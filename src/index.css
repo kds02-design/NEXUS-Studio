@@ -1,0 +1,149 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Teko:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* NEXUS Studio Topbar 로고 — Teko, 앞단어 light + 뒷단어 semibold + 포인트 컬러
+   각 앱이 글로벌 span 셀렉터로 폰트를 덮는 경우가 있어 !important로 강제 */
+.nexus-title { font-family: 'Teko', sans-serif !important; letter-spacing: 0.5px; line-height: 1; display: inline-flex; align-items: baseline; }
+.nexus-title-first  { font-family: 'Teko', sans-serif !important; font-weight: 300; }
+.nexus-title-second { font-family: 'Teko', sans-serif !important; font-weight: 600; }
+
+/* 각 앱 내부 헤더 타이틀 전용 — Teko */
+.app-title { font-family: 'Teko', sans-serif; letter-spacing: 0.5px; line-height: 1; }
+
+/* NEXUS 표준 팝오버 — RenderMetrics DropdownControl 기준 */
+.nx-popover-panel {
+  background: #121214;
+  border: 1px solid #3f3f46;            /* zinc-700 */
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.nx-popover-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #52525b;                        /* zinc-600 */
+  padding: 10px 16px 6px;
+}
+.nx-popover-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 11px;
+  color: #a1a1aa;                        /* zinc-400 */
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.nx-popover-item:hover { background: #27272a; color: #fafafa; }
+.nx-popover-item.is-active { color: #60a5fa; font-weight: 700; }   /* blue-400 */
+.nx-popover-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
+
+/* ───── NEXUS 디자인 토큰 ─────
+   토큰 변수 (각 앱의 인라인 컬러 대신 사용 권장) */
+:root {
+  --nx-bg: #0A0A0F;
+  --nx-surface: #111118;
+  --nx-card: #16161F;
+  --nx-border: #1E1E2E;
+  --nx-border-strong: #3f3f46;          /* zinc-700 */
+  --nx-accent: #6C5CE7;
+  --nx-accent-soft: #2D2A4A;
+  --nx-text: #E8E6FF;
+  --nx-text-muted: #7A7A9A;
+  --nx-text-dim: #3A3A5A;
+  --nx-radius: 10px;
+  --nx-radius-sm: 6px;
+  --nx-radius-lg: 14px;
+}
+
+/* 버튼 */
+.nx-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 14px; border-radius: var(--nx-radius-sm);
+  font-size: 12px; font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+.nx-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.nx-btn-primary   { background: var(--nx-accent); color: #fff; }
+.nx-btn-primary:hover:not(:disabled)   { background: #5849d4; }
+.nx-btn-secondary { background: transparent; border-color: var(--nx-border); color: var(--nx-text-muted); }
+.nx-btn-secondary:hover:not(:disabled) { border-color: var(--nx-border-strong); color: var(--nx-text); background: rgba(255,255,255,0.03); }
+.nx-btn-ghost     { background: transparent; color: var(--nx-text-muted); }
+.nx-btn-ghost:hover:not(:disabled)     { background: rgba(255,255,255,0.06); color: var(--nx-text); }
+.nx-btn-danger    { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.4); color: #fca5a5; }
+.nx-btn-danger:hover:not(:disabled)    { background: rgba(239,68,68,0.2); }
+
+/* 카드 */
+.nx-card {
+  background: var(--nx-card);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius);
+  padding: 16px;
+}
+
+/* 인풋 / 텍스트에어리어 */
+.nx-input, .nx-textarea {
+  width: 100%;
+  background: #0A0A0A;
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-sm);
+  padding: 10px 12px;
+  color: var(--nx-text);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.12s;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+.nx-input:focus, .nx-textarea:focus { border-color: var(--nx-border-strong); }
+.nx-input::placeholder, .nx-textarea::placeholder { color: var(--nx-text-dim); }
+.nx-textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+/* 모달 */
+.nx-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.nx-modal-panel {
+  background: var(--nx-card);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6);
+  max-width: 100%;
+  overflow: hidden;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+
+/* 토스트 */
+.nx-toast {
+  position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+  background: var(--nx-accent); color: #fff;
+  padding: 10px 22px; border-radius: 8px;
+  font-size: 13px; font-weight: 500;
+  z-index: 999;
+  box-shadow: 0 10px 40px rgba(108,92,231,0.3);
+}
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: 'Noto Sans KR', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
