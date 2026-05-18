@@ -1,18 +1,17 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import {
-  collection, doc, getDocs, addDoc, query, orderBy, limit, serverTimestamp,
+  collection, getDocs, addDoc, query, orderBy, limit, serverTimestamp,
 } from "firebase/firestore";
-import { db, appId } from "../../lib/firebase";
+import { db } from "../../lib/firebase";
 import { GEMINI_API_KEY } from "../../lib/gemini";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobal } from "../../context/GlobalContext";
 import { APP_MAP } from "../../config/apps";
 import {
   Upload, FileText, Image as ImageIcon, X, Loader2, Sparkles, Check,
-  ChevronDown, ChevronRight, Type, Box, Video, Star, Palette,
-  Users, AlertCircle, RefreshCw, ArrowLeft, Save,
+  ChevronRight, Type, Box, Star, Palette,
+  Users, AlertCircle, RefreshCw,
 } from "lucide-react";
-
 const GENRES = [
   { id: "rpg",      label: "RPG / 판타지" },
   { id: "casual",   label: "캐주얼 / 카툰" },
@@ -60,7 +59,7 @@ const fileToText = (file) => new Promise((resolve, reject) => {
 });
 
 export default function BriefStudio() {
-  const { user, isAdmin } = useAuth();
+  const { user } = useAuth();
   const { navigate } = useGlobal();
 
   const [step, setStep] = useState(1);
@@ -79,6 +78,8 @@ export default function BriefStudio() {
   const [showHistory, setShowHistory] = useState(false);
   const docInputRef = useRef(null);
   const imgInputRef = useRef(null);
+  const [isDraggingDoc, setIsDraggingDoc] = useState(false);
+  const [isDraggingImg, setIsDraggingImg] = useState(false);
 
   // 담당자 목록 로드 — Firestore users (admin은 전체 read 가능, 일반 사용자는 본인만 보일 수 있음)
   useEffect(() => {
@@ -111,9 +112,8 @@ export default function BriefStudio() {
     })();
   }, [user, report]);
 
-  const onDocPick = (e) => {
-    const arr = Array.from(e.target.files || []);
-    e.target.value = "";
+  // 클릭 input + 드래그 드롭 양쪽에서 호출되는 공용 필터/병합 헬퍼.
+  const acceptDocs = (arr) => {
     if (arr.length === 0) return;
     const ok = arr.filter(f => SUPPORTED_DOC_EXT.test(f.name));
     if (ok.length < arr.length) {
@@ -121,11 +121,35 @@ export default function BriefStudio() {
     } else { setError(""); }
     setDocFiles(prev => [...prev, ...ok]);
   };
+  const acceptImages = (arr) => {
+    if (arr.length === 0) return;
+    const ok = arr.filter(f => f.type.startsWith("image/"));
+    setImageFiles(prev => [...prev, ...ok]);
+  };
+
+  const onDocPick = (e) => {
+    const arr = Array.from(e.target.files || []);
+    e.target.value = "";
+    acceptDocs(arr);
+  };
   const onImagePick = (e) => {
     const arr = Array.from(e.target.files || []);
     e.target.value = "";
-    const ok = arr.filter(f => f.type.startsWith("image/"));
-    setImageFiles(prev => [...prev, ...ok]);
+    acceptImages(arr);
+  };
+
+  // 드래그 핸들러 — preventDefault 가 없으면 브라우저가 파일을 새 탭으로 여는 기본동작 발동.
+  const handleDocDragOver  = (e) => { e.preventDefault(); setIsDraggingDoc(true); };
+  const handleDocDragLeave = (e) => { e.preventDefault(); setIsDraggingDoc(false); };
+  const handleDocDrop      = (e) => {
+    e.preventDefault(); setIsDraggingDoc(false);
+    acceptDocs(Array.from(e.dataTransfer.files || []));
+  };
+  const handleImgDragOver  = (e) => { e.preventDefault(); setIsDraggingImg(true); };
+  const handleImgDragLeave = (e) => { e.preventDefault(); setIsDraggingImg(false); };
+  const handleImgDrop      = (e) => {
+    e.preventDefault(); setIsDraggingImg(false);
+    acceptImages(Array.from(e.dataTransfer.files || []));
   };
 
   const removeDoc = (i) => setDocFiles(prev => prev.filter((_, idx) => idx !== i));
@@ -173,7 +197,6 @@ export default function BriefStudio() {
 
       // === Stage 2: Gemini 호출 ===
       setAnalysisStage("Gemini 2.5 Pro로 분석 중... (30~60초)"); setAnalysisPercent(55);
-      const styleIds = STYLE_KEYS.map(s => s.id).join(", ");
       const sysPrompt = `당신은 게임 디자인 브리프 분석 전문가입니다. 첨부된 문서와 레퍼런스 이미지를 종합 분석해 디자인 방향성을 도출하세요.\n\n[기본 설정]\n- 장르: ${GENRES.find(g => g.id === genre)?.label || genre}\n- 플랫폼: ${PLATFORMS.find(p => p.id === platform)?.label || platform}\n- ${assigneeBlock}\n\n[입력 파일]\n- 문서 ${docFiles.length}개: ${docSummaries.join(" / ") || "(없음)"}\n- 이미지 ${imageFiles.length}개: ${imageSummaries.join(" / ") || "(없음)"}\n\n반드시 아래 JSON 스키마로만 출력 (코드블록·설명 금지). 누락 필드 없게:\n{\n  "directionSummary": "전체 디자인 방향 한국어 요약 (3~5문장)",\n  "keywords": [{"label": "한국어 키워드", "weight": 0.0~1.0}, ...총 5~7개],\n  "styleScores": { ${STYLE_KEYS.map(s => `"${s.id}": 0.0~1.0`).join(", ")} },\n  "colorPalette": [{"hex": "#RRGGBB", "name": "한국어 색상 이름", "role": "primary|accent|background|text"}, ...4~6개],\n  "typography": {\n    "weight": "thin|light|regular|medium|bold|black",\n    "style": "serif|sans|display|script",\n    "mood": "한국어 분위기 키워드 2~3개",\n    "recommendations": "추천 폰트 또는 폰트 패밀리 (영문)"\n  },\n  "assigneeMatch": {\n    "score": 0.0~1.0,\n    "reasoning": "담당자 성향과 이 방향이 맞는지 한국어 1~2문장"\n  },\n  "referenceSummary": "레퍼런스 이미지/문서에서 발견한 핵심 시각 패턴 한국어 요약 (2~3문장)",\n  "risks": ["주의해야 할 점 한국어 1~3개"]\n}`;
 
       const ctrl = new AbortController();
@@ -257,14 +280,12 @@ export default function BriefStudio() {
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0a0a0f] text-zinc-200" style={{ fontFamily: "'Inter',system-ui,sans-serif" }}>
+    <div className="h-full overflow-y-auto bg-[#0a0a0f] text-zinc-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
       <div className="max-w-5xl mx-auto p-8">
         {/* Header */}
         <div className="flex items-end justify-between mb-8">
-          <div>
-            <h1 className="app-title text-2xl tracking-wide flex items-baseline gap-1.5 mb-1 text-white"><span className="font-light">Brief</span> <span className="font-semibold">Studio</span></h1>
-            <div className="text-xs text-zinc-400">브리프 스튜디오</div>
-            <p className="text-xs text-zinc-500 mt-1">문서와 레퍼런스를 업로드하면 AI가 디자인 방향을 잡아드려요</p>
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-zinc-500">문서와 레퍼런스를 업로드하면 AI가 디자인 방향을 잡아드려요</p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowHistory(v => !v)} className="px-3 py-2 text-xs rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600">
@@ -285,7 +306,7 @@ export default function BriefStudio() {
             { n: 2, label: "분석 중" },
             { n: 3, label: "결과" },
           ].map((s, i) => (
-            <React.Fragment key={s.n}>
+            <Fragment key={s.n}>
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border ${step === s.n ? "bg-[#A29BFE]/20 border-[#A29BFE]/50 text-[#A29BFE] font-bold" : step > s.n ? "bg-[#A29BFE]/10 border-[#A29BFE]/30 text-[#A29BFE]" : "border-zinc-800 text-zinc-500"}`}>
                 <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${step >= s.n ? "bg-[#A29BFE] text-zinc-900" : "bg-zinc-800 text-zinc-500"}`}>
                   {step > s.n ? <Check size={10}/> : s.n}
@@ -293,7 +314,7 @@ export default function BriefStudio() {
                 {s.label}
               </div>
               {i < 2 && <div className={`flex-1 h-px ${step > s.n ? "bg-[#A29BFE]/30" : "bg-zinc-800"}`}/>}
-            </React.Fragment>
+            </Fragment>
           ))}
         </div>
 
@@ -337,9 +358,19 @@ export default function BriefStudio() {
                 <div className="text-xs font-bold text-zinc-300 flex items-center gap-2"><FileText size={14}/> 문서</div>
                 <span className="text-[10px] text-zinc-500">{SUPPORTED_DOC_HINT}</span>
               </div>
-              <button onClick={() => docInputRef.current?.click()} className="w-full py-6 rounded-lg border border-dashed border-zinc-700 hover:border-[#A29BFE]/50 hover:bg-[#A29BFE]/5 transition-colors text-xs text-zinc-400 flex flex-col items-center gap-2">
+              <button
+                onClick={() => docInputRef.current?.click()}
+                onDragOver={handleDocDragOver}
+                onDragLeave={handleDocDragLeave}
+                onDrop={handleDocDrop}
+                className={`w-full py-6 rounded-lg border border-dashed transition-colors text-xs flex flex-col items-center gap-2 ${
+                  isDraggingDoc
+                    ? 'border-[#A29BFE] bg-[#A29BFE]/10 text-[#A29BFE]'
+                    : 'border-zinc-700 hover:border-[#A29BFE]/50 hover:bg-[#A29BFE]/5 text-zinc-400'
+                }`}
+              >
                 <Upload size={20}/>
-                <span>클릭해서 문서 추가</span>
+                <span>{isDraggingDoc ? '여기에 놓으세요' : '클릭하거나 드래그해서 문서 추가'}</span>
               </button>
               <input ref={docInputRef} type="file" multiple accept=".pdf,.txt,.md,.json" onChange={onDocPick} className="hidden"/>
               {docFiles.length > 0 && (
@@ -360,9 +391,19 @@ export default function BriefStudio() {
                 <div className="text-xs font-bold text-zinc-300 flex items-center gap-2"><ImageIcon size={14}/> 레퍼런스 / 작업물 / 경쟁사</div>
                 <span className="text-[10px] text-zinc-500">JPG / PNG / WEBP</span>
               </div>
-              <button onClick={() => imgInputRef.current?.click()} className="w-full py-6 rounded-lg border border-dashed border-zinc-700 hover:border-[#A29BFE]/50 hover:bg-[#A29BFE]/5 transition-colors text-xs text-zinc-400 flex flex-col items-center gap-2">
+              <button
+                onClick={() => imgInputRef.current?.click()}
+                onDragOver={handleImgDragOver}
+                onDragLeave={handleImgDragLeave}
+                onDrop={handleImgDrop}
+                className={`w-full py-6 rounded-lg border border-dashed transition-colors text-xs flex flex-col items-center gap-2 ${
+                  isDraggingImg
+                    ? 'border-[#A29BFE] bg-[#A29BFE]/10 text-[#A29BFE]'
+                    : 'border-zinc-700 hover:border-[#A29BFE]/50 hover:bg-[#A29BFE]/5 text-zinc-400'
+                }`}
+              >
                 <Upload size={20}/>
-                <span>클릭해서 이미지 추가</span>
+                <span>{isDraggingImg ? '여기에 놓으세요' : '클릭하거나 드래그해서 이미지 추가'}</span>
               </button>
               <input ref={imgInputRef} type="file" multiple accept="image/*" onChange={onImagePick} className="hidden"/>
               {imageFiles.length > 0 && (

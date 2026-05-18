@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   Award, 
   FileText, 
@@ -276,7 +276,7 @@ const AnalysisDashboard = ({ banners, onOpenPreview }) => {
                     </h4>
                     {currentQuarterData.worst.length > 0 ? (
                         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                            {currentQuarterData.worst.map((item, idx) => (
+                            {currentQuarterData.worst.map((item) => (
                                 <div key={item.id} className="bg-zinc-900 rounded-lg overflow-hidden border border-zinc-800 hover:border-red-500/50 transition-colors cursor-pointer group" onClick={() => onOpenPreview(item)}>
                                     {/* ✨ 수정됨: object-top 추가 (상단 기준 크롭) */}
                                     <div className="aspect-[4/5] bg-black relative">

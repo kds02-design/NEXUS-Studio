@@ -177,6 +177,31 @@ export async function fetchUserProfile(uid) {
   return snap.exists() ? { uid, ...snap.data() } : null;
 }
 
+// 프로필 아바타 저장.
+//   avatarType: 'emoji' | 'initial' | 'photo' (photo는 Google profilePhoto fallback용 마커)
+//   avatarValue: 이모지 문자 또는 #RRGGBB 컬러 코드
+export async function updateUserAvatar(uid, avatarType, avatarValue) {
+  if (!uid) throw new Error("uid required");
+  await updateDoc(userRef(uid), {
+    avatarType,
+    avatarValue,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// 등급 업그레이드 요청 저장. 관리자가 NEXUS Admin에서 검토.
+export async function submitUpgradeRequest({ uid, email, displayName, currentGrade, targetGrade, reason }) {
+  if (!uid) throw new Error("uid required");
+  const ref = doc(collection(db, "upgradeRequests"));
+  await setDoc(ref, {
+    uid, email: email || "", displayName: displayName || "",
+    currentGrade, targetGrade, reason: String(reason || "").trim(),
+    status: "pending",
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
 export async function redeemInviteCode(uid, rawCode) {
   if (!uid) throw new Error("uid required");
   const code = String(rawCode || "").trim().toUpperCase();

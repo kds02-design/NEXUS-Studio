@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Sparkles, Cpu, CheckCircle2, Loader2 } from 'lucide-react';
 import { db } from '../../lib/dexie';
 
 const AiAnalysisModal = ({ isOpen, onClose, selectedIds, onComplete }) => {
   const [status, setStatus] = useState('idle'); // idle, processing, complete
   const [progress, setProgress] = useState(0);
-  const [currentProcessingItem, setCurrentProcessingItem] = useState('');
+  const [_currentProcessingItem, setCurrentProcessingItem] = useState('');
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {

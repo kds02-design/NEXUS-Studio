@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Upload, Plus } from 'lucide-react';
+import { useState } from 'react';
+import { X, Upload } from 'lucide-react';
 
 const UploadModal = ({ 
     isOpen, 

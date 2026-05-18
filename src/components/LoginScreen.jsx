@@ -70,7 +70,7 @@ export default function LoginScreen() {
     <div style={{
       minHeight: "100vh", background: THEME.bg, color: THEME.text,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-      fontFamily: "'Inter',system-ui,sans-serif",
+      fontFamily: "'Noto Sans KR', sans-serif",
     }}>
       <div style={{
         width: "100%", maxWidth: 380, background: THEME.surface,

@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import { memo } from 'react';
 import { Loader2 } from 'lucide-react';
 
 const MobileMockup = memo(({ src, isLoading }) => {

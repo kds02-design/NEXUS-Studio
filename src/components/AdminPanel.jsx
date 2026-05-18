@@ -60,7 +60,7 @@ export default function AdminPanel({ onClose }) {
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-      fontFamily: "'Inter',system-ui,sans-serif",
+      fontFamily: "'Noto Sans KR', sans-serif",
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         width: "100%", maxWidth: 720, maxHeight: "85vh", background: THEME.surface,

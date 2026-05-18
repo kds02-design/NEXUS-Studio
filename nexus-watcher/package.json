@@ -1,0 +1,21 @@
+{
+  "name": "nexus-watcher",
+  "version": "0.1.0",
+  "description": "NEXUS Studio 네트워크 폴더 자동 감시 에이전트 — 새 이미지를 Cloudinary에 업로드하고 Firestore에 색인합니다.",
+  "private": true,
+  "type": "module",
+  "main": "watcher.js",
+  "scripts": {
+    "start": "node watcher.js",
+    "sync": "node watcher.js --scan-only"
+  },
+  "dependencies": {
+    "chokidar": "^3.6.0",
+    "cloudinary": "^2.5.1",
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^12.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,6 +1,10 @@
+/* eslint-disable */
 // ============================================================
-// TYPECORE STUDIO — Platform Shell v2
+// TYPECORE STUDIO — Platform Shell v2 (아카이브)
 // 프롬프트 아크 통합 완료
+// ※ 현재 라우팅은 main.jsx → App.jsx → Shell.jsx 경로를 사용한다.
+//   이 파일은 v3 설계 참고용으로만 보관되며 더 이상 import 되지 않는다.
+//   따라서 ESLint 검사에서 전체 제외한다.
 // ============================================================
 import { useState, createContext, useContext, useCallback, useEffect, useMemo, useRef } from "react";
 import {
@@ -944,7 +948,7 @@ export default function App() {
 function Shell() {
   const { currentApp } = useGlobal();
   return (
-    <div style={{ minHeight:"100vh", background:THEME.bg, color:THEME.text, fontFamily:"'Inter',system-ui,sans-serif", display:"flex", flexDirection:"column" }}>
+    <div style={{ minHeight:"100vh", background:THEME.bg, color:THEME.text, fontFamily:"'Noto Sans KR', sans-serif", display:"flex", flexDirection:"column" }}>
       <style>{`* { box-sizing:border-box; } @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)} } ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#1E1E2E;border-radius:2px}`}</style>
       <Topbar/>
       <div style={{ flex:1, overflow:"hidden" }}>

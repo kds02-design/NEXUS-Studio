@@ -1,26 +1,27 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  collection, doc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, serverTimestamp,
+  collection, doc, updateDoc, onSnapshot, writeBatch,
 } from 'firebase/firestore';
 import { db, appId } from '../../lib/firebase';
 import { uploadBase64 } from '../../lib/storage';
 import { useAuth } from '../../context/AuthContext';
+import { useGlobal } from '../../context/GlobalContext';
 import { processAndCropImage } from './utils/imageProcessor';
 
 import BannerCard from './components/banner/BannerCard';
-import PromotionFilterBar from './components/banner/PromotionFilterBar';
 import UploadModal from './components/modals/UploadModal';
 import PreviewModal from './components/modals/PreviewModal';
 import BatchEditModal from './components/modals/BatchEditModal';
 import ProcessingModal from './components/modals/ProcessingModal';
 import AnalysisDashboard from './components/dashboard/AnalysisDashboard';
 import AiAnalysisModal from './components/modals/AiAnalysisModal';
+import WebDesignEvalModal from './components/modals/WebDesignEvalModal';
 import ConfirmWorkspace from './components/modals/ConfirmWorkspace';
+import { analyzeWebDesign, prepareImageForAI } from './services/gemini';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import FloatingActionBar from './components/layout/FloatingActionBar';
 
-import { Layers, Edit3, X, Sparkles, Trash2, CheckCircle, Clock } from 'lucide-react';
 
 const GAMES = ['아이온', '블소', '리니지', '기타'];
 
@@ -45,9 +46,23 @@ async function uploadBannerImagesToCloud(banner) {
 }
 
 function App() {
-    const { user } = useAuth();
+    const { user, isAdmin } = useAuth();
+    const { isLight } = useGlobal();
     const [allBanners, setAllBanners] = useState([]);
     const [isLoadingData, setIsLoadingData] = useState(true);
+
+    // 관리자 모드 (체크박스/플로팅 액션바 노출 토글) — 관리자만 켤 수 있음, localStorage 영속화
+    const [isAdminMode, setIsAdminMode] = useState(() => {
+        try { return localStorage.getItem('pa_isAdminMode') === 'true'; } catch { return false; }
+    });
+    useEffect(() => {
+        try { localStorage.setItem('pa_isAdminMode', String(isAdminMode)); } catch { /* noop */ }
+    }, [isAdminMode]);
+    // 권한이 사라지면 강제로 꺼야 함 (관리자 권한 회수 등 안전장치)
+    useEffect(() => {
+        if (!isAdmin && isAdminMode) setIsAdminMode(false);
+    }, [isAdmin, isAdminMode]);
+    // 관리자 모드 토글 시 다중 선택 초기화는 setSelectedItems 선언 이후로 이동 (아래 별도 effect)
 
     // Firestore 실시간 구독 — Dexie의 useLiveQuery 대체
     useEffect(() => {
@@ -62,7 +77,6 @@ function App() {
             (snap) => {
                 clearTimeout(watchdog);
                 const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                console.log(`[PromotionArchive] received ${arr.length} banners`);
                 setAllBanners(arr);
                 setIsLoadingData(false);
             },
@@ -80,6 +94,12 @@ function App() {
     const [activeCategory, setActiveCategory] = useState('all');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isDesktopSidebarOpen, setIsDesktopSidebarOpen] = useState(false);
+
+    // BannerCodex 패턴 — 사이드바 빈 공간 클릭 시 데스크톱에서 토글.
+    const handleSidebarClick = useCallback((e) => {
+        const isInteractive = e.target.closest("button, input, label, select, a, span");
+        if (!isInteractive && window.innerWidth >= 768) setIsDesktopSidebarOpen(prev => !prev);
+    }, []);
 
     const [collectionIds, setCollectionIds] = useState([]);
     const [isCollectionMode, setIsCollectionMode] = useState(false);
@@ -113,7 +133,7 @@ function App() {
     }, [allBanners, pinnedGames]);
 
     const [isAiSearchMode, setIsAiSearchMode] = useState(false);
-    const [isAiQuerying, setIsAiQuerying] = useState(false);
+    const [isAiQuerying] = useState(false);
     const [aiSearchKeywords, setAiSearchKeywords] = useState([]);
 
     const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -129,6 +149,10 @@ function App() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     const [selectedItems, setSelectedItems] = useState([]);
+    // 관리자 모드 토글 → 다중 선택 초기화
+    useEffect(() => {
+        if (!isAdminMode) setSelectedItems(prev => (prev.length > 0 ? [] : prev));
+    }, [isAdminMode]);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -137,6 +161,9 @@ function App() {
 
     const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+    const [isWebEvalOpen, setIsWebEvalOpen] = useState(false);
+    const [evalTargetBanner, setEvalTargetBanner] = useState(null);
+    const [isEvalRunning, setIsEvalRunning] = useState(false);
 
     const [pendingFiles, setPendingFiles] = useState([]);
     const [uploadSettings, setUploadSettings] = useState({ game: '아이온', year: new Date().getFullYear().toString() });
@@ -267,10 +294,11 @@ function App() {
 
                 if (!type) return;
 
-                let title = "미분류";
                 const designIndex = pathParts.findIndex(p => p.includes('디자인'));
+                let title;
                 if (designIndex > 0) title = pathParts[designIndex - 1].trim();
                 else title = pathParts.length >= 3 ? pathParts[pathParts.length - 3].trim() : pathParts[pathParts.length - 2].trim();
+                if (!title) title = "미분류";
 
                 if (!groups[title]) groups[title] = { title, pcCandidates: [], moCandidates: [] };
 
@@ -445,7 +473,7 @@ function App() {
                     const batch = writeBatch(db);
                     uploaded.forEach(b => {
                         if (!b) return;
-                        const { id, ...rest } = b;
+                        const { id: _id, ...rest } = b;
                         const docRef = doc(promoColRef());
                         batch.set(docRef, { ...rest, ownerUid: user.uid });
                     });
@@ -515,11 +543,6 @@ function App() {
         setIsPreviewOpen(true);
     };
 
-    const handleOpenConfirm = (banner) => {
-        setSelectedBanner(banner);
-        setIsConfirmOpen(true);
-    };
-
     const handleUpdateHistory = async (newHistory) => {
         if (!selectedBanner) return;
         try {
@@ -554,10 +577,43 @@ function App() {
     };
 
     return (
-        <div className="flex h-screen bg-[#0c0c0e] text-zinc-300 font-sans selection:bg-[#d8b17e]/30 overflow-hidden">
+        <div
+            data-pa-theme={isLight ? 'light' : 'dark'}
+            className={`flex h-full font-sans selection:bg-[#d8b17e]/30 overflow-hidden ${isLight ? 'bg-[#F5F5F5] text-[#1A1A1A]' : 'bg-[#0c0c0e] text-zinc-300'}`}
+        >
+            {/* 라이트 모드 오버라이드 — 하드코딩된 다크 컬러 surface 를 light 토큰으로 매핑 */}
+            <style>{`
+              [data-pa-theme="light"] .bg-\\[\\#0c0c0e\\] { background-color: #F5F5F5 !important; }
+              [data-pa-theme="light"] .bg-\\[\\#111\\] { background-color: #FFFFFF !important; }
+              [data-pa-theme="light"] .bg-\\[\\#111111\\] { background-color: #FFFFFF !important; }
+              [data-pa-theme="light"] .bg-\\[\\#1A1A1A\\] { background-color: #FFFFFF !important; }
+              [data-pa-theme="light"] .bg-zinc-900 { background-color: #FFFFFF !important; }
+              [data-pa-theme="light"] .bg-zinc-800 { background-color: #F0F0F0 !important; }
+              [data-pa-theme="light"] .bg-zinc-800\\/60 { background-color: rgba(240,240,240,0.6) !important; }
+              [data-pa-theme="light"] .bg-zinc-800\\/80 { background-color: rgba(240,240,240,0.85) !important; }
+              [data-pa-theme="light"] .bg-zinc-900\\/50 { background-color: rgba(255,255,255,0.5) !important; }
+              [data-pa-theme="light"] .bg-black\\/50 { background-color: rgba(0,0,0,0.35) !important; }
+              [data-pa-theme="light"] .bg-black\\/70 { background-color: rgba(0,0,0,0.5) !important; }
+              [data-pa-theme="light"] .text-zinc-200 { color: #1A1A1A !important; }
+              [data-pa-theme="light"] .text-zinc-300 { color: #1A1A1A !important; }
+              [data-pa-theme="light"] .text-zinc-400 { color: #555555 !important; }
+              [data-pa-theme="light"] .text-zinc-500 { color: #666666 !important; }
+              [data-pa-theme="light"] .text-zinc-600 { color: #888888 !important; }
+              [data-pa-theme="light"] .text-white { color: #1A1A1A !important; }
+              [data-pa-theme="light"] .border-zinc-800 { border-color: #E0E0E0 !important; }
+              [data-pa-theme="light"] .border-zinc-800\\/80 { border-color: #E0E0E0 !important; }
+              [data-pa-theme="light"] .border-white\\/5 { border-color: #E5E5E5 !important; }
+              [data-pa-theme="light"] .border-white\\/10 { border-color: #DCDCDC !important; }
+              [data-pa-theme="light"] .border-white\\/20 { border-color: #C8C8C8 !important; }
+              [data-pa-theme="light"] .hover\\:bg-zinc-800:hover { background-color: #F0F0F0 !important; }
+              [data-pa-theme="light"] .hover\\:bg-white\\/5:hover { background-color: rgba(0,0,0,0.04) !important; }
+              [data-pa-theme="light"] .hover\\:bg-white\\/10:hover { background-color: rgba(0,0,0,0.07) !important; }
+              [data-pa-theme="light"] .hover\\:text-white:hover { color: #1A1A1A !important; }
+            `}</style>
             <Sidebar
                 isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen}
                 isDesktopSidebarOpen={isDesktopSidebarOpen} setIsDesktopSidebarOpen={setIsDesktopSidebarOpen}
+                handleSidebarClick={handleSidebarClick}
                 activeCategory={activeCategory} handleGameClick={handleGameClick}
                 isCollectionMode={isCollectionMode} setIsCollectionMode={setIsCollectionMode}
                 collectionIds={collectionIds} availableGames={availableGames}
@@ -570,35 +626,41 @@ function App() {
                 handleFolderUpload={handleFileUpload} handleFileUpload={handleFileUpload}
                 handleSaveLibrary={handleSaveLibrary} handleLoadLibrary={handleLoadLibrary}
                 banners={allBanners}
+                isAdminMode={isAdminMode} setIsAdminMode={setIsAdminMode}
             />
 
             <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
                 <Header
-                    setIsSidebarOpen={setIsSidebarOpen} searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+                    setIsSidebarOpen={setIsSidebarOpen}
+                    // search
+                    searchQuery={searchQuery} setSearchQuery={setSearchQuery}
                     isAiSearchMode={isAiSearchMode} setIsAiSearchMode={setIsAiSearchMode}
                     isAiQuerying={isAiQuerying} handleAiSearch={() => { }} setAiSearchKeywords={setAiSearchKeywords}
+                    aiSearchKeywords={aiSearchKeywords}
+                    // context
+                    isCollectionMode={isCollectionMode} setIsCollectionMode={setIsCollectionMode}
+                    activeCategory={activeCategory}
+                    filteredBanners={filteredBanners} banners={allBanners}
+                    // admin selection
+                    isAdminMode={isAdminMode}
+                    selectedIds={selectedItems}
+                    handleSelectAll={() => setSelectedItems(selectedItems.length === filteredBanners.length ? [] : filteredBanners.map(b => b.id))}
+                    // filters
+                    isFilterOpen={isFilterOpen} setIsFilterOpen={setIsFilterOpen}
+                    activeFilters={activeFilters} setActiveFilters={setActiveFilters}
+                    availableYears={[2026, 2025, 2024, 2023]} filterRef={filterRef}
+                    // sort
+                    isSortMenuOpen={isSortMenuOpen} setIsSortMenuOpen={setIsSortMenuOpen}
+                    sortOrder={sortOrder} setSortOrder={setSortOrder} sortRef={sortRef}
+                    // grid
+                    isLargeGrid={isLargeGrid} setIsLargeGrid={setIsLargeGrid}
                 />
 
-                <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 relative scrollbar-hide">
+                <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 pt-4 relative scrollbar-hide">
                     {currentView === 'dashboard' ? (
                         <AnalysisDashboard banners={filteredBanners} onOpenPreview={handleOpenPreview} />
                     ) : (
                         <>
-                            <PromotionFilterBar
-                                isCollectionMode={isCollectionMode} setIsCollectionMode={setIsCollectionMode}
-                                activeCategory={activeCategory} isAiSearchMode={isAiSearchMode} searchQuery={searchQuery}
-                                aiSearchKeywords={aiSearchKeywords} filteredBanners={filteredBanners} banners={allBanners}
-                                selectedIds={selectedItems}
-                                handleSelectAll={() => setSelectedItems(selectedItems.length === filteredBanners.length ? [] : filteredBanners.map(b => b.id))}
-                                isFilterOpen={isFilterOpen} setIsFilterOpen={setIsFilterOpen}
-                                activeFilters={activeFilters} setActiveFilters={setActiveFilters}
-                                availableYears={[2026, 2025, 2024, 2023]}
-                                isSortMenuOpen={isSortMenuOpen} setIsSortMenuOpen={setIsSortMenuOpen}
-                                sortOrder={sortOrder} setSortOrder={setSortOrder}
-                                isLargeGrid={isLargeGrid} setIsLargeGrid={setIsLargeGrid}
-                                filterRef={filterRef}
-                            />
-
                             {isLoadingData && allBanners.length === 0 ? (
                                 <div className="text-center py-20 text-zinc-500 text-sm">데이터를 불러오는 중...</div>
                             ) : (
@@ -611,14 +673,10 @@ function App() {
                                                 toggleSelection={(id) => setSelectedItems(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id])}
                                                 toggleLike={(id) => toggleLike(id, banner.liked)}
                                                 onOpenPreview={handleOpenPreview}
-                                                onTagClick={setSearchQuery}
                                                 isCollectionMode={isCollectionMode}
                                                 onRemove={(id) => { const next = collectionIds.filter(c => c !== id); setCollectionIds(next); localStorage.setItem('myCollection', JSON.stringify(next)); }}
+                                                isAdminMode={isAdminMode}
                                             />
-                                            <div className="absolute top-3 right-3 z-20 flex flex-col items-end gap-1 pointer-events-none">
-                                                {banner.isCompleted && <div className="bg-violet-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg border border-violet-400 flex items-center gap-1"><CheckCircle className="w-3 h-3" /> 컨펌 완료</div>}
-                                                {!banner.isCompleted && banner.history?.length > 0 && <div className="bg-green-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg border border-green-400 flex items-center gap-1"><Clock className="w-3 h-3" /> 수정 중</div>}
-                                            </div>
                                         </div>
                                     ))}
                                 </div>
@@ -627,7 +685,7 @@ function App() {
                     )}
                 </main>
 
-                {selectedItems.length > 0 && (
+                {isAdminMode && selectedItems.length > 0 && (
                     <FloatingActionBar
                         selectedCount={selectedItems.length}
                         onAddToCollection={handleBulkAddToCollection}
@@ -642,24 +700,122 @@ function App() {
                     <PreviewModal
                         isOpen={isPreviewOpen}
                         onClose={() => setIsPreviewOpen(false)}
-                        onOpenConfirm={handleOpenConfirm}
                         banner={selectedBanner}
                         editedBanner={editedBanner}
                         onEditChange={(field, value) => { setEditedBanner(prev => ({ ...prev, [field]: value })); setHasChanges(true); }}
                         hasChanges={hasChanges}
+                        onToggleLike={(id) => toggleLike(id, selectedBanner?.liked)}
                         onSave={async () => {
                             if (!editedBanner) return;
                             try {
                                 // 편집 중 새 base64 이미지가 들어왔다면 Cloudinary 업로드
                                 const uploaded = await uploadBannerImagesToCloud(editedBanner);
-                                const { id, ...rest } = uploaded;
+                                const { id: _id, ...rest } = uploaded;
                                 await updateDoc(promoDocRef(selectedBanner.id), rest);
                                 setHasChanges(false); setSelectedBanner(uploaded);
                                 alert("저장되었습니다.");
                             } catch (e) { alert(`저장 실패: ${e.message}`); }
                         }}
                         collectionIds={collectionIds}
+                        onToggleCollection={(id) => {
+                            const next = collectionIds.includes(id)
+                                ? collectionIds.filter(c => c !== id)
+                                : [...collectionIds, id];
+                            setCollectionIds(next);
+                            localStorage.setItem('myCollection', JSON.stringify(next));
+                        }}
                         availableGames={GAMES}
+                        onOpenAnalysis={(b) => {
+                            setEvalTargetBanner(b || selectedBanner);
+                            setIsWebEvalOpen(true);
+                        }}
+                    />
+                )}
+
+                {isWebEvalOpen && (
+                    <WebDesignEvalModal
+                        isOpen={isWebEvalOpen}
+                        onClose={() => setIsWebEvalOpen(false)}
+                        banner={evalTargetBanner || selectedBanner}
+                        onEditChange={async (field, value) => {
+                            const target = evalTargetBanner || selectedBanner;
+                            if (!target?.id) return;
+                            try {
+                                await updateDoc(promoDocRef(target.id), { [field]: value });
+                                setEvalTargetBanner(prev => prev ? { ...prev, [field]: value } : prev);
+                                if (selectedBanner?.id === target.id) {
+                                    setSelectedBanner(prev => prev ? { ...prev, [field]: value } : prev);
+                                    setEditedBanner(prev => prev ? { ...prev, [field]: value } : prev);
+                                }
+                            } catch (e) { alert(`업데이트 실패: ${e.message}`); }
+                        }}
+                        onAnalyze={async (b) => {
+                            const target = b || evalTargetBanner || selectedBanner;
+                            if (!target?.id) return;
+                            setIsEvalRunning(true);
+                            try {
+                                // PC + 모바일 이미지를 모두 base64로 변환 (둘 다 있으면 둘 다 보냄)
+                                const imgSources = [
+                                    target.full_image || target.preview,
+                                    target.mobile_image,
+                                ].filter(Boolean);
+                                if (imgSources.length === 0) {
+                                    alert("분석할 이미지가 없습니다.");
+                                    return;
+                                }
+                                const imagesBase64 = await Promise.all(
+                                    imgSources.map(src => prepareImageForAI(src).catch(err => {
+                                        console.error('[PromotionArchive] image prep failed:', err);
+                                        return null;
+                                    }))
+                                );
+                                const validImages = imagesBase64.filter(Boolean);
+                                if (validImages.length === 0) {
+                                    alert("이미지 변환에 실패했습니다. (CORS 문제일 가능성 있음)");
+                                    return;
+                                }
+
+                                const result = await analyzeWebDesign(validImages, target.webUserComment || '');
+                                if (!result.ok) {
+                                    alert(`AI 분석 실패: ${result.error}`);
+                                    return;
+                                }
+
+                                const patch = {
+                                    webScores: result.webScores,
+                                    webAiScore: result.webAiScore,
+                                    isWebAnalyzed: true,
+                                    webAnalyzedAt: new Date().toISOString(),
+                                    webManualScoreAdj: 0,
+                                };
+                                // AI가 뽑은 메타데이터로 banner 자체도 업데이트 (제목/날짜)
+                                if (result.title) patch.title = result.title;
+                                if (result.year) patch.year = result.year;
+                                if (result.month) patch.month = result.month;
+                                if (result.fullDate) patch.webDateText = result.fullDate;
+                                // AI가 뽑은 태그가 있으면 기존 태그와 병합
+                                if (result.tags?.length > 0) {
+                                    patch.tags = [...new Set([...(target.tags || []), ...result.tags])];
+                                }
+                                if (result.summary) patch.webSummary = result.summary;
+
+                                await updateDoc(promoDocRef(target.id), patch);
+                                setEvalTargetBanner(prev => prev ? { ...prev, ...patch } : prev);
+                                if (selectedBanner?.id === target.id) {
+                                    setSelectedBanner(prev => prev ? { ...prev, ...patch } : prev);
+                                    setEditedBanner(prev => prev ? { ...prev, ...patch } : prev);
+                                }
+                                if (result.missingCount > 0) {
+                                    console.warn(`[PromotionArchive] ${result.missingCount}/10 항목 누락`);
+                                }
+                            } catch (e) {
+                                console.error('[PromotionArchive] analyze error:', e);
+                                alert(`분석 실패: ${e.message}`);
+                            }
+                            finally { setIsEvalRunning(false); }
+                        }}
+                        isAnalyzing={isEvalRunning}
+                        isAdmin={false}
                     />
                 )}
 

@@ -56,7 +56,7 @@ export function LimitReachedModal({ onClose }) {
     <div style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 9999,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-      fontFamily: "'Inter',system-ui,sans-serif",
+      fontFamily: "'Noto Sans KR', sans-serif",
     }}>
       <div style={{
         width: "100%", maxWidth: 380, background: THEME.surface,

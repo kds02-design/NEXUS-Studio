@@ -1,4 +1,3 @@
-import React from 'react';
 import { Layers, Edit3, X, Sparkles, Trash2 } from 'lucide-react';
 
 const FloatingActionBar = ({

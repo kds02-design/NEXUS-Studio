@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  X, ChevronLeft, ChevronRight, Upload, ImageIcon, Trash2, CheckCircle2,
-  FileText, Edit2, History, Monitor, Smartphone, Sparkles, CheckSquare, Lock
+  X, ChevronLeft, ChevronRight, Upload, ImageIcon, Trash2,
+  FileText, Monitor, Smartphone, Sparkles, CheckSquare, Lock
 } from "lucide-react";
 
 const ConfirmWorkspace = ({
@@ -22,6 +22,7 @@ const ConfirmWorkspace = ({
   const [comment, setComment] = useState("");
   const [attachedFile, setAttachedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [zoomedImage, setZoomedImage] = useState(null);
 
   const [editingNoteId, setEditingNoteId] = useState(null);

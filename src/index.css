@@ -1,7 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=Teko:wght@300;400;500;600;700&display=swap');
+/* Google Fonts (Noto Sans KR + Teko) 는 index.html <head> 에서 preconnect + <link> 로 직접 로드.
+   CSS @import 보다 빠르고 preconnect 효과를 살릴 수 있다. */
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind v4 토큰 — font-sans는 Noto Sans KR(본문), font-display는 Teko(타이틀 전용) */
+@theme {
+  --font-sans: 'Noto Sans KR', sans-serif;
+  --font-display: 'Teko', sans-serif;
+}
 
 /* NEXUS Studio Topbar 로고 — Teko, 앞단어 light + 뒷단어 semibold + 포인트 컬러
    각 앱이 글로벌 span 셀렉터로 폰트를 덮는 경우가 있어 !important로 강제 */

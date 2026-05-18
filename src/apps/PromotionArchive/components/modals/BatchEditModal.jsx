@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { X, Edit3, Plus, Minus } from 'lucide-react';
 
 const BatchEditModal = ({ 

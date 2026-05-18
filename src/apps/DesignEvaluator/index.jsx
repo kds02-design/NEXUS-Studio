@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Upload, Image as ImageIcon, Loader2, Sparkles, Settings, X, Bot, BrainCircuit,
-  ChevronDown, ChevronUp, Copy, Check, Edit3, Download, FileText, ZoomIn, MousePointer2
+  ChevronDown, Copy, Check, Edit3, Download, ZoomIn, MousePointer2
 } from 'lucide-react';
 import { GEMINI_API_KEY } from '../../lib/gemini';
+import { fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES } from '../../lib/evaluationCriteria';
 
 const compressImage = (base64Str, maxWidth = 1024, quality = 0.8) => {
     return new Promise((resolve) => {
@@ -86,6 +87,7 @@ const getCategoryWeights = (category = '') => {
     return { impression: 10, concept: 10, layout: 10, typography: 10, color: 10, readability: 10, brand: 10, flow: 10, detail: 10, conversion: 10 };
 };
 
+// eslint-disable-next-line no-unused-vars
 const defaultEvaluationCriteria = `[임무 2: 10대 평가 항목 (100점 만점)]
 각 항목에 대해 100점 만점 기준의 점수(score)와 핵심을 찌르는 심플한 한 줄 평가(reason)를 작성하세요.
 
@@ -146,7 +148,7 @@ AI는 판별/지정된 카테고리에 따라 다음의 기준으로 평가하�
 - 구어체나 불필요한 미사여구를 빼고 핵심만 심플하게 작성하세요.`;
 
 export default function DesignEvaluator() {
-  const [imageFile, setImageFile] = useState(null);
+  const [, setImageFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [aspectRatio, setAspectRatio] = useState(1);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -161,17 +163,73 @@ export default function DesignEvaluator() {
   const [notification, setNotification] = useState(null);
   const [isCopied, setIsCopied] = useState(false);
   const fileInputRef = useRef(null);
+  // eslint-disable-next-line no-unused-vars
   const txtFileInputRef = useRef(null);
 
   const [geminiApiKey, setGeminiApiKey] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('geminiApiKey') || '' : '');
   const [openAiApiKey, setOpenAiApiKey] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('openAiApiKey') || '' : '');
-  const [evaluationCriteria, setEvaluationCriteria] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('evaluationCriteria') || defaultEvaluationCriteria : defaultEvaluationCriteria);
+
+  // ─── Firestore evaluationCriteria 동기화 ───
+  // banner / promotion / brandweb 활성 버전을 한꺼번에 로드 → 카테고리별 기준 텍스트로 합성
+  const [criteriaByType, setCriteriaByType] = useState({
+    banner:    { items: getSeedCriteria(CRITERIA_TYPES.banner),    versionName: "(시드)" },
+    promotion: { items: getSeedCriteria(CRITERIA_TYPES.promotion), versionName: "(시드)" },
+    brandweb:  { items: getSeedCriteria(CRITERIA_TYPES.brandweb),  versionName: "(시드)" },
+  });
+  const [criteriaLoading, setCriteriaLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setCriteriaLoading(true);
+      try {
+        const [b, p, w] = await Promise.all([
+          fetchActiveCriteria(CRITERIA_TYPES.banner),
+          fetchActiveCriteria(CRITERIA_TYPES.promotion),
+          fetchActiveCriteria(CRITERIA_TYPES.brandweb),
+        ]);
+        if (cancelled) return;
+        const useOrSeed = (v, type) => (v && Array.isArray(v.criteria) && v.criteria.length > 0)
+          ? { items: v.criteria, versionName: v.name || "active" }
+          : { items: getSeedCriteria(type), versionName: "(시드 fallback)" };
+        setCriteriaByType({
+          banner:    useOrSeed(b, CRITERIA_TYPES.banner),
+          promotion: useOrSeed(p, CRITERIA_TYPES.promotion),
+          brandweb:  useOrSeed(w, CRITERIA_TYPES.brandweb),
+        });
+      } catch (e) {
+        console.warn("[DesignEvaluator] criteria load failed; using seeds", e);
+      } finally { if (!cancelled) setCriteriaLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 동적으로 카테고리별 평가 기준 텍스트 생성 (Gemini 프롬프트에 주입)
+  const evaluationCriteria = useMemo(() => {
+    return `[임무 2: 10대 평가 항목 (100점 만점)]
+각 항목에 대해 100점 만점 기준의 점수(score)와 핵심을 찌르는 심플한 한 줄 평가(reason)를 작성하세요.
+
+[★ 카테고리별 평가 항목, 가중치, JSON 키 매핑 ★]
+AI는 판별/지정된 카테고리에 따라 다음의 기준으로 평가하고, 반드시 괄호 안의 (JSON 키)에 맞춰 점수와 이유를 기입하세요.
+
+▶ [배너] 및 [기타] 카테고리:
+${formatCriteriaList(criteriaByType.banner.items)}
+
+▶ [프로모션 페이지] 카테고리:
+${formatCriteriaList(criteriaByType.promotion.items)}
+
+▶ [브랜드웹_메인] / [브랜드웹_서브] 카테고리:
+${formatCriteriaList(criteriaByType.brandweb.items)}
+
+[중요: 이유(reason) 작성 시 강력한 규칙]
+- 고점 항목 (85점 이상): 어떤 디자인 요소가 훌륭한지 구체적으로 짚어 명확히 칭찬하세요.
+- 저점 항목 (80점 미만): 절대 칭찬하거나 "무난하다"고 타협하지 마세요. 명확한 단점과 아쉬운 점을 날카롭게 비판하고 지적하세요.
+- 구어체나 불필요한 미사여구를 빼고 핵심만 심플하게 작성하세요.`;
+  }, [criteriaByType]);
 
   useEffect(() => {
       localStorage.setItem('geminiApiKey', geminiApiKey);
       localStorage.setItem('openAiApiKey', openAiApiKey);
-      localStorage.setItem('evaluationCriteria', evaluationCriteria);
-  }, [geminiApiKey, openAiApiKey, evaluationCriteria]);
+  }, [geminiApiKey, openAiApiKey]);
 
   const showNotification = (msg) => {
       setNotification(msg);
@@ -215,17 +273,11 @@ export default function DesignEvaluator() {
       processFile(file);
   };
 
+  // eslint-disable-next-line no-unused-vars
   const handleTxtImport = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (event) => {
-          setEvaluationCriteria(event.target.result);
-          showNotification("평가 기준 텍스트를 성공적으로 불러왔습니다.");
-      };
-      reader.onerror = () => showNotification("파일을 읽는 중 오류가 발생했습니다.");
-      reader.readAsText(file);
+      // 평가 기준은 이제 NEXUS Admin > 평가 기준 관리 에서만 수정 가능합니다.
       e.target.value = '';
+      showNotification("평가 기준은 NEXUS Admin 에서 관리합니다. (TXT 불러오기 비활성화)");
   };
 
   const callOpenAIAPI = async (prompt, imageBase64) => {
@@ -448,14 +500,8 @@ ${evaluationCriteria}
   };
 
   const handleUpdateCriteria = () => {
-      if (!userComment.trim()) {
-          showNotification("코멘트를 먼저 입력해주세요.");
-          return;
-      }
-      const updatedCriteria = evaluationCriteria + '\n\n[사용자 추가 지침]\n' + userComment;
-      setEvaluationCriteria(updatedCriteria);
-      showNotification("코멘트가 AI 평가 기준(Prompt)에 업데이트 되었습니다.");
-      setUserComment('');
+      // 평가 기준은 이제 NEXUS Admin 에서 관리합니다. 임시 추가 지침 기능 비활성화.
+      showNotification("평가 기준 변경은 NEXUS Admin > 평가 기준 관리에서 새 버전으로 저장하세요.");
   };
 
   const exportCriteriaToTxt = () => {
@@ -477,8 +523,6 @@ ${evaluationCriteria}
         onDragEnter={() => setIsDragging(true)}
     >
         <style>{`
-            .font-teko, .font-teko * { font-family: 'Teko', sans-serif !important; }
-            .font-oswald, .font-oswald * { font-family: 'Teko', sans-serif !important; }
             .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
             .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
             .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(150, 150, 150, 0.3); border-radius: 10px; }
@@ -499,7 +543,7 @@ ${evaluationCriteria}
             >
                 <div className="bg-black/90 px-10 py-8 rounded-3xl flex flex-col items-center gap-4 pointer-events-none shadow-2xl border border-white/10">
                     <Upload className="w-16 h-16 text-[#df6a78] animate-bounce" />
-                    <span className="text-[#df6a78] font-bold text-4xl font-teko tracking-wide">DROP IMAGE HERE</span>
+                    <span className="text-[#df6a78] font-bold text-4xl tracking-wide">DROP IMAGE HERE</span>
                     <span className="text-zinc-300 text-sm font-medium">화면 어디든 이미지를 놓아주세요</span>
                 </div>
             </div>
@@ -507,13 +551,7 @@ ${evaluationCriteria}
 
         <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
-        <header className="h-16 border-b border-white/5 flex items-center justify-between px-6 bg-[#0c0c0e]/80 sticky top-0 z-40 backdrop-blur-md">
-            <div className="flex items-center gap-3">
-                <h1 className="app-title text-2xl tracking-wide flex items-baseline gap-1.5 text-white">
-                    <span className="font-light">Design</span>
-                    <span className="font-semibold">Evaluator</span>
-                </h1>
-            </div>
+        <header className="h-16 border-b border-white/5 flex items-center justify-end px-6 bg-[#0c0c0e]/80 sticky top-0 z-40 backdrop-blur-md">
             <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-full hover:bg-white/5 transition-colors text-zinc-400 hover:text-white">
                 <Settings className="w-5 h-5" />
             </button>
@@ -626,7 +664,7 @@ ${evaluationCriteria}
                                 </div>
                                 <div className="text-right shrink-0">
                                     <div className="text-zinc-400 text-xs font-bold mb-1 tracking-wider uppercase flex items-center justify-end gap-1">최종 환산 점수 <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-zinc-300 lowercase">가중치 적용</span></div>
-                                    <div className="text-[90px] font-black text-[#f15d72] font-teko leading-[0.8] drop-shadow-[0_4px_24px_rgba(241,93,114,0.2)] mt-2">
+                                    <div className="text-[90px] font-black text-[#f15d72] leading-[0.8] drop-shadow-[0_4px_24px_rgba(241,93,114,0.2)] mt-2">
                                         {getFinalScore100(resultData, manualScoreAdj)}
                                     </div>
                                 </div>
@@ -666,7 +704,7 @@ ${evaluationCriteria}
                                             </div>
                                             <div className="w-px h-10 bg-white/10 shrink-0"></div>
                                             <div className="w-12 shrink-0 text-center">
-                                                <span className={`text-3xl font-teko font-bold ${scoreColorClass} leading-none`}>{scoreVal}</span>
+                                                <span className={`text-3xl font-bold ${scoreColorClass} leading-none`}>{scoreVal}</span>
                                             </div>
                                             <p className="text-sm font-normal leading-relaxed text-zinc-300 break-keep flex-1">{data.reason}</p>
                                         </div>
@@ -678,7 +716,7 @@ ${evaluationCriteria}
                                 <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-lg flex flex-col justify-center">
                                     <div className="flex justify-between items-center mb-6">
                                         <label className="text-sm font-bold text-white flex items-center gap-2"><Settings className="w-4 h-4 text-[#df6a78]" />점수 보정</label>
-                                        <span className={`text-sm font-teko text-xl font-bold px-4 py-1 rounded-lg border leading-none pt-1.5 ${manualScoreAdj > 0 ? 'bg-[#df6a78]/20 text-[#df6a78] border-[#df6a78]/30' : manualScoreAdj < 0 ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-white/10 text-zinc-300 border-white/10'}`}>
+                                        <span className={`text-sm text-xl font-bold px-4 py-1 rounded-lg border leading-none pt-1.5 ${manualScoreAdj > 0 ? 'bg-[#df6a78]/20 text-[#df6a78] border-[#df6a78]/30' : manualScoreAdj < 0 ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-white/10 text-zinc-300 border-white/10'}`}>
                                             {manualScoreAdj > 0 ? '+' : ''}{manualScoreAdj}
                                         </span>
                                     </div>
@@ -745,20 +783,17 @@ ${evaluationCriteria}
                                         <Bot className="w-4 h-4 text-[#0eb9b3]" /> AI 채점 지침 (Prompt)
                                     </label>
                                     <div className="flex gap-2">
-                                        <input type="file" accept=".txt" ref={txtFileInputRef} onChange={handleTxtImport} className="hidden" />
-                                        <button onClick={() => txtFileInputRef.current?.click()} className="text-[11px] px-3 py-1.5 rounded-md bg-[#df6a78]/10 border border-[#df6a78]/30 hover:bg-[#df6a78]/20 text-[#df6a78] transition-colors flex items-center gap-1">
-                                            <FileText className="w-3 h-3" /> TXT 불러오기
-                                        </button>
                                         <button onClick={exportCriteriaToTxt} className="text-[11px] px-3 py-1.5 rounded-md bg-[#0eb9b3]/10 border border-[#0eb9b3]/30 hover:bg-[#0eb9b3]/20 text-[#0eb9b3] transition-colors flex items-center gap-1">
-                                            <Download className="w-3 h-3" /> TXT로 내보내기
-                                        </button>
-                                        <button onClick={() => setEvaluationCriteria(defaultEvaluationCriteria)} className="text-[11px] px-3 py-1.5 rounded-md bg-white/5 border border-white/10 hover:bg-white/10 text-zinc-300 hover:text-white transition-colors">
-                                            기본값 복구
+                                            <Download className="w-3 h-3" /> 현재 활성 버전 내보내기
                                         </button>
                                     </div>
                                 </div>
-                                <textarea value={evaluationCriteria} onChange={(e) => setEvaluationCriteria(e.target.value)} className="w-full flex-1 min-h-[350px] bg-black/50 border border-white/10 rounded-lg p-4 text-[13px] text-zinc-300 focus:border-[#0eb9b3] focus:outline-none transition-colors custom-scrollbar leading-relaxed resize-none" placeholder="평가 기준을 입력하세요..." />
-                                <p className="text-[11px] text-zinc-500 mt-3 leading-relaxed">※ 카테고리에 따른 특별 지침이 기본적으로 포함되어 있습니다. 특정 카테고리의 기준을 수정하고 싶다면 위 텍스트 영역에서 내용을 편집하세요.</p>
+                                <div className="text-[10px] text-violet-300 bg-violet-500/10 border border-violet-500/30 rounded-md px-3 py-2 mb-2">
+                                    평가 기준은 이제 <b>NEXUS Admin → 평가 기준 관리</b>에서 관리됩니다.
+                                    {criteriaLoading ? " (불러오는 중...)" : ` 활성 버전: 배너 ${criteriaByType.banner.versionName} · 프로모션 ${criteriaByType.promotion.versionName} · 브랜드웹 ${criteriaByType.brandweb.versionName}`}
+                                </div>
+                                <textarea value={evaluationCriteria} readOnly className="w-full flex-1 min-h-[350px] bg-black/50 border border-white/10 rounded-lg p-4 text-[13px] text-zinc-400 outline-none transition-colors custom-scrollbar leading-relaxed resize-none cursor-default" />
+                                <p className="text-[11px] text-zinc-500 mt-3 leading-relaxed">※ 위 내용은 Firestore 활성 버전을 합성한 결과로, 읽기 전용입니다. 변경하려면 NEXUS Admin 으로 이동하세요.</p>
                             </div>
                         )}
                     </div>

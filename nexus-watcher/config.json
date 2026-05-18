@@ -1,0 +1,18 @@
+{
+  "watch": [
+    {
+      "path": "\\\\ppc-file\\배너\\",
+      "app": "banner-codex",
+      "game": "리니지",
+      "year": "2025"
+    },
+    {
+      "path": "\\\\ppc-file\\프로모션\\",
+      "app": "promotion-archive",
+      "game": "아이온"
+    }
+  ],
+  "interval": 300,
+  "extensions": [".jpg", ".jpeg", ".png", ".webp"],
+  "exclude": ["old", "개발", "팝업", "guide"]
+}
