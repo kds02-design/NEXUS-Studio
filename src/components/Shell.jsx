@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Menu } from "lucide-react";
+import { Menu, Lock } from "lucide-react";
 import { APP_MAP, APP_REGISTRY, THEME } from "../config/apps";
 import { useGlobal } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
@@ -192,20 +192,24 @@ function AppCard({ app, onOpen, isAdmin }) {
     <div onClick={handleClick} onMouseEnter={() => !disabled && setHov(true)} onMouseLeave={() => setHov(false)}
       title={disabled ? "준비 중인 앱입니다" : (adminUnlocked ? "관리자 권한으로 활성화됨" : (hasVersions ? "버전 선택 후 카드를 눌러 실행" : undefined))}
       style={{
-        background: disabled ? THEME.surface : (hov ? THEME.card : THEME.surface),
-        border: `1px solid ${THEME.border}`,
+        // 준비 중: 한층 더 어두운 배경 + 점선 보더로 "미완성" 시그널
+        background: disabled ? "#06060C" : (hov ? THEME.card : THEME.surface),
+        border: disabled ? `1px dashed rgba(122,122,154,0.25)` : `1px solid ${THEME.border}`,
         borderRadius: 10, padding: "18px 20px",
         cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.45 : (adminUnlocked ? 0.85 : 1),
-        filter: disabled ? "grayscale(0.5)" : "none",
+        opacity: disabled ? 0.55 : (adminUnlocked ? 0.85 : 1),
+        filter: disabled ? "grayscale(0.8)" : "none",
         transition: "all 0.2s",
         transform: (!disabled && hov) ? "translateY(-2px)" : "none",
         position: "relative",
+        userSelect: disabled ? "none" : undefined,
       }}>
       {/* 우상단 뱃지 — 아이콘 제거, 영문 타이틀이 좌측을 차지하므로 뱃지만 우측에 정렬 */}
       <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"flex-end", minHeight:18, marginBottom:6 }}>
         {disabled ? (
-          <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"rgba(122,122,154,0.15)", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>준비 중</span>
+          <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, letterSpacing:"0.1em", color:"#B8B8D0", textTransform:"uppercase", background:"rgba(122,122,154,0.22)", border:`1px solid rgba(122,122,154,0.5)`, padding:"3px 8px", borderRadius:999, fontWeight:700 }}>
+            <Lock size={9} strokeWidth={2.5} /> 준비 중
+          </span>
         ) : app.beta ? (
           <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>BETA</span>
         ) : app.badge ? (
@@ -217,11 +221,11 @@ function AppCard({ app, onOpen, isAdmin }) {
           return <span style={{ fontSize:9, letterSpacing:"0.08em", color:THEME.textMuted, background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{v?.label || selectedVersion}</span>;
         })() : null}
       </div>
-      {/* 메인 타이틀: 영문 sub */}
-      <div style={{ fontSize:15, fontWeight:700, color:THEME.text, marginBottom:4, lineHeight:1.2 }}>{app.sub}</div>
+      {/* 메인 타이틀: 영문 sub — 준비 중은 더 흐리게 */}
+      <div style={{ fontSize:15, fontWeight:700, color: disabled ? THEME.textMuted : THEME.text, marginBottom:4, lineHeight:1.2 }}>{app.sub}</div>
       {/* 보조 타이틀: 한글 label */}
-      <div style={{ fontSize:11, color:THEME.textMuted, marginBottom:4 }}>{app.label}</div>
-      <div style={{ fontSize:11, color:THEME.textMuted, lineHeight:1.5 }}>{app.desc}</div>
+      <div style={{ fontSize:11, color: disabled ? THEME.textDim : THEME.textMuted, marginBottom:4 }}>{app.label}</div>
+      <div style={{ fontSize:11, color: disabled ? THEME.textDim : THEME.textMuted, lineHeight:1.5 }}>{app.desc}</div>
       {hasVersions && (
         <div style={{ marginTop:12, display:"flex", gap:4 }}>
           {app.versions.map(v => {
