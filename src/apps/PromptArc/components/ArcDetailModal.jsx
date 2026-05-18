@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import {
   X, Copy, Trash2, Edit2, Heart, Star, Check, ChevronLeft, ChevronRight,
   Play, Folder, FolderPlus, Plus, Type, Box, Video, MoreHorizontal,
-  Link2, Search,
+  Link2, Search, Download,
 } from "lucide-react";
 import { APP_MAP } from "../../../config/apps";
 import { STYLE_FILTERS, matchesFilter, inferRelatedType } from "../constants/categories";
@@ -24,9 +24,9 @@ const copyToClipboard = async (text, onSuccess) => {
 };
 
 export default function ArcDetailModal({
-  prompt, onClose, onEdit, onDelete, onLike, onPin: _onPin, onLive: _onLive, onFavorite,
+  prompt, onClose, onEdit, onDelete, onLike, onPin, onLive, onFavorite,
   isLiked, isFavorite, onSendToApp, folders, onToggleFolderItem, onCreateFolder,
-  showToast, currentUserId,
+  showToast, currentUserId, isAdmin = false,
   allPrompts = [], onLinkRelated, onUnlinkRelated, onOpenRelated,
 }) {
   const images = prompt.images?.length ? prompt.images : (prompt.image ? [prompt.image] : []);
@@ -50,12 +50,38 @@ export default function ArcDetailModal({
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   useEffect(() => { setZoomScale(1); setPanPos({ x: 0, y: 0 }); }, [mediaIdx]);
+
+  // 이미지 저장 — Cloudinary 등 CORS 가 허용되면 blob 다운로드, 막히면 새 탭으로 폴백.
+  const handleDownload = async () => {
+    if (activeMedia?.type !== 'image' || !activeMedia.src) return;
+    const url = activeMedia.src;
+    const base = (prompt.title || 'image').replace(/[\\/:*?"<>|]/g, '_');
+    try {
+      const res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const ext = (blob.type.split('/')[1] || url.split('.').pop() || 'png').replace('+xml', '').split('?')[0];
+      const obj = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = obj; a.download = `${base}.${ext}`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(obj);
+      showToast?.('이미지를 저장했습니다.');
+    } catch {
+      // CORS 차단 시 새 탭으로 이동 → 사용자가 우클릭 저장 가능
+      window.open(url, '_blank', 'noopener');
+      showToast?.('이미지 새 탭에서 열림 — 우클릭하여 저장하세요.');
+    }
+  };
+
   const handleZoomWheel = (e) => { const adj = e.deltaY * -0.001; setZoomScale((prev) => Math.min(Math.max(1, prev + adj), 5)); };
   const handleZoomMouseDown = (e) => { if (zoomScale <= 1) return; e.preventDefault(); setIsDragging(true); setDragStart({ x: e.clientX - panPos.x, y: e.clientY - panPos.y }); };
   const handleZoomMouseMove = (e) => { if (!isDragging) return; setPanPos({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y }); };
   const handleZoomMouseUp = () => setIsDragging(false);
 
   const isAuthor = (prompt.ownerUid && prompt.ownerUid === currentUserId) || (!prompt.ownerUid && (!prompt.authorId || prompt.authorId === currentUserId));
+  // 관리자는 모든 프롬프트를 수정/삭제할 수 있음
+  const canEdit = isAuthor || isAdmin;
   const inAnyFolder = (folders || []).some(f => (f.items || []).includes(prompt.id));
 
   useEffect(() => {
@@ -166,6 +192,14 @@ export default function ArcDetailModal({
       <div className="w-full max-w-5xl h-[90vh] bg-[#111] rounded-2xl border border-white/10 flex overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Left: media */}
         <div className="w-[60%] bg-[#050505] relative flex flex-col">
+          {activeMedia?.type === 'image' && (
+            <div className="absolute top-4 left-4 z-[20]">
+              <button onClick={handleDownload}
+                className="flex items-center gap-2 px-3 py-2 rounded-md text-[11px] font-bold border bg-black/50 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 backdrop-blur-md transition-all">
+                <Download className="w-3.5 h-3.5" /> 이미지 저장
+              </button>
+            </div>
+          )}
           <div className="flex-1 flex items-center justify-center p-4 overflow-hidden"
             onWheel={activeMedia?.type === 'image' ? handleZoomWheel : undefined}
             onMouseDown={activeMedia?.type === 'image' ? handleZoomMouseDown : undefined}
@@ -182,7 +216,7 @@ export default function ArcDetailModal({
                   cursor: zoomScale > 1 ? (isDragging ? 'grabbing' : 'grab') : 'default',
                   transition: isDragging ? 'none' : 'transform 0.1s ease-out',
                 }}
-                className="max-w-full max-h-full object-scale-down pointer-events-none select-none"
+                className="max-w-full max-h-full object-scale-down select-none"
                 onDragStart={(e) => e.preventDefault()}
               />
             )}
@@ -224,9 +258,21 @@ export default function ArcDetailModal({
           <div className="p-5 border-b border-white/5">
             <div className="text-base font-bold text-zinc-200 mb-1">{prompt.title || 'Untitled'}</div>
             <div className="flex items-center gap-2 mt-3">
-              {isAuthor && <>
-                <button onClick={() => onDelete(prompt.id)} className="p-2 rounded-full bg-white/5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10"><Trash2 size={13} /></button>
-                <button onClick={() => onEdit(mainIdx)} className="p-2 rounded-full bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10"><Edit2 size={13} /></button>
+              {canEdit && <>
+                <button onClick={() => onDelete(prompt.id)} className="p-2 rounded-full bg-white/5 text-zinc-400 hover:text-red-400 hover:bg-red-500/10" title={isAuthor ? '삭제' : '관리자 권한으로 삭제'}><Trash2 size={13} /></button>
+                <button onClick={() => onEdit(mainIdx)} className="p-2 rounded-full bg-white/5 text-zinc-400 hover:text-white hover:bg-white/10" title={isAuthor ? '수정' : '관리자 권한으로 수정'}><Edit2 size={13} /></button>
+                <button
+                  onClick={() => onLive && onLive(prompt.id, prompt.isLive)}
+                  className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wider transition-colors ${prompt.isLive ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-white/5 text-zinc-500 hover:text-rose-300 border border-transparent'}`}
+                  title={prompt.isLive ? 'LIVE 해제' : 'LIVE 표시'}
+                >LIVE</button>
+                <button
+                  onClick={() => onPin && onPin(prompt.id, prompt.isPinned)}
+                  className={`px-2.5 py-1.5 rounded-full text-[10px] font-bold tracking-wider transition-colors flex items-center gap-1 ${prompt.isPinned ? 'bg-[#C8A969]/20 text-[#C8A969] border border-[#C8A969]/40' : 'bg-white/5 text-zinc-500 hover:text-[#C8A969] border border-transparent'}`}
+                  title={prompt.isPinned ? '추천 해제' : '추천 고정'}
+                >
+                  <Star size={11} fill={prompt.isPinned ? 'currentColor' : 'none'} /> 추천
+                </button>
               </>}
               <button onClick={() => onLike(prompt.id, isLiked)} className={`flex items-center gap-1 p-2 rounded-full bg-white/5 text-xs ${isLiked ? 'text-rose-400' : 'text-zinc-400 hover:text-white'}`} title="좋아요">
                 <Heart size={13} fill={isLiked ? 'currentColor' : 'none'} /> {prompt.likeCount || 0}
@@ -312,7 +358,7 @@ export default function ArcDetailModal({
                   <Link2 size={11} className="text-[#C8A969]" /> 연관 아이템
                   {relatedItems.length > 0 && <span className="text-[#C8A969]">{relatedItems.length}</span>}
                 </div>
-                {isAuthor && (
+                {canEdit && (
                   <div className="relative" ref={pickerRef}>
                     <button onClick={() => setPickerOpen(v => !v)}
                       className="flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-bold border border-white/10 text-zinc-400 hover:text-white hover:bg-white/5">
@@ -366,7 +412,7 @@ export default function ArcDetailModal({
                           <PromptImage src={thumb} alt={rel.title} className="w-full h-full object-cover bg-zinc-900" />
                         </div>
                         <div className={`absolute top-1 left-1 px-1 py-0.5 text-[8px] font-bold rounded border ${TYPE_BADGE_COLOR[t] || TYPE_BADGE_COLOR['기타']}`}>{t}</div>
-                        {isAuthor && (
+                        {canEdit && (
                           <button onClick={(e) => { e.stopPropagation(); handleRemoveRelated(rel.id); }}
                             className="absolute top-1 right-1 p-1 rounded bg-black/70 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
                             title="연결 해제"><X size={10} /></button>

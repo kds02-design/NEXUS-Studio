@@ -265,9 +265,9 @@ function AppCardGrid({ onScroll }) {
   const { navigate } = useGlobal();
   const { isAdmin } = useAuth();
   const groups = [
-    { key:"hub",      label:"허브" },
-    { key:"evaluate", label:"탐색 / 평가" },
-    { key:"generate", label:"프롬프트 생성" },
+    { key:"explore",    label:"허브 / 평가" },
+    { key:"generate",   label:"프롬프트 생성" },
+    { key:"production", label:"비주얼 생성" },
     // 관리자 그룹은 isAdmin일 때만 렌더 (아래 filter)
     ...(isAdmin ? [{ key:"admin", label:"Admin", adminLabel: true }] : []),
   ];

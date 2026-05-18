@@ -18,12 +18,12 @@ const matches = (app, q) => {
   );
 };
 
-// 표시 순서 + 한글 라벨. AppCardGrid 의 그룹 순서와 동일하게 맞춤.
-const GROUP_ORDER = ["hub", "evaluate", "generate", "admin"];
+// 표시 순서 + 한글 라벨. AppCardGrid(Shell.jsx) 의 그룹 순서와 동일하게 맞춤.
+const GROUP_ORDER = ["explore", "generate", "production", "admin"];
 const GROUP_LABELS = {
-  hub: "허브",
-  evaluate: "탐색·평가",
+  explore: "허브 / 평가",
   generate: "프롬프트 생성",
+  production: "비주얼 생성",
   admin: "Admin",
 };
 
@@ -60,8 +60,14 @@ export default function CommandPalette({ open, onClose }) {
     return out;
   }, [query, isAdmin, currentApp]);
 
-  // 키보드 탐색 헬퍼: group_header 는 건너뛴다.
-  const isSelectable = (idx) => idx >= 0 && idx < items.length && items[idx].kind !== "group_header";
+  // 키보드 탐색 헬퍼: group_header 와 비활성(준비 중) 항목은 건너뛴다.
+  const isSelectable = (idx) => {
+    if (idx < 0 || idx >= items.length) return false;
+    const it = items[idx];
+    if (it.kind === "group_header") return false;
+    if (it.disabled) return false;
+    return true;
+  };
   const findSelectable = (from, dir) => {
     let next = from;
     while (next >= 0 && next < items.length && !isSelectable(next)) next += dir;
@@ -212,15 +218,15 @@ export default function CommandPalette({ open, onClose }) {
               <div
                 key={item.id}
                 data-cp-idx={idx}
-                onMouseEnter={() => setSelectedIndex(idx)}
+                onMouseEnter={() => { if (!dim) setSelectedIndex(idx); }}
                 onClick={() => activate(item)}
                 style={{
                   display: "flex", alignItems: "center", gap: 12,
                   height: 40, minHeight: 40, maxHeight: 40,
                   padding: "0 18px",
                   cursor: dim ? "not-allowed" : "pointer",
-                  background: selected ? "rgba(255,255,255,0.06)" : "transparent",
-                  borderLeft: `2px solid ${selected ? "rgba(255,255,255,0.4)" : "transparent"}`,
+                  background: selected && !dim ? "rgba(255,255,255,0.06)" : "transparent",
+                  borderLeft: `2px solid ${selected && !dim ? "rgba(255,255,255,0.4)" : "transparent"}`,
                   opacity: dim ? 0.4 : 1,
                   transition: "background 0.08s",
                 }}

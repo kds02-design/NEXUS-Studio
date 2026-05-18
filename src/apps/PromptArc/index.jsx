@@ -304,6 +304,7 @@ export default function PromptArcApp() {
             onToggleFolderItem={toggleFolderItem}
             onCreateFolder={createFolder}
             showToast={showToast} currentUserId={user?.uid || 'anonymous'}
+            isAdmin={isAdmin}
             allPrompts={prompts}
             onLinkRelated={linkRelated}
             onUnlinkRelated={unlinkRelated}

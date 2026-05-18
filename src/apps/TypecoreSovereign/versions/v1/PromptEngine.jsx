@@ -395,7 +395,7 @@ const OptionGroupCard = ({ id, title, icon, summary, children, openCardId, onTog
     );
 };
 
-const App = () => {
+const App = ({ version, setVersion, versions } = {}) => {
     const apiKey = GEMINI_API_KEY;
     const { ensureCanGenerate, modal: usageModal } = useUsageGate();
     const { payload, clearPayload } = useGlobal();
@@ -1528,9 +1528,8 @@ End exactly with this exact suffix (DO NOT omit the --ar parameter): " --ar ${cu
     return (
         <div className={`flex flex-col h-screen ${t.bg} ${t.textColor} overflow-hidden transition-colors duration-500 relative p-4`}>
             <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
-        body, input, textarea, button, select, div, p, span { font-family: 'Noto Sans KR', sans-serif !important; }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; } 
+        /* 글로벌 폰트(Noto Sans KR / Teko / JetBrains Mono)는 index.html에서 로드됨. 앱 내부 강제 오버라이드 제거. */
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { margin: 10px; background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(63, 63, 70, 0.5); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(82, 82, 91, 0.5); }
@@ -1544,7 +1543,28 @@ End exactly with this exact suffix (DO NOT omit the --ar parameter): " --ar ${cu
                             <Menu className="w-5 h-5 mx-auto text-zinc-400 cursor-pointer hover:text-white transition-colors" onClick={() => setIsSidebarOpen(true)} />
                         )}
                     </div>
-                    <div className="p-4 shrink-0">
+                    <div className="p-4 shrink-0 space-y-3">
+                        {/* 버전 셀렉터 — 사이드바 펼침 시에만 (접힘 모드는 폭이 부족) */}
+                        {isSidebarOpen && versions?.length > 0 && setVersion && (
+                            <div className="flex items-center gap-1 bg-[#0A0A0A] border border-zinc-800/60 rounded-full p-1">
+                                {versions.map((v) => {
+                                    const isActive = v.key === version;
+                                    return (
+                                        <button
+                                            key={v.key}
+                                            onClick={() => setVersion(v.key)}
+                                            title={`${v.label} 버전으로 전환`}
+                                            className={`flex-1 px-2 py-1 rounded-full text-[10px] font-bold tracking-[0.04em] transition-all whitespace-nowrap ${
+                                                isActive ? '' : 'text-zinc-500 hover:text-zinc-300'
+                                            }`}
+                                            style={isActive ? { background: `${v.color}22`, color: v.color } : undefined}
+                                        >
+                                            {v.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                         <div className="flex bg-[#121212] rounded-[10px] p-1 border border-zinc-800/60 shadow-inner">
                             <button onClick={() => setCurrentView('editor')} className={`flex-1 py-2 px-1 text-[11px] font-bold rounded-[10px] flex items-center justify-center gap-1.5 transition-all duration-200 whitespace-nowrap ${currentView === 'editor' ? 'bg-[#2A2A2E] text-white shadow-sm border border-zinc-600/30' : 'text-zinc-500 hover:text-zinc-300 hover:bg-[#1C1C1C] border border-transparent'}`}>
                                 <PenTool className="w-3.5 h-3.5 shrink-0" /> {isSidebarOpen && <span>Creation</span>}

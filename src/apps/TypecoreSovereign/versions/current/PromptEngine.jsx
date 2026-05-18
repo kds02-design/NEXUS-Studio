@@ -1333,12 +1333,7 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspecti
     <div className={`flex flex-col h-screen ${t.bg} ${t.textColor} overflow-hidden transition-colors duration-500 relative p-4 font-sans`}>
       {usageModal}
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
-        /* 타이틀(.app-title) 외 전체 텍스트에 Noto Sans KR 강제 적용 — !important + 높은 특이도(.font-mono 등 다른 클래스 룰도 덮어씀). */
-        body, input, textarea, button, select, label, div, p, span, a, li, h1, h2, h3, h4, h5, h6,
-        .font-mono, .font-sans, .font-serif,
-        [class*="font-"] { font-family: 'Noto Sans KR', sans-serif !important; }
-        .app-title, .app-title * { font-family: 'Teko', sans-serif !important; letter-spacing: 0.5px; }
+        /* 글로벌 폰트(Noto Sans KR / Teko / JetBrains Mono)는 index.html에서 로드됨. 앱 내부 강제 오버라이드 제거. */
         .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { margin: 10px; background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(63, 63, 70, 0.5); border-radius: 10px; }

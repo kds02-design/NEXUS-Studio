@@ -1,16 +1,17 @@
 // 대시보드 풀스크린 히어로 — 다크 시네마틱 배경 이미지 + 그라데이션 + 중앙 텍스트.
 // 배경 이미지 URL은 Firestore settings/dashboard에서 라이브 구독.
+// 초기 렌더에는 이미지를 그리지 않고 배경색만 깐다 — Firestore 응답 도착 전까지
+// 기본 이미지가 잠깐 보였다가 사용자 설정 이미지로 교체되는 깜빡임 방지.
 import { useEffect, useState } from "react";
-import { DEFAULT_HERO_IMAGE, subscribeDashboardSettings } from "../lib/dashboardSettings";
+import { subscribeDashboardSettings } from "../lib/dashboardSettings";
 import { THEME } from "../config/apps";
 
 export default function DashboardHero() {
-  const [bgUrl, setBgUrl] = useState(DEFAULT_HERO_IMAGE);
+  const [bgUrl, setBgUrl] = useState(null);
 
   useEffect(() => {
     const unsub = subscribeDashboardSettings((data) => {
-      if (data?.heroImageUrl) setBgUrl(data.heroImageUrl);
-      else setBgUrl(DEFAULT_HERO_IMAGE);
+      setBgUrl(data?.heroImageUrl || null);
     });
     return () => unsub && unsub();
   }, []);
@@ -22,14 +23,24 @@ export default function DashboardHero() {
         width: "100%",
         height: "45vh",
         minHeight: 320,
-        backgroundImage: `url("${bgUrl}")`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
+        background: THEME.surface,
         overflow: "hidden",
         flexShrink: 0,
         marginBottom: 24,
       }}
     >
+      {/* 배경 이미지 — bgUrl 도착 후에만 마운트. opacity fade-in 으로 부드럽게 노출. */}
+      {bgUrl && (
+        <div
+          style={{
+            position: "absolute", inset: 0,
+            backgroundImage: `url("${bgUrl}")`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            transition: "opacity 0.4s ease",
+          }}
+        />
+      )}
       {/* dark overlay */}
       <div
         style={{

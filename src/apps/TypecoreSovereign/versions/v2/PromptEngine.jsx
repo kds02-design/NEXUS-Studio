@@ -1026,9 +1026,8 @@ const App = ({ version, setVersion, versions } = {}) => {
     return (
         <div className={`flex flex-col h-screen ${t.bg} ${t.textColor} overflow-hidden transition-colors duration-500 relative p-4 font-sans`}>
             <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
-        body, input, textarea, button, select, div, p, span { font-family: 'Noto Sans KR', sans-serif !important; }
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; } 
+        /* 글로벌 폰트(Noto Sans KR / Teko / JetBrains Mono)는 index.html에서 로드됨. 앱 내부 강제 오버라이드 제거. */
+        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { margin: 10px; background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(63, 63, 70, 0.5); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(82, 82, 91, 0.5); }

@@ -71,8 +71,8 @@ export default function DashboardRecentPrompts() {
           <button key={p.id} onClick={() => openPrompt(p)}
             title={p.title || "Untitled"}
             style={{
-              display:"block", position:"relative", border:`1px solid ${THEME.border}`,
-              borderRadius:10, overflow:"hidden", cursor:"pointer", padding:0,
+              display:"block", position:"relative", width:"100%", border:`1px solid ${THEME.border}`,
+              borderRadius:10, overflow:"hidden", cursor:"pointer", padding:0, margin:0,
               background:THEME.card, transition:"all 0.2s",
               aspectRatio:"16 / 9",
             }}
@@ -80,7 +80,7 @@ export default function DashboardRecentPrompts() {
             onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.transform = "translateY(0)"; }}
           >
             <img src={pickThumb(p)} alt=""
-              style={{ width:"100%", height:"100%", objectFit:"cover", display:"block" }}
+              style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }}
               onError={(e) => { e.currentTarget.style.display = "none"; }} />
           </button>
         ))}
