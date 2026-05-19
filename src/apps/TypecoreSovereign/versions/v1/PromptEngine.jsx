@@ -656,7 +656,7 @@ const App = ({ version, setVersion, versions } = {}) => {
     }`;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.7 } })
             });
@@ -759,7 +759,7 @@ const App = ({ version, setVersion, versions } = {}) => {
       Return ONLY a 2-3 sentence Korean description (Aura) detailing how the structural lines and shapes of the typography should be formed to match the combined mood of the images.
       Example: "거대한 배경의 압도적인 스케일과 캐릭터의 예리한 무기 형태를 결합합니다. 묵직하고 단단한 사각 기둥 뼈대를 바탕으로, 획의 끝단에 베어내는 듯한 날카로운 사선 텐션을 주입하여 질감이 배제된 서늘한 2D 실루엣을 완성합니다."`;
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -847,7 +847,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         }
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } })
             });
@@ -905,7 +905,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         }
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } })
             });
@@ -932,7 +932,7 @@ const App = ({ version, setVersion, versions } = {}) => {
 
         const systemPrompt = `[YOUR PERSONA]: ${persona.role}\n[YOUR TONE]: ${persona.tone}\n[CURRENT SUB-TRAIT FOCUS]: ${getSliderText(personaSliderValue)}\nExpand the user's keyword into a detailed, highly professional morphological design direction. NO MATERIALS / NO LIGHTING. FOCUS ON PURE FORM. 2-3 sentences. Return ONLY the expanded text in Korean.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: customDesignInjections }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } })
             });
@@ -947,7 +947,7 @@ const App = ({ version, setVersion, versions } = {}) => {
 
         const systemPrompt = `[YOUR PERSONA]: ${persona.role}\n[YOUR TONE]: ${persona.tone}\n[CURRENT SUB-TRAIT FOCUS]: ${getSliderText(personaSliderValue)}\nExpand the user's short edit keyword into a detailed, structural Image-to-Image morphological edit instruction incorporating the sub-trait focus. NO 3D/MATERIALS. Keep it 2D flat. Focus on stroke edges, dynamics, and destruction. Return only the expanded text in Korean.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: editInstruction }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } })
             });
@@ -992,7 +992,7 @@ const App = ({ version, setVersion, versions } = {}) => {
     Return STRICTLY a valid JSON object: { "hasConflict": boolean, "analysisMessage": "string", "resolutions": [ { "title": "string", "desc": "string", "resolvedPromptEn": "string", "resolvedPromptKo": "string" } ] }`;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.2 } })
             });
@@ -1430,7 +1430,7 @@ ${priorityOverrideKo}${aiRecInstructionKo}${autoRefineInstructionKo}`.trim();
     Output format: \n1. # ARCHITECTURAL EVOLUTION \n2. # KINETIC ORGANIC ANATOMY \n3. # THE UNBOUNDED BOUNDARY \n4. # THE SUPREME COMMAND: Consolidated elite prompt string.`;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } })
             });
@@ -1452,7 +1452,7 @@ ${priorityOverrideKo}${aiRecInstructionKo}${autoRefineInstructionKo}`.trim();
     PROHIBIT 3D and MATERIALS. \n[INTERPRETATION LIMIT]: Do NOT reinterpret the structure. Only enhance existing geometry. \n[CRITICAL ANTI-SCENE RULE]: NEVER describe landscapes, skies, realistic 3D buildings, environments, or people. The metaphors (e.g., fortress, blades) are strictly for 2D FLAT LETTER SHAPES. The output must remain a flat typography logotype on a solid background. \n[CRITICAL LAYOUT RULE]: Never suggest "compressed vertical aspect ratio". Strictly follow the [PROPORTION SAFETY] and [LAYOUT MANDATE] defined in the user prompt. If a subtitle is present, emphasize the size contrast heavily so they are not rendered at the same size. Describe horizontal expansion and heavy grounded gravity. \nOutput format: \n1. # ARCHITECTURAL EVOLUTION \n2. # KINETIC ORGANIC ANATOMY \n3. # THE UNBOUNDED BOUNDARY \n4. # THE SUPREME COMMAND: Consolidated elite I2I prompt string.`;
 
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } })
             });
@@ -1469,7 +1469,7 @@ ${priorityOverrideKo}${aiRecInstructionKo}${autoRefineInstructionKo}`.trim();
         const systemPrompt = `Convert specs into Midjourney V6 tag string. Use ::2 for critical traits. Force 2D flat silhouette. 
 End exactly with this exact suffix (DO NOT omit the --ar parameter): " --ar ${currentAR} --iw 1.5 --style raw --no 3d, volumetric, perspective, emboss, bevel, shadow, color, standard font, texture, glowing shader, material"`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.2 } })
             });
@@ -1484,7 +1484,7 @@ End exactly with this exact suffix (DO NOT omit the --ar parameter): " --ar ${cu
         const { baseTechnicalEn, chatGPTOutput } = isEdit ? buildEditPrompts() : buildPrompts();
         const systemPrompt = `Create DALL-E 3 instructions for this typography prompt. Bullet points for edits. Strictly forbid 3D/materials. Output ONLY the final prompt text.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } })
             });

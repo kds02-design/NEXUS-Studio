@@ -111,7 +111,7 @@ export function useRenderPrompt() {
 
   const showToast = (msg, ms = 3000) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), ms); };
 
-  // ===== arc payload effect — Gemini 로 추천 옵션 계산 =====
+  // ===== arc payload effect — Gemini 로 추천 옵션 계산. mode==='edit' 이면 마이크로 에디트 뷰로 전환 + editImage 자동 임포트. =====
   useEffect(() => {
     if (!payload || payload.target !== 'render-metrics') return;
     if (!payload.timestamp) return;
@@ -122,30 +122,44 @@ export function useRenderPrompt() {
     const text = payload.prompt?.text || '';
     const tags = Array.isArray(payload.prompt?.tags) ? payload.prompt.tags : [];
     const source = payload.source || 'unknown';
+    const isEditMode = payload.mode === 'edit';
 
     (async () => {
-      setIncomingFromArc({ from: source, tags, text, hasImage: !!imgUrl, status: 'starting' });
+      setIncomingFromArc({ from: source, tags, text, hasImage: !!imgUrl, status: 'starting', mode: isEditMode ? 'edit' : 'creation' });
       try { clearPayload(); } catch {}
       if (!imgUrl) { setIncomingFromArc((s) => s ? { ...s, status: 'no-image' } : null); return; }
       setIsArcAnalyzing(true);
       setIncomingFromArc((s) => s ? { ...s, status: 'fetching' } : null);
+      let dataUrl;
       let base64Data;
       try {
-        const res = await fetch(imgUrl, { mode: 'cors' });
-        if (!res.ok) throw new Error(`이미지 fetch ${res.status}`);
-        const blob = await res.blob();
-        const dataUrl = await new Promise((resolve, reject) => {
-          const r = new FileReader();
-          r.onloadend = () => resolve(String(r.result));
-          r.onerror = reject;
-          r.readAsDataURL(blob);
-        });
-        base64Data = dataUrl.split(',')[1];
+        if (imgUrl.startsWith('data:')) {
+          dataUrl = imgUrl;
+        } else {
+          const res = await fetch(imgUrl, { mode: 'cors' });
+          if (!res.ok) throw new Error(`이미지 fetch ${res.status}`);
+          const blob = await res.blob();
+          dataUrl = await new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onloadend = () => resolve(String(r.result));
+            r.onerror = reject;
+            r.readAsDataURL(blob);
+          });
+        }
+        base64Data = (dataUrl || '').split(',')[1];
       } catch (e) {
         console.error('[RenderMatrix] arc 이미지 다운로드 실패', e);
         setIsArcAnalyzing(false);
         setIncomingFromArc((s) => s ? { ...s, status: 'fetch-failed' } : null);
         return;
+      }
+      // edit 모드 — 마이크로 에디트 뷰 + editImage 자동 임포트. (view 전환은 onSwitchView 로직 일부만 수동 적용)
+      if (isEditMode) {
+        try {
+          setCurrentView('edit');
+          setAiModel('NanoBanana');
+          setEditImage(dataUrl);
+        } catch (e) { console.error('[RenderMatrix] edit 모드 전환 실패', e); }
       }
       setIncomingFromArc((s) => s ? { ...s, status: 'analyzing' } : null);
       try {

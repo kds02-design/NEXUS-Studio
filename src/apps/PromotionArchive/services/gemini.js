@@ -1,7 +1,15 @@
 // --- API Key Definition ---
-// VITE_GEMINI_API_KEY env var (.env 파일 참조)
-import { GEMINI_API_KEY as apiKey } from "../../../lib/gemini";
+// 브랜드웹 라이브러리 전용 키 → 미설정 시 공용 VITE_GEMINI_API_KEY 로 폴백.
+// 별도 quota/billing 관리가 필요할 때 .env 에 VITE_GEMINI_API_KEY_BRANDWEB 만 추가하면 됨.
+import { GEMINI_API_KEY as DEFAULT_GEMINI_KEY } from "../../../lib/gemini";
 import { WEB_EVALUATION_KEYS, DEFAULT_WEB_EVAL_PROMPT } from "../constants/webEvalCriteria";
+
+const apiKey = (import.meta.env.VITE_GEMINI_API_KEY_BRANDWEB || "").trim() || DEFAULT_GEMINI_KEY;
+// 콘솔에서 어떤 키 소스가 활성화됐는지 확인 — 값은 노출하지 않음.
+if (typeof window !== "undefined") {
+  const usingDedicated = !!(import.meta.env.VITE_GEMINI_API_KEY_BRANDWEB || "").trim();
+  console.info(`[PromotionArchive] Gemini key source: ${usingDedicated ? "VITE_GEMINI_API_KEY_BRANDWEB (dedicated)" : "VITE_GEMINI_API_KEY (shared default)"}`);
+}
 
 // Gemini API 호출 함수
 export const callGeminiAPI = async (prompt, images = [], temperature = 0.4) => {

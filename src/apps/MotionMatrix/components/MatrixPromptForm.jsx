@@ -1,5 +1,21 @@
 import { useRef } from 'react';
 
+// dataURL(또는 일반 URL) 형식의 레퍼런스 이미지를 파일로 다운로드.
+// data:image/<mime>;base64,... 에서 확장자를 자동 추출 (없으면 png 폴백).
+function downloadReferenceImage(image) {
+  if (!image) return;
+  let ext = 'png';
+  const m = String(image).match(/^data:image\/([a-z0-9+]+);/i);
+  if (m) ext = m[1].toLowerCase() === 'jpeg' ? 'jpg' : m[1].toLowerCase();
+  const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  const a = document.createElement('a');
+  a.href = image;
+  a.download = `motion-matrix-ref-${ts}.${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export default function MatrixPromptForm({
   image, _setImage, isImageDragging, setIsImageDragging, onImageChange,
   directorNote, setDirectorNote,
@@ -29,6 +45,16 @@ export default function MatrixPromptForm({
           {image ? (
             <div className="relative group w-full h-full flex items-center justify-center p-2">
               <img src={image} alt="Upload preview" className="max-w-full max-h-full object-contain rounded-lg shadow-md" />
+              {/* 다운로드 버튼 — Prompt Arc 등에서 자동 임포트된 레퍼런스를 로컬에 저장. 우상단 고정, group-hover 와 무관하게 항상 노출. */}
+              <button
+                onClick={(e) => { e.stopPropagation(); downloadReferenceImage(image); }}
+                title="레퍼런스 이미지 다운로드"
+                className="absolute top-3 right-3 z-10 p-1.5 bg-[#0f1115]/85 hover:bg-[#2b2d31] text-[#e3e3e3] rounded-md border border-[#2b2d31] backdrop-blur-sm transition-colors"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3" />
+                </svg>
+              </button>
               <div className="absolute inset-0 bg-[#0f1115]/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer backdrop-blur-sm" onClick={() => fileInputRef.current.click()}>
                 <span className="bg-[#2b2d31] px-3 py-1.5 rounded-full text-[11px] font-medium text-[#e3e3e3] border border-[#4b4d52]">Change Image</span>
               </div>

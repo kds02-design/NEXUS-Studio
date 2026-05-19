@@ -20,11 +20,27 @@ import { uploadBase64 } from "../../lib/storage";
 // 관리자 전용 보라색 포인트
 const ACCENT = "#6C5CE7";
 
-const TABS = [
-  { id: "users",    label: "사용자 관리",     icon: <Users size={14}/>,        emoji: "👥" },
-  { id: "criteria", label: "평가 기준 관리",  icon: <ListChecks size={14}/>,   emoji: "📋" },
-  { id: "invites",  label: "초대 코드 관리",  icon: <Ticket size={14}/>,       emoji: "🎫" },
-  { id: "settings", label: "시스템 설정",     icon: <SettingsIcon size={14}/>, emoji: "⚙️" },
+// 사이드바 섹션 구조 — 그룹 라벨 + 항목 리스트. PromptArc ARC_CATEGORIES 패턴 차용.
+const NAV_SECTIONS = [
+  {
+    label: "운영",
+    items: [
+      { id: "users",   name: "사용자 관리",   icon: <Users size={18}/> },
+      { id: "invites", name: "초대 코드",     icon: <Ticket size={18}/> },
+    ],
+  },
+  {
+    label: "콘텐츠",
+    items: [
+      { id: "criteria", name: "평가 기준",   icon: <ListChecks size={18}/> },
+    ],
+  },
+  {
+    label: "시스템",
+    items: [
+      { id: "settings", name: "시스템 설정", icon: <SettingsIcon size={18}/> },
+    ],
+  },
 ];
 
 const formatTime = (ts) => {
@@ -37,6 +53,15 @@ const formatTime = (ts) => {
 export default function NexusAdminApp() {
   const { isAdmin, isAuthLoading } = useAuth();
   const [tab, setTab] = useState("users");
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // PromptArc 패턴 — 사이드바 빈 공간 클릭 시 펼침/접힘 토글.
+  // 내부 버튼 클릭은 stopPropagation 으로 차단되도록 각 핸들러에서 처리.
+  const handleSidebarClick = useCallback((e) => {
+    if (e.target === e.currentTarget || e.target.tagName === "NAV") {
+      setIsSidebarCollapsed(v => !v);
+    }
+  }, []);
 
   if (isAuthLoading) {
     return <FullPanel><div className="text-zinc-500 text-sm">로딩 중...</div></FullPanel>;
@@ -54,31 +79,68 @@ export default function NexusAdminApp() {
   }
 
   return (
-    <div className="flex flex-col bg-[#0a0a0c] text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
-      <nav className="flex gap-1 px-6 border-b border-white/5 bg-[#0c0c0e] shrink-0">
-        {TABS.map(t => {
-          const active = tab === t.id;
-          return (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              className="px-4 py-3 text-xs font-bold transition-colors flex items-center gap-2 border-b-2"
-              style={{
-                color: active ? ACCENT : "#7A7A9A",
-                borderBottomColor: active ? ACCENT : "transparent",
-              }}>
-              <span className="text-sm">{t.emoji}</span>
-              {t.label}
-            </button>
-          );
-        })}
-      </nav>
-
-      <div className="flex-1 overflow-y-auto p-6">
-        {tab === "users"    && <UsersPanel/>}
-        {tab === "criteria" && <CriteriaPanel/>}
-        {tab === "invites"  && <InvitesPanel/>}
-        {tab === "settings" && <SettingsPanel/>}
-      </div>
+    <div className="flex bg-[#0a0a0c] text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
+      <AdminSidebar
+        tab={tab}
+        setTab={setTab}
+        isSidebarCollapsed={isSidebarCollapsed}
+        handleSidebarClick={handleSidebarClick}
+      />
+      <main className="flex-1 my-3 mr-3 ml-3 rounded-[16px] border border-zinc-800/80 bg-[#0c0c0e] shadow-2xl overflow-hidden flex flex-col min-w-0">
+        <div className="flex-1 overflow-y-auto p-6">
+          {tab === "users"    && <UsersPanel/>}
+          {tab === "criteria" && <CriteriaPanel/>}
+          {tab === "invites"  && <InvitesPanel/>}
+          {tab === "settings" && <SettingsPanel/>}
+        </div>
+      </main>
     </div>
+  );
+}
+
+// PromptArc ArcSidebar 패턴 — 둥근 모서리 카드형 사이드바 + 섹션 라벨 + 항목 리스트.
+// 접힘 시 라벨/구분선 숨김, 항목 아이콘만 노출.
+function AdminSidebar({ tab, setTab, isSidebarCollapsed, handleSidebarClick }) {
+  return (
+    <aside
+      onClick={handleSidebarClick}
+      className={`hidden md:flex flex-col bg-[#141414] my-3 ml-3 rounded-[16px] border border-zinc-800/80 shadow-2xl overflow-hidden transition-all duration-300 cursor-default shrink-0 ${isSidebarCollapsed ? "w-16" : "w-[200px]"}`}
+      title={isSidebarCollapsed ? "클릭하면 사이드바가 펼쳐집니다" : undefined}
+    >
+      <div className={`flex items-center h-[60px] shrink-0 transition-all duration-300 ${isSidebarCollapsed ? "justify-center" : "px-4"}`} />
+      <nav className="flex-1 overflow-y-auto arc-scrollbar py-2 flex flex-col gap-0.5">
+        {NAV_SECTIONS.map((section, sIdx) => (
+          <div key={section.label} className={sIdx > 0 ? "mt-2" : ""}>
+            {!isSidebarCollapsed && (
+              <div className="px-4 pt-2 pb-1 text-[9.5px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                {section.label}
+              </div>
+            )}
+            {isSidebarCollapsed && sIdx > 0 && (
+              <div className="h-px bg-white/5 my-1 mx-3" />
+            )}
+            {section.items.map((item) => {
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={(e) => { e.stopPropagation(); setTab(item.id); }}
+                  className={`flex items-center h-10 w-full pr-3 transition-colors ${active ? "text-zinc-200 bg-white/5" : "text-zinc-500 hover:text-white hover:bg-white/5"}`}
+                  style={active ? { boxShadow: `inset 2px 0 0 ${ACCENT}` } : undefined}
+                >
+                  <div className="w-16 flex justify-center shrink-0" style={active ? { color: ACCENT } : undefined}>
+                    {item.icon}
+                  </div>
+                  {!isSidebarCollapsed && (
+                    <span className={`text-xs truncate min-w-0 ${active ? "font-bold" : ""}`}>{item.name}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+    </aside>
   );
 }
 
@@ -155,12 +217,11 @@ function UsersPanel() {
   };
 
   return (
-    <div className="space-y-6">
-      <SectionHeader
-        title="사용자 관리"
-        subtitle={`승인 대기 ${pending.length} · 승인됨 ${approved.length} · 거절됨 ${rejected.length}`}
-        action={<RefreshButton onClick={load} loading={loading}/>}
-      />
+    <AdminSection
+      title="사용자 관리"
+      subtitle={`승인 대기 ${pending.length} · 승인됨 ${approved.length} · 거절됨 ${rejected.length}`}
+      action={<RefreshButton onClick={load} loading={loading}/>}
+    >
       {error && <ErrorBanner message={error}/>}
 
       {pending.length > 0 && (
@@ -195,7 +256,7 @@ function UsersPanel() {
           />
         </div>
       )}
-    </div>
+    </AdminSection>
   );
 }
 
@@ -445,26 +506,24 @@ function CriteriaPanel() {
   };
 
   return (
-    <div className="space-y-5">
-      <SectionHeader
-        title="평가 기준 관리"
-        subtitle="평가 유형별로 기준 항목과 버전을 관리합니다."
-        action={
-          <div className="flex items-center gap-2">
-            <button onClick={handleManualMigrate} disabled={migrating}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold text-zinc-400 border border-white/10 hover:bg-white/5 disabled:opacity-40">
-              {migrating ? "마이그레이션 중..." : "시드 마이그레이션"}
-            </button>
-            <button onClick={handleNew}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors"
-              style={{ background: `${ACCENT}15`, color: ACCENT, border: `1px solid ${ACCENT}55` }}>
-              <Plus size={12}/> 새 버전
-            </button>
-            <RefreshButton onClick={load} loading={loading}/>
-          </div>
-        }
-      />
-
+    <AdminSection
+      title="평가 기준 관리"
+      subtitle="평가 유형별로 기준 항목과 버전을 관리합니다."
+      action={
+        <div className="flex flex-col gap-2">
+          <button onClick={handleManualMigrate} disabled={migrating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold text-zinc-400 border border-white/10 hover:bg-white/5 disabled:opacity-40">
+            {migrating ? "마이그레이션 중..." : "시드 마이그레이션"}
+          </button>
+          <button onClick={handleNew}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors"
+            style={{ background: `${ACCENT}15`, color: ACCENT, border: `1px solid ${ACCENT}55` }}>
+            <Plus size={12}/> 새 버전
+          </button>
+          <RefreshButton onClick={load} loading={loading}/>
+        </div>
+      }
+    >
       {migrationResult && (
         <div className="text-[11px] text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-md p-3">
           <div className="font-bold mb-1">마이그레이션 결과</div>
@@ -576,7 +635,7 @@ function CriteriaPanel() {
           onSaveAsNew={handleSaveAsNew}
         />
       )}
-    </div>
+    </AdminSection>
   );
 }
 
@@ -783,22 +842,20 @@ function InvitesPanel() {
   };
 
   return (
-    <div className="space-y-5">
-      <SectionHeader
-        title="초대 코드 관리"
-        subtitle={`총 ${codes.length}개 · 활성 ${codes.filter(c => c.active).length}개`}
-        action={
-          <div className="flex items-center gap-2">
-            <button onClick={() => setCreating(v => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors"
-              style={{ background: `${ACCENT}15`, color: ACCENT, border: `1px solid ${ACCENT}55` }}>
-              <Plus size={12}/> 새 코드
-            </button>
-            <RefreshButton onClick={load} loading={loading}/>
-          </div>
-        }
-      />
-
+    <AdminSection
+      title="초대 코드 관리"
+      subtitle={`총 ${codes.length}개 · 활성 ${codes.filter(c => c.active).length}개`}
+      action={
+        <div className="flex flex-col gap-2">
+          <button onClick={() => setCreating(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors"
+            style={{ background: `${ACCENT}15`, color: ACCENT, border: `1px solid ${ACCENT}55` }}>
+            <Plus size={12}/> 새 코드
+          </button>
+          <RefreshButton onClick={load} loading={loading}/>
+        </div>
+      }
+    >
       {error && <ErrorBanner message={error}/>}
 
       {creating && (
@@ -879,11 +936,36 @@ function InvitesPanel() {
           </tbody>
         </table>
       </div>
-    </div>
+    </AdminSection>
   );
 }
 
 // ─────────────── 4. 시스템 설정 ───────────────
+// Vercel Build Settings 스타일 — 섹션 헤더(굵은 라벨 + 하단 구분선) + 각 row 3열 그리드.
+function SettingsSectionDivider({ title, subtitle }) {
+  return (
+    <div className="border-b border-white/10 pb-3 pt-2">
+      <div className="text-sm font-bold text-white">{title}</div>
+      {subtitle && <div className="text-[11px] text-zinc-500 mt-1">{subtitle}</div>}
+    </div>
+  );
+}
+
+// 한 설정 항목 = [이름 | 설명 | 컨트롤] 3열 grid. 마지막 row 는 borderBottom 없도록 lastClass.
+function SettingRow({ name, description, control, lastInGroup = false }) {
+  return (
+    <div className={`grid grid-cols-12 gap-6 py-5 ${lastInGroup ? "" : "border-b border-white/5"}`}>
+      <div className="col-span-3">
+        <div className="text-xs font-bold text-zinc-100">{name}</div>
+      </div>
+      <div className="col-span-5">
+        <div className="text-[11px] text-zinc-500 leading-relaxed">{description}</div>
+      </div>
+      <div className="col-span-4">{control}</div>
+    </div>
+  );
+}
+
 function SettingsPanel() {
   const settingsRef = doc(db, "systemSettings", "global");
   const [data, setData] = useState({ platformName: "NEXUS Studio", notice: "", appsEnabled: {} });
@@ -913,20 +995,13 @@ function SettingsPanel() {
   };
 
   // 토글 가능한 앱 목록은 APP_REGISTRY를 직접 참조하지 않고, 사용자가 등록한 ID만 노출.
-  // (apps.js와 강결합 피하기 위해 동적 추가/삭제 방식)
   const [newAppId, setNewAppId] = useState("");
   const toggleApp = (id) => {
-    setData(prev => ({
-      ...prev,
-      appsEnabled: { ...prev.appsEnabled, [id]: !prev.appsEnabled?.[id] },
-    }));
+    setData(prev => ({ ...prev, appsEnabled: { ...prev.appsEnabled, [id]: !prev.appsEnabled?.[id] } }));
   };
   const addApp = () => {
     if (!newAppId.trim()) return;
-    setData(prev => ({
-      ...prev,
-      appsEnabled: { ...prev.appsEnabled, [newAppId.trim()]: true },
-    }));
+    setData(prev => ({ ...prev, appsEnabled: { ...prev.appsEnabled, [newAppId.trim()]: true } }));
     setNewAppId("");
   };
   const removeApp = (id) => {
@@ -938,65 +1013,86 @@ function SettingsPanel() {
   };
 
   return (
-    <div className="space-y-5 max-w-2xl">
-      <SectionHeader
-        title="시스템 설정"
-        subtitle="플랫폼 전역 설정 (Firestore systemSettings/global)"
-      />
-
+    <AdminSection
+      title="시스템 설정"
+      subtitle="플랫폼 전역 설정 (Firestore systemSettings/global)"
+    >
       {error && <ErrorBanner message={error}/>}
 
       <DashboardHeroSettings />
 
-      <div className="rounded-lg border border-white/5 bg-[#111118] p-4 space-y-2">
-        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest">플랫폼 이름</label>
-        <input value={data.platformName || ""} onChange={e => setData({ ...data, platformName: e.target.value })}
-          className="w-full bg-[#0a0a0c] border border-white/10 rounded px-3 py-2 text-xs text-zinc-200 outline-none focus:border-white/20"/>
-        <p className="text-[10px] text-zinc-600">이 값은 Firestore에만 저장됩니다. UI에 적용하려면 Shell에서 이 값을 읽도록 별도 작업이 필요합니다.</p>
-      </div>
+      {/* ─── General ─────────────────────────────────────────── */}
+      <section>
+        <SettingsSectionDivider title="General" subtitle="플랫폼 전반 설정" />
+        <div>
+          <SettingRow
+            name="플랫폼 이름"
+            description="이 값은 Firestore 에만 저장됩니다. UI 에 적용하려면 Shell 에서 이 값을 읽도록 별도 작업이 필요합니다."
+            control={
+              <input value={data.platformName || ""} onChange={e => setData({ ...data, platformName: e.target.value })}
+                className="w-full bg-[#0a0a0c] border border-white/10 rounded px-3 py-2 text-xs text-zinc-200 outline-none focus:border-white/20"/>
+            }
+          />
+          <SettingRow
+            name="공지사항"
+            description="모든 사용자에게 보여줄 공지 메시지. 점검 안내 · 변경사항 알림 등에 사용합니다."
+            lastInGroup
+            control={
+              <textarea value={data.notice || ""} onChange={e => setData({ ...data, notice: e.target.value })}
+                placeholder="예: 6/1 02:00 ~ 04:00 점검 예정"
+                className="w-full h-20 bg-[#0a0a0c] border border-white/10 rounded px-3 py-2 text-xs text-zinc-200 outline-none focus:border-white/20 resize-none"/>
+            }
+          />
+        </div>
+      </section>
 
-      <div className="rounded-lg border border-white/5 bg-[#111118] p-4 space-y-3">
-        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest">공지사항</label>
-        <textarea value={data.notice || ""} onChange={e => setData({ ...data, notice: e.target.value })}
-          placeholder="모든 사용자에게 보여줄 공지 메시지 (예: 점검 안내)"
-          className="w-full h-24 bg-[#0a0a0c] border border-white/10 rounded px-3 py-2 text-xs text-zinc-200 outline-none focus:border-white/20 resize-none"/>
-      </div>
-
-      <div className="rounded-lg border border-white/5 bg-[#111118] p-4 space-y-3">
-        <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest">앱 활성화 / 비활성화</label>
-        <p className="text-[10px] text-zinc-600">앱 ID를 추가하면 활성화 토글로 관리할 수 있습니다. 실제 라우팅 차단은 별도 적용 필요.</p>
-        <div className="space-y-1.5">
-          {Object.keys(data.appsEnabled || {}).map(id => (
-            <div key={id} className="flex items-center justify-between p-2 rounded bg-[#0a0a0c]">
-              <span className="text-xs text-zinc-200 font-mono">{id}</span>
-              <div className="flex items-center gap-2">
-                <button onClick={() => toggleApp(id)}
-                  className="text-[10px] font-bold px-2 py-1 rounded"
-                  style={data.appsEnabled[id]
-                    ? { color: "#34d399", background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.3)" }
-                    : { color: "#52525b", background: "transparent", border: "1px solid rgba(255,255,255,0.08)" }}>
-                  {data.appsEnabled[id] ? "ENABLED" : "DISABLED"}
-                </button>
-                <button onClick={() => removeApp(id)} className="text-zinc-500 hover:text-rose-400 p-1">
-                  <Trash2 size={11}/>
-                </button>
+      {/* ─── App Toggles ─────────────────────────────────────── */}
+      <section>
+        <SettingsSectionDivider title="App Toggles" subtitle="앱별 활성화 / 비활성화 (라우팅 차단은 별도 적용 필요)" />
+        <div>
+          <SettingRow
+            name="등록된 앱"
+            description="앱 ID 를 등록한 뒤 토글로 활성/비활성을 관리합니다. apps.js 와는 분리된 동적 레지스트리입니다."
+            lastInGroup
+            control={
+              <div className="space-y-1.5">
+                {Object.keys(data.appsEnabled || {}).map(id => (
+                  <div key={id} className="flex items-center justify-between p-2 rounded bg-[#0a0a0c] border border-white/5">
+                    <span className="text-xs text-zinc-200 font-mono truncate">{id}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button onClick={() => toggleApp(id)}
+                        className="text-[10px] font-bold px-2 py-1 rounded transition-colors"
+                        style={data.appsEnabled[id]
+                          ? { color: "#34d399", background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.3)" }
+                          : { color: "#52525b", background: "transparent", border: "1px solid rgba(255,255,255,0.08)" }}>
+                        {data.appsEnabled[id] ? "ENABLED" : "DISABLED"}
+                      </button>
+                      <button onClick={() => removeApp(id)} className="text-zinc-500 hover:text-rose-400 p-1">
+                        <Trash2 size={11}/>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {Object.keys(data.appsEnabled || {}).length === 0 && (
+                  <div className="text-zinc-600 text-[11px] text-center py-3 border border-dashed border-white/10 rounded">
+                    등록된 앱이 없습니다.
+                  </div>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <input value={newAppId} onChange={e => setNewAppId(e.target.value)} placeholder="앱 ID (예: prompt-arc)"
+                    className="flex-1 bg-[#0a0a0c] border border-white/10 rounded px-2 py-1.5 text-xs text-zinc-200 outline-none font-mono"/>
+                  <button onClick={addApp} className="px-3 py-1.5 text-[11px] font-bold rounded text-zinc-300 border border-white/10 hover:bg-white/5">
+                    <Plus size={11} className="inline mr-1"/>추가
+                  </button>
+                </div>
               </div>
-            </div>
-          ))}
-          {Object.keys(data.appsEnabled || {}).length === 0 && (
-            <div className="text-zinc-600 text-xs text-center py-3">등록된 앱이 없습니다.</div>
-          )}
+            }
+          />
         </div>
-        <div className="flex gap-2 pt-1">
-          <input value={newAppId} onChange={e => setNewAppId(e.target.value)} placeholder="앱 ID (예: prompt-arc)"
-            className="flex-1 bg-[#0a0a0c] border border-white/10 rounded px-2 py-1.5 text-xs text-zinc-200 outline-none"/>
-          <button onClick={addApp} className="px-3 py-1.5 text-[11px] font-bold rounded text-zinc-300 border border-white/10 hover:bg-white/5">
-            <Plus size={11} className="inline mr-1"/>추가
-          </button>
-        </div>
-      </div>
+      </section>
 
-      <div className="flex items-center justify-between sticky bottom-0 bg-[#0a0a0c] py-3">
+      {/* 하단 저장 바 — sticky 로 항상 노출. */}
+      <div className="flex items-center justify-between sticky bottom-0 bg-[#0a0a0c] py-3 border-t border-white/10 -mx-1 px-1">
         <span className="text-[10px] text-zinc-600">
           {savedAt && `최근 저장 ${formatTime(savedAt)}`}
           {loading && "로딩 중..."}
@@ -1007,7 +1103,7 @@ function SettingsPanel() {
           {saving ? "저장 중..." : "설정 저장"}
         </button>
       </div>
-    </div>
+    </AdminSection>
   );
 }
 
@@ -1127,6 +1223,26 @@ function SectionHeader({ title, subtitle, action }) {
         {subtitle && <div className="text-[11px] text-zinc-500 mt-1">{subtitle}</div>}
       </div>
       {action}
+    </div>
+  );
+}
+
+// Vercel Settings 스타일 레이아웃 — 좌측 sticky 타이틀 + 우측 컨텐츠.
+// 4개 패널이 모두 같은 형태이므로 outer wrapper 와 SectionHeader 호출을 한 컴포넌트로 흡수.
+// md 미만에서는 좌측이 위로 stack 되어 모바일/좁은 화면에서도 깨지지 않음.
+function AdminSection({ title, subtitle, action, children }) {
+  return (
+    <div className="grid grid-cols-12 gap-x-10 gap-y-4 max-w-6xl mx-auto">
+      <aside className="col-span-12 md:col-span-3">
+        <div className="md:sticky md:top-0">
+          <div className="text-base font-bold text-white">{title}</div>
+          {subtitle && <div className="text-[11px] text-zinc-500 mt-1.5 leading-relaxed">{subtitle}</div>}
+          {action && <div className="mt-3">{action}</div>}
+        </div>
+      </aside>
+      <main className="col-span-12 md:col-span-9 min-w-0 space-y-5">
+        {children}
+      </main>
     </div>
   );
 }

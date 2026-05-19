@@ -810,7 +810,7 @@ const App = () => {
             const mimeType = prefix.match(/:(.*?);/)[1];
 
             const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
             const prompt = `You are an expert game UI and pop-art designer. Analyze this logo image's typography, materials, depth, and effects.
           CRITICAL INSTRUCTION 1: Write a highly detailed English prompt phrase describing the OVERALL GENRE (e.g., 'dark sci-fi cyberpunk', 'glitch art', 'cute pastel pop'), the EXACT material of the text face (e.g., 'bright polished silver chrome text face'), the color and style of the 3D extrusion/sides (e.g., 'thick deep black sides with glowing fiery orange edges'), and any specific lighting or FX.
@@ -905,7 +905,7 @@ const App = () => {
 
         try {
             const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
             const targetPrompt = compiledOutputs[aiModel];
             const currentIntentText = currentView === 'editor' ? userIntent : editIntent;
@@ -958,7 +958,7 @@ Output JSON with exactly two keys:
         setIsExpandingIntent(true);
         try {
             const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
             let systemPrompt = `당신은 아트 디렉터입니다. 사용자의 짧은 키워드를 시각적 묘사로 구체화하세요. 3문장 이내(한국어)로 작성하세요.`;
 
@@ -991,7 +991,7 @@ Output JSON with exactly two keys:
 
         try {
             const apiKey = "";
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
             const systemPrompt = `당신은 아트 디렉터입니다. 사용자의 피드백을 반영해 텍스트의 재질이나 효과를 보완하세요. 형태 변형 금지.
           반드시 JSON 형식으로 응답: { "message": "친절한 응답", "updated_intent": "수정된 최종 3문장 이내 한글 묘사" }`;

@@ -5,7 +5,7 @@ import {
   Link2, Search, Download,
 } from "lucide-react";
 import { APP_MAP } from "../../../config/apps";
-import { STYLE_FILTERS, matchesFilter, inferRelatedType } from "../constants/categories";
+import { inferRelatedType } from "../constants/categories";
 import { PromptImage } from "./ArcCard";
 
 const TYPE_BADGE_COLOR = {
@@ -103,27 +103,57 @@ export default function ArcDetailModal({
   const currentDesc = prompt.stepDescriptions?.[mainIdx] || prompt.description || '';
   const currentKws = (prompt.stepKeywords?.[mainIdx] || prompt.aiKeywords || '').split(',').map(k => k.trim()).filter(Boolean);
 
-  const detectedStyles = useMemo(() => {
-    const out = new Set();
-    for (const f of STYLE_FILTERS) {
-      if (matchesFilter(prompt, f)) out.add(f.id);
-    }
-    return out;
-  }, [prompt]);
+  // sendTargets — 5개 타겟 모두 항상 노출. 각 항목은 클릭 시 target-별 payload 모양으로 라우팅된다.
+  const sendTargets = useMemo(() => [
+    { id: 'typecore-sovereign', label: '타이프코어 소버린 마이크로 리터칭', icon: <Type size={13} /> },
+    { id: 'render-matrix',      label: '렌더 메트릭스 마이크로 에디트',     icon: <Box size={13} /> },
+    { id: 'render-matrix-pop',  label: '렌더 메트릭스 팝으로 변형',         icon: <Box size={13} /> },
+    { id: 'motion-metrics',     label: '모션 메트릭스 레퍼런스 전달',       icon: <Video size={13} /> },
+    { id: 'design-eval',        label: '디자인 평가도구로 평가',            icon: <Star size={13} /> },
+  ], []);
 
-  const sendTargets = useMemo(() => {
-    const list = [
-      { id: 'typecore-sovereign', label: '타이프코어 소버린으로 편집', icon: <Type size={13} /> },
-    ];
-    if (detectedStyles.has('2d_bw') || detectedStyles.has('calligraphy')) {
-      list.push({ id: 'render-metrics', label: '렌더 메트릭스로 입체화', icon: <Box size={13} /> });
+  // 타겟별 navigate payload 빌더. PromptArc/index.jsx 의 handleSendToApp 은 이 payload 를 그대로 navigate 에 전달한다.
+  const buildPayload = (targetId, imageUrl) => {
+    const basePrompt = { text: currentPrompt || prompt.content || '', tags: cleanTags };
+    const stamp = { source: 'prompt-arc', target: targetId, timestamp: Date.now() };
+
+    if (targetId === 'typecore-sovereign') {
+      // 2D 타이포 → 마이크로 리터칭 모드로 진입, editUploadedImage 자동 임포트.
+      return {
+        ...stamp,
+        mode: 'edit',
+        prompt: basePrompt,
+        image: { url: imageUrl },
+        params: { briefReportId: null },
+      };
     }
-    if (detectedStyles.has('3d_render')) {
-      list.push({ id: 'motion-metrics', label: '모션 메트릭스로 애니메이션', icon: <Video size={13} /> });
+    if (targetId === 'render-matrix') {
+      // 렌더링 → 마이크로 에디트 모드로 진입, editImage 자동 임포트.
+      return {
+        ...stamp,
+        mode: 'edit',
+        prompt: { ...basePrompt, style: prompt.optimizedModel || '' },
+        image: { url: imageUrl },
+        params: {},
+      };
     }
-    list.push({ id: 'design-eval', label: '디자인 평가도구로 평가', icon: <Star size={13} /> });
-    return list;
-  }, [detectedStyles]);
+    if (targetId === 'motion-metrics') {
+      // 모션 → 레퍼런스 이미지로 진입, image 영역에 자동 임포트.
+      return {
+        ...stamp,
+        prompt: { ...basePrompt, style: prompt.optimizedModel || '' },
+        image: { url: imageUrl },
+        params: {},
+      };
+    }
+    // 그 외(render-matrix-pop, design-eval) — 일반 전달.
+    return {
+      ...stamp,
+      prompt: { ...basePrompt, style: prompt.optimizedModel || '' },
+      image: { url: imageUrl, metadata: {} },
+      params: {},
+    };
+  };
 
   const cleanTags = currentTags.filter(t => t && typeof t === 'string');
   const cleanKws = currentKws.filter(Boolean);
@@ -208,7 +238,7 @@ export default function ArcDetailModal({
             onMouseLeave={activeMedia?.type === 'image' ? handleZoomMouseUp : undefined}
           >
             {activeMedia?.type === 'video' ? (
-              <video src={activeMedia.src} controls playsInline preload="metadata" className="max-w-full max-h-full bg-black rounded" />
+              <video src={activeMedia.src} poster={prompt.videoPoster || undefined} controls playsInline preload="metadata" autoPlay muted loop className="max-w-full max-h-full bg-black rounded" />
             ) : (
               <img src={activeMedia?.src} alt=""
                 style={{
@@ -239,7 +269,7 @@ export default function ArcDetailModal({
                   <div key={idx} onClick={() => setMediaIdx(idx)} className={`relative w-14 h-14 rounded-lg overflow-hidden border-2 cursor-pointer ${idx === mediaIdx ? 'border-[#C8A969]' : 'border-transparent hover:border-white/30'}`}>
                     {m.type === 'video' ? (
                       <>
-                        <video src={m.src} muted playsInline preload="metadata" className="w-full h-full object-cover bg-black" />
+                        <video src={m.src} poster={prompt.videoPoster || undefined} muted playsInline preload="metadata" className="w-full h-full object-cover bg-black" />
                         <div className="absolute inset-0 flex items-center justify-center bg-black/40 pointer-events-none">
                           <Play size={14} className="text-white" fill="currentColor" />
                         </div>
@@ -467,21 +497,15 @@ export default function ArcDetailModal({
                         const currentImageUrl = activeMedia?.type === 'image'
                           ? activeMedia.src
                           : (prompt.thumbnail || prompt.images?.[0] || '');
-                        const enriched = {
-                          ...prompt,
-                          content: currentPrompt || prompt.content || '',
-                          thumbnail: currentImageUrl,
-                          images: currentImageUrl ? [currentImageUrl, ...(prompt.images || []).slice(1)] : (prompt.images || []),
-                        };
-                        onSendToApp(t.id, enriched);
+                        onSendToApp(t.id, buildPayload(t.id, currentImageUrl));
                         onClose();
                       }}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-xs font-medium rounded-xl transition-colors text-left ${isDisabled ? 'text-zinc-600 cursor-not-allowed opacity-50' : 'text-[#a1a1aa] hover:bg-white/5 hover:text-white'}`}
+                      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 text-[10.5px] font-medium rounded-lg transition-colors text-left ${isDisabled ? 'text-zinc-600 cursor-not-allowed opacity-50' : 'text-[#a1a1aa] hover:bg-white/5 hover:text-white'}`}
                       title={isDisabled ? '준비 중인 앱입니다' : undefined}
                     >
                       <span className="shrink-0" style={{ color: APP_MAP[t.id]?.color }}>{t.icon}</span>
-                      <span className="leading-snug flex-1">{t.label}</span>
-                      {isDisabled && <span className="text-[8px] font-bold tracking-wider text-zinc-600 uppercase">준비중</span>}
+                      <span className="leading-tight flex-1">{t.label}</span>
+                      {isDisabled && <span className="text-[8px] font-bold tracking-wider text-zinc-600 uppercase shrink-0">준비중</span>}
                     </button>
                   );
                 })}

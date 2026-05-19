@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, LayoutGrid, Heart, Layers, Zap, Star, Settings, BrainCircuit, Sparkles,
+  X, LayoutGrid, Heart, Layers, Zap, Star, Settings, ShieldCheck,
   Save, FileJson, FileText, Image as ImageIcon, FolderPlus, Upload,
   CheckSquare, Trash2
 } from 'lucide-react';
@@ -52,7 +52,7 @@ const CodexSidebar = ({
   activeCategory, handleGameClick, pinnedGames, togglePinGame,
   recentGames, availableGames, isAllGamesModalOpen, setIsAllGamesModalOpen,
   isSettingsOpen, setIsSettingsOpen, settingsRef,
-  geminiApiKey, setGeminiApiKey, openAiApiKey, setOpenAiApiKey,
+  adminModeEnabled, toggleAdminMode,
   handleSaveLibrary, handleLoadLibrary, isSaving,
   setEditingPromptText, setIsPromptManagerOpen, customAiPrompt,
   setIsLogoManagerOpen, handleFolderUpload, isUploading,
@@ -181,15 +181,18 @@ const CodexSidebar = ({
                   {!isAdmin && <div className={`px-3 py-3 text-xs ${isLightMode ? 'text-slate-500' : 'text-zinc-500'} text-center`}>설정 항목이 없습니다.</div>}
                   {isAdmin && (
                     <>
-                      <div className="px-2 pb-2">
-                        <label className={`text-[10px] font-bold uppercase tracking-wider block mb-1.5 ${isLightMode ? 'text-slate-500' : 'text-zinc-500'} flex items-center gap-1`}><BrainCircuit className="w-3 h-3" /> Gemini API Key</label>
-                        <input type="password" value={geminiApiKey} onChange={(e) => setGeminiApiKey(e.target.value)} placeholder="Gemini API Key 입력"
-                          className={`w-full border rounded-md px-2 py-1.5 text-xs mb-1.5 focus:border-[#0eb9b3] focus:outline-none transition-colors ${isLightMode ? 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400' : 'bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500'}`} />
-                        <label className={`text-[10px] font-bold uppercase tracking-wider block mb-1.5 mt-3 ${isLightMode ? 'text-violet-500' : 'text-violet-400'} flex items-center gap-1`}><Sparkles className="w-3 h-3" /> OpenAI API Key <span className="text-[8px] font-normal opacity-70">(Cross-Check)</span></label>
-                        <input type="password" value={openAiApiKey} onChange={(e) => setOpenAiApiKey(e.target.value)} placeholder="ChatGPT (선택사항)"
-                          className={`w-full border rounded-md px-2 py-1.5 text-xs focus:border-violet-500 focus:outline-none transition-colors ${isLightMode ? 'bg-slate-50 border-slate-200 text-slate-900 placeholder:text-slate-400' : 'bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-600'}`} />
-                        <p className={`text-[9px] mt-1 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`}>입력 시 두 AI의 평가 평균값을 사용합니다.</p>
-                      </div>
+                      {/* 관리 모드 토글 — ON 시 체크박스/편집 등 admin UI 노출. localStorage 에 영속. */}
+                      <button onClick={(e) => { e.stopPropagation(); toggleAdminMode(); }}
+                        className={`flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}>
+                        <div className="flex items-center gap-3">
+                          <ShieldCheck className={`w-4 h-4 shrink-0 ${adminModeEnabled ? 'text-[#0eb9b3]' : ''}`} />
+                          <span className={adminModeEnabled ? 'text-[#0eb9b3] font-bold' : ''}>관리 모드</span>
+                        </div>
+                        {/* 토글 스위치 */}
+                        <div className={`relative w-8 h-4 rounded-full transition-colors shrink-0 ${adminModeEnabled ? 'bg-[#0eb9b3]' : (isLightMode ? 'bg-slate-300' : 'bg-zinc-700')}`}>
+                          <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${adminModeEnabled ? 'left-[18px]' : 'left-0.5'}`} />
+                        </div>
+                      </button>
                       <div className={`h-px w-full my-1 ${isLightMode ? 'bg-slate-100' : 'bg-white/5'}`}></div>
                       <button onClick={(e) => { e.stopPropagation(); handleSaveLibrary(); }} disabled={isSaving} className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}>
                         <Save className="w-4 h-4 shrink-0" /> <span>데이터 내보내기</span>

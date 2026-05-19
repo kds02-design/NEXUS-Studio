@@ -190,12 +190,14 @@ export default function PromptArcApp() {
     } finally { setDeleteConfirm({ isOpen: false, id: null }); setIsDeleting(false); }
   };
 
-  const handleSendToApp = (targetId, prompt) => {
+  // ArcDetailModal 에서 buildPayload() 로 타겟별 모양에 맞춰 만든 payload 를 그대로 navigate 한다.
+  // 호출부가 timestamp 를 빼먹어도 여기서 한 번 더 보강.
+  const handleSendToApp = (targetId, payload) => {
     navigate(targetId, {
-      source: 'prompt-arc', target: targetId,
-      prompt: { text: prompt.content || prompt.stepPrompts?.[0] || '', tags: prompt.tags || [], style: prompt.optimizedModel || '' },
-      image: { url: prompt.thumbnail || prompt.images?.[0] || '', metadata: {} },
-      params: {},
+      ...(payload || {}),
+      source: payload?.source || 'prompt-arc',
+      target: targetId,
+      timestamp: payload?.timestamp || Date.now(),
     });
     showToast(`${APP_MAP[targetId]?.label}로 전달 중...`);
   };

@@ -6,6 +6,7 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { db, appId } from "../lib/firebase";
 import { useGlobal } from "../context/GlobalContext";
 import { THEME } from "../config/apps";
+import { cloudinaryVideoThumb } from "../apps/PromptArc/services/cloudinary";
 
 const toMillis = (t) => {
   if (!t) return 0;
@@ -17,6 +18,9 @@ const toMillis = (t) => {
 };
 
 const pickThumb = (p) => p.thumbnail || (p.images?.length > 0 ? p.images[0] : null);
+const pickVideo = (p) => (Array.isArray(p.videos) && typeof p.videos[0] === "string") ? p.videos[0] : null;
+// 영상 전용 카드: 이미지 썸네일이 없고 영상만 있는 경우.
+const isVideoOnly = (p) => !pickThumb(p) && !!pickVideo(p);
 
 export default function DashboardRecentPrompts() {
   const { navigate } = useGlobal();
@@ -37,8 +41,8 @@ export default function DashboardRecentPrompts() {
           if (ap !== bp) return bp - ap;
           return toMillis(b.createdAt) - toMillis(a.createdAt);
         });
-        // 썸네일/이미지가 있는 것만 골라 최대 4개
-        setItems(all.filter((p) => pickThumb(p)).slice(0, 4));
+        // 썸네일/이미지 또는 영상이 있는 것만 골라 최대 4개
+        setItems(all.filter((p) => pickThumb(p) || pickVideo(p)).slice(0, 4));
         setLoading(false);
       }, (err) => { console.warn("[DashboardRecent] subscribe err", err); setLoading(false); });
       return () => unsub();
@@ -60,30 +64,77 @@ export default function DashboardRecentPrompts() {
   return (
     <div style={{ padding:"0 40px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box", marginBottom: 36 }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: 14 }}>
-        <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.14em", color:THEME.textDim, textTransform:"uppercase", borderLeft:`2px solid ${THEME.border}`, paddingLeft:10 }}>최근 프롬프트</div>
+        <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.14em", color:THEME.textDim, textTransform:"uppercase", borderLeft:"2px solid rgba(255,255,255,0.03)", paddingLeft:10 }}>최근 프롬프트</div>
         <button
           onClick={() => navigate("prompt-arc", { source:"index", target:"prompt-arc", prompt:{ text:"", tags:[], style:"" }, image:{ url:"", metadata:{} }, params:{} })}
           style={{ background:"none", border:`1px solid ${THEME.border}`, color:THEME.textMuted, padding:"4px 12px", borderRadius:6, fontSize:11, cursor:"pointer" }}
         >전체 보기 →</button>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12 }}>
-        {items.map((p) => (
-          <button key={p.id} onClick={() => openPrompt(p)}
-            title={p.title || "Untitled"}
-            style={{
-              display:"block", position:"relative", width:"100%", border:`1px solid ${THEME.border}`,
-              borderRadius:10, overflow:"hidden", cursor:"pointer", padding:0, margin:0,
-              background:THEME.card, transition:"all 0.2s",
-              aspectRatio:"16 / 9",
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${THEME.accent}88`; e.currentTarget.style.transform = "translateY(-2px)"; }}
-            onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.transform = "translateY(0)"; }}
-          >
-            <img src={pickThumb(p)} alt=""
-              style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"cover", display:"block" }}
-              onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          </button>
-        ))}
+        {items.map((p) => {
+          const videoUrl = pickVideo(p);
+          const imgSrc = pickThumb(p);
+          const videoOnly = isVideoOnly(p);
+          // 영상 전용일 때만 video 태그 노출. 이미지가 있으면 정지 썸네일이 우선.
+          // (대시보드는 4개 고정·above-the-fold라 IntersectionObserver 없이 바로 autoplay.)
+          return (
+            <button key={p.id} onClick={() => openPrompt(p)}
+              title={p.title || "Untitled"}
+              style={{
+                display:"block", position:"relative", width:"100%", border:`1px solid ${THEME.border}`,
+                borderRadius:10, overflow:"hidden", cursor:"pointer", padding:0, margin:0,
+                background:THEME.card, transition:"all 0.2s",
+                aspectRatio:"16 / 9",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${THEME.accent}88`; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.transform = "translateY(0)"; }}
+            >
+              {/* 블러 배경 — 같은 이미지(또는 영상 포스터)를 cover로 깔고 blur+scale 적용.
+                  가로로 긴 이미지가 contain 으로 표시될 때 위/아래 빈 공간을 채워주는 역할.
+                  scale(1.1) 은 blur 가장자리에 생기는 fade-out 을 가리기 위함. */}
+              {(() => {
+                const backdropSrc = videoOnly ? (p.videoPoster || cloudinaryVideoThumb(videoUrl)) : imgSrc;
+                if (!backdropSrc) return null;
+                return (
+                  <img src={backdropSrc} alt="" aria-hidden="true"
+                    style={{
+                      position:"absolute", inset:0, width:"100%", height:"100%",
+                      objectFit:"cover", display:"block",
+                      filter:"blur(20px) saturate(1.1)",
+                      transform:"scale(1.1)",
+                      opacity:0.55,
+                    }}
+                    onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                );
+              })()}
+              {videoOnly ? (
+                <video
+                  src={videoUrl}
+                  poster={p.videoPoster || cloudinaryVideoThumb(videoUrl) || undefined}
+                  autoPlay muted loop playsInline preload="metadata"
+                  style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block" }}
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                />
+              ) : (
+                <img src={imgSrc} alt=""
+                  style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"contain", display:"block" }}
+                  onError={(e) => { e.currentTarget.style.display = "none"; }} />
+              )}
+              {videoUrl && (
+                <span style={{
+                  position:"absolute", top:8, left:8,
+                  padding:"2px 7px", borderRadius:4,
+                  background:"rgba(0,0,0,0.65)", color:"#fff",
+                  fontSize:9, fontWeight:700, letterSpacing:"0.08em",
+                  display:"flex", alignItems:"center", gap:4,
+                }}>
+                  <span style={{ width:5, height:5, borderRadius:999, background:"#ff4d4d" }} />
+                  VIDEO
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

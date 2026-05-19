@@ -1,10 +1,10 @@
 // Pop 전용 Gemini API 호출.
 // 주의: 원본 RenderMatrixPop/index.jsx 에서 apiKey 는 빈 문자열("")로 하드코딩되어 있었으며,
 // "기존 기능 100% 유지" 요구에 따라 그대로 둔다. (실제 호출은 401/403 으로 실패하지만 원본도 동일)
-// 모델은 RenderMatrix 와 달리 `gemini-2.5-flash-preview-09-2025` 를 사용.
+// 모델은 RenderMatrix 와 달리 `gemini-2.5-flash` 를 사용.
 
 const GEMINI_API_KEY = "";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 // fetchWithRetry + parseJSON 은 RenderMatrix 와 100% 동일 — import 후 re-export.
 import { fetchWithRetry, parseJSON } from "../../RenderMatrix/services/gemini";

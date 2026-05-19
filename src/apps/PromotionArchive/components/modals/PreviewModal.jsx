@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useReducer, useCallback, useRef } from 'react';
 import {
   X, Heart, Monitor, Smartphone, Download, Copy, Plus,
-  Lock, ZoomIn, ZoomOut, Layers,
+  Lock, ZoomIn, ZoomOut, Layers, Edit3,
   Signal, Wifi, Battery, Link as LinkIcon, Sparkles, Frame,
   ChevronLeft, ChevronRight, RotateCw, Star,
 } from "lucide-react";
@@ -17,6 +17,7 @@ const initialState = {
   panStart: { x: 0, y: 0, scrollLeft: 0, scrollTop: 0 },
   now: new Date(),
   isLinkInputVisible: false,
+  isEditing: false,  // 편집 모드 — 헤더 우측 Edit 버튼으로 토글. OFF 면 게임/일정/제목은 읽기 전용 표시.
 };
 
 function reducer(state, action) {
@@ -28,6 +29,7 @@ function reducer(state, action) {
     case "PAN_END": return { ...state, isPanning: false };
     case "SET_NOW": return { ...state, now: action.now };
     case "SET_LINK_VISIBLE": return { ...state, isLinkInputVisible: action.value };
+    case "TOGGLE_EDITING": return { ...state, isEditing: !state.isEditing };
     default: return state;
   }
 }
@@ -35,7 +37,7 @@ function reducer(state, action) {
 const PreviewModal = ({
   isOpen, onClose, banner, editedBanner, onEditChange,
   onSave, hasChanges, onToggleLike, collectionIds, onToggleCollection, availableGames,
-  onOpenAnalysis,
+  onOpenAnalysis, gameLogos = {}, isAdminMode: _isAdminMode = false,
 }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const scrollRef = useRef(null);
@@ -173,32 +175,11 @@ const PreviewModal = ({
               </button>
             </div>
 
-            {/* 데스크톱/모바일 세그먼트 + 프레임 토글 */}
-            <div className="flex flex-col items-center gap-1.5">
-              <div className="inline-flex items-center rounded-full bg-white/[0.06] backdrop-blur-xl border border-white/10 p-1">
-                {[
-                  { id: 'pc', label: '데스크톱', Icon: Monitor },
-                  { id: 'mobile', label: '모바일', Icon: Smartphone },
-                ].map(({ id, label, Icon }) => {
-                  const isActive = state.activeTab === id;
-                  return (
-                    <button
-                      key={id}
-                      onClick={() => dispatch({ type: 'SET_TAB', tab: id })}
-                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-all ${
-                        isActive
-                          ? 'bg-white/15 text-white shadow-sm'
-                          : 'text-zinc-400 hover:text-zinc-200'
-                      }`}
-                    >
-                      <Icon size={13} />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
+            {/* 프레임 토글(좌) + 데스크톱/모바일 세그먼트(우) — 가로 정렬.
+                프레임/원본/맞춤은 데스크톱 탭에서만 노출. */}
+            <div className="flex items-center gap-2">
               {state.activeTab === "pc" && (
-                <div className="inline-flex items-center gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full px-1.5 py-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="inline-flex items-center gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full px-1.5 py-1 animate-in fade-in slide-in-from-left-1 duration-200">
                   <button
                     onClick={() => dispatch({ type: "TOGGLE_FULL_VIEW" })}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
@@ -227,6 +208,28 @@ const PreviewModal = ({
                   )}
                 </div>
               )}
+              <div className="inline-flex items-center rounded-full bg-white/[0.06] backdrop-blur-xl border border-white/10 p-1">
+                {[
+                  { id: 'pc', label: '데스크톱', Icon: Monitor },
+                  { id: 'mobile', label: '모바일', Icon: Smartphone },
+                ].map(({ id, label, Icon }) => {
+                  const isActive = state.activeTab === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => dispatch({ type: 'SET_TAB', tab: id })}
+                      className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-all ${
+                        isActive
+                          ? 'bg-white/15 text-white shadow-sm'
+                          : 'text-zinc-400 hover:text-zinc-200'
+                      }`}
+                    >
+                      <Icon size={13} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             <div className="w-[120px]" />
@@ -367,163 +370,189 @@ const PreviewModal = ({
           </div>
         </div>
 
-        {/* 우측 사이드바 — BannerCodex 340px 패턴 */}
+        {/* 우측 사이드바 — BannerCodex CodexDetailModal 패턴 */}
         <aside className="w-[340px] shrink-0 flex flex-col h-full shadow-2xl bg-[#111111] border-l border-white/5 relative">
-          <div className="flex-1 overflow-y-auto scrollbar-hide p-7 pt-10 pb-24">
-            {/* 타이틀 */}
-            <section className="mb-7">
-              <label className={labelStyle}>Promotion Title</label>
-              <div className="flex gap-1.5">
-                <input
-                  className={`${inputStyle} text-sm font-bold flex-1 bg-zinc-900/60`}
-                  value={editedBanner?.title || ""}
-                  onChange={(e) => onEditChange("title", e.target.value)}
-                />
-                <button
-                  onClick={() => onToggleCollection(banner?.id)}
-                  className={`w-9 h-9 rounded-md border flex items-center justify-center transition-all ${
-                    collectionIds.includes(banner?.id)
-                      ? "bg-[#d8b17e] text-black border-[#d8b17e] shadow-lg"
-                      : "bg-white/5 border-white/10 text-zinc-500 hover:text-zinc-200"
-                  }`}
-                  title="컬렉션에 담기"
-                >
-                  <Layers size={14} />
-                </button>
-              </div>
-            </section>
+          <div className="flex-1 overflow-y-auto scrollbar-hide p-6 pt-7 pb-20">
 
-            {/* 게임 + 스케줄 */}
-            <section className="grid grid-cols-2 gap-3 mb-7">
-              <div>
-                <label className={labelStyle}>Game</label>
-                <select
-                  className={inputStyle}
-                  value={editedBanner?.game || ""}
-                  onChange={(e) => onEditChange("game", e.target.value)}
-                >
+            {/* 헤더 — 게임 로고 + 제목 + (날짜는 제목 아래 한 곳에서만) */}
+            <div className="flex items-center gap-3 mb-5">
+              {/* 게임 로고 — BannerCodex 와 동일한 settings/gameLogos 컬렉션 공유. 없으면 첫 글자. */}
+              <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 overflow-hidden border bg-black border-zinc-800 text-white">
+                {gameLogos[editedBanner?.game]
+                  ? <img src={gameLogos[editedBanner?.game]} alt={editedBanner?.game} className="w-full h-full object-cover" />
+                  : <span className="text-xl font-bold">{editedBanner?.game ? editedBanner.game.substring(0, 1) : '?'}</span>}
+              </div>
+              <div className="flex-1 min-w-0">
+                {state.isEditing ? (
+                  <div className="space-y-2">
+                    <input type="text" value={editedBanner?.title || ""} onChange={(e) => onEditChange("title", e.target.value)}
+                      className="w-full text-base font-bold px-2 py-1.5 border rounded-lg bg-zinc-900 border-zinc-700 text-white focus:border-[#d8b17e] focus:outline-none transition-colors"
+                      placeholder="배너 제목" />
+                    <div className="flex gap-1.5">
+                      <select value={editedBanner?.year || 2026} onChange={(e) => onEditChange("year", Number(e.target.value))}
+                        className="flex-1 text-xs px-2 py-1.5 border rounded-lg bg-zinc-900 border-zinc-700 text-white focus:border-[#d8b17e] focus:outline-none">
+                        {YEAR_LIST.map(y => <option key={`year-${y}`} value={y}>{y}년</option>)}
+                      </select>
+                      <select value={editedBanner?.month || 1} onChange={(e) => onEditChange("month", Number(e.target.value))}
+                        className="w-[72px] text-xs px-2 py-1.5 border rounded-lg bg-zinc-900 border-zinc-700 text-white focus:border-[#d8b17e] focus:outline-none">
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                          <option key={`month-${m}`} value={m}>{m}월</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <h2 className="text-lg font-bold leading-tight mb-1.5 break-words pr-2 text-white" title={editedBanner?.title}>
+                      {editedBanner?.title || "(제목 없음)"}
+                    </h2>
+                    <div className="text-[11px] font-medium text-zinc-500">
+                      {editedBanner?.year || "-"}년 {editedBanner?.month ? `${editedBanner.month}월` : ""}
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* 액션 버튼 행 — 컬렉션 → Edit → 좋아요. Edit 은 좋아요 바로 왼쪽. 40x40 원형 패턴. */}
+            <div className="flex items-center gap-2 mb-8 border-b border-white/5 pb-8">
+              <button onClick={() => onToggleCollection(banner?.id)}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${
+                  collectionIds.includes(banner?.id)
+                    ? "bg-[#d8b17e] text-black border-[#d8b17e]"
+                    : "border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                }`}
+                title="컬렉션에 담기">
+                <Layers className="w-4 h-4" />
+              </button>
+              <button onClick={() => dispatch({ type: "TOGGLE_EDITING" })}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${
+                  state.isEditing
+                    ? "bg-[#d8b17e] text-black border-[#d8b17e]"
+                    : "border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                }`}
+                title="속성 직접 편집">
+                <Edit3 className="w-4 h-4" />
+              </button>
+              <button onClick={() => onToggleLike(banner?.id)}
+                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${
+                  banner?.liked
+                    ? "bg-pink-500/10 text-pink-400 border-pink-500/30"
+                    : "border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                }`}
+                title="좋아요">
+                <Heart className={`w-4 h-4 ${banner?.liked ? "fill-pink-500" : ""}`} />
+              </button>
+            </div>
+
+            {/* Game — 표시: chip(태그와 다른 #d8b17e 컬러) / 편집: select */}
+            <div className="mb-5 pb-5 border-b border-white/5">
+              <label className={labelStyle}>Game</label>
+              {state.isEditing ? (
+                <select className={inputStyle} value={editedBanner?.game || ""} onChange={(e) => onEditChange("game", e.target.value)}>
                   {availableGames?.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
-              </div>
-              <div>
-                <label className={labelStyle}>Schedule</label>
-                <div className="flex gap-1.5">
-                  <select
-                    className={inputStyle}
-                    value={editedBanner?.year || 2026}
-                    onChange={(e) => onEditChange("year", Number(e.target.value))}
-                  >
-                    {YEAR_LIST.map(y => <option key={`year-${y}`} value={y}>{y}</option>)}
-                  </select>
-                  <select
-                    className={`${inputStyle} w-[54px] px-1`}
-                    value={editedBanner?.month || 1}
-                    onChange={(e) => onEditChange("month", Number(e.target.value))}
-                  >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                      <option key={`month-${m}`} value={m}>{m}M</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </section>
+              ) : (
+                editedBanner?.game ? (
+                  <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-bold rounded border bg-[#d8b17e]/15 text-[#d8b17e] border-[#d8b17e]/40">
+                    {editedBanner.game}
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-zinc-600">미지정</span>
+                )
+              )}
+            </div>
 
-            {/* 태그 */}
-            <section className="mb-7">
+            {/* Tags — 표시: chip / 편집: chip + X + new input */}
+            <div className="mb-5 pb-5 border-b border-white/5">
               <label className={labelStyle}>Tags</label>
               <div className="flex flex-wrap gap-1 mb-2">
                 {editedBanner?.tags?.map((tag, idx) => (
-                  <span
-                    key={`tag-${tag}-${idx}`}
-                    className="flex items-center gap-1 px-1.5 py-0.5 bg-white/5 text-zinc-400 text-[10px] font-bold rounded border border-white/10 hover:text-zinc-200"
-                  >
+                  <span key={`tag-${tag}-${idx}`} className="flex items-center gap-1 px-1.5 py-0.5 text-zinc-400 text-[10px] font-bold border border-white/10 rounded hover:text-zinc-200">
                     #{tag}
-                    <X
-                      size={9}
-                      className="cursor-pointer hover:text-red-400"
-                      onClick={() => onEditChange("tags", editedBanner.tags.filter(t => t !== tag))}
-                    />
+                    {state.isEditing && (
+                      <X size={9} className="cursor-pointer hover:text-red-400"
+                        onClick={() => onEditChange("tags", editedBanner.tags.filter(t => t !== tag))} />
+                    )}
                   </span>
                 ))}
+                {(!editedBanner?.tags || editedBanner.tags.length === 0) && !state.isEditing && (
+                  <span className="text-[11px] text-zinc-600">없음</span>
+                )}
               </div>
-              <input
-                className={`${inputStyle} py-1.5 text-[11px]`}
-                placeholder="New tag…"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && e.target.value.trim()) {
-                    onEditChange("tags", [...(editedBanner?.tags || []), e.target.value.trim()]);
-                    e.target.value = "";
-                  }
-                }}
-              />
-            </section>
+              {state.isEditing && (
+                <input className="w-full bg-transparent border-0 border-b border-white/5 focus:border-[#d8b17e] outline-none px-0 py-1 text-[11px] text-zinc-300 placeholder:text-zinc-600 transition-colors"
+                  placeholder="New tag…"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && e.target.value.trim()) {
+                      onEditChange("tags", [...(editedBanner?.tags || []), e.target.value.trim()]);
+                      e.target.value = "";
+                    }
+                  }} />
+              )}
+            </div>
 
-            {/* Asset Path */}
-            <section className="mb-7">
+            {/* Asset Path — 박스 유지 + 카피 버튼 컬러 액센트 */}
+            <div className="mb-5 pb-5 border-b border-white/5">
               <label className={labelStyle}>Asset Path</label>
               <div className="flex gap-1.5">
                 <div className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-md px-2.5 py-2 text-[10px] text-zinc-500 font-mono break-all leading-relaxed">
                   {banner?.path || '경로 없음'}
                 </div>
-                <button
-                  onClick={() => handleCopyPath(banner?.path)}
-                  className="p-1.5 bg-zinc-800 rounded-md text-zinc-400 hover:text-white border border-zinc-700 transition-colors self-start"
-                >
+                <button onClick={() => handleCopyPath(banner?.path)}
+                  className="p-1.5 rounded-md text-[#d8b17e] bg-[#d8b17e]/10 border border-[#d8b17e]/40 hover:bg-[#d8b17e] hover:text-black transition-colors self-start shrink-0"
+                  title="경로 복사">
                   <Copy size={12} />
                 </button>
               </div>
-            </section>
+            </div>
 
             {/* Upload + Link */}
-            <section className="space-y-3 pt-4 border-t border-white/5 mb-7">
+            <div className="mb-5 pb-5 border-b border-white/5 space-y-3">
               <div className="flex justify-between items-center">
-                <label className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest">Initial Upload</label>
+                <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Initial Upload</label>
                 <span className="text-[10px] text-zinc-400 font-mono">
                   {banner?.created_at ? new Date(banner.created_at).toLocaleDateString() : "-"}
                 </span>
               </div>
               <div>
                 <label className={labelStyle}>Promotion Page Link</label>
-                {state.isLinkInputVisible ? (
+                {(state.isLinkInputVisible || editedBanner?.promotionUrl) ? (
                   <div className="relative">
-                    <LinkIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" size={12} />
+                    <LinkIcon className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-500" size={12} />
                     <input
-                      className={`${inputStyle} pl-8 py-1.5`}
+                      className="w-full bg-transparent border-0 border-b border-white/5 focus:border-[#d8b17e] outline-none pl-5 py-1 text-[11px] text-zinc-300 placeholder:text-zinc-600 transition-colors disabled:cursor-not-allowed"
                       placeholder="https://…"
                       value={editedBanner?.promotionUrl || ""}
                       onChange={(e) => onEditChange("promotionUrl", e.target.value)}
+                      disabled={!state.isEditing}
                     />
                   </div>
                 ) : (
-                  <button
-                    onClick={() => dispatch({ type: "SET_LINK_VISIBLE", value: true })}
-                    className="w-full border border-dashed border-zinc-700 rounded-md py-1.5 text-[11px] text-zinc-500 hover:text-zinc-300 transition-all flex items-center justify-center gap-1.5"
-                  >
-                    <Plus size={12} /> ADD URL
+                  <button onClick={() => state.isEditing && dispatch({ type: "SET_LINK_VISIBLE", value: true })}
+                    disabled={!state.isEditing}
+                    className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-[#d8b17e] disabled:opacity-50 disabled:hover:text-zinc-500 transition-colors">
+                    <Plus size={12} /> URL 추가
                   </button>
                 )}
               </div>
-            </section>
+            </div>
 
-            {/* AI 디자인 분석 */}
-            <section className="mt-2">
-              <button
-                onClick={() => onOpenAnalysis?.(banner)}
-                className="w-full py-3 px-4 rounded-2xl border bg-transparent border-white/10 hover:border-[#d8b17e] hover:bg-[#d8b17e]/5 flex items-center justify-between transition-all group"
-              >
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-zinc-500 group-hover:text-[#d8b17e] transition-colors" />
-                  <span className="text-xs font-bold text-zinc-300">AI 디자인 분석</span>
+            {/* AI 디자인 분석 — 명확한 버튼 (border + hover bg) */}
+            <button onClick={() => onOpenAnalysis?.(banner)}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/[0.02] hover:border-[#d8b17e]/50 hover:bg-[#d8b17e]/5 transition-all group">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-zinc-500 group-hover:text-[#d8b17e] transition-colors" />
+                <span className="text-xs font-bold text-zinc-300 group-hover:text-white transition-colors">AI 디자인 분석</span>
+              </div>
+              {hasEval ? (
+                <div className="text-2xl font-black text-[#d8b17e] font-mono tracking-tighter leading-none">
+                  {getWebFinalScore100(banner)}
                 </div>
-                {hasEval ? (
-                  <div className="text-2xl font-black text-[#d8b17e] font-mono tracking-tighter leading-none">
-                    {getWebFinalScore100(banner)}
-                  </div>
-                ) : (
-                  <span className="text-[10px] font-medium text-zinc-500 tracking-wider">미분석</span>
-                )}
-              </button>
-            </section>
+              ) : (
+                <span className="text-[10px] font-medium text-zinc-500 tracking-wider group-hover:text-zinc-300 transition-colors">미분석 ›</span>
+              )}
+            </button>
           </div>
 
           {/* 변경사항 저장 바 */}

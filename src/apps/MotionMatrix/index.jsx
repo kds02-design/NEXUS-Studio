@@ -69,7 +69,9 @@ function App() {
     toastTimer.current = setTimeout(() => setToastMsg(''), 3000);
   }
 
-  // RenderMatrix payload → Gemini motion recommendation
+  // 외부 앱(RenderMatrix / PromptArc) → 레퍼런스 이미지 + 텍스트 자동 임포트 + 추천 분석 + AI Director 자동 실행.
+  const [pendingPayloadAnalysis, setPendingPayloadAnalysis] = useState(false);
+
   useEffect(() => {
     if (!payload || payload.target !== 'motion-metrics') return;
     if (!payload.timestamp || consumedPayloadRef.current === payload.timestamp) return;
@@ -79,27 +81,72 @@ function App() {
     const tags = Array.isArray(payload.prompt?.tags) ? payload.prompt.tags : [];
     const style = payload.prompt?.style || '';
     const source = payload.source || 'unknown';
-    setIncomingFromRender({ source, text, tags, style, status: 'analyzing' });
+    const imgUrl = payload.image?.url || '';
+
+    setIncomingFromRender({ source, text, tags, style, status: imgUrl ? 'fetching-image' : 'analyzing' });
     try { clearPayload(); } catch {}
-    if (!text || !apiKey) { setIncomingFromRender((s) => (s ? { ...s, status: 'no-text' } : null)); return; }
 
     (async () => {
-      setIsArcAnalyzing(true);
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(new Error('Gemini timeout 30s')), 30000);
-      try {
-        const rec = await analyzeRenderPayloadForMotion({ text, style, tags }, { signal: ctrl.signal });
-        clearTimeout(t);
-        setArcRecommended(rec);
-        setIncomingFromRender((s) => (s ? { ...s, status: 'done', summary: rec.summary } : null));
-      } catch (e) {
-        clearTimeout(t);
-        console.error('[MotionMatrix] 추천 분석 실패', e);
-        setIncomingFromRender((s) => (s ? { ...s, status: 'failed', errorMessage: e.message } : null));
-      } finally { setIsArcAnalyzing(false); }
+      // 1) 이미지 fetch → dataURL → setImage (레퍼런스 이미지 영역 자동 임포트)
+      let dataUrl = null;
+      if (imgUrl) {
+        try {
+          if (imgUrl.startsWith('data:')) {
+            dataUrl = imgUrl;
+          } else {
+            const res = await fetch(imgUrl, { mode: 'cors' });
+            if (!res.ok) throw new Error(`이미지 fetch ${res.status}`);
+            const blob = await res.blob();
+            dataUrl = await new Promise((resolve, reject) => {
+              const r = new FileReader();
+              r.onloadend = () => resolve(String(r.result));
+              r.onerror = reject;
+              r.readAsDataURL(blob);
+            });
+          }
+          setImage(dataUrl);
+        } catch (e) {
+          console.error('[MotionMatrix] payload 이미지 fetch 실패', e);
+        }
+      }
+      if (text) setDirectorNote(text);
+
+      // 2) tag/text 기반 추천 (기존 동작) — text 있고 API 키 있을 때만
+      if (text && apiKey) {
+        setIsArcAnalyzing(true);
+        const ctrl = new AbortController();
+        const t = setTimeout(() => ctrl.abort(new Error('Gemini timeout 30s')), 30000);
+        try {
+          const rec = await analyzeRenderPayloadForMotion({ text, style, tags }, { signal: ctrl.signal });
+          clearTimeout(t);
+          setArcRecommended(rec);
+          setIncomingFromRender((s) => (s ? { ...s, status: 'done', summary: rec.summary } : null));
+        } catch (e) {
+          clearTimeout(t);
+          console.error('[MotionMatrix] 추천 분석 실패', e);
+          setIncomingFromRender((s) => (s ? { ...s, status: 'failed', errorMessage: e.message } : null));
+        } finally { setIsArcAnalyzing(false); }
+      } else {
+        setIncomingFromRender((s) => (s ? { ...s, status: dataUrl ? 'image-only' : 'no-text' } : null));
+      }
+
+      // 3) 이미지 + 텍스트가 모두 들어오면 AI Director 자동 분석 트리거.
+      //    state 가 commit 된 이후 두번째 effect 에서 handleAiAnalysis(false) 호출.
+      if (dataUrl || text) setPendingPayloadAnalysis(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload?.timestamp, payload?.target]);
+
+  // pendingPayloadAnalysis 가 true 가 되고 image 가 commit 된 직후 → AI Director 자동 실행.
+  useEffect(() => {
+    if (!pendingPayloadAnalysis) return;
+    // image 가 비어있고 directorNote 도 비어있으면 분석할 게 없다.
+    if (!image && !directorNote.trim()) return;
+    setPendingPayloadAnalysis(false);
+    // handleAiAnalysis 가 같은 render scope 안에서 정의되므로 다음 microtask 로 미뤄 호출.
+    Promise.resolve().then(() => { try { handleAiAnalysis(false); } catch (e) { console.error('[MotionMatrix] 자동 분석 호출 실패', e); } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPayloadAnalysis, image, directorNote]);
 
   const handleCopy = (text) => {
     try {

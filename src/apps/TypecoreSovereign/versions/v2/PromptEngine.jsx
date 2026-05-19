@@ -716,7 +716,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const persona = directorPersonas.find(p => p.id === aiPersona) || directorPersonas[0];
         const prompt = `Act as an Elite Art Director for a Dark Fantasy RPG typography project.\n[YOUR PERSONA]: ${persona.role}\n[YOUR TONE]: ${persona.tone}\n[KEYWORDS YOU FAVOR]: ${persona.keywords}\n[CURRENT SUB-TRAIT FOCUS]: ${getSliderText(personaSliderValue)}\n[USER INPUT]: Text: "${inputText}"\n[DETAILED DESIGN INTENT / AURA]: "${customDesignInjections || "None"}"\n[CRITICAL INSTRUCTION]: You MUST base your setup heavily on the "[DETAILED DESIGN INTENT / AURA]" and your Persona. Reflect the [CURRENT SUB-TRAIT FOCUS] deeply in your choices.\nReturn JSON: { "summary": { "title": "...", "reason": "..." }, "setStyle": { "id": "...", "name": "...", "en": "..." }, "setWeight": { "id": "...", "name": "...", "en": "..." }, "setTerminal": { "id": "...", "name": "...", "en": "..." }, "setTexture": { "id": "...", "name": "...", "en": "..." }, "setKinetic": { "id": "...", "name": "...", "en": "..." }, "setSharpness": { "id": "...", "name": "...", "en": "..." }, "setKerning": { "id": "...", "name": "..." , "en": "..."} }`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
             const data = await response.json(); const res = extractJson(data.candidates[0].content.parts[0].text);
             if (res?.summary) setAiRecSummary(res.summary);
             if (res?.setStyle) setScriptType(updateDynamic('MMOStyles', res.setStyle));
@@ -750,7 +750,7 @@ const App = ({ version, setVersion, versions } = {}) => {
            "setDamage": { "id": "...", "name": "...", "en": "..." }
         }
       }`;
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }, ...imageParts] }], generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }, ...imageParts] }], generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
             const data = await response.json();
             const result = extractJson(data.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
             if (result?.extractedAura) setCustomDesignInjections(String(result.extractedAura).trim());
@@ -774,7 +774,7 @@ const App = ({ version, setVersion, versions } = {}) => {
             const imageParts = await Promise.all(base64Promises);
             const persona = directorPersonas.find(p => p.id === aiPersona) || directorPersonas[0];
             const systemPrompt = `You are a legendary Typography Art Director specialized in STRICTLY 2D FLAT BLACK-AND-WHITE SILHOUETTE typography. [YOUR PERSONA]: ${persona.role}\n[YOUR TONE]: ${persona.tone}\nAnalyze the provided reference image(s). Synthesize their core worldview, narrative tension, and character traits.\n[CRITICAL RULE FOR TYPOGRAPHY AURA]: The resulting typography MUST be a pure 2D flat silhouette. ABSOLUTELY NO textures, NO lighting, NO 3D, NO materials, NO gradient colors. Focus ONLY on structural morphology.\nReturn ONLY a 2-3 sentence Korean description (Aura) detailing how the structural lines and shapes of the typography should be formed to match the combined mood.`;
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }, ...imageParts] }], generationConfig: { temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }, ...imageParts] }], generationConfig: { temperature: 0.7 } }) });
             const data = await response.json(); const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text;
             if (resultText) setCustomDesignInjections(resultText.trim());
         } catch (error) { console.error("Mood analysis failed:", error); } finally { setIsAnalyzingMood(false); if (moodImageRef.current) moodImageRef.current.value = ""; }
@@ -789,7 +789,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const parts = [{ text: "Process the tuning request. Analyze the reference image if provided." }];
         if (tuningReferenceImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: tuningReferenceImage } });
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
             const data = await response.json(); const result = extractJson(data.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
             if (result?.newAura && result?.replyMessage) {
                 setCurrentTunedAura(String(result.newAura)); setTuningChatHistory(prev => [...prev, { role: 'assistant', content: String(result.replyMessage) }]);
@@ -807,7 +807,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const parts = [{ text: "Process the tuning request. Analyze the reference image if provided." }];
         if (editTuningReferenceImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: editTuningReferenceImage } });
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
             const data = await response.json(); const result = extractJson(data.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
             if (result?.newAura && result?.replyMessage) {
                 setCurrentTunedEditAura(String(result.newAura)); setTuningChatHistory(prev => [...prev, { role: 'assistant', content: String(result.replyMessage) }]);
@@ -821,7 +821,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const persona = directorPersonas.find(p => p.id === aiPersona) || directorPersonas[0];
         const systemPrompt = `[YOUR PERSONA]: ${persona.role}\n[YOUR TONE]: ${persona.tone}\n[CURRENT SUB-TRAIT FOCUS]: ${getSliderText(personaSliderValue)}\nExpand the user's keyword into a detailed, highly professional morphological design direction. NO MATERIALS / NO LIGHTING. FOCUS ON PURE FORM. 2-3 sentences. Return ONLY the expanded text in Korean.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: customDesignInjections }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: customDesignInjections }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
             const data = await response.json(); if (data.candidates?.[0]?.content?.parts?.[0]?.text) setCustomDesignInjections(String(data.candidates[0].content.parts[0].text).trim());
         } catch (e) { } finally { setIsExpandingIntent(false); }
     }
@@ -831,7 +831,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const persona = directorPersonas.find(p => p.id === aiPersona) || directorPersonas[0];
         const systemPrompt = `[YOUR PERSONA]: ${persona.role}\n[YOUR TONE]: ${persona.tone}\n[CURRENT SUB-TRAIT FOCUS]: ${getSliderText(personaSliderValue)}\nExpand the user's short edit keyword into a detailed, structural Image-to-Image morphological edit instruction incorporating the sub-trait focus. NO 3D/MATERIALS. Keep it 2D flat. Focus on stroke edges, dynamics, and destruction. Return only the expanded text in Korean.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: editInstruction }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: editInstruction }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
             const data = await response.json(); if (data.candidates?.[0]?.content?.parts?.[0]?.text) setEditInstruction(String(data.candidates[0].content.parts[0].text).trim());
         } catch (e) { } finally { setIsEditExpandingIntent(false); }
     }
@@ -844,7 +844,7 @@ const App = ({ version, setVersion, versions } = {}) => {
     Pay attention to the strict block structure: [TEXT LOCK], [LAYOUT LOCK], [PERSONA MORPHOLOGY], etc.
     Return STRICTLY a valid JSON object: { "hasConflict": boolean, "analysisMessage": "string", "resolutions": [ { "title": "string", "desc": "string", "resolvedPromptEn": "string", "resolvedPromptKo": "string" } ] }`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }) });
             const data = await response.json(); const result = extractJson(data.candidates[0].content.parts[0].text);
             setInspectionResult({ ...result, isEdit: isEditFlag }); setIsInspectorModalOpen(true);
         } catch (e) { console.error("Inspector error", e); } finally { setIsInspecting(false); }
@@ -856,7 +856,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const persona = directorPersonas.find(p => p.id === aiPersona) || directorPersonas[0];
         const systemPrompt = `You are a visionary Art Director for "Nano Banana 2". Transform technical specs into a morphological masterpiece. \n[YOUR PERSONA]: ${persona.role} \n[YOUR WRITING TONE]: ${persona.tone} \n[KEYWORDS]: ${persona.keywords} \n[CURRENT SUB-TRAIT FOCUS]: ${getSliderText(personaSliderValue)} \nPROHIBIT 3D and MATERIALS.\n[CRITICAL RULE]: Adhere to the [PRIORITY 1-7] block structure in your mind. Emphasize the allowed deformation budget and Legibility floor.\nOutput format: \n1. # ARCHITECTURAL EVOLUTION \n2. # KINETIC ORGANIC ANATOMY \n3. # THE UNBOUNDED BOUNDARY \n4. # THE SUPREME COMMAND: Consolidated elite prompt string.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
             const data = await response.json();
             const saveCode = generateSaveCode();
             const finalPrompt = String(data.candidates?.[0]?.content?.parts?.[0]?.text || "") + `\n\n${saveCode}`;
@@ -871,7 +871,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const persona = directorPersonas.find(p => p.id === aiPersona) || directorPersonas[0];
         const systemPrompt = `You are a visionary Art Director for Nano Banana 2 Image-to-Image generation.\n[YOUR PERSONA]: ${persona.role} \n[YOUR WRITING TONE]: ${persona.tone} \n[KEYWORDS]: ${persona.keywords} \nPROHIBIT 3D and MATERIALS. \n[INTERPRETATION LIMIT]: Do NOT reinterpret the structure beyond the deformation budget. Focus on Micro-refinements. \nOutput format: \n1. # ARCHITECTURAL EVOLUTION \n2. # KINETIC ORGANIC ANATOMY \n3. # THE UNBOUNDED BOUNDARY \n4. # THE SUPREME COMMAND: Consolidated elite I2I prompt string.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
             const data = await response.json();
             const saveCode = generateSaveCode();
             const finalPrompt = String(data.candidates?.[0]?.content?.parts?.[0]?.text || "") + `\n\n${saveCode}`;
@@ -886,7 +886,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const currentAR = aspectRatio;
         const systemPrompt = `Convert specs into Midjourney V6 tag string. Use ::2 for critical traits. Force 2D flat silhouette. \nEnd exactly with this exact suffix (DO NOT omit the --ar parameter): " --ar ${currentAR} --iw 1.5 --style raw --no 3d, volumetric, perspective, emboss, bevel, shadow, color, standard font, texture, glowing shader, material"`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.2 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.2 } }) });
             const data = await response.json();
             let resultText = String(data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || midjourneyOutput);
             const saveCode = generateSaveCode();
@@ -903,7 +903,7 @@ const App = ({ version, setVersion, versions } = {}) => {
         const { baseTechnicalEn, chatGPTOutput } = isEditFlag ? buildEditPrompts() : buildPrompts();
         const systemPrompt = `Create DALL-E 3 instructions for this typography prompt. Bullet points for edits. Strictly forbid 3D/materials. Output ONLY the final prompt text.`;
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: baseTechnicalEn }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
             const data = await response.json();
             const saveCode = generateSaveCode();
             const resultText = String(data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || chatGPTOutput) + `\n\n${saveCode}`;

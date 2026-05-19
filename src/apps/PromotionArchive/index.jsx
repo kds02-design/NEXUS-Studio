@@ -25,6 +25,26 @@ import FloatingActionBar from './components/layout/FloatingActionBar';
 
 const GAMES = ['아이온', '블소', '리니지', '기타'];
 
+// 원본 폴더 경로 prefix — 실제 서버 share 루트.
+// 사용자가 \\ppc-file\1.리니지\ 같은 폴더를 선택하면 webkitRelativePath 는 1.리니지/... 로 시작하므로
+// prefix(\\ppc-file\) + relPath 만 결합하면 \\ppc-file\1.리니지\... 정식 경로 복원.
+// localStorage('pa_pathPrefix')로 덮어쓰기 가능.
+const DEFAULT_PATH_PREFIX = '\\\\ppc-file\\';
+const getCanonicalPrefix = () => {
+    try { return localStorage.getItem('pa_pathPrefix') || DEFAULT_PATH_PREFIX; }
+    catch { return DEFAULT_PATH_PREFIX; }
+};
+// File 의 webkitRelativePath 에서 부모 폴더만 추출 → prefix + 슬래시→백슬래시 변환.
+const buildCanonicalPath = (file) => {
+    if (!file) return '';
+    const rel = file.webkitRelativePath || file.name || '';
+    const parts = rel.split('/');
+    parts.pop(); // 파일명 제거 → 부모 폴더만
+    const folderRel = parts.join('/');
+    if (!folderRel) return getCanonicalPrefix();
+    return getCanonicalPrefix() + folderRel.replace(/\//g, '\\') + '\\';
+};
+
 // 컬렉션 경로 — BannerCodex/PromptArc와 같은 패턴으로 통일.
 const promoColRef = () => collection(db, 'artifacts', appId, 'public', 'data', 'promotion-banners');
 const promoDocRef = (id) => doc(db, 'artifacts', appId, 'public', 'data', 'promotion-banners', id);
@@ -63,6 +83,15 @@ function App() {
         if (!isAdmin && isAdminMode) setIsAdminMode(false);
     }, [isAdmin, isAdminMode]);
     // 관리자 모드 토글 시 다중 선택 초기화는 setSelectedItems 선언 이후로 이동 (아래 별도 effect)
+
+    // 게임 로고 — BannerCodex 와 동일한 Firestore 컬렉션 공유 (artifacts/{appId}/public/data/settings/gameLogos).
+    // PreviewModal 헤더에서 게임 로고 표시용. 관리자가 BannerCodex 설정에서 등록하면 여기에도 자동 반영.
+    const [gameLogos, setGameLogos] = useState({});
+    useEffect(() => {
+        if (!db) return;
+        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'gameLogos');
+        return onSnapshot(ref, snap => setGameLogos(snap.exists() ? snap.data() : {}));
+    }, []);
 
     // Firestore 실시간 구독 — Dexie의 useLiveQuery 대체
     useEffect(() => {
@@ -270,9 +299,12 @@ function App() {
             const directItems = [];
             const groups = {};
             const excludeRegex = /개발|팝업|popup|가이드|guide|Thumbs\.db|^\./i;
+            // 허용 확장자 — jpg/jpeg/png 만 통과. psd/ai/gif/webp/tif 등은 모두 제외.
+            const allowedExtRegex = /\.(jpe?g|png)$/i;
 
             pendingFiles.forEach(file => {
                 if (excludeRegex.test(file.name)) return;
+                if (!allowedExtRegex.test(file.name)) return;
 
                 if (!file.webkitRelativePath || file.webkitRelativePath.split('/').length < 2) {
                     directItems.push({ title: file.name.split('.')[0], pcFile: file, mobileFile: null });
@@ -364,6 +396,7 @@ function App() {
                         title: item.title,
                         game: uploadSettings.game,
                         year: uploadSettings.year,
+                        path: buildCanonicalPath(item.pcFile || item.mobileFile),
                         preview: pcData?.thumbnail || moData?.thumbnail,
                         full_image: pcData?.detail || null,
                         mobile_image: moData?.detail || null,
@@ -725,6 +758,8 @@ function App() {
                             localStorage.setItem('myCollection', JSON.stringify(next));
                         }}
                         availableGames={GAMES}
+                        gameLogos={gameLogos}
+                        isAdminMode={isAdminMode}
                         onOpenAnalysis={(b) => {
                             setEvalTargetBanner(b || selectedBanner);
                             setIsWebEvalOpen(true);

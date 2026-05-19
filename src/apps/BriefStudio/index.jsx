@@ -1,6 +1,8 @@
-import { Fragment, useState, useEffect, useRef } from "react";
+// BriefStudio — 3단 레이아웃: 요청서 / 레퍼런스 / AI 분석 결과.
+// 분석 완료 후 결과를 Firestore (briefHistory) 에 저장하고, 작업 플로우 버튼으로 각 앱에 payload 전달.
+import { useEffect, useRef, useState } from "react";
 import {
-  collection, getDocs, addDoc, query, orderBy, limit, serverTimestamp,
+  addDoc, collection, getDocs, query, orderBy, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { GEMINI_API_KEY } from "../../lib/gemini";
@@ -8,10 +10,12 @@ import { useAuth } from "../../context/AuthContext";
 import { useGlobal } from "../../context/GlobalContext";
 import { APP_MAP } from "../../config/apps";
 import {
-  Upload, FileText, Image as ImageIcon, X, Loader2, Sparkles, Check,
-  ChevronRight, Type, Box, Star, Palette,
-  Users, AlertCircle, RefreshCw,
+  Upload, FileText, Image as ImageIcon, X, Loader2, Sparkles,
+  ArrowRight, Type, Box, Video, AlertCircle, Users, Check, ChevronRight,
+  Palette, Layers,
 } from "lucide-react";
+
+// ─── 정적 데이터 ─────────────────────────────────────────
 const GENRES = [
   { id: "rpg",      label: "RPG / 판타지" },
   { id: "casual",   label: "캐주얼 / 카툰" },
@@ -28,67 +32,94 @@ const PLATFORMS = [
   { id: "web",      label: "웹/프로모션" },
   { id: "multi",    label: "멀티플랫폼" },
 ];
-const STYLE_KEYS = [
-  { id: "rpg",       label: "RPG/판타지",   color: "#A29BFE" },
-  { id: "casual",    label: "캐주얼/카툰",   color: "#74B9FF" },
-  { id: "sf",        label: "SF/사이버펑크", color: "#0eb9b3" },
-  { id: "minimal",   label: "미니멀/모던",   color: "#dfe6e9" },
-  { id: "luxury",    label: "고급/럭셔리",   color: "#FDCB6E" },
-  { id: "horror",    label: "호러/다크",     color: "#FD79A8" },
-];
-const SEND_TARGETS = [
-  { id: "typecore-sovereign", label: "타이프코어 소버린",   icon: <Type size={14}/> },
-  { id: "render-metrics",     label: "렌더 메트릭스",       icon: <Box size={14}/> },
-  { id: "design-eval",        label: "디자인 평가도구",     icon: <Star size={14}/> },
-];
+
+const PRODUCTION_TYPE_META = {
+  typography: { label: "타이포", color: "#A29BFE" },
+  banner:     { label: "배너",   color: "#74B9FF" },
+  promotion:  { label: "프로모션", color: "#FDCB6E" },
+  brandweb:   { label: "브랜드웹", color: "#0eb9b3" },
+};
 
 const SUPPORTED_DOC_EXT = /\.(pdf|txt|md|json)$/i;
-const SUPPORTED_DOC_HINT = "PDF / TXT / MD / JSON";
+const MAX_IMAGES = 10;
+const POINT = "#A29BFE";
 
-const fileToBase64 = (file) => new Promise((resolve, reject) => {
+// ─── 파일 헬퍼 ───────────────────────────────────────────
+const fileToBase64 = (file) => new Promise((res, rej) => {
   const r = new FileReader();
-  r.onload = () => resolve(String(r.result).split(",")[1] || "");
-  r.onerror = reject;
+  r.onload = () => res(String(r.result).split(",")[1] || "");
+  r.onerror = rej;
   r.readAsDataURL(file);
 });
-const fileToText = (file) => new Promise((resolve, reject) => {
+const fileToDataUrl = (file) => new Promise((res, rej) => {
   const r = new FileReader();
-  r.onload = () => resolve(String(r.result));
-  r.onerror = reject;
+  r.onload = () => res(String(r.result));
+  r.onerror = rej;
+  r.readAsDataURL(file);
+});
+const fileToText = (file) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(String(r.result));
+  r.onerror = rej;
   r.readAsText(file);
 });
+
+// AI JSON 응답 파싱 — 코드블록/잡음 제거 후 추출.
+const parseGeminiJson = (raw) => {
+  if (!raw) return null;
+  let s = String(raw).replace(/```json/gi, "").replace(/```/g, "").trim();
+  const a = s.indexOf("{"); const b = s.lastIndexOf("}");
+  if (a === -1 || b === -1) return null;
+  try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
+};
+
+// 작업 플로우 카드용 메타.
+const FLOW_APPS = {
+  "typecore-sovereign": { label: "타이프코어 소버린", desc: "타이포그래피 설계",     icon: <Type size={16} />,  color: "#A29BFE" },
+  "render-matrix":      { label: "렌더 메트릭스",     desc: "재질·라이팅 시뮬레이션", icon: <Box size={16} />,   color: "#74B9FF" },
+  "motion-matrix":      { label: "모션 메트릭스",     desc: "모션·인트로 합성",     icon: <Video size={16} />, color: "#FD79A8" },
+  "banner-codex":       { label: "배너 코덱스",       desc: "배너 라이브러리",      icon: <Layers size={16} />, color: "#74B9FF" },
+  "promotion-archive":  { label: "프로모션 아카이브", desc: "프로모션 자산 관리",   icon: <Layers size={16} />, color: "#FDCB6E" },
+  "brand-web-review":   { label: "브랜드웹 리뷰",     desc: "브랜드웹 검수",        icon: <Layers size={16} />, color: "#0eb9b3" },
+};
 
 export default function BriefStudio() {
   const { user } = useAuth();
   const { navigate } = useGlobal();
 
-  const [step, setStep] = useState(1);
+  // 1단 — 요청서
   const [docFiles, setDocFiles] = useState([]);
-  const [imageFiles, setImageFiles] = useState([]);
+  const [docText, setDocText] = useState("");
   const [genre, setGenre] = useState("rpg");
   const [platform, setPlatform] = useState("mobile");
   const [assigneeUid, setAssigneeUid] = useState("");
   const [users, setUsers] = useState([]);
   const [usersError, setUsersError] = useState("");
+  const [isDraggingDoc, setIsDraggingDoc] = useState(false);
+  const docInputRef = useRef(null);
+
+  // 2단 — 레퍼런스
+  const [imageFiles, setImageFiles] = useState([]); // {file, preview, name, size}
+  const [isDraggingImg, setIsDraggingImg] = useState(false);
+  const imgInputRef = useRef(null);
+
+  // 3단 — 분석 결과
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisStage, setAnalysisStage] = useState("");
   const [analysisPercent, setAnalysisPercent] = useState(0);
   const [report, setReport] = useState(null);
+  const [reportId, setReportId] = useState(null);
   const [error, setError] = useState("");
-  const [history, setHistory] = useState([]);
-  const [showHistory, setShowHistory] = useState(false);
-  const docInputRef = useRef(null);
-  const imgInputRef = useRef(null);
-  const [isDraggingDoc, setIsDraggingDoc] = useState(false);
-  const [isDraggingImg, setIsDraggingImg] = useState(false);
+  const [includeMotion, setIncludeMotion] = useState(false);
 
-  // 담당자 목록 로드 — Firestore users (admin은 전체 read 가능, 일반 사용자는 본인만 보일 수 있음)
+  // ─── 담당자 목록 로드 ──────────────────────────────────
   useEffect(() => {
     (async () => {
       try {
-        const snap = await getDocs(collection(db, "users"));
+        const snap = await getDocs(query(collection(db, "users"), orderBy("email")));
         const list = snap.docs.map(d => ({ uid: d.id, ...d.data() }))
-                      .filter(u => u.email)
-                      .sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email));
+          .filter(u => u.email)
+          .sort((a, b) => (a.displayName || a.email).localeCompare(b.displayName || b.email));
         setUsers(list);
       } catch (e) {
         console.warn("[BriefStudio] users 조회 실패", e);
@@ -97,76 +128,44 @@ export default function BriefStudio() {
     })();
   }, []);
 
-  // 본인의 과거 리포트 로드
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      try {
-        const colRef = collection(db, "briefHistory", user.uid, "reports");
-        const q = query(colRef, orderBy("createdAt", "desc"), limit(20));
-        const snap = await getDocs(q);
-        setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-      } catch (e) {
-        console.warn("[BriefStudio] history 조회 실패", e);
-      }
-    })();
-  }, [user, report]);
-
-  // 클릭 input + 드래그 드롭 양쪽에서 호출되는 공용 필터/병합 헬퍼.
+  // ─── 문서/이미지 받기 ──────────────────────────────────
   const acceptDocs = (arr) => {
-    if (arr.length === 0) return;
+    if (!arr?.length) return;
     const ok = arr.filter(f => SUPPORTED_DOC_EXT.test(f.name));
-    if (ok.length < arr.length) {
-      setError(`지원하지 않는 형식이 일부 제외됨 (지원: ${SUPPORTED_DOC_HINT}). docx는 PDF로 변환 후 다시 시도하세요.`);
-    } else { setError(""); }
+    if (ok.length < arr.length) setError("지원 형식: PDF / TXT / MD / JSON. docx 는 PDF 로 변환해주세요.");
+    else setError("");
     setDocFiles(prev => [...prev, ...ok]);
   };
-  const acceptImages = (arr) => {
-    if (arr.length === 0) return;
-    const ok = arr.filter(f => f.type.startsWith("image/"));
-    setImageFiles(prev => [...prev, ...ok]);
+  const acceptImages = async (arr) => {
+    if (!arr?.length) return;
+    const imgs = arr.filter(f => f.type.startsWith("image/"));
+    const room = MAX_IMAGES - imageFiles.length;
+    const slice = imgs.slice(0, room);
+    if (imgs.length > room) setError(`최대 ${MAX_IMAGES}장까지만 업로드 가능합니다.`);
+    const withPreview = await Promise.all(slice.map(async (f) => ({
+      file: f, name: f.name, size: f.size, preview: await fileToDataUrl(f),
+    })));
+    setImageFiles(prev => [...prev, ...withPreview]);
   };
 
-  const onDocPick = (e) => {
-    const arr = Array.from(e.target.files || []);
-    e.target.value = "";
-    acceptDocs(arr);
-  };
-  const onImagePick = (e) => {
-    const arr = Array.from(e.target.files || []);
-    e.target.value = "";
-    acceptImages(arr);
-  };
-
-  // 드래그 핸들러 — preventDefault 가 없으면 브라우저가 파일을 새 탭으로 여는 기본동작 발동.
-  const handleDocDragOver  = (e) => { e.preventDefault(); setIsDraggingDoc(true); };
-  const handleDocDragLeave = (e) => { e.preventDefault(); setIsDraggingDoc(false); };
-  const handleDocDrop      = (e) => {
-    e.preventDefault(); setIsDraggingDoc(false);
-    acceptDocs(Array.from(e.dataTransfer.files || []));
-  };
-  const handleImgDragOver  = (e) => { e.preventDefault(); setIsDraggingImg(true); };
-  const handleImgDragLeave = (e) => { e.preventDefault(); setIsDraggingImg(false); };
-  const handleImgDrop      = (e) => {
-    e.preventDefault(); setIsDraggingImg(false);
-    acceptImages(Array.from(e.dataTransfer.files || []));
-  };
-
+  const onDocPick = (e) => { const arr = Array.from(e.target.files || []); e.target.value = ""; acceptDocs(arr); };
+  const onImgPick = (e) => { const arr = Array.from(e.target.files || []); e.target.value = ""; acceptImages(arr); };
   const removeDoc = (i) => setDocFiles(prev => prev.filter((_, idx) => idx !== i));
   const removeImage = (i) => setImageFiles(prev => prev.filter((_, idx) => idx !== i));
 
-  const startAnalysis = async () => {
-    if (docFiles.length === 0 && imageFiles.length === 0) {
-      setError("문서나 이미지를 1개 이상 업로드해주세요.");
-      return;
-    }
+  // ─── Gemini 분석 ────────────────────────────────────────
+  const handleAnalyze = async () => {
     if (!GEMINI_API_KEY) { setError("Gemini API 키가 없습니다."); return; }
-    setError(""); setReport(null); setStep(2); setAnalysisPercent(0);
+    if (docFiles.length === 0 && !docText.trim() && imageFiles.length === 0) {
+      setError("문서·텍스트·이미지 중 최소 하나는 필요합니다."); return;
+    }
+    setError(""); setReport(null); setReportId(null);
+    setIsAnalyzing(true); setAnalysisStage("파일 준비 중…"); setAnalysisPercent(10);
+
     try {
-      // === Stage 1: 파일 준비 ===
-      setAnalysisStage("문서 텍스트 추출 중..."); setAnalysisPercent(10);
       const parts = [];
       const docSummaries = [];
+      // 문서
       for (const f of docFiles) {
         const ext = (f.name.split(".").pop() || "").toLowerCase();
         if (ext === "pdf") {
@@ -176,453 +175,538 @@ export default function BriefStudio() {
         } else {
           const text = await fileToText(f);
           parts.push({ text: `[문서: ${f.name}]\n${text.slice(0, 30000)}` });
-          docSummaries.push(`${f.name} (${(f.size/1024).toFixed(1)}KB, 텍스트 ${text.length}자)`);
+          docSummaries.push(`${f.name} (${text.length}자)`);
+        }
+      }
+      // 직접 입력 텍스트
+      if (docText.trim()) parts.push({ text: `[추가 메모]\n${docText.trim().slice(0, 30000)}` });
+
+      setAnalysisStage("이미지 인코딩 중…"); setAnalysisPercent(30);
+      const imgSummaries = [];
+      for (const it of imageFiles) {
+        const b64 = await fileToBase64(it.file);
+        parts.push({ inlineData: { mimeType: it.file.type || "image/jpeg", data: b64 } });
+        imgSummaries.push(`${it.name} (${(it.size/1024).toFixed(1)}KB)`);
+      }
+
+      const assignee = users.find(u => u.uid === assigneeUid);
+      const assigneeBlock = assignee
+        ? `담당자: ${assignee.displayName || assignee.email} (${assignee.email})`
+        : "담당자: 미지정";
+
+      const sysPrompt = `당신은 게임 디자인 브리프 분석 전문가입니다. 첨부된 문서와 레퍼런스 이미지를 종합 분석해 디자인 방향성을 도출하세요.
+
+[기본 설정]
+- 장르: ${GENRES.find(g => g.id === genre)?.label || genre}
+- 플랫폼: ${PLATFORMS.find(p => p.id === platform)?.label || platform}
+- ${assigneeBlock}
+
+[입력 파일]
+- 문서 ${docFiles.length}개: ${docSummaries.join(" / ") || "(없음)"}
+- 이미지 ${imageFiles.length}개: ${imgSummaries.join(" / ") || "(없음)"}
+
+반드시 아래 JSON 스키마로만 출력 (코드블록·설명 금지). 누락 필드 없게:
+{
+  "gameName": "게임명 (문서/이미지에서 추출 또는 추정)",
+  "projectName": "프로젝트명 (예: 신규 출시 배너, 시즌2 프로모션)",
+  "productionTypes": ["typography" 또는 "banner" 또는 "promotion" 또는 "brandweb" 중 해당하는 것들 (복수 가능)],
+  "directionSummary": "전체 디자인 방향 한국어 요약 (2~3문장)",
+  "keywords": ["핵심 키워드", ...총 3~5개],
+  "colorPalette": [{"hex":"#RRGGBB","name":"한국어 색상 이름","role":"primary|accent|background|text"}, ...4~6개],
+  "typography": {
+    "weight": "thin|light|regular|medium|bold|black",
+    "style": "serif|sans|display|script",
+    "mood": "한국어 분위기 키워드 2~3개",
+    "recommendations": "추천 폰트 또는 폰트 패밀리 (영문)"
+  }
+}`;
+
+      parts.unshift({ text: sysPrompt });
+
+      setAnalysisStage("Gemini 2.5 분석 중… (30~60초)"); setAnalysisPercent(60);
+
+      const body = {
+        contents: [{ role: "user", parts }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.7 },
+      };
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) },
+      );
+      if (!res.ok) throw new Error(`Gemini ${res.status}`);
+      const json = await res.json();
+      const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const parsed = parseGeminiJson(text);
+      if (!parsed) throw new Error("AI 응답을 해석할 수 없습니다.");
+
+      setAnalysisStage("저장 중…"); setAnalysisPercent(90);
+      // Firestore 저장
+      let savedId = null;
+      if (user) {
+        try {
+          const ref = await addDoc(collection(db, "briefHistory", user.uid, "reports"), {
+            ...parsed,
+            genre, platform,
+            assigneeUid: assignee?.uid || "",
+            assigneeName: assignee?.displayName || assignee?.email || "",
+            docFiles: docSummaries,
+            imageCount: imageFiles.length,
+            createdAt: serverTimestamp(),
+          });
+          savedId = ref.id;
+        } catch (e) {
+          console.warn("[BriefStudio] 저장 실패", e);
         }
       }
 
-      setAnalysisStage("이미지 인코딩 중..."); setAnalysisPercent(30);
-      const imageSummaries = [];
-      for (const f of imageFiles) {
-        const b64 = await fileToBase64(f);
-        const mime = f.type || "image/jpeg";
-        parts.push({ inlineData: { mimeType: mime, data: b64 } });
-        imageSummaries.push(`${f.name} (${(f.size/1024).toFixed(1)}KB)`);
-      }
-
-      // 담당자 정보
-      const assignee = users.find(u => u.uid === assigneeUid);
-      const assigneeBlock = assignee
-        ? `[담당자] ${assignee.displayName || assignee.email} / 등급: ${assignee.grade || "general"} / 이메일: ${assignee.email}`
-        : "[담당자] 미지정";
-
-      // === Stage 2: Gemini 호출 ===
-      setAnalysisStage("Gemini 2.5 Pro로 분석 중... (30~60초)"); setAnalysisPercent(55);
-      const sysPrompt = `당신은 게임 디자인 브리프 분석 전문가입니다. 첨부된 문서와 레퍼런스 이미지를 종합 분석해 디자인 방향성을 도출하세요.\n\n[기본 설정]\n- 장르: ${GENRES.find(g => g.id === genre)?.label || genre}\n- 플랫폼: ${PLATFORMS.find(p => p.id === platform)?.label || platform}\n- ${assigneeBlock}\n\n[입력 파일]\n- 문서 ${docFiles.length}개: ${docSummaries.join(" / ") || "(없음)"}\n- 이미지 ${imageFiles.length}개: ${imageSummaries.join(" / ") || "(없음)"}\n\n반드시 아래 JSON 스키마로만 출력 (코드블록·설명 금지). 누락 필드 없게:\n{\n  "directionSummary": "전체 디자인 방향 한국어 요약 (3~5문장)",\n  "keywords": [{"label": "한국어 키워드", "weight": 0.0~1.0}, ...총 5~7개],\n  "styleScores": { ${STYLE_KEYS.map(s => `"${s.id}": 0.0~1.0`).join(", ")} },\n  "colorPalette": [{"hex": "#RRGGBB", "name": "한국어 색상 이름", "role": "primary|accent|background|text"}, ...4~6개],\n  "typography": {\n    "weight": "thin|light|regular|medium|bold|black",\n    "style": "serif|sans|display|script",\n    "mood": "한국어 분위기 키워드 2~3개",\n    "recommendations": "추천 폰트 또는 폰트 패밀리 (영문)"\n  },\n  "assigneeMatch": {\n    "score": 0.0~1.0,\n    "reasoning": "담당자 성향과 이 방향이 맞는지 한국어 1~2문장"\n  },\n  "referenceSummary": "레퍼런스 이미지/문서에서 발견한 핵심 시각 패턴 한국어 요약 (2~3문장)",\n  "risks": ["주의해야 할 점 한국어 1~3개"]\n}`;
-
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(new Error("Gemini timeout 90s")), 90000);
-      const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: sysPrompt }, ...parts] }],
-            generationConfig: { responseMimeType: "application/json", temperature: 0.4 },
-          }),
-          signal: ctrl.signal,
-        },
-      );
-      clearTimeout(t);
-      if (!resp.ok) {
-        const txt = await resp.text().catch(() => "");
-        throw new Error(`Gemini ${resp.status}: ${txt.slice(0, 300)}`);
-      }
-      const data = await resp.json();
-      const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!txt) throw new Error("AI 응답이 비어있어요");
-      const parsed = JSON.parse(txt);
-
-      // === Stage 3: Firestore 저장 ===
-      setAnalysisStage("결과 저장 중..."); setAnalysisPercent(90);
-      const savedReport = {
-        ownerUid: user.uid,
-        ownerEmail: user.email || "",
-        genre, platform,
-        assigneeUid: assigneeUid || null,
-        assigneeName: assignee?.displayName || assignee?.email || null,
-        docNames: docFiles.map(f => f.name),
-        imageNames: imageFiles.map(f => f.name),
-        result: parsed,
-        createdAt: serverTimestamp(),
-        createdAtMs: Date.now(),
-      };
-      let savedId = null;
-      try {
-        const ref = await addDoc(collection(db, "briefHistory", user.uid, "reports"), savedReport);
-        savedId = ref.id;
-      } catch (e) {
-        console.warn("[BriefStudio] Firestore 저장 실패 (결과는 표시됨):", e);
-      }
-
-      setAnalysisPercent(100);
-      setReport({ ...savedReport, id: savedId, result: parsed });
-      setStep(3);
+      setReport(parsed);
+      setReportId(savedId);
+      setIncludeMotion(false);
+      setAnalysisPercent(100); setAnalysisStage("완료");
     } catch (e) {
-      console.error("[BriefStudio] 분석 실패", e);
-      setError(`분석 실패: ${e.message || e}`);
-      setStep(1);
+      setError(`분석 실패: ${e.message}`);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
-  const resetAll = () => {
-    setStep(1); setDocFiles([]); setImageFiles([]); setReport(null); setError("");
-    setAnalysisStage(""); setAnalysisPercent(0);
-  };
+  // ─── 작업 플로우 → 각 앱 ───────────────────────────────
+  const buildPayload = (target) => ({
+    source: "brief-studio",
+    target,
+    prompt: {
+      text: report?.directionSummary || "",
+      tags: report?.keywords || [],
+      style: report?.typography?.mood || "",
+    },
+    image: {
+      url: imageFiles[0]?.preview || "",
+      metadata: { count: imageFiles.length },
+    },
+    params: {
+      briefReportId: reportId,
+      gameName: report?.gameName || "",
+      projectName: report?.projectName || "",
+      productionTypes: report?.productionTypes || [],
+      colorPalette: report?.colorPalette || [],
+      typography: report?.typography || {},
+    },
+  });
+  const goToApp = (target) => { navigate(target, buildPayload(target)); };
 
-  const sendToApp = (targetId) => {
-    if (!report) return;
-    const r = report.result || {};
-    const text = [
-      r.directionSummary || "",
-      r.keywords?.length ? "키워드: " + r.keywords.map(k => k.label).join(", ") : "",
-      r.typography ? `타이포: ${r.typography.style} / ${r.typography.weight} / ${r.typography.mood}` : "",
-      r.colorPalette?.length ? "팔레트: " + r.colorPalette.map(c => `${c.name}(${c.hex})`).join(", ") : "",
-    ].filter(Boolean).join("\n\n");
-    const tags = (r.keywords || []).slice(0, 5).map(k => k.label);
-    navigate(targetId, {
-      source: "brief-studio",
-      target: targetId,
-      prompt: { text, tags, style: r.typography ? `${r.typography.style}-${r.typography.weight}` : "" },
-      image: { url: "", metadata: { palette: r.colorPalette, styleScores: r.styleScores } },
-      params: { briefReportId: report.id, genre, platform },
-    });
-  };
+  const hasInputs = docFiles.length > 0 || docText.trim() || imageFiles.length > 0;
+  const hasType = (t) => report?.productionTypes?.includes(t);
+  const isAppDisabled = (id) => !!APP_MAP[id]?.disabled;
 
   return (
-    <div className="h-full overflow-y-auto bg-[#0a0a0f] text-zinc-200" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
-      <div className="max-w-5xl mx-auto p-8">
-        {/* Header */}
-        <div className="flex items-end justify-between mb-8">
-          <div className="flex flex-col gap-2">
-            <p className="text-xs text-zinc-500">문서와 레퍼런스를 업로드하면 AI가 디자인 방향을 잡아드려요</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setShowHistory(v => !v)} className="px-3 py-2 text-xs rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600">
-              내 리포트 ({history.length})
-            </button>
-            {step > 1 && (
-              <button onClick={resetAll} className="px-3 py-2 text-xs rounded-lg border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 flex items-center gap-1.5">
-                <RefreshCw size={12}/> 새로 시작
-              </button>
+    <div
+      className="flex h-full overflow-hidden bg-[#0a0a0f] text-zinc-200"
+      style={{ fontFamily: "'Noto Sans KR', sans-serif", height: "calc(100vh - 52px)" }}
+    >
+      {/* PANEL 1 — 요청서 */}
+      <section className="flex-1 flex flex-col overflow-hidden border-r border-zinc-800">
+        <PanelHeader icon={<FileText size={14} />} title="요청서" subtitle="문서 / 텍스트 / 기본 설정" />
+        <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
+          {/* 문서 업로드 */}
+          <div>
+            <Label>요청서 문서 <span className="text-zinc-600 font-normal">(PDF / TXT / MD / JSON)</span></Label>
+            <label
+              onDragOver={(e) => { e.preventDefault(); setIsDraggingDoc(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setIsDraggingDoc(false); }}
+              onDrop={(e) => { e.preventDefault(); setIsDraggingDoc(false); acceptDocs(Array.from(e.dataTransfer.files || [])); }}
+              className={`relative block w-full py-6 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-center ${
+                isDraggingDoc ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-zinc-800 hover:border-zinc-700 bg-[#0c0c12]"
+              }`}
+            >
+              <Upload size={20} className="mx-auto mb-2 text-zinc-500" />
+              <div className="text-[11px] text-zinc-400">클릭하거나 드래그하여 업로드</div>
+              <input ref={docInputRef} type="file" accept=".pdf,.txt,.md,.json" multiple className="hidden" onChange={onDocPick} />
+            </label>
+            {docFiles.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {docFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 bg-white/5 border border-white/10 rounded-md text-[11px]">
+                    <FileText size={12} className="text-zinc-500 shrink-0" />
+                    <span className="flex-1 truncate text-zinc-300">{f.name}</span>
+                    <span className="text-[9px] text-zinc-500">{(f.size / 1024).toFixed(1)}KB</span>
+                    <button onClick={() => removeDoc(i)} className="text-zinc-500 hover:text-zinc-200 shrink-0"><X size={12} /></button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
-        </div>
 
-        {/* Step indicator */}
-        <div className="flex items-center gap-2 mb-8">
-          {[
-            { n: 1, label: "업로드" },
-            { n: 2, label: "분석 중" },
-            { n: 3, label: "결과" },
-          ].map((s, i) => (
-            <Fragment key={s.n}>
-              <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border ${step === s.n ? "bg-[#A29BFE]/20 border-[#A29BFE]/50 text-[#A29BFE] font-bold" : step > s.n ? "bg-[#A29BFE]/10 border-[#A29BFE]/30 text-[#A29BFE]" : "border-zinc-800 text-zinc-500"}`}>
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${step >= s.n ? "bg-[#A29BFE] text-zinc-900" : "bg-zinc-800 text-zinc-500"}`}>
-                  {step > s.n ? <Check size={10}/> : s.n}
-                </span>
-                {s.label}
-              </div>
-              {i < 2 && <div className={`flex-1 h-px ${step > s.n ? "bg-[#A29BFE]/30" : "bg-zinc-800"}`}/>}
-            </Fragment>
-          ))}
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 rounded-lg border border-red-900/50 bg-red-950/30 text-red-300 text-xs flex items-start gap-2">
-            <AlertCircle size={14} className="shrink-0 mt-0.5"/>
-            <span>{error}</span>
+          {/* 직접 입력 텍스트 */}
+          <div>
+            <Label>또는 직접 입력</Label>
+            <textarea
+              value={docText}
+              onChange={(e) => setDocText(e.target.value)}
+              placeholder="요청 내용을 텍스트로 입력하세요…"
+              rows={5}
+              className="w-full bg-[#0c0c12] border border-zinc-800 rounded-lg px-3 py-2.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-[#A29BFE]/50 resize-y leading-relaxed"
+              style={{ fontFamily: "inherit" }}
+            />
           </div>
-        )}
 
-        {showHistory && (
-          <div className="mb-6 p-4 rounded-xl border border-zinc-800 bg-zinc-950/40">
-            <div className="text-xs font-bold text-zinc-300 mb-3">최근 리포트</div>
-            {history.length === 0 ? (
-              <div className="text-xs text-zinc-500 py-4 text-center">아직 저장된 리포트가 없어요</div>
+          {/* 기본 설정 */}
+          <div className="grid grid-cols-2 gap-3">
+            <SelectField label="장르" value={genre} onChange={setGenre} options={GENRES} />
+            <SelectField label="플랫폼" value={platform} onChange={setPlatform} options={PLATFORMS} />
+          </div>
+
+          <div>
+            <Label><Users size={11} className="inline mr-1" />담당자</Label>
+            {usersError ? (
+              <div className="text-[10px] text-amber-400 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded">{usersError}</div>
             ) : (
-              <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                {history.map(h => (
-                  <button key={h.id} onClick={() => { setReport(h); setStep(3); setShowHistory(false); }} className="w-full text-left p-2.5 rounded-lg bg-zinc-900/50 hover:bg-zinc-800/70 border border-zinc-800 transition-colors">
-                    <div className="text-xs text-zinc-200 font-medium truncate">{h.result?.directionSummary?.slice(0, 80) || "(요약 없음)"}</div>
-                    <div className="text-[10px] text-zinc-500 mt-1 flex items-center gap-2">
-                      <span>{GENRES.find(g => g.id === h.genre)?.label}</span>
-                      <span>·</span>
-                      <span>{PLATFORMS.find(p => p.id === h.platform)?.label}</span>
-                      <span>·</span>
-                      <span>{h.createdAtMs ? new Date(h.createdAtMs).toLocaleString("ko-KR") : "-"}</span>
-                    </div>
-                  </button>
+              <select value={assigneeUid} onChange={(e) => setAssigneeUid(e.target.value)}
+                className="w-full bg-[#0c0c12] border border-zinc-800 rounded-lg px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[#A29BFE]/50">
+                <option value="">미지정</option>
+                {users.map(u => (
+                  <option key={u.uid} value={u.uid}>{u.displayName || u.email}</option>
                 ))}
-              </div>
+              </select>
             )}
           </div>
-        )}
 
-        {/* === Step 1: Upload === */}
-        {step === 1 && (
-          <div className="space-y-5">
-            {/* 문서 */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-xs font-bold text-zinc-300 flex items-center gap-2"><FileText size={14}/> 문서</div>
-                <span className="text-[10px] text-zinc-500">{SUPPORTED_DOC_HINT}</span>
-              </div>
-              <button
-                onClick={() => docInputRef.current?.click()}
-                onDragOver={handleDocDragOver}
-                onDragLeave={handleDocDragLeave}
-                onDrop={handleDocDrop}
-                className={`w-full py-6 rounded-lg border border-dashed transition-colors text-xs flex flex-col items-center gap-2 ${
-                  isDraggingDoc
-                    ? 'border-[#A29BFE] bg-[#A29BFE]/10 text-[#A29BFE]'
-                    : 'border-zinc-700 hover:border-[#A29BFE]/50 hover:bg-[#A29BFE]/5 text-zinc-400'
-                }`}
-              >
-                <Upload size={20}/>
-                <span>{isDraggingDoc ? '여기에 놓으세요' : '클릭하거나 드래그해서 문서 추가'}</span>
-              </button>
-              <input ref={docInputRef} type="file" multiple accept=".pdf,.txt,.md,.json" onChange={onDocPick} className="hidden"/>
-              {docFiles.length > 0 && (
-                <div className="mt-3 space-y-1.5">
-                  {docFiles.map((f, i) => (
-                    <div key={i} className="flex items-center justify-between p-2 rounded bg-zinc-900/60 border border-zinc-800 text-xs">
-                      <span className="truncate text-zinc-300"><FileText size={11} className="inline mr-1.5 text-zinc-500"/>{f.name} <span className="text-zinc-600">{(f.size/1024).toFixed(1)}KB</span></span>
-                      <button onClick={() => removeDoc(i)} className="text-zinc-500 hover:text-red-400"><X size={12}/></button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 이미지 */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-xs font-bold text-zinc-300 flex items-center gap-2"><ImageIcon size={14}/> 레퍼런스 / 작업물 / 경쟁사</div>
-                <span className="text-[10px] text-zinc-500">JPG / PNG / WEBP</span>
-              </div>
-              <button
-                onClick={() => imgInputRef.current?.click()}
-                onDragOver={handleImgDragOver}
-                onDragLeave={handleImgDragLeave}
-                onDrop={handleImgDrop}
-                className={`w-full py-6 rounded-lg border border-dashed transition-colors text-xs flex flex-col items-center gap-2 ${
-                  isDraggingImg
-                    ? 'border-[#A29BFE] bg-[#A29BFE]/10 text-[#A29BFE]'
-                    : 'border-zinc-700 hover:border-[#A29BFE]/50 hover:bg-[#A29BFE]/5 text-zinc-400'
-                }`}
-              >
-                <Upload size={20}/>
-                <span>{isDraggingImg ? '여기에 놓으세요' : '클릭하거나 드래그해서 이미지 추가'}</span>
-              </button>
-              <input ref={imgInputRef} type="file" multiple accept="image/*" onChange={onImagePick} className="hidden"/>
-              {imageFiles.length > 0 && (
-                <div className="mt-3 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                  {imageFiles.map((f, i) => (
-                    <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-zinc-800 bg-zinc-900">
-                      <img src={URL.createObjectURL(f)} alt={f.name} className="w-full h-full object-cover"/>
-                      <button onClick={() => removeImage(i)} className="absolute top-1 right-1 p-1 bg-black/70 rounded text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <X size={11}/>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* 기본 설정 */}
-            <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">장르</label>
-                <select value={genre} onChange={e => setGenre(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:border-[#A29BFE] outline-none">
-                  {GENRES.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5">플랫폼</label>
-                <select value={platform} onChange={e => setPlatform(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:border-[#A29BFE] outline-none">
-                  {PLATFORMS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider block mb-1.5 flex items-center gap-1.5"><Users size={11}/> 담당자</label>
-                {usersError ? (
-                  <div className="text-[10px] text-zinc-600 px-3 py-2 bg-zinc-900/40 border border-zinc-800 rounded-lg">{usersError}</div>
-                ) : (
-                  <select value={assigneeUid} onChange={e => setAssigneeUid(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:border-[#A29BFE] outline-none">
-                    <option value="">미지정</option>
-                    {users.map(u => <option key={u.uid} value={u.uid}>{u.displayName || u.email}</option>)}
-                  </select>
-                )}
-              </div>
-            </div>
-
-            {/* Start button */}
-            <div className="flex justify-end">
-              <button onClick={startAnalysis} disabled={docFiles.length === 0 && imageFiles.length === 0} className="px-6 py-3 rounded-lg bg-[#A29BFE] hover:bg-[#8b82f5] text-zinc-900 font-bold text-sm flex items-center gap-2 shadow-lg disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
-                <Sparkles size={14}/> 분석 시작
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* === Step 2: Analyzing === */}
-        {step === 2 && (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-12 text-center">
-            <Loader2 className="w-12 h-12 mx-auto text-[#A29BFE] animate-spin mb-6"/>
-            <div className="text-base font-bold text-zinc-200 mb-2">{analysisStage}</div>
-            <div className="text-xs text-zinc-500 mb-6">잠시만 기다려주세요. gemini-2.5-pro 모델은 정확도가 높은 만큼 응답이 다소 느려요.</div>
-            <div className="max-w-md mx-auto">
-              <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
-                <div className="h-full bg-[#A29BFE] transition-all duration-300" style={{ width: `${analysisPercent}%` }}/>
-              </div>
-              <div className="mt-2 text-[10px] text-zinc-500 text-right">{analysisPercent}%</div>
-            </div>
-          </div>
-        )}
-
-        {/* === Step 3: Result === */}
-        {step === 3 && report && (
-          <ReportView report={report} onSendToApp={sendToApp}/>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ReportView({ report, onSendToApp }) {
-  const r = report.result || {};
-  const styleScores = r.styleScores || {};
-  const palette = Array.isArray(r.colorPalette) ? r.colorPalette : [];
-  const keywords = Array.isArray(r.keywords) ? r.keywords : [];
-
-  return (
-    <div className="space-y-5">
-      {/* Direction Summary */}
-      <div className="rounded-xl border border-[#A29BFE]/30 bg-[#A29BFE]/5 p-5">
-        <div className="text-[10px] font-bold tracking-wider text-[#A29BFE] uppercase mb-2">디자인 방향 요약</div>
-        <p className="text-sm text-zinc-200 leading-relaxed">{r.directionSummary || "-"}</p>
-      </div>
-
-      {/* Keywords */}
-      <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-        <div className="text-xs font-bold text-zinc-300 mb-3 flex items-center gap-2"><Sparkles size={14}/> 핵심 키워드</div>
-        <div className="flex flex-wrap gap-2">
-          {keywords.length === 0 ? <span className="text-xs text-zinc-500">-</span> : keywords.map((k, i) => (
-            <div key={i} className="px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center gap-2">
-              <span className="text-sm font-bold text-zinc-100">{k.label}</span>
-              <span className="text-[10px] text-[#A29BFE] font-mono">{Math.round((k.weight || 0) * 100)}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Style Match */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-          <div className="text-xs font-bold text-zinc-300 mb-3">스타일 매칭</div>
-          <div className="space-y-2.5">
-            {STYLE_KEYS.map(s => {
-              const v = Math.max(0, Math.min(1, Number(styleScores[s.id]) || 0));
-              return (
-                <div key={s.id}>
-                  <div className="flex items-center justify-between text-[11px] mb-1">
-                    <span className="text-zinc-400">{s.label}</span>
-                    <span className="font-mono text-zinc-500">{Math.round(v * 100)}%</span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-zinc-900 overflow-hidden">
-                    <div className="h-full transition-all" style={{ width: `${v * 100}%`, background: s.color }}/>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Color Palette */}
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-          <div className="text-xs font-bold text-zinc-300 mb-3 flex items-center gap-2"><Palette size={14}/> 컬러 팔레트</div>
-          {palette.length === 0 ? <span className="text-xs text-zinc-500">-</span> : (
-            <div className="space-y-2">
-              <div className="flex rounded-lg overflow-hidden border border-zinc-800 h-12">
-                {palette.map((c, i) => (
-                  <div key={i} className="flex-1" style={{ background: c.hex }} title={`${c.name} ${c.hex}`}/>
-                ))}
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {palette.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2 p-2 rounded bg-zinc-900/60 border border-zinc-800">
-                    <div className="w-6 h-6 rounded shrink-0" style={{ background: c.hex }}/>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-medium text-zinc-200 truncate">{c.name}</div>
-                      <div className="text-[9px] font-mono text-zinc-500">{c.hex} {c.role && `· ${c.role}`}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+          {error && (
+            <div className="flex items-start gap-2 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[11px] text-rose-300">
+              <AlertCircle size={12} className="shrink-0 mt-0.5" /> <span>{error}</span>
             </div>
           )}
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Typography */}
-        {r.typography && (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-            <div className="text-xs font-bold text-zinc-300 mb-3 flex items-center gap-2"><Type size={14}/> 타이포그래피 방향</div>
-            <div className="space-y-2 text-xs">
-              <Row label="굵기"   value={r.typography.weight}/>
-              <Row label="스타일" value={r.typography.style}/>
-              <Row label="분위기" value={r.typography.mood}/>
-              <Row label="추천"   value={r.typography.recommendations}/>
+        {/* 분석 시작 */}
+        <div className="border-t border-zinc-800 bg-[#0c0c12] p-3 shrink-0">
+          <button
+            onClick={handleAnalyze}
+            disabled={!hasInputs || isAnalyzing}
+            className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg text-[12px] font-bold transition-colors ${
+              hasInputs && !isAnalyzing
+                ? "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
+                : "bg-white/5 text-zinc-600 cursor-not-allowed"
+            }`}
+          >
+            {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            {isAnalyzing ? "분석 중…" : "분석 시작"}
+          </button>
+        </div>
+      </section>
+
+      {/* PANEL 2 — 레퍼런스 */}
+      <section className="flex-1 flex flex-col overflow-hidden border-r border-zinc-800">
+        <PanelHeader
+          icon={<ImageIcon size={14} />}
+          title="레퍼런스"
+          subtitle={`이미지 ${imageFiles.length} / ${MAX_IMAGES}장`}
+        />
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+          <label
+            onDragOver={(e) => { e.preventDefault(); setIsDraggingImg(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setIsDraggingImg(false); }}
+            onDrop={(e) => { e.preventDefault(); setIsDraggingImg(false); acceptImages(Array.from(e.dataTransfer.files || [])); }}
+            className={`relative block w-full py-10 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-center ${
+              isDraggingImg ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-zinc-800 hover:border-zinc-700 bg-[#0c0c12]"
+            } ${imageFiles.length >= MAX_IMAGES ? "opacity-50 cursor-not-allowed" : ""}`}
+          >
+            <Upload size={24} className="mx-auto mb-2 text-zinc-500" />
+            <div className="text-[12px] text-zinc-300 font-medium">이미지 드래그 앤 드롭</div>
+            <div className="text-[10px] text-zinc-500 mt-1">최대 {MAX_IMAGES}장</div>
+            <input ref={imgInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onImgPick}
+              disabled={imageFiles.length >= MAX_IMAGES} />
+          </label>
+
+          {imageFiles.length > 0 && (
+            <div className="grid grid-cols-3 gap-2">
+              {imageFiles.map((it, i) => (
+                <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-zinc-800 bg-[#0c0c12]">
+                  <img src={it.preview} alt={it.name} className="w-full h-full object-cover" />
+                  <button onClick={() => removeImage(i)}
+                    className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-rose-500 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                    <X size={11} />
+                  </button>
+                  <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent text-[9px] text-zinc-300 truncate">
+                    {it.name}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      </section>
 
-        {/* Assignee Match */}
-        {r.assigneeMatch && (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-            <div className="text-xs font-bold text-zinc-300 mb-3 flex items-center gap-2"><Users size={14}/> 담당자 컨펌 예상도</div>
-            <div className="flex items-center gap-3 mb-3">
-              <div className="text-3xl font-black text-[#A29BFE] font-mono">{Math.round((r.assigneeMatch.score || 0) * 100)}%</div>
-              <div className="flex-1 h-1.5 rounded-full bg-zinc-900 overflow-hidden">
-                <div className="h-full bg-[#A29BFE] transition-all" style={{ width: `${(r.assigneeMatch.score || 0) * 100}%` }}/>
+      {/* PANEL 3 — AI 분석 결과 */}
+      <section className="flex-1 flex flex-col overflow-hidden">
+        <PanelHeader icon={<Sparkles size={14} />} title="AI 분석 결과" subtitle={report ? "완료" : isAnalyzing ? "분석 중" : "대기"} />
+        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+          {!report && !isAnalyzing && (
+            <div className="text-center py-16 text-zinc-500">
+              <Sparkles size={32} className="mx-auto mb-3 text-zinc-700" />
+              <div className="text-[12px] leading-relaxed">
+                좌측에 요청서와 레퍼런스를 등록하고<br />
+                <span className="text-[#A29BFE]">[분석 시작]</span> 을 눌러주세요.
               </div>
             </div>
-            <p className="text-[11px] text-zinc-400 leading-relaxed">{r.assigneeMatch.reasoning || "-"}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Reference summary + Risks */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {r.referenceSummary && (
-          <div className="rounded-xl border border-zinc-800 bg-zinc-950/40 p-5">
-            <div className="text-xs font-bold text-zinc-300 mb-3">레퍼런스 분석 요약</div>
-            <p className="text-[11px] text-zinc-400 leading-relaxed">{r.referenceSummary}</p>
-          </div>
-        )}
-        {Array.isArray(r.risks) && r.risks.length > 0 && (
-          <div className="rounded-xl border border-amber-900/30 bg-amber-950/20 p-5">
-            <div className="text-xs font-bold text-amber-300 mb-3 flex items-center gap-2"><AlertCircle size={14}/> 주의 사항</div>
-            <ul className="space-y-1.5 text-[11px] text-amber-100/80 leading-relaxed list-disc pl-4">
-              {r.risks.map((x, i) => <li key={i}>{x}</li>)}
-            </ul>
-          </div>
-        )}
-      </div>
-
-      {/* Send to apps */}
-      <div className="rounded-xl border border-[#A29BFE]/30 bg-[#A29BFE]/5 p-5">
-        <div className="text-xs font-bold text-[#A29BFE] mb-3">이 브리프로 이어서 작업</div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {SEND_TARGETS.map(t => (
-            <button key={t.id} onClick={() => onSendToApp(t.id)} className="flex items-center justify-between gap-2 px-3 py-2.5 bg-zinc-900/60 hover:bg-zinc-800 border border-zinc-800 hover:border-[#A29BFE]/40 rounded-lg text-[11px] font-medium text-zinc-300 hover:text-white transition-colors text-left">
-              <span className="flex items-center gap-2"><span style={{color: APP_MAP[t.id]?.color}}>{t.icon}</span> {t.label}</span>
-              <ChevronRight size={12} className="text-zinc-600"/>
-            </button>
-          ))}
+          )}
+          {isAnalyzing && (
+            <div className="py-16 px-4">
+              <div className="flex flex-col items-center gap-3 mb-6">
+                <Loader2 size={32} className="animate-spin" style={{ color: POINT }} />
+                <div className="text-[12px] text-zinc-300 font-medium">{analysisStage}</div>
+              </div>
+              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-full transition-all duration-500" style={{ width: `${analysisPercent}%`, background: POINT }} />
+              </div>
+              <div className="text-[10px] text-zinc-600 mt-2 text-center">{analysisPercent}%</div>
+            </div>
+          )}
+          {report && (
+            <ResultView
+              report={report}
+              imageFiles={imageFiles}
+              includeMotion={includeMotion}
+              setIncludeMotion={setIncludeMotion}
+              goToApp={goToApp}
+              isAppDisabled={isAppDisabled}
+              hasType={hasType}
+            />
+          )}
         </div>
+      </section>
+    </div>
+  );
+}
+
+// ─── 공용 UI 컴포넌트 ────────────────────────────────────
+function PanelHeader({ icon, title, subtitle }) {
+  return (
+    <header className="h-12 flex items-center px-5 border-b border-zinc-800 bg-[#0c0c12] shrink-0">
+      <div className="flex items-center gap-2 text-[12px] flex-1">
+        <span className="text-[#A29BFE]">{icon}</span>
+        <span className="font-bold text-zinc-200">{title}</span>
+        {subtitle && <span className="text-zinc-600">· {subtitle}</span>}
+      </div>
+    </header>
+  );
+}
+function Label({ children }) {
+  return <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">{children}</div>;
+}
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <select value={value} onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-[#0c0c12] border border-zinc-800 rounded-lg px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[#A29BFE]/50">
+        {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+// ─── 분석 결과 뷰 ────────────────────────────────────────
+function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToApp, isAppDisabled, hasType }) {
+  return (
+    <div className="space-y-6">
+      {/* 자동 분석 */}
+      <section>
+        <SectionTitle>자동 분석 결과</SectionTitle>
+        <div className="space-y-2 mb-3">
+          <KV label="게임명" value={report.gameName} />
+          <KV label="프로젝트" value={report.projectName} />
+        </div>
+        <div className="text-[10px] font-bold text-zinc-500 mb-2">제작 종류</div>
+        <div className="flex flex-wrap gap-1.5">
+          {(report.productionTypes || []).map(t => {
+            const m = PRODUCTION_TYPE_META[t]; if (!m) return null;
+            return (
+              <span key={t} className="px-2.5 py-1 rounded-md text-[10px] font-bold border"
+                style={{ background: `${m.color}1A`, color: m.color, borderColor: `${m.color}55` }}>
+                {m.label}
+              </span>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 컨셉 제안 */}
+      <section>
+        <SectionTitle>AI 컨셉 제안</SectionTitle>
+        {report.directionSummary && (
+          <div className="bg-[#A29BFE]/5 border border-[#A29BFE]/20 rounded-lg p-3 mb-3">
+            <div className="text-[11px] leading-relaxed text-zinc-200 whitespace-pre-wrap">{report.directionSummary}</div>
+          </div>
+        )}
+        {Array.isArray(report.keywords) && report.keywords.length > 0 && (
+          <div className="mb-3">
+            <div className="text-[10px] font-bold text-zinc-500 mb-1.5">핵심 키워드</div>
+            <div className="flex flex-wrap gap-1.5">
+              {report.keywords.map((k, i) => (
+                <span key={i} className="px-2.5 py-1 bg-white/5 border border-white/10 rounded-md text-[10px] text-zinc-300">#{k}</span>
+              ))}
+            </div>
+          </div>
+        )}
+        {Array.isArray(report.colorPalette) && report.colorPalette.length > 0 && (
+          <div className="mb-3">
+            <div className="text-[10px] font-bold text-zinc-500 mb-1.5 flex items-center gap-1.5">
+              <Palette size={11} /> 컬러 팔레트
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {report.colorPalette.map((c, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-[#0c0c12] border border-zinc-800 rounded-md">
+                  <span className="w-4 h-4 rounded border border-white/10 shrink-0" style={{ background: c.hex }} />
+                  <span className="text-[9px] text-zinc-400 font-mono">{c.hex}</span>
+                  {c.name && <span className="text-[9px] text-zinc-500">· {c.name}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {report.typography && (
+          <div>
+            <div className="text-[10px] font-bold text-zinc-500 mb-1.5">타이포 방향</div>
+            <div className="bg-[#0c0c12] border border-zinc-800 rounded-lg p-2.5 space-y-1">
+              <KV small label="weight" value={report.typography.weight} />
+              <KV small label="style" value={report.typography.style} />
+              <KV small label="mood" value={report.typography.mood} />
+              <KV small label="추천" value={report.typography.recommendations} />
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* 작업 플로우 */}
+      {(hasType("typography") || hasType("banner") || hasType("promotion") || hasType("brandweb")) && (
+        <section>
+          <SectionTitle>작업 플로우</SectionTitle>
+
+          {/* 타이포 워크플로우: Sovereign → Render → Motion(선택) */}
+          {hasType("typography") && (
+            <div className="space-y-2 mb-3">
+              <WorkflowStep n={1} appId="typecore-sovereign" goTo={goToApp} disabled={isAppDisabled("typecore-sovereign")} />
+              <WorkflowArrow />
+              <WorkflowStep n={2} appId="render-matrix" goTo={goToApp} disabled={isAppDisabled("render-matrix")} />
+              <WorkflowArrow dim={!includeMotion} />
+              <WorkflowStep
+                n={3}
+                appId="motion-matrix"
+                goTo={goToApp}
+                disabled={isAppDisabled("motion-matrix") || !includeMotion}
+                optional
+                onToggle={() => setIncludeMotion(v => !v)}
+                included={includeMotion}
+              />
+            </div>
+          )}
+
+          {/* 단일 앱 이동 */}
+          <div className="space-y-2">
+            {hasType("banner") &&    <DirectStep appId="banner-codex"       goTo={goToApp} disabled={isAppDisabled("banner-codex")} />}
+            {hasType("promotion") && <DirectStep appId="promotion-archive"  goTo={goToApp} disabled={isAppDisabled("promotion-archive")} />}
+            {hasType("brandweb") &&  <DirectStep appId="brand-web-review"   goTo={goToApp} disabled={isAppDisabled("brand-web-review")} />}
+          </div>
+        </section>
+      )}
+
+      {!imageFiles.length && (
+        <div className="text-[10px] text-zinc-600 px-1">
+          <AlertCircle size={11} className="inline mr-1" />
+          레퍼런스 이미지가 없으면 다음 앱에 전달되는 image 가 비어있습니다.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{children}</div>;
+}
+function KV({ label, value, small }) {
+  if (!value) return null;
+  return (
+    <div className={`flex items-start gap-2 ${small ? "text-[10px]" : "text-[11px]"}`}>
+      <div className={`${small ? "w-14" : "w-16"} shrink-0 text-zinc-600`}>{label}</div>
+      <div className="flex-1 text-zinc-200 leading-relaxed break-words">{value}</div>
+    </div>
+  );
+}
+
+function WorkflowArrow({ dim }) {
+  return (
+    <div className={`flex justify-center ${dim ? "opacity-30" : ""}`}>
+      <ChevronRight size={14} className="text-zinc-600 rotate-90" />
+    </div>
+  );
+}
+
+function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }) {
+  const m = FLOW_APPS[appId] || {};
+  return (
+    <div className={`bg-[#0c0c12] border rounded-lg p-3 ${disabled && !optional ? "border-zinc-800 opacity-50" : "border-zinc-800"}`}>
+      <div className="flex items-center gap-2.5">
+        <div className="w-7 h-7 flex items-center justify-center rounded-md text-[#0a0a0f]" style={{ background: m.color }}>
+          {m.icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-mono text-zinc-500">STEP {n}</span>
+            <span className="text-[12px] font-bold text-zinc-200">{m.label}</span>
+            {optional && (
+              <span className="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 uppercase">선택</span>
+            )}
+          </div>
+          <div className="text-[10px] text-zinc-500">{m.desc}</div>
+        </div>
+        {optional ? (
+          <button onClick={onToggle}
+            className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-colors ${
+              included
+                ? "bg-[#A29BFE]/15 border-[#A29BFE]/40 text-[#cfc8ff]"
+                : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+            }`}>
+            {included ? <><Check size={10} className="inline mr-0.5" />포함</> : "포함하기"}
+          </button>
+        ) : null}
+        <button
+          onClick={() => goTo(appId)}
+          disabled={disabled}
+          className={`px-2.5 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
+            disabled
+              ? "bg-white/5 text-zinc-600 cursor-not-allowed"
+              : "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
+          }`}
+        >
+          {disabled ? "준비중" : <>바로 이동 <ArrowRight size={11} /></>}
+        </button>
       </div>
     </div>
   );
 }
 
-function Row({ label, value }) {
+function DirectStep({ appId, goTo, disabled }) {
+  const m = FLOW_APPS[appId] || {};
   return (
-    <div className="flex items-start gap-3">
-      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider w-14 shrink-0 pt-0.5">{label}</span>
-      <span className="text-zinc-200 flex-1">{value || "-"}</span>
+    <div className="bg-[#0c0c12] border border-zinc-800 rounded-lg p-3 flex items-center gap-2.5">
+      <div className="w-7 h-7 flex items-center justify-center rounded-md text-[#0a0a0f]" style={{ background: m.color }}>
+        {m.icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[12px] font-bold text-zinc-200">{m.label}</div>
+        <div className="text-[10px] text-zinc-500">{m.desc}</div>
+      </div>
+      <button
+        onClick={() => goTo(appId)}
+        disabled={disabled}
+        className={`px-3 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
+          disabled
+            ? "bg-white/5 text-zinc-600 cursor-not-allowed"
+            : "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
+        }`}
+      >
+        {disabled ? "준비중" : <>이동 <ArrowRight size={11} /></>}
+      </button>
     </div>
   );
 }

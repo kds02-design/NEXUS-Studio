@@ -1,7 +1,7 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   X, Copy, Check, Plus, Loader2, Sparkles, Image as ImageIcon,
-  ChevronLeft, ChevronRight, Film, Star,
+  ChevronLeft, ChevronRight, Film, Star, Camera, RotateCcw,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { isVideoFile, VIDEO_MAX_BYTES, VIDEO_ACCEPT } from "../../../lib/storage";
@@ -38,6 +38,10 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
   const [copied, setCopied] = useState(false);
   const [_isDragImg, setIsDragImg] = useState(false);
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
+  // 사용자가 영상에서 직접 캡처한 프레임(dataURL 또는 이미 업로드된 URL).
+  // null 이면 Cloudinary 자동 썸네일을 사용. 영상 제거 시 초기화.
+  const [customPoster, setCustomPoster] = useState(initialData?.videoPoster || null);
+  const videoEditRef = useRef(null);
 
   const videoPreviews = useMemo(() => {
     return (data.videos || []).map(v => (v instanceof File) ? URL.createObjectURL(v) : v);
@@ -67,7 +71,32 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
       next.splice(idx, 1);
       return { ...prev, videos: next };
     });
+    setCustomPoster(null);
   };
+
+  // 현재 video 의 currentTime 프레임을 캔버스로 그려 dataURL 추출.
+  // blob: URL (새 업로드)은 CORS 문제 없음. 이미 업로드된 Cloudinary URL 도 보통 통과되지만
+  // 실패 시 toDataURL 이 SecurityError 던짐 → 안내 토스트.
+  const captureCurrentFrame = () => {
+    const video = videoEditRef.current;
+    if (!video) { showToast?.("영상이 아직 준비되지 않았어요.", "error"); return; }
+    if (!video.videoWidth) { showToast?.("영상이 로드되지 않았어요. 잠시 후 다시 시도하세요.", "error"); return; }
+    try {
+      const w = video.videoWidth;
+      const h = video.videoHeight;
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      setCustomPoster(dataUrl);
+      showToast?.(`프레임 캡처 완료 (${video.currentTime.toFixed(1)}초)`);
+    } catch (e) {
+      console.error("[Frame capture]", e);
+      showToast?.("프레임 캡처 실패 — CORS 차단 가능성 (저장 후 재시도)", "error");
+    }
+  };
+  const clearCustomPoster = () => { setCustomPoster(null); showToast?.("자동 썸네일로 복원"); };
 
   const handleTabChange = (idx) => { setMainIdx(idx); setData(p => ({ ...p, content: p.stepPrompts?.[idx] || '' })); };
 
@@ -174,13 +203,45 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
                 </label>
               ) : (
                 <div className="relative w-full max-w-xl">
-                  <video src={videoPreviews[0]} controls playsInline preload="metadata" className="w-full bg-black rounded-lg border border-white/10" />
+                  <video ref={videoEditRef} src={videoPreviews[0]} controls playsInline preload="metadata" crossOrigin="anonymous"
+                    className="w-full bg-black rounded-lg border border-white/10" />
                   <button onClick={() => handleRemoveVideo(0)} className="absolute -top-2 -right-2 p-2 bg-red-500/90 hover:bg-red-500 text-white rounded-full shadow-lg" title="영상 제거"><X size={14} /></button>
                   {data.videos[0] instanceof File && (
                     <div className="mt-2 text-[10px] text-zinc-500 text-center font-mono">
                       {data.videos[0].name} · {(data.videos[0].size / 1024 / 1024).toFixed(1)}MB
                     </div>
                   )}
+
+                  {/* 프레임 선택 — 재생 위치를 잡고 "이 프레임 사용" 클릭. 첫 프레임이 검은 영상의 해결책. */}
+                  <div className="mt-3 p-3 rounded-lg border border-white/10 bg-black/40">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">썸네일 프레임</div>
+                      <button onClick={captureCurrentFrame}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[10px] font-bold border bg-[#C8A969]/15 border-[#C8A969]/40 text-[#C8A969] hover:bg-[#C8A969]/25 transition-colors">
+                        <Camera size={11} /> 현재 프레임 사용
+                      </button>
+                    </div>
+                    {customPoster ? (
+                      <div className="flex items-center gap-3">
+                        <img src={customPoster} alt="custom poster"
+                          className="w-28 h-16 rounded border border-[#C8A969]/40 object-cover bg-black" />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] text-[#C8A969] font-bold">사용자 지정 프레임</div>
+                          <div className="text-[9px] text-zinc-500 mt-0.5">저장 시 Cloudinary에 업로드되어 포스터로 사용됩니다.</div>
+                        </div>
+                        <button onClick={clearCustomPoster}
+                          className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10px] text-zinc-400 border border-white/10 hover:bg-white/5 shrink-0"
+                          title="자동 썸네일로 복원">
+                          <RotateCcw size={10} /> 기본값
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-zinc-500 leading-relaxed">
+                        영상을 재생하다가 원하는 시점에서 <span className="text-zinc-300 font-bold">현재 프레임 사용</span> 버튼을 누르세요.
+                        선택하지 않으면 Cloudinary 자동 썸네일(첫 프레임 부근)이 사용됩니다.
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -249,7 +310,9 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
               <input value={data.title || ''} onChange={e => setData({ ...data, title: e.target.value })} placeholder="제목을 입력하세요"
                 className="flex-1 bg-transparent text-base font-bold text-zinc-200 outline-none placeholder:text-zinc-600 border-none" />
               <button onClick={runAiAnalyze}
-                disabled={isAiAnalyzing || (!data.images?.length && !(data.type === 'video' && data.videos?.[0]))}
+                // 어떤 미디어든 있으면 분석 가능. runAiAnalyze 가 video/image 모드를 자동 판정함.
+                // (이전 조건은 data.type === 'video' 를 강요해서 영상-only 케이스에서 버튼이 비활성화되는 버그가 있었음.)
+                disabled={isAiAnalyzing || (!data.images?.length && !data.videos?.[0])}
                 className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition-colors bg-violet-500/10 border-violet-500/30 text-violet-300 hover:bg-violet-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                 title="현재 미디어를 Gemini 2.5 Flash로 분석해서 제목·태그·키워드·설명을 자동 입력"
               >
@@ -323,7 +386,7 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
           </div>
           <div className="p-5 border-t border-white/5 flex justify-end gap-2">
             <button onClick={onClose} className="px-4 py-2 text-xs border border-white/10 text-zinc-400 rounded-lg hover:bg-white/5">취소</button>
-            <button onClick={() => { if (!data.title) return showToast('제목을 입력해주세요.', 'error'); onSave(data); }}
+            <button onClick={() => { if (!data.title) return showToast('제목을 입력해주세요.', 'error'); onSave({ ...data, videoPoster: customPoster || '' }); }}
               disabled={isSaving} className="px-6 py-2 text-xs font-bold bg-[#C8A969] text-black rounded-lg hover:bg-[#A88949] disabled:opacity-50">
               {isSaving ? '저장 중...' : '저장'}
             </button>

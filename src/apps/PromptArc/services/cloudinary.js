@@ -108,6 +108,17 @@ export const uploadPromptImages = async (uid, promptId, prompt) => {
       out.thumbnail = '';
     }
   }
+  // 사용자가 영상에서 직접 캡처한 프레임 — dataURL 이면 업로드, 이미 URL 이면 그대로 둠.
+  if (typeof out.videoPoster === 'string' && out.videoPoster.startsWith('data:')) {
+    try {
+      const url = await uploadBase64(out.videoPoster,
+        `users/${uid}/prompts/${promptId}/poster-${ts}.jpg`);
+      out.videoPoster = url || '';
+    } catch (e) {
+      console.warn(`[uploadPromptImages] videoPoster upload failed for ${promptId}:`, e?.message || e);
+      out.videoPoster = '';
+    }
+  }
   if (Array.isArray(out.videos) && out.videos.length > 0) {
     const uploaded = [];
     for (const v of out.videos) {

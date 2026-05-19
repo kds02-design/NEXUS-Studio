@@ -702,7 +702,9 @@ Return strictly in JSON format:
     } catch (error) { console.error("Image analysis failed:", error); } finally { setIsAnalyzingCreation(false); }
   };
 
-  // 다른 앱(주로 프롬프트 아크)에서 전달된 payload 수신 — 진입 시 자동 적용 + 자동 분석.
+  // 다른 앱(주로 프롬프트 아크)에서 전달된 payload 수신.
+  // mode === 'edit' 이면 마이크로 리터칭 탭으로 즉시 전환 + 이미지/aura 만 채우고 역설계 분석은 건너뛴다.
+  // 기본(생성 모드)은 종전대로 creation 영역에 이미지를 올리고 analyzeCreationImage 로 옵션 자동 추론.
   useEffect(() => {
     if (!payload || payload.target !== 'typecore-sovereign') return;
     if (!payload.timestamp) return;
@@ -713,33 +715,46 @@ Return strictly in JSON format:
     const text = payload.prompt?.text || '';
     const tags = Array.isArray(payload.prompt?.tags) ? payload.prompt.tags : [];
     const source = payload.source || 'unknown';
+    const isEditMode = payload.mode === 'edit';
 
     (async () => {
       let dataUrl = null;
       if (imgUrl) {
         try {
-          const res = await fetch(imgUrl, { mode: 'cors' });
-          if (!res.ok) throw new Error(`이미지 fetch 실패: ${res.status}`);
-          const blob = await res.blob();
-          dataUrl = await new Promise((resolve, reject) => {
-            const r = new FileReader();
-            r.onloadend = () => resolve(String(r.result));
-            r.onerror = reject;
-            r.readAsDataURL(blob);
-          });
-          // 업로드 영역에 표시
-          setCreationUploadedImage(dataUrl);
+          // data:URL 이면 fetch 생략 (이미 dataURL).
+          if (imgUrl.startsWith('data:')) {
+            dataUrl = imgUrl;
+          } else {
+            const res = await fetch(imgUrl, { mode: 'cors' });
+            if (!res.ok) throw new Error(`이미지 fetch 실패: ${res.status}`);
+            const blob = await res.blob();
+            dataUrl = await new Promise((resolve, reject) => {
+              const r = new FileReader();
+              r.onloadend = () => resolve(String(r.result));
+              r.onerror = reject;
+              r.readAsDataURL(blob);
+            });
+          }
         } catch (e) {
           console.error('[TypecoreSovereign] 전달 이미지 로드 실패', e);
         }
       }
-      // 사용자 텍스트가 있으면 inputText로 치환 (우선순위 높음)
-      if (text) setInputText(text.slice(0, 60));
-      setIncomingFromArc({ from: source, hasImage: !!dataUrl, text, tags });
-      // 자동 역설계 분석 — 기존 함수가 모든 옵션을 자동으로 채워줌
-      if (dataUrl) {
-        try { await analyzeCreationImage(dataUrl); }
-        catch (e) { console.error('[TypecoreSovereign] 자동 분석 실패', e); }
+
+      if (isEditMode) {
+        // 마이크로 리터칭 탭으로 전환 + editUploadedImage 자동 임포트.
+        try { setCurrentView('edit'); } catch {}
+        if (dataUrl) setEditUploadedImage(dataUrl);
+        if (text) setCustomDesignInjections(text);
+        setIncomingFromArc({ from: source, hasImage: !!dataUrl, text, tags, mode: 'edit' });
+      } else {
+        // 생성 모드(기존 동작) — creation 영역에 임포트 + 자동 역설계.
+        if (dataUrl) setCreationUploadedImage(dataUrl);
+        if (text) setInputText(text.slice(0, 60));
+        setIncomingFromArc({ from: source, hasImage: !!dataUrl, text, tags });
+        if (dataUrl) {
+          try { await analyzeCreationImage(dataUrl); }
+          catch (e) { console.error('[TypecoreSovereign] 자동 분석 실패', e); }
+        }
       }
       try { clearPayload(); } catch {}
     })();
@@ -1596,6 +1611,19 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspecti
                           <DropdownControl label="표면(Surface) 질감" data={[...staticOptions.editSurfaceMods, ...(dynamicOptions.editSurfaceMods || [])]} value={editSurfaceMod} onChange={setEditSurfaceMod} theme={theme} />
                       </div>
                     </OptionGroupCard>
+                 )}
+
+                 {isAdvancedOptionsEnabled && (
+                     <OptionGroupCard id="layout" openCardId={isEditMode ? editOpenCardId : openCardId} onToggle={isEditMode ? handleEditToggleCard : handleToggleCard} title="[L2] 구조 배치" icon={<LayoutTemplate className="w-3.5 h-3.5 text-zinc-500" />} summary={`${getOptionName(staticOptions.layouts, layoutType).split(' ')[0]}`}>
+                        <div className="mb-3">
+                          <DropdownControl label="배열 방식" data={staticOptions.layouts} value={layoutType} onChange={setLayoutType} theme={theme} />
+                        </div>
+                        {(layoutType === "TitleSub" || layoutType === "SubTitle") && (
+                          <div className="mb-3">
+                            <DropdownControl label="서브 텍스트 크기" data={staticOptions.subTitleSizes} value={subTitleSize} onChange={setSubTitleSize} theme={theme} />
+                          </div>
+                        )}
+                     </OptionGroupCard>
                  )}
 
                  {isAdvancedOptionsEnabled && (

@@ -12,45 +12,66 @@ export const PromptImage = ({ src, alt, className }) => {
 export default function ArcCard({ prompt, onClick, onDelete, isAdminMode, isSelected, onToggleSelect }) {
   const videoUrl = Array.isArray(prompt.videos) && typeof prompt.videos[0] === 'string' ? prompt.videos[0] : null;
   const baseImage = prompt.thumbnail || (prompt.images?.length > 0 ? prompt.images[0] : prompt.image);
-  const videoPoster = !baseImage && videoUrl ? cloudinaryVideoThumb(videoUrl) : null;
+  // 사용자 지정 포스터(videoPoster) → Cloudinary 자동 썸네일 순으로 폴백.
+  const autoPoster = videoUrl ? cloudinaryVideoThumb(videoUrl) : null;
+  const videoPosterSrc = prompt.videoPoster || autoPoster;
+  const videoPoster = !baseImage && videoPosterSrc ? videoPosterSrc : null;
   const displayImage = baseImage || videoPoster;
   const isVideoOnly = (prompt.type === 'video') || (!baseImage && !!videoUrl);
   const [hov, setHov] = useState(false);
+  const [inView, setInView] = useState(false);
+  const containerRef = useRef(null);
   const videoRef = useRef(null);
 
+  // 카드가 뷰포트에 진입하면 inView=true → 영상 자동 재생.
+  // 영상 없는 카드는 옵저버 생성 자체를 스킵.
+  useEffect(() => {
+    if (!videoUrl) return;
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => {
+      const e = entries[0];
+      setInView(!!e?.isIntersecting);
+    }, { threshold: 0.1, rootMargin: '100px' });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [videoUrl]);
+
+  // inView 가 변하면 재생/일시정지. currentTime 은 유지해서 다시 보일 때 이어서 재생.
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (hov) {
-      v.currentTime = 0;
+    if (inView) {
       const p = v.play();
       if (p && typeof p.catch === 'function') p.catch(() => {});
     } else {
       v.pause();
-      v.currentTime = 0;
     }
-  }, [hov, videoUrl]);
+  }, [inView, videoUrl]);
+
+  // 영상 노출 조건 — hover 가 아닌 뷰포트 진입 여부로 판단.
+  const showVideo = !!videoUrl && inView;
 
   return (
-    <div onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+    <div ref={containerRef} onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       className={`group bg-[#111111] rounded-xl border transition-all cursor-pointer overflow-hidden relative break-inside-avoid ${isSelected ? 'border-purple-500/50' : 'border-white/5 hover:border-[#C8A969]/50'}`}
       style={{ boxShadow: hov ? '0 8px 32px rgba(200,169,105,0.08)' : 'none' }}
     >
       <div className="relative w-full">
         {isVideoOnly && !displayImage ? (
           <div className="relative w-full aspect-video bg-gradient-to-br from-[#1a1521] to-[#0a0a0a] flex items-center justify-center">
-            <div className={`text-5xl transition-transform ${hov ? 'scale-90 opacity-30' : 'scale-100 opacity-80'}`}>🎬</div>
+            <div className={`text-5xl transition-transform ${showVideo ? 'scale-90 opacity-30' : 'scale-100 opacity-80'}`}>🎬</div>
             {videoUrl && (
-              <video ref={videoRef} src={videoUrl} muted loop playsInline preload="metadata"
-                className={`absolute inset-0 w-full h-full object-cover bg-black ${hov ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity`} />
+              <video ref={videoRef} src={videoUrl} poster={videoPosterSrc || undefined} muted loop playsInline preload="metadata"
+                className={`absolute inset-0 w-full h-full object-cover bg-black ${showVideo ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity`} />
             )}
           </div>
         ) : (
           <>
-            <PromptImage src={displayImage} alt={prompt.title} className={`w-full h-auto object-scale-down block bg-[#0A0A0A] ${videoUrl && hov ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
+            <PromptImage src={displayImage} alt={prompt.title} className={`w-full h-auto object-scale-down block bg-[#0A0A0A] ${showVideo ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
             {videoUrl && (
-              <video ref={videoRef} src={videoUrl} muted loop playsInline preload="metadata"
-                className={`absolute inset-0 w-full h-full object-cover bg-black ${hov ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity`} />
+              <video ref={videoRef} src={videoUrl} poster={videoPosterSrc || undefined} muted loop playsInline preload="metadata"
+                className={`absolute inset-0 w-full h-full object-cover bg-black ${showVideo ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity`} />
             )}
           </>
         )}

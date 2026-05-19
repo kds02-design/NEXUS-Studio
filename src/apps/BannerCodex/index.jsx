@@ -59,7 +59,21 @@ export default function App() {
   const { user, isAdmin } = useAuth();
   const { theme } = useGlobal();
   const isLightMode = theme === 'light';
-  const isAdminMode = isAdmin;
+
+  // 관리자 권한(isAdmin) 과 별도로, 설정에서 명시적으로 켠 "관리 모드" 토글.
+  // 관리자라도 토글 OFF 면 일반 사용자처럼 보이고 (체크박스/편집 UI 숨김), 토글 ON 시에만 admin UI 노출.
+  // localStorage 에 저장되어 새로고침 후에도 유지.
+  const [adminModeEnabled, setAdminModeEnabled] = useState(() => {
+    try { return localStorage.getItem('bannerCodex:adminMode') === '1'; } catch { return false; }
+  });
+  const isAdminMode = isAdmin && adminModeEnabled;
+  const toggleAdminMode = useCallback(() => {
+    setAdminModeEnabled(v => {
+      const next = !v;
+      try { localStorage.setItem('bannerCodex:adminMode', next ? '1' : '0'); } catch {}
+      return next;
+    });
+  }, []);
 
   // UI state
   const [activeView] = useState('grid');
@@ -938,8 +952,7 @@ export default function App() {
         recentGames={recentGames} availableGames={availableGames}
         isAllGamesModalOpen={isAllGamesModalOpen} setIsAllGamesModalOpen={setIsAllGamesModalOpen}
         isSettingsOpen={isSettingsOpen} setIsSettingsOpen={setIsSettingsOpen} settingsRef={settingsRef}
-        geminiApiKey={geminiApiKey} setGeminiApiKey={setGeminiApiKey}
-        openAiApiKey={openAiApiKey} setOpenAiApiKey={setOpenAiApiKey}
+        adminModeEnabled={adminModeEnabled} toggleAdminMode={toggleAdminMode}
         handleSaveLibrary={handleSaveLibrary} handleLoadLibrary={handleLoadLibrary} isSaving={isSaving}
         setEditingPromptText={setEditingPromptText} setIsPromptManagerOpen={setIsPromptManagerOpen} customAiPrompt={customAiPrompt}
         setIsLogoManagerOpen={setIsLogoManagerOpen} handleFolderUpload={handleFolderUpload} isUploading={isUploading}

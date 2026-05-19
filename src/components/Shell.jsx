@@ -166,6 +166,19 @@ function Notification() {
 }
 
 const versionStorageKey = (appId) => `${appId}:version`;
+
+// 앱 sub 영문 라벨에서 2글자 약자 생성 (Adobe CC 스타일).
+// "Banner Codex" → "Bc", "Render Matrix: Pop" → "Rp", "NEXUS Admin" → "Na".
+const cardAbbr = (sub) => {
+  const words = String(sub || "").split(/[\s:]+/).filter(Boolean);
+  if (words.length === 0) return "??";
+  if (words.length === 1) {
+    const w = words[0];
+    return ((w[0] || "?").toUpperCase()) + ((w[1] || "").toLowerCase());
+  }
+  return ((words[0][0] || "?").toUpperCase()) + ((words[words.length - 1][0] || "").toLowerCase());
+};
+
 const readSelectedVersion = (app) => {
   if (!app?.versions?.length) return null;
   try {
@@ -204,25 +217,45 @@ function AppCard({ app, onOpen, isAdmin }) {
         position: "relative",
         userSelect: disabled ? "none" : undefined,
       }}>
-      {/* 우상단 뱃지 — 아이콘 제거, 영문 타이틀이 좌측을 차지하므로 뱃지만 우측에 정렬 */}
-      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"flex-end", minHeight:18, marginBottom:6 }}>
-        {disabled ? (
-          <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, letterSpacing:"0.1em", color:"#B8B8D0", textTransform:"uppercase", background:"rgba(122,122,154,0.22)", border:`1px solid rgba(122,122,154,0.5)`, padding:"3px 8px", borderRadius:999, fontWeight:700 }}>
-            <Lock size={9} strokeWidth={2.5} /> 준비 중
-          </span>
-        ) : app.beta ? (
-          <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>BETA</span>
-        ) : app.badge ? (
-          <span style={{ fontSize:9, letterSpacing:"0.08em", color:THEME.textMuted, background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{app.badge}</span>
-        ) : adminUnlocked ? (
-          <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>Admin</span>
-        ) : hasVersions ? (() => {
-          const v = app.versions.find(x => x.key === selectedVersion);
-          return <span style={{ fontSize:9, letterSpacing:"0.08em", color:THEME.textMuted, background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{v?.label || selectedVersion}</span>;
-        })() : null}
+      {/* 상단 행: [아이콘 + 타이틀] ............ [뱃지] */}
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:10, marginBottom:8 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:0, flex:1 }}>
+          {/* 2글자 아이콘 — 톤다운된 컬러 배경 + 컬러 텍스트 (Linear/Notion 스타일) */}
+          <div style={{
+            width:36, height:36, borderRadius:8, flexShrink:0,
+            display:"flex", alignItems:"center", justifyContent:"center",
+            background: disabled ? "rgba(122,122,154,0.10)" : `${app.color}1f`,
+            border: disabled ? `1px solid rgba(122,122,154,0.25)` : `1px solid ${app.color}40`,
+          }}>
+            <span style={{
+              fontSize:14, fontWeight:700, letterSpacing:"0.01em", lineHeight:1,
+              color: disabled ? THEME.textMuted : app.color,
+              fontFamily:"'Noto Sans KR', sans-serif",
+            }}>{app.abbr || cardAbbr(app.sub)}</span>
+          </div>
+          {/* 메인 타이틀: 영문 sub — 준비 중은 더 흐리게 */}
+          <div style={{ minWidth:0, flex:1 }}>
+            <div style={{ fontSize:15, fontWeight:700, color: disabled ? THEME.textMuted : THEME.text, lineHeight:1.2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{app.sub}</div>
+          </div>
+        </div>
+        {/* 우상단 뱃지 */}
+        <div style={{ display:"flex", alignItems:"flex-start", shrink:0, flexShrink:0 }}>
+          {disabled ? (
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, letterSpacing:"0.1em", color:"#B8B8D0", textTransform:"uppercase", background:"rgba(122,122,154,0.22)", border:`1px solid rgba(122,122,154,0.5)`, padding:"3px 8px", borderRadius:999, fontWeight:700 }}>
+              <Lock size={9} strokeWidth={2.5} /> 준비 중
+            </span>
+          ) : app.beta ? (
+            <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>BETA</span>
+          ) : app.badge ? (
+            <span style={{ fontSize:9, letterSpacing:"0.08em", color:THEME.textMuted, background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{app.badge}</span>
+          ) : adminUnlocked ? (
+            <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>Admin</span>
+          ) : hasVersions ? (() => {
+            const v = app.versions.find(x => x.key === selectedVersion);
+            return <span style={{ fontSize:9, letterSpacing:"0.08em", color:THEME.textMuted, background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{v?.label || selectedVersion}</span>;
+          })() : null}
+        </div>
       </div>
-      {/* 메인 타이틀: 영문 sub — 준비 중은 더 흐리게 */}
-      <div style={{ fontSize:15, fontWeight:700, color: disabled ? THEME.textMuted : THEME.text, marginBottom:4, lineHeight:1.2 }}>{app.sub}</div>
       {/* 보조 타이틀: 한글 label */}
       <div style={{ fontSize:11, color: disabled ? THEME.textDim : THEME.textMuted, marginBottom:4 }}>{app.label}</div>
       <div style={{ fontSize:11, color: disabled ? THEME.textDim : THEME.textMuted, lineHeight:1.5 }}>{app.desc}</div>
@@ -285,9 +318,10 @@ function AppCardGrid({ onScroll }) {
         // adminOnly 앱은 비-관리자 화면에서 카드 자체가 보이지 않음
         const apps = APP_REGISTRY.filter(a => a.group === g.key && (!a.adminOnly || isAdmin));
         if (!apps.length) return null;
+        // 섹션 타이틀 앞 세로 바 — 거의 보이지 않을 정도로 극단적으로 미세하게.
         const labelStyle = g.adminLabel
-          ? { fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: THEME.accent, textTransform:"uppercase", marginBottom:14, borderLeft:`2px solid ${THEME.accent}`, paddingLeft:10 }
-          : { fontSize:10, fontWeight:600, letterSpacing:"0.14em", color:THEME.textDim, textTransform:"uppercase", marginBottom:14, borderLeft:`2px solid ${THEME.border}`, paddingLeft:10 };
+          ? { fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: THEME.accent, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(108,92,231,0.15)", paddingLeft:10 }
+          : { fontSize:10, fontWeight:600, letterSpacing:"0.14em", color:THEME.textDim, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(255,255,255,0.03)", paddingLeft:10 };
         return (
           <div key={g.key} style={{ marginBottom:40 }}>
             <div style={labelStyle}>{g.label}</div>
