@@ -34,6 +34,7 @@ import BrandWebReviewApp from "../apps/BrandWebReview";
 import BannerCodexApp from "../apps/BannerCodex";
 import BriefStudioApp from "../apps/BriefStudio";
 import NexusAdminApp from "../apps/NexusAdmin";
+import BannerCreatorApp from "../apps/BannerCreator";
 import PlaceholderApp from "../apps/PlaceholderApp";
 
 // 인덱스 스크롤 → Topbar 배경/블러 동적 계산.
@@ -351,6 +352,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "promotion-archive":  return <PromotionArchiveApp />;
     case "brand-web-review":   return <BrandWebReviewApp />;
     case "banner-codex":       return <BannerCodexApp />;
+    case "banner-creator":     return <BannerCreatorApp />;
     case "brief-studio":       return <BriefStudioApp />;
     case "nexus-admin":        return <NexusAdminApp />;
     default:                   return <PlaceholderApp appId={appId} />;
