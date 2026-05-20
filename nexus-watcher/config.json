@@ -1,18 +1,28 @@
 {
   "watch": [
     {
-      "path": "\\\\ppc-file\\배너\\",
+      "path": "Z:\\4.블레이드앤소울\\2026\\배너\\",
       "app": "banner-codex",
-      "game": "리니지",
-      "year": "2025"
+      "game": "블소",
+      "year": "2026"
     },
     {
-      "path": "\\\\ppc-file\\프로모션\\",
+      "path": "Z:\\1.리니지\\",
       "app": "promotion-archive",
-      "game": "아이온"
+      "game": "리니지"
     }
   ],
   "interval": 300,
-  "extensions": [".jpg", ".jpeg", ".png", ".webp"],
-  "exclude": ["old", "개발", "팝업", "guide"]
+  "extensions": [
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp"
+  ],
+  "exclude": [
+    "old",
+    "개발",
+    "팝업",
+    "guide"
+  ]
 }

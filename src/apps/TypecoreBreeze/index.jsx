@@ -10,7 +10,7 @@ import BreezeModals from './components/BreezeModals.jsx';
 function BreezeViews() {
   const { currentView, usageModal } = useBreeze();
   return (
-    <div className="flex flex-col h-screen bg-[#0A0A0A] text-zinc-200 font-sans overflow-hidden transition-colors duration-500 relative selection:bg-zinc-700 selection:text-white">
+    <div className="flex flex-col h-screen bg-slate-50 text-slate-900 dark:bg-[#0A0A0A] dark:text-zinc-200 font-sans overflow-hidden transition-colors duration-500 relative selection:bg-zinc-700 selection:text-white">
       {usageModal}
       <style>{`.custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }`}</style>
       <main className="flex-1 flex overflow-hidden">

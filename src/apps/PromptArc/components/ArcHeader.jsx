@@ -39,23 +39,23 @@ export default function ArcHeader({
   }, [filterPopoverOpen, sortPopoverOpen, setFilterPopoverOpen, setSortPopoverOpen]);
 
   return (
-    <header className="h-14 border-b border-white/5 bg-[#050505]/90 flex items-center px-6 gap-4 shrink-0">
+    <header className="h-14 border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#050505]/90 flex items-center px-6 gap-4 shrink-0">
       <div className="flex-1 relative max-w-sm ml-auto">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={13} />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" size={13} />
         <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="검색..."
-          className="w-full bg-[#121212] border border-white/10 rounded-lg pl-9 pr-8 py-2 text-xs text-white outline-none focus:border-[#C8A969]/50 placeholder:text-zinc-600" />
-        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500"><X size={12} /></button>}
+          className="w-full bg-slate-100 dark:bg-[#121212] border border-slate-200 dark:border-white/10 rounded-lg pl-9 pr-8 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-[#C8A969]/50 placeholder:text-slate-400 dark:placeholder:text-zinc-600" />
+        {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500"><X size={12} /></button>}
       </div>
       <div className="flex items-center gap-2">
-        <div className="flex items-center bg-white/5 rounded-lg p-0.5">
-          <button onClick={() => setViewMode('small')} className={`p-1.5 rounded transition-colors ${viewMode === 'small' ? 'bg-[#1A1A1A] text-[#C8A969]' : 'text-zinc-500'}`}><Grid size={13} /></button>
-          <button onClick={() => setViewMode('normal')} className={`p-1.5 rounded transition-colors ${viewMode === 'normal' ? 'bg-[#1A1A1A] text-[#C8A969]' : 'text-zinc-500'}`}><Layout size={13} /></button>
-          <button onClick={() => setViewMode('large')} className={`p-1.5 rounded transition-colors ${viewMode === 'large' ? 'bg-[#1A1A1A] text-[#C8A969]' : 'text-zinc-500'}`}><Maximize2 size={13} /></button>
+        <div className="flex items-center bg-black/5 dark:bg-white/5 rounded-lg p-0.5">
+          <button onClick={() => setViewMode('small')} className={`p-1.5 rounded transition-colors ${viewMode === 'small' ? 'bg-white dark:bg-[#1A1A1A] text-[#C8A969]' : 'text-slate-400 dark:text-zinc-500'}`}><Grid size={13} /></button>
+          <button onClick={() => setViewMode('normal')} className={`p-1.5 rounded transition-colors ${viewMode === 'normal' ? 'bg-white dark:bg-[#1A1A1A] text-[#C8A969]' : 'text-slate-400 dark:text-zinc-500'}`}><Layout size={13} /></button>
+          <button onClick={() => setViewMode('large')} className={`p-1.5 rounded transition-colors ${viewMode === 'large' ? 'bg-white dark:bg-[#1A1A1A] text-[#C8A969]' : 'text-slate-400 dark:text-zinc-500'}`}><Maximize2 size={13} /></button>
         </div>
         <div className="relative">
           <button
             onClick={() => { setFilterPopoverOpen(!filterPopoverOpen); setSortPopoverOpen(false); }}
-            className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg transition-colors ${filterCount > 0 ? 'text-[#C8A969] bg-[#C8A969]/10 hover:bg-[#C8A969]/15' : 'text-zinc-400 hover:text-white hover:bg-white/5'}`}
+            className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg transition-colors ${filterCount > 0 ? 'text-[#C8A969] bg-[#C8A969]/10 hover:bg-[#C8A969]/15' : 'text-slate-600 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5'}`}
             title="필터"
           >
             <FilterIcon size={12} /> 필터
@@ -74,7 +74,7 @@ export default function ArcHeader({
                   {filterCount > 0 && (
                     <button
                       onClick={() => setFilters({ style: null, theme: null, unanalyzed: false })}
-                      className="text-[10px] text-zinc-500 hover:text-white px-1.5 py-0.5 rounded hover:bg-white/10"
+                      className="text-[10px] text-slate-500 hover:text-slate-900 hover:bg-black/10 dark:text-zinc-500 dark:hover:text-white dark:hover:bg-white/10 px-1.5 py-0.5 rounded"
                     >초기화</button>
                   )}
                 </div>
@@ -114,7 +114,7 @@ export default function ArcHeader({
           )}
         </div>
         <div className="relative">
-          <button onClick={() => { setSortPopoverOpen(!sortPopoverOpen); setFilterPopoverOpen(false); }} className="flex items-center gap-1 px-2 py-1.5 text-xs text-zinc-400 hover:text-white hover:bg-white/5 rounded-lg">
+          <button onClick={() => { setSortPopoverOpen(!sortPopoverOpen); setFilterPopoverOpen(false); }} className="flex items-center gap-1 px-2 py-1.5 text-xs text-slate-600 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 rounded-lg">
             <ArrowUpDown size={12} /> {sortLabel}
           </button>
           {sortPopoverOpen && (

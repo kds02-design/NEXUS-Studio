@@ -266,10 +266,11 @@ const App = ({ version, setVersion, versions } = {}) => {
   // 1. Context & Global States
   const apiKey = GEMINI_API_KEY;
   const { ensureCanGenerate, modal: usageModal } = useUsageGate();
-  const { payload, clearPayload } = useGlobal();
+  const { payload, clearPayload, isLight } = useGlobal();
   const [incomingFromArc, setIncomingFromArc] = useState(null); // { from, hasImage, text }
   const consumedPayloadRef = useRef(null);
-  const [theme] = useState("dark");
+  // 전역 테마와 동기화 — 루트 컨테이너만 light 대응. 내부 위젯은 다크 하드코딩.
+  const theme = isLight ? "light" : "dark";
   const [currentView, setCurrentView] = useState("editor");
   const isEditMode = currentView === 'edit';
 
@@ -408,8 +409,8 @@ const App = ({ version, setVersion, versions } = {}) => {
   const editTuningChatRef = useRef(null);
 
   const t = {
-    bg: theme === 'dark' ? 'bg-[#0A0A0A]' : 'bg-zinc-200',
-    textColor: theme === 'dark' ? 'text-zinc-100' : 'text-zinc-900',
+    bg: theme === 'dark' ? 'bg-[#0A0A0A]' : 'bg-slate-50',
+    textColor: theme === 'dark' ? 'text-zinc-100' : 'text-slate-900',
   };
 
   // Derivative States

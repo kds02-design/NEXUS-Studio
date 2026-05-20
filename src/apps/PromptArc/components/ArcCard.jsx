@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from "react";
-import { Image as ImageIcon, Trash2, Play, Link2 } from "lucide-react";
+import { Image as ImageIcon, Trash2, Edit2, Play, Link2 } from "lucide-react";
 import { cloudinaryVideoThumb } from "../services/cloudinary";
 
 export const PromptImage = ({ src, alt, className }) => {
   const [error, setError] = useState(false);
   useEffect(() => { setError(false); }, [src]);
-  if (error || !src) return <div className={`flex items-center justify-center bg-zinc-900 text-zinc-600 ${className}`}><ImageIcon size={24} /></div>;
+  if (error || !src) return <div className={`flex items-center justify-center bg-slate-100 text-slate-400 dark:bg-zinc-900 dark:text-zinc-600 ${className}`}><ImageIcon size={24} /></div>;
   return <img src={src} alt={alt} className={className} onError={() => setError(true)} loading="lazy" onDragStart={e => e.preventDefault()} />;
 };
 
-export default function ArcCard({ prompt, onClick, onDelete, isAdminMode, isSelected, onToggleSelect }) {
+export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode, isSelected, onToggleSelect, currentUid, isAdmin }) {
+  // 본인 프롬프트 또는 관리자만 수정/삭제 가능. ownerUid 가 없는 구프롬프트는 authorId 폴백.
+  const isAuthor = (prompt.ownerUid && prompt.ownerUid === currentUid) || (!prompt.ownerUid && (!prompt.authorId || prompt.authorId === currentUid));
+  const canEdit = isAuthor || isAdmin;
   const videoUrl = Array.isArray(prompt.videos) && typeof prompt.videos[0] === 'string' ? prompt.videos[0] : null;
   const baseImage = prompt.thumbnail || (prompt.images?.length > 0 ? prompt.images[0] : prompt.image);
   // 사용자 지정 포스터(videoPoster) → Cloudinary 자동 썸네일 순으로 폴백.
@@ -54,7 +57,7 @@ export default function ArcCard({ prompt, onClick, onDelete, isAdminMode, isSele
 
   return (
     <div ref={containerRef} onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-      className={`group bg-[#111111] rounded-xl border transition-all cursor-pointer overflow-hidden relative break-inside-avoid ${isSelected ? 'border-purple-500/50' : 'border-white/5 hover:border-[#C8A969]/50'}`}
+      className={`group bg-white dark:bg-[#111111] rounded-xl border transition-all cursor-pointer overflow-hidden relative break-inside-avoid ${isSelected ? 'border-purple-500/50' : 'border-slate-200 dark:border-white/5 hover:border-[#C8A969]/50'}`}
       style={{ boxShadow: hov ? '0 8px 32px rgba(200,169,105,0.08)' : 'none' }}
     >
       <div className="relative w-full">
@@ -68,7 +71,7 @@ export default function ArcCard({ prompt, onClick, onDelete, isAdminMode, isSele
           </div>
         ) : (
           <>
-            <PromptImage src={displayImage} alt={prompt.title} className={`w-full h-auto object-scale-down block bg-[#0A0A0A] ${showVideo ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
+            <PromptImage src={displayImage} alt={prompt.title} className={`w-full h-auto object-scale-down block bg-slate-50 dark:bg-[#0A0A0A] ${showVideo ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
             {videoUrl && (
               <video ref={videoRef} src={videoUrl} poster={videoPosterSrc || undefined} muted loop playsInline preload="metadata"
                 className={`absolute inset-0 w-full h-full object-cover bg-black ${showVideo ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity`} />
@@ -102,9 +105,12 @@ export default function ArcCard({ prompt, onClick, onDelete, isAdminMode, isSele
           <input type="checkbox" checked={isSelected} onChange={e => { e.stopPropagation(); onToggleSelect(prompt.id); }} className="w-3.5 h-3.5 accent-purple-500 cursor-pointer" />
         </div>
       )}
-      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-40">
-        <button onClick={e => { e.stopPropagation(); onDelete(prompt.id); }} className="p-1.5 rounded-lg bg-[#151515]/80 text-zinc-300 hover:text-red-400 backdrop-blur-sm"><Trash2 size={13} /></button>
-      </div>
+      {canEdit && (
+        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-40">
+          <button onClick={e => { e.stopPropagation(); onEdit?.(prompt); }} className="p-1.5 rounded-lg bg-[#151515]/80 text-zinc-300 hover:text-white backdrop-blur-sm" title={isAuthor ? '수정' : '관리자 권한으로 수정'}><Edit2 size={13} /></button>
+          <button onClick={e => { e.stopPropagation(); onDelete(prompt.id); }} className="p-1.5 rounded-lg bg-[#151515]/80 text-zinc-300 hover:text-red-400 backdrop-blur-sm" title={isAuthor ? '삭제' : '관리자 권한으로 삭제'}><Trash2 size={13} /></button>
+        </div>
+      )}
       <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 opacity-0 group-hover:opacity-100 z-20 pointer-events-none">
         {!videoUrl && (prompt.tags || []).map((tag, i) => <span key={i} className="px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-bold text-zinc-300">#{tag}</span>)}
       </div>

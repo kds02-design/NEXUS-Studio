@@ -6,9 +6,8 @@ import {
   LayoutDashboard, KeyRound, Bot, Activity,
   Mail, Info, LogOut,
 } from "lucide-react";
-import { THEME } from "../config/apps";
 import { useAuth } from "../context/AuthContext";
-import { useGlobal } from "../context/GlobalContext";
+import { useGlobal, useTheme } from "../context/GlobalContext";
 import { GRADE_LABEL, GRADES } from "../lib/grades";
 import UserAvatar from "./UserAvatar";
 import AvatarPicker from "./AvatarPicker";
@@ -23,13 +22,13 @@ const gradeColor = {
   [GRADES.expert]:  "#0eb9b3",
 };
 
-// GlobalContext.toggleTheme이 no-op으로 잠겨있는 동안엔 이 플래그를 true로 유지.
-// 라이트 모드 전체 롤아웃 후 false 로 변경하면 자동으로 풀림.
-const THEME_SWITCH_LOCKED = true;
+// Shell 골조는 라이트 지원 완료. 개별 앱(BannerCodex 외)은 아직 다크 하드코딩 — 라이트 전환 시 mixed 표시 가능.
+const THEME_SWITCH_LOCKED = false;
 
 export default function ProfilePopover({ open, onClose }) {
   const { user, profile, grade, isAdmin, signOut, usageToday, dailyLimit } = useAuth();
   const { setCurrentApp, isLight, toggleTheme } = useGlobal();
+  const T = useTheme();
   const panelRef = useRef(null);
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -48,7 +47,7 @@ export default function ProfilePopover({ open, onClose }) {
   if (!user) return null;
 
   const displayName = user.displayName || profile?.displayName || user.email?.split("@")[0] || "사용자";
-  const gColor = gradeColor[grade] || THEME.accent;
+  const gColor = gradeColor[grade] || T.accent;
   const showUpgrade = grade === GRADES.general || grade === GRADES.pro;
   const showInvite  = grade === GRADES.general;
   const limitText   = dailyLimit === Infinity ? "∞" : dailyLimit;
@@ -64,26 +63,26 @@ export default function ProfilePopover({ open, onClose }) {
       {open && (
         <div ref={panelRef} style={{
           position:"absolute", top: 56, right: 20, width: 300, zIndex: 200,
-          background: THEME.surface, border: `1px solid ${THEME.border}`,
+          background: T.surface, border: `1px solid ${T.border}`,
           borderRadius: 12, boxShadow: "0 18px 40px rgba(0,0,0,0.5)",
-          color: THEME.text, fontFamily:"'Noto Sans KR', sans-serif",
+          color: T.text, fontFamily:"'Noto Sans KR', sans-serif",
           animation: "fadeIn 0.15s ease-out",
           overflow: "hidden",
         }}>
           {/* User header */}
-          <div style={{ padding:"18px 18px 16px", borderBottom:`1px solid ${THEME.border}`, display:"flex", alignItems:"flex-start", gap:12 }}>
+          <div style={{ padding:"18px 18px 16px", borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"flex-start", gap:12 }}>
             <div style={{ position:"relative" }}>
               <UserAvatar profile={profile} user={user} size={48} />
               <button onClick={() => { setAvatarPickerOpen(true); onClose?.(); }} title="아바타 변경"
-                style={{ position:"absolute", bottom:-2, right:-2, width:20, height:20, borderRadius:"50%", background:THEME.bg, border:`1px solid ${THEME.border}`, color:THEME.textMuted, fontSize:10, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✎</button>
+                style={{ position:"absolute", bottom:-2, right:-2, width:20, height:20, borderRadius:"50%", background:T.bg, border:`1px solid ${T.border}`, color:T.textMuted, fontSize:10, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✎</button>
             </div>
             <div style={{ flex:1, minWidth:0 }}>
-              <div style={{ fontSize:14, fontWeight:700, color:THEME.text, marginBottom:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{displayName}</div>
-              <div style={{ fontSize:11, color:THEME.textMuted, marginBottom:8, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{user.email}</div>
+              <div style={{ fontSize:14, fontWeight:700, color:T.text, marginBottom:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{displayName}</div>
+              <div style={{ fontSize:11, color:T.textMuted, marginBottom:8, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{user.email}</div>
               <div title={`오늘 사용 ${usageToday}/${limitText}`} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"2px 8px", background:`${gColor}1A`, border:`1px solid ${gColor}55`, borderRadius:999, fontSize:9, fontWeight:700, color:gColor, letterSpacing:"0.08em" }}>
                 <span style={{ width:5, height:5, borderRadius:999, background:gColor }} />
                 {GRADE_LABEL[grade]?.toUpperCase()}
-                <span style={{ color:THEME.textMuted, fontWeight:500, letterSpacing:0, marginLeft:3 }}>{usageToday}/{limitText}</span>
+                <span style={{ color:T.textMuted, fontWeight:500, letterSpacing:0, marginLeft:3 }}>{usageToday}/{limitText}</span>
               </div>
             </div>
           </div>
@@ -132,6 +131,7 @@ export default function ProfilePopover({ open, onClose }) {
 // 다크/라이트 테마 토글 행. 우측에 세그먼트 스위치(☀/🌙). locked=true 면 시각적으로 disabled.
 // (GlobalContext.toggleTheme 이 현재 no-op 이라 라이트 모드 미완성 동안 잠금 — 스위치 UI는 노출.)
 function ThemeSwitchRow({ isLight, onToggle, locked }) {
+  const T = useTheme();
   const [hov, setHov] = useState(false);
   const handlePick = (target) => {
     if (locked) return;
@@ -140,11 +140,11 @@ function ThemeSwitchRow({ isLight, onToggle, locked }) {
   const segBase = {
     display:"inline-flex", alignItems:"center", justifyContent:"center",
     width:28, height:22, borderRadius:999, border:0, cursor: locked ? "not-allowed" : "pointer",
-    background:"transparent", color:THEME.textDim, transition:"background 0.12s, color 0.12s",
+    background:"transparent", color:T.textDim, transition:"background 0.12s, color 0.12s",
     padding:0,
   };
-  const activeBg  = locked ? `${THEME.textDim}33` : `${THEME.accent}33`;
-  const activeFg  = locked ? THEME.textMuted    : "#fff";
+  const activeBg  = locked ? `${T.textDim}33` : `${T.accent}33`;
+  const activeFg  = locked ? T.textMuted    : (isLight ? T.text : "#fff");
 
   return (
     <div
@@ -153,30 +153,30 @@ function ThemeSwitchRow({ isLight, onToggle, locked }) {
       style={{
         display:"flex", alignItems:"center", gap:11, width:"100%",
         padding:"9px 10px", borderRadius:6,
-        background: hov && !locked ? "rgba(255,255,255,0.03)" : "transparent",
-        color: locked ? THEME.textDim : THEME.text, fontSize:12.5, fontWeight:500,
+        background: hov && !locked ? T.hoverBg : "transparent",
+        color: locked ? T.textDim : T.text, fontSize:12.5, fontWeight:500,
         opacity: locked ? 0.7 : 1, transition:"background 0.12s",
       }}
     >
-      <span style={{ width:20, display:"inline-flex", alignItems:"center", justifyContent:"center", color: locked ? THEME.textDim : THEME.textMuted, flexShrink:0 }}>
+      <span style={{ width:20, display:"inline-flex", alignItems:"center", justifyContent:"center", color: locked ? T.textDim : T.textMuted, flexShrink:0 }}>
         {isLight ? <Sun size={14} /> : <Moon size={14} />}
       </span>
       <span style={{ flex:1 }}>테마</span>
-      <div style={{ display:"inline-flex", alignItems:"center", gap:2, padding:2, borderRadius:999, background:THEME.bg, border:`1px solid ${THEME.border}` }}>
+      <div style={{ display:"inline-flex", alignItems:"center", gap:2, padding:2, borderRadius:999, background:T.bg, border:`1px solid ${T.border}` }}>
         <button type="button" onClick={() => handlePick('light')} disabled={locked} aria-label="라이트 모드"
-          style={{ ...segBase, background: isLight ? activeBg : "transparent", color: isLight ? activeFg : THEME.textDim }}>
+          style={{ ...segBase, background: isLight ? activeBg : "transparent", color: isLight ? activeFg : T.textDim }}>
           <Sun size={12} />
         </button>
         <button type="button" onClick={() => handlePick('dark')} disabled={locked} aria-label="다크 모드"
-          style={{ ...segBase, background: !isLight ? activeBg : "transparent", color: !isLight ? activeFg : THEME.textDim }}>
+          style={{ ...segBase, background: !isLight ? activeBg : "transparent", color: !isLight ? activeFg : T.textDim }}>
           <Moon size={12} />
         </button>
       </div>
       {locked && (
         <span style={{
-          fontSize:9.5, color:THEME.textDim, fontWeight:600, letterSpacing:"0.04em",
-          padding:"2px 7px", background:THEME.bg, borderRadius:999,
-          border:`1px solid ${THEME.border}`,
+          fontSize:9.5, color:T.textDim, fontWeight:600, letterSpacing:"0.04em",
+          padding:"2px 7px", background:T.bg, borderRadius:999,
+          border:`1px solid ${T.border}`,
         }}>
           준비 중
         </span>
@@ -186,15 +186,16 @@ function ThemeSwitchRow({ isLight, onToggle, locked }) {
 }
 
 function Section({ label, children, last }) {
+  const T = useTheme();
   return (
-    <div style={{ borderBottom: last ? "none" : `1px solid ${THEME.border}` }}>
+    <div style={{ borderBottom: last ? "none" : `1px solid ${T.border}` }}>
       {label && (
         <div style={{
           padding:"12px 18px 4px",
           fontSize:9.5,
           fontWeight:700,
           letterSpacing:"0.14em",
-          color:THEME.textDim,
+          color:T.textDim,
           textTransform:"uppercase",
         }}>
           {label}
@@ -209,9 +210,10 @@ function Section({ label, children, last }) {
 
 // icon prop: string(이모지) 또는 ReactNode(lucide 아이콘) 모두 허용.
 function Row({ icon, label, rightText, onClick, disabled, hint, danger }) {
+  const T = useTheme();
   const [hov, setHov] = useState(false);
-  const textColor = danger ? "#ff7575" : (disabled ? THEME.textDim : THEME.text);
-  const iconColor = danger ? "#ff7575" : (disabled ? THEME.textDim : THEME.textMuted);
+  const textColor = danger ? "#ff7575" : (disabled ? T.textDim : T.text);
+  const iconColor = danger ? "#ff7575" : (disabled ? T.textDim : T.textMuted);
   const isNode = isValidElement(icon);
   return (
     <button
@@ -222,7 +224,7 @@ function Row({ icon, label, rightText, onClick, disabled, hint, danger }) {
       style={{
         display:"flex", alignItems:"center", gap:11, width:"100%",
         padding:"9px 10px", borderRadius:6,
-        background: hov && !disabled ? "rgba(255,255,255,0.05)" : "transparent",
+        background: hov && !disabled ? T.hoverBg : "transparent",
         border:0, color: textColor, fontSize:12.5, fontWeight:500,
         cursor: disabled ? "not-allowed" : "pointer", textAlign:"left",
         opacity: disabled ? 0.6 : 1, transition:"background 0.12s",
@@ -236,15 +238,15 @@ function Row({ icon, label, rightText, onClick, disabled, hint, danger }) {
       </span>
       <span style={{ flex:1, fontWeight: danger ? 600 : 500 }}>{label}</span>
       {rightText && (
-        <span style={{ fontSize:11, color:THEME.textMuted, fontWeight:500 }}>
+        <span style={{ fontSize:11, color:T.textMuted, fontWeight:500 }}>
           {rightText}
         </span>
       )}
       {disabled && hint && !rightText && (
         <span style={{
-          fontSize:9.5, color:THEME.textDim, fontWeight:600, letterSpacing:"0.04em",
-          padding:"2px 7px", background:THEME.bg, borderRadius:999,
-          border:`1px solid ${THEME.border}`,
+          fontSize:9.5, color:T.textDim, fontWeight:600, letterSpacing:"0.04em",
+          padding:"2px 7px", background:T.bg, borderRadius:999,
+          border:`1px solid ${T.border}`,
         }}>
           {hint}
         </span>

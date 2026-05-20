@@ -300,7 +300,7 @@ export default function BriefStudio() {
 
   return (
     <div
-      className="flex h-full overflow-hidden bg-[#0a0a0f] text-zinc-200"
+      className="flex h-full overflow-hidden bg-slate-50 text-slate-900 dark:bg-[#0a0a0f] dark:text-zinc-200"
       style={{ fontFamily: "'Noto Sans KR', sans-serif", height: "calc(100vh - 52px)" }}
     >
       {/* PANEL 1 — 요청서 */}

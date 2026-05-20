@@ -14,7 +14,7 @@ export default function RenderMatrixPop({ version = 'current' }) {
   return (
     <div className="h-full w-full">
       <Suspense fallback={
-        <div className="w-full h-full flex items-center justify-center bg-[#0A0A0A] text-zinc-500 text-xs gap-2">
+        <div className="w-full h-full flex items-center justify-center bg-slate-50 text-slate-400 dark:bg-[#0A0A0A] dark:text-zinc-500 text-xs gap-2">
           <span className="w-3 h-3 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
           Loading {FALLBACK_LABEL[version] || '최신'}…
         </div>

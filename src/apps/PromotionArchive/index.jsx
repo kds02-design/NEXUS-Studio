@@ -166,9 +166,32 @@ function App() {
     const [aiSearchKeywords, setAiSearchKeywords] = useState([]);
 
     const [isFilterOpen, setIsFilterOpen] = useState(false);
-    const [activeFilters, setActiveFilters] = useState({ score: 'all', year: 'all', status: 'all' });
+    // BannerCodex 와 동일한 필터 스키마. 'quality' 는 5-tier 점수 등급.
+    // 'ocr' 은 AI 분석 완료 상태(isWebAnalyzed)를 의미하며 관리자 모드에서만 노출.
+    const [activeFilters, setActiveFilters] = useState({
+        assetType: 'all',
+        year: 'all',
+        customStart: '',
+        customEnd: '',
+        quality: 'all',
+        tag: 'all',
+        game: 'all',
+        ocr: 'all',
+    });
+    const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
     const [sortOrder, setSortOrder] = useState('latest');
+
+    // 태그 빈도 Top 5 — BannerCodex useFilter.js 동일 로직.
+    const topTags = useMemo(() => {
+        const counts = {};
+        allBanners.forEach(b => {
+            if (Array.isArray(b.tags)) {
+                b.tags.forEach(t => { if (t && t !== '기타') counts[t] = (counts[t] || 0) + 1; });
+            }
+        });
+        return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+    }, [allBanners]);
 
     const [isLargeGrid, setIsLargeGrid] = useState(false);
 
@@ -233,10 +256,53 @@ function App() {
             );
         }
 
-        if (activeFilters.year !== 'all') result = result.filter(b => String(b.year) === activeFilters.year);
-        if (activeFilters.score !== 'all') {
-            if (activeFilters.score === 'high') result = result.filter(b => (b.designScore || 0) >= 8);
-            if (activeFilters.score === 'medium') result = result.filter(b => (b.designScore || 0) < 8);
+        // 에셋 타입 — b.assetType 직접 비교. 없는 데이터는 'all' 외 필터에서 자동 제외됨.
+        if (activeFilters.assetType !== 'all') {
+            result = result.filter(b => (b.assetType || '').toLowerCase() === activeFilters.assetType.toLowerCase());
+        }
+
+        // 년도 — 'custom' 일 때는 created_at 기준 날짜 범위 비교.
+        if (activeFilters.year !== 'all') {
+            if (activeFilters.year === 'custom') {
+                if (activeFilters.customStart && activeFilters.customEnd) {
+                    const start = new Date(activeFilters.customStart);
+                    const end = new Date(activeFilters.customEnd); end.setHours(23, 59, 59, 999);
+                    result = result.filter(b => {
+                        const d = new Date(b.created_at || b.createdAt || 0);
+                        return !isNaN(d.getTime()) && d >= start && d <= end;
+                    });
+                }
+            } else {
+                result = result.filter(b => String(b.year) === activeFilters.year);
+            }
+        }
+
+        // 디자인 품질 5-tier — webAiScore(실제 Gemini) 우선, fallback designScore.
+        if (activeFilters.quality !== 'all') {
+            result = result.filter(b => {
+                const score = parseFloat(b.webAiScore ?? b.designScore) || 0;
+                if (activeFilters.quality === '8.7_up') return score >= 8.7;
+                if (activeFilters.quality === '8.2_8.6') return score >= 8.2 && score <= 8.6;
+                if (activeFilters.quality === '7.5_7.9') return score >= 7.5 && score <= 7.9;
+                if (activeFilters.quality === '7.5_down') return score < 7.5;
+                return true;
+            });
+        }
+
+        // 스타일 태그
+        if (activeFilters.tag !== 'all') {
+            result = result.filter(b => Array.isArray(b.tags) && b.tags.includes(activeFilters.tag));
+        }
+
+        // 게임/IP (고급 필터)
+        if (activeFilters.game !== 'all') {
+            result = result.filter(b => b.game === activeFilters.game);
+        }
+
+        // AI 분석 상태 (관리자 전용 고급 필터)
+        if (activeFilters.ocr !== 'all') {
+            if (activeFilters.ocr === 'done') result = result.filter(b => !!b.isWebAnalyzed);
+            if (activeFilters.ocr === 'pending') result = result.filter(b => !b.isWebAnalyzed);
         }
 
         const sorted = [...result];
@@ -682,6 +748,8 @@ function App() {
                     isFilterOpen={isFilterOpen} setIsFilterOpen={setIsFilterOpen}
                     activeFilters={activeFilters} setActiveFilters={setActiveFilters}
                     availableYears={[2026, 2025, 2024, 2023]} filterRef={filterRef}
+                    isAdvancedFilterOpen={isAdvancedFilterOpen} setIsAdvancedFilterOpen={setIsAdvancedFilterOpen}
+                    topTags={topTags} availableGames={availableGames} pinnedGames={pinnedGames}
                     // sort
                     isSortMenuOpen={isSortMenuOpen} setIsSortMenuOpen={setIsSortMenuOpen}
                     sortOrder={sortOrder} setSortOrder={setSortOrder} sortRef={sortRef}

@@ -4,9 +4,11 @@
 // 기본 이미지가 잠깐 보였다가 사용자 설정 이미지로 교체되는 깜빡임 방지.
 import { useEffect, useState } from "react";
 import { subscribeDashboardSettings } from "../lib/dashboardSettings";
-import { THEME } from "../config/apps";
+import { useGlobal, useTheme } from "../context/GlobalContext";
 
 export default function DashboardHero() {
+  const T = useTheme();
+  const { isLight } = useGlobal();
   const [bgUrl, setBgUrl] = useState(null);
 
   useEffect(() => {
@@ -16,14 +18,20 @@ export default function DashboardHero() {
     return () => unsub && unsub();
   }, []);
 
+  // 라이트 모드에서도 이미지 위에 텍스트 가독성을 위해 dark overlay 는 유지.
+  // 다만 하단 그라데이션은 페이지 배경(T.bg) 으로 자연스럽게 페이드.
+  const gradientStart = isLight ? "rgba(247,247,250,0)"    : "rgba(10,10,15,0)";
+  const gradientMid   = isLight ? "rgba(247,247,250,0.55)" : "rgba(10,10,15,0.55)";
+
   return (
     <div
       style={{
         position: "relative",
         width: "100%",
-        height: "45vh",
-        minHeight: 320,
-        background: THEME.surface,
+        // 화면이 커져도 히어로가 무한정 늘어나지 않도록 상한 고정.
+        // 320 ~ 45vh ~ 460 — 큰 모니터에서도 타이틀 위치가 일정 거리 안으로 고정됨.
+        height: "clamp(320px, 45vh, 460px)",
+        background: T.surface,
         overflow: "hidden",
         flexShrink: 0,
         marginBottom: 24,
@@ -41,18 +49,18 @@ export default function DashboardHero() {
           }}
         />
       )}
-      {/* dark overlay */}
+      {/* dark overlay — 이미지 위 텍스트 대비 확보. 두 테마 동일. */}
       <div
         style={{
           position: "absolute", inset: 0,
           background: "rgba(10, 10, 15, 0.55)",
         }}
       />
-      {/* bottom gradient to dashboard bg */}
+      {/* bottom gradient to dashboard bg — 라이트는 흰색으로 페이드 */}
       <div
         style={{
           position: "absolute", left: 0, right: 0, bottom: 0, height: "60%",
-          background: `linear-gradient(to bottom, rgba(10,10,15,0) 0%, rgba(10,10,15,0.55) 50%, ${THEME.bg} 100%)`,
+          background: `linear-gradient(to bottom, ${gradientStart} 0%, ${gradientMid} 50%, ${T.bg} 100%)`,
           pointerEvents: "none",
         }}
       />

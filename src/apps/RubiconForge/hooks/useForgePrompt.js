@@ -3,6 +3,7 @@
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
+import { useGlobal } from '../../../context/GlobalContext';
 import { staticOptions, getOptionEn, getOptionProp, getOptionName } from '../constants/categories';
 import {
   translatePrompt,
@@ -15,7 +16,9 @@ import {
 } from '../services/gemini';
 
 export function useForgePrompt() {
-  const [theme] = useState("dark");
+  // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
+  const { isLight } = useGlobal();
+  const theme = isLight ? "light" : "dark";
   const [currentView, setCurrentView] = useState("creation");
 
   const [themeDna, setThemeDna] = useState("LineageDarkRoyal");

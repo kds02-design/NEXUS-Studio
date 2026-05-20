@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Menu, Lock } from "lucide-react";
-import { APP_MAP, APP_REGISTRY, THEME } from "../config/apps";
-import { useGlobal } from "../context/GlobalContext";
+import { APP_MAP, APP_REGISTRY } from "../config/apps";
+import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
 import { GRADE_LABEL, GRADES } from "../lib/grades";
 
@@ -29,40 +29,43 @@ import PromptBuilderApp from "../apps/PromptBuilder";
 import RubiconForgeApp from "../apps/RubiconForge";
 import LogoForgeApp from "../apps/LogoForge";
 import DesignEvaluatorApp from "../apps/DesignEvaluator";
+import DesignLexiconApp from "../apps/DesignLexicon";
 import PromotionArchiveApp from "../apps/PromotionArchive";
 import BrandWebReviewApp from "../apps/BrandWebReview";
 import BannerCodexApp from "../apps/BannerCodex";
+import BannerCreatorApp from "../apps/BannerCreator";
 import BriefStudioApp from "../apps/BriefStudio";
 import NexusAdminApp from "../apps/NexusAdmin";
-import BannerCreatorApp from "../apps/BannerCreator";
 import PlaceholderApp from "../apps/PlaceholderApp";
 
 // 인덱스 스크롤 → Topbar 배경/블러 동적 계산.
 // 0px: 완전 투명 / 50px: 페이드인 시작 / 150px: 완전 불투명 + blur 16px.
-function computeIndexTopbarStyle(scrollY) {
+// isLight 에 따라 배경 RGB 베이스 (다크: 10,10,15 / 라이트: 247,247,250)를 바꿔준다.
+function computeIndexTopbarStyle(scrollY, T, isLight) {
   const start = 50, end = 150;
   const t = Math.max(0, Math.min(1, (scrollY - start) / (end - start)));
-  // 0 → 0.95 opacity / 0px → 16px blur
   const opacity = 0.95 * t;
   const blur = 16 * t;
+  const rgb = isLight ? "247, 247, 250" : "10, 10, 15";
   return {
-    background: opacity === 0 ? "transparent" : `rgba(10, 10, 15, ${opacity.toFixed(3)})`,
+    background: opacity === 0 ? "transparent" : `rgba(${rgb}, ${opacity.toFixed(3)})`,
     backdropFilter: blur === 0 ? "none" : `blur(${blur.toFixed(1)}px)`,
     WebkitBackdropFilter: blur === 0 ? "none" : `blur(${blur.toFixed(1)}px)`,
-    borderColor: t < 0.05 ? "transparent" : THEME.border,
+    borderColor: t < 0.05 ? "transparent" : T.border,
   };
 }
 
 function Topbar({ scrollY = 0, onOpenPalette }) {
-  const { currentApp, setCurrentApp } = useGlobal();
+  const { currentApp, setCurrentApp, isLight } = useGlobal();
+  const T = useTheme();
   const { user, profile, grade } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const app = currentApp ? APP_MAP[currentApp] : null;
   const isIndex = !app;
 
   const dynamicStyle = isIndex
-    ? computeIndexTopbarStyle(scrollY)
-    : { background: THEME.surface, backdropFilter: "none", WebkitBackdropFilter: "none", borderColor: THEME.border };
+    ? computeIndexTopbarStyle(scrollY, T, isLight)
+    : { background: T.surface, backdropFilter: "none", WebkitBackdropFilter: "none", borderColor: T.border };
 
   return (
     <div style={{
@@ -86,11 +89,11 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
           style={{
             display:"inline-flex", alignItems:"center", justifyContent:"center",
             width:32, height:32, padding:0, border:0, borderRadius:6,
-            background:"transparent", color: THEME.textMuted, cursor:"pointer",
+            background:"transparent", color: T.textMuted, cursor:"pointer",
             transition:"background 0.15s, color 0.15s",
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; e.currentTarget.style.color = "#fff"; }}
-          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = THEME.textMuted; }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = T.hoverBg; e.currentTarget.style.color = T.text; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = T.textMuted; }}
         >
           <Menu size={18} />
         </button>
@@ -102,8 +105,8 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
         >
           <NexusLogo height={18} />
           <span style={{ display:"inline-flex", alignItems:"baseline", gap:6, fontFamily:"'Teko', sans-serif", fontSize:22, lineHeight:1, letterSpacing:"0.5px", whiteSpace:"nowrap", transform:"translateY(2px)" }}>
-            <span style={{ color:"#ffffff", fontWeight:600 }}>NEXUS</span>
-            <span style={{ color:"#ffffff", fontWeight:600 }}>STUDIO</span>
+            <span style={{ color: T.text, fontWeight:600 }}>NEXUS</span>
+            <span style={{ color: T.text, fontWeight:600 }}>STUDIO</span>
           </span>
         </div>
         {/* 서브앱일 때만: 앱 이름 (클릭 불가, 앱 포인트 컬러).
@@ -122,7 +125,7 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
       {/* RIGHT: 등급 뱃지 + 프로필 아이콘 */}
       <div style={{ display:"flex", alignItems:"center", gap:10 }}>
         {user && grade && GRADE_LABEL[grade] && (() => {
-          const gColor = GRADE_COLOR[grade] || THEME.accent;
+          const gColor = GRADE_COLOR[grade] || T.accent;
           return (
             <div
               title={`현재 등급: ${GRADE_LABEL[grade]}`}
@@ -158,9 +161,10 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
 
 function Notification() {
   const { notification } = useGlobal();
+  const T = useTheme();
   if (!notification) return null;
   return (
-    <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", background:THEME.accent, color:"#fff", padding:"10px 22px", borderRadius:8, fontSize:13, fontWeight:500, zIndex:999 }}>
+    <div style={{ position:"fixed", bottom:28, left:"50%", transform:"translateX(-50%)", background:T.accent, color:"#fff", padding:"10px 22px", borderRadius:8, fontSize:13, fontWeight:500, zIndex:999 }}>
       ✓ {notification}
     </div>
   );
@@ -190,6 +194,8 @@ const readSelectedVersion = (app) => {
 };
 
 function AppCard({ app, onOpen, isAdmin }) {
+  const T = useTheme();
+  const { isLight } = useGlobal();
   const [hov, setHov] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(() => readSelectedVersion(app));
   const disabled = !!app.disabled && !isAdmin;
@@ -202,13 +208,16 @@ function AppCard({ app, onOpen, isAdmin }) {
     try { localStorage.setItem(versionStorageKey(app.id), key); } catch {}
     if (!disabled) onOpen();
   };
+  // 라이트/다크 disabled 색상 — 라이트에선 더 옅은 회색이 자연스러움.
+  const disabledBg     = isLight ? "#ECECEF"             : "#06060C";
+  const disabledBorder = isLight ? "rgba(0,0,0,0.08)"    : "rgba(122,122,154,0.25)";
   return (
     <div onClick={handleClick} onMouseEnter={() => !disabled && setHov(true)} onMouseLeave={() => setHov(false)}
       title={disabled ? "준비 중인 앱입니다" : (adminUnlocked ? "관리자 권한으로 활성화됨" : (hasVersions ? "버전 선택 후 카드를 눌러 실행" : undefined))}
       style={{
-        // 준비 중: 한층 더 어두운 배경 + 점선 보더로 "미완성" 시그널
-        background: disabled ? "#06060C" : (hov ? THEME.card : THEME.surface),
-        border: disabled ? `1px dashed rgba(122,122,154,0.25)` : `1px solid ${THEME.border}`,
+        // 준비 중: 한층 더 어두운/연한 배경 + 점선 보더로 "미완성" 시그널
+        background: disabled ? disabledBg : (hov ? T.card : T.surface),
+        border: disabled ? `1px dashed ${disabledBorder}` : `1px solid ${T.border}`,
         borderRadius: 10, padding: "18px 20px",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.55 : (adminUnlocked ? 0.85 : 1),
@@ -225,41 +234,41 @@ function AppCard({ app, onOpen, isAdmin }) {
           <div style={{
             width:36, height:36, borderRadius:8, flexShrink:0,
             display:"flex", alignItems:"center", justifyContent:"center",
-            background: disabled ? "rgba(122,122,154,0.10)" : `${app.color}1f`,
-            border: disabled ? `1px solid rgba(122,122,154,0.25)` : `1px solid ${app.color}40`,
+            background: disabled ? T.hoverBg : `${app.color}1f`,
+            border: disabled ? `1px solid ${disabledBorder}` : `1px solid ${app.color}40`,
           }}>
             <span style={{
               fontSize:14, fontWeight:700, letterSpacing:"0.01em", lineHeight:1,
-              color: disabled ? THEME.textMuted : app.color,
+              color: disabled ? T.textMuted : app.color,
               fontFamily:"'Noto Sans KR', sans-serif",
             }}>{app.abbr || cardAbbr(app.sub)}</span>
           </div>
           {/* 메인 타이틀: 영문 sub — 준비 중은 더 흐리게 */}
           <div style={{ minWidth:0, flex:1 }}>
-            <div style={{ fontSize:15, fontWeight:700, color: disabled ? THEME.textMuted : THEME.text, lineHeight:1.2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{app.sub}</div>
+            <div style={{ fontSize:15, fontWeight:700, color: disabled ? T.textMuted : T.text, lineHeight:1.2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{app.sub}</div>
           </div>
         </div>
         {/* 우상단 뱃지 */}
         <div style={{ display:"flex", alignItems:"flex-start", shrink:0, flexShrink:0 }}>
           {disabled ? (
-            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, letterSpacing:"0.1em", color:"#B8B8D0", textTransform:"uppercase", background:"rgba(122,122,154,0.22)", border:`1px solid rgba(122,122,154,0.5)`, padding:"3px 8px", borderRadius:999, fontWeight:700 }}>
+            <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, letterSpacing:"0.1em", color: T.textMuted, textTransform:"uppercase", background: T.hoverBg, border:`1px solid ${disabledBorder}`, padding:"3px 8px", borderRadius:999, fontWeight:700 }}>
               <Lock size={9} strokeWidth={2.5} /> 준비 중
             </span>
           ) : app.beta ? (
-            <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>BETA</span>
+            <span style={{ fontSize:9, letterSpacing:"0.1em", color:T.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${T.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>BETA</span>
           ) : app.badge ? (
-            <span style={{ fontSize:9, letterSpacing:"0.08em", color:THEME.textMuted, background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{app.badge}</span>
+            <span style={{ fontSize:9, letterSpacing:"0.08em", color:T.textMuted, background:"transparent", border:`1px solid ${T.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{app.badge}</span>
           ) : adminUnlocked ? (
-            <span style={{ fontSize:9, letterSpacing:"0.1em", color:THEME.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>Admin</span>
+            <span style={{ fontSize:9, letterSpacing:"0.1em", color:T.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${T.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>Admin</span>
           ) : hasVersions ? (() => {
             const v = app.versions.find(x => x.key === selectedVersion);
-            return <span style={{ fontSize:9, letterSpacing:"0.08em", color:THEME.textMuted, background:"transparent", border:`1px solid ${THEME.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{v?.label || selectedVersion}</span>;
+            return <span style={{ fontSize:9, letterSpacing:"0.08em", color:T.textMuted, background:"transparent", border:`1px solid ${T.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{v?.label || selectedVersion}</span>;
           })() : null}
         </div>
       </div>
       {/* 보조 타이틀: 한글 label */}
-      <div style={{ fontSize:11, color: disabled ? THEME.textDim : THEME.textMuted, marginBottom:4 }}>{app.label}</div>
-      <div style={{ fontSize:11, color: disabled ? THEME.textDim : THEME.textMuted, lineHeight:1.5 }}>{app.desc}</div>
+      <div style={{ fontSize:11, color: disabled ? T.textDim : T.textMuted, marginBottom:4 }}>{app.label}</div>
+      <div style={{ fontSize:11, color: disabled ? T.textDim : T.textMuted, lineHeight:1.5 }}>{app.desc}</div>
       {hasVersions && (
         <div style={{ marginTop:12, display:"flex", gap:4 }}>
           {app.versions.map(v => {
@@ -274,12 +283,12 @@ function AppCard({ app, onOpen, isAdmin }) {
                   fontSize:10, fontWeight:700, letterSpacing:"0.04em",
                   padding:"5px 6px", borderRadius:5, cursor:"pointer",
                   background: active ? `${v.color}22` : "transparent",
-                  border: `1px solid ${active ? `${v.color}88` : THEME.border}`,
-                  color: active ? v.color : THEME.textMuted,
+                  border: `1px solid ${active ? `${v.color}88` : T.border}`,
+                  color: active ? v.color : T.textMuted,
                   transition: "all 0.12s",
                 }}
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${v.color}aa`; e.currentTarget.style.color = v.color; }}
-                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.color = THEME.textMuted; } }}
+                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; } }}
               >
                 {v.label}
               </button>
@@ -290,9 +299,9 @@ function AppCard({ app, onOpen, isAdmin }) {
       {!hasVersions && app.canReceive.length > 0 && (
         <div style={{ marginTop:12, display:"flex", gap:4, flexWrap:"wrap" }}>
           {app.canReceive.slice(0,3).map(rid => (
-            <span key={rid} style={{ fontSize:9, color:THEME.textDim, background:THEME.border, padding:"2px 5px", borderRadius:3 }}>{APP_MAP[rid]?.sub.split(" ")[0]}</span>
+            <span key={rid} style={{ fontSize:9, color:T.textDim, background:T.border, padding:"2px 5px", borderRadius:3 }}>{APP_MAP[rid]?.sub.split(" ")[0]}</span>
           ))}
-          {app.canReceive.length > 3 && <span style={{ fontSize:9, color:THEME.textDim }}>+{app.canReceive.length-3}</span>}
+          {app.canReceive.length > 3 && <span style={{ fontSize:9, color:T.textDim }}>+{app.canReceive.length-3}</span>}
         </div>
       )}
     </div>
@@ -300,8 +309,9 @@ function AppCard({ app, onOpen, isAdmin }) {
 }
 
 function AppCardGrid({ onScroll }) {
-  const { navigate } = useGlobal();
+  const { navigate, isLight } = useGlobal();
   const { isAdmin } = useAuth();
+  const T = useTheme();
   const groups = [
     { key:"explore",    label:"허브 / 평가" },
     { key:"generate",   label:"프롬프트 생성" },
@@ -309,6 +319,8 @@ function AppCardGrid({ onScroll }) {
     // 관리자 그룹은 isAdmin일 때만 렌더 (아래 filter)
     ...(isAdmin ? [{ key:"admin", label:"Admin", adminLabel: true }] : []),
   ];
+  // 라이트에서는 배경이 흰색이라 흰색 alpha 보더가 안 보임 → 검정 alpha 로 전환
+  const sectionBarColor = isLight ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.03)";
   return (
     <div style={{ width:"100%", height:"100%", overflowY:"auto" }} onScroll={onScroll}>
       <DashboardHero />
@@ -321,8 +333,8 @@ function AppCardGrid({ onScroll }) {
         if (!apps.length) return null;
         // 섹션 타이틀 앞 세로 바 — 거의 보이지 않을 정도로 극단적으로 미세하게.
         const labelStyle = g.adminLabel
-          ? { fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: THEME.accent, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(108,92,231,0.15)", paddingLeft:10 }
-          : { fontSize:10, fontWeight:600, letterSpacing:"0.14em", color:THEME.textDim, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(255,255,255,0.03)", paddingLeft:10 };
+          ? { fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: T.accent, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(108,92,231,0.15)", paddingLeft:10 }
+          : { fontSize:10, fontWeight:600, letterSpacing:"0.14em", color:T.textDim, textTransform:"uppercase", marginBottom:14, borderLeft:`2px solid ${sectionBarColor}`, paddingLeft:10 };
         return (
           <div key={g.key} style={{ marginBottom:40 }}>
             <div style={labelStyle}>{g.label}</div>
@@ -349,6 +361,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "rubicon-forge":      return <RubiconForgeApp />;
     case "logo-forge":         return <LogoForgeApp />;
     case "design-eval":        return <DesignEvaluatorApp />;
+    case "design-lexicon":     return <DesignLexiconApp />;
     case "promotion-archive":  return <PromotionArchiveApp />;
     case "brand-web-review":   return <BrandWebReviewApp />;
     case "banner-codex":       return <BannerCodexApp />;
@@ -362,9 +375,10 @@ function AppRouter({ appId, version, setVersion, versions }) {
 // Topbar 아래 노출되는 버전 선택 서브헤더 — versions 있는 앱에서만 사용.
 // position:fixed 로 두어 Topbar 와 동일하게 flow 에서 분리, 콘텐츠 위에 항상 떠 있음.
 function VersionSubHeader({ versions, selectedVersion, onSelect }) {
+  const T = useTheme();
   return (
-    <div style={{ position:"fixed", top:52, left:0, right:0, zIndex:999, height:36, minHeight:36, background:THEME.surface, borderBottom:`1px solid ${THEME.border}`, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 20px" }}>
-      <div style={{ display:"flex", alignItems:"center", gap:4, background:THEME.bg, border:`1px solid ${THEME.border}`, borderRadius:999, padding:"3px 4px" }}>
+    <div style={{ position:"fixed", top:52, left:0, right:0, zIndex:999, height:36, minHeight:36, background:T.surface, borderBottom:`1px solid ${T.border}`, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 20px" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:4, background:T.bg, border:`1px solid ${T.border}`, borderRadius:999, padding:"3px 4px" }}>
         {versions.map((v) => {
           const active = v.key === selectedVersion;
           return (
@@ -374,7 +388,7 @@ function VersionSubHeader({ versions, selectedVersion, onSelect }) {
               style={{
                 padding:"4px 12px", borderRadius:999, border:0, cursor:"pointer",
                 background: active ? `${v.color}22` : "transparent",
-                color: active ? v.color : THEME.textMuted,
+                color: active ? v.color : T.textMuted,
                 fontSize:11, fontWeight:700, letterSpacing:"0.04em",
                 fontFamily:"'Noto Sans KR', sans-serif", transition:"all 0.12s",
               }}>{v.label}</button>
@@ -387,6 +401,7 @@ function VersionSubHeader({ versions, selectedVersion, onSelect }) {
 
 export default function Shell() {
   const { currentApp } = useGlobal();
+  const T = useTheme();
   const app = currentApp ? APP_MAP[currentApp] : null;
   const hasVersions = Array.isArray(app?.versions) && app.versions.length > 0;
   const [selectedVersion, setSelectedVersionRaw] = useState(() => readSelectedVersion(app));
@@ -422,9 +437,9 @@ export default function Shell() {
   const innerPaddingTop = currentApp ? 52 : 0;
 
   return (
-    <div style={{ height:"100vh", background:THEME.bg, color:THEME.text, fontFamily:"'Noto Sans KR', sans-serif", display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ height:"100vh", background:T.bg, color:T.text, fontFamily:"'Noto Sans KR', sans-serif", display:"flex", flexDirection:"column", overflow:"hidden" }}>
       {/* 폰트 link 는 index.html <head> 에 위치 — CSS 파싱 대기 없이 즉시 다운로드 시작. */}
-      <style>{`* { box-sizing:border-box; } @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)} } ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${THEME.border};border-radius:2px}`}</style>
+      <style>{`* { box-sizing:border-box; } @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)} } ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${T.border};border-radius:2px}`}</style>
       {/* 폰트 프리로드 — Teko 5개 가중치를 각각 span 으로 명시해 Shell 마운트 시점에
           전 가중치 다운로드 trigger. lazy 로 로드되는 서브앱들이 도착할 때면 폰트 준비 완료. */}
       <div aria-hidden="true" style={{

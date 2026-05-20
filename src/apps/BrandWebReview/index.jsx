@@ -37,7 +37,7 @@ export default function BrandWebReviewApp() {
   }, [incoming]);
 
   return (
-    <div className="flex h-full bg-[#0c0c0e] text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
+    <div className="flex h-full bg-slate-50 text-slate-900 dark:bg-[#0c0c0e] dark:text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
       {/* 사이드바 — BannerCodex 패턴 (빈 공간 클릭 토글, 햄버거 없음, h-[60px] 상단 여백) */}
       <aside
         onClick={handleSidebarClick}

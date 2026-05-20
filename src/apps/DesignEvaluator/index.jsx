@@ -519,7 +519,7 @@ ${evaluationCriteria}
 
   return (
     <div
-        className="min-h-screen bg-[#0c0c0e] text-zinc-300 font-sans selection:bg-[#df6a78]/30 overflow-x-hidden"
+        className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#0c0c0e] dark:text-zinc-300 font-sans selection:bg-[#df6a78]/30 overflow-x-hidden"
         onDragEnter={() => setIsDragging(true)}
     >
         <style>{`

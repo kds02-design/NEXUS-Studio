@@ -240,7 +240,10 @@ const DEFAULT_STATE = {
 
 /* ════════ Main ════════ */
 export default function LogoForge() {
-  const { navigate, setNotification } = useGlobal();
+  const { navigate, setNotification, isLight } = useGlobal();
+  // Phase 2.5 — 루트만 light 대응. 내부 위젯은 T 토큰(다크) 그대로.
+  const rootBg   = isLight ? "#F7F7FA" : T.bg;
+  const rootText = isLight ? "#1A1A24" : T.text;
   const [state, setStateRaw] = useState(() => load(STORAGE_STATE, null) || DEFAULT_STATE);
   const [presets, setPresets] = useState(() => load(STORAGE_PRESETS, {}));
   const [presetName, setPresetName] = useState("");
@@ -331,7 +334,7 @@ export default function LogoForge() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: T.bg, color: T.text, fontFamily: "'Noto Sans KR', sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: rootBg, color: rootText, fontFamily: "'Noto Sans KR', sans-serif" }}>
       {/* 3-PANEL BODY */}
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "320px 1fr 420px", overflow: "hidden" }}>
         {/* ─── LEFT: 기본 설정 ─── */}

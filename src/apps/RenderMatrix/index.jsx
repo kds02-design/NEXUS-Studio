@@ -113,7 +113,7 @@ export default function RenderMatrixApp() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#09090B] text-zinc-100 p-5 font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 font-sans overflow-hidden">
       {rp.usageModal}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }

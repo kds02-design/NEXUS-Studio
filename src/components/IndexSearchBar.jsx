@@ -1,8 +1,8 @@
 // Index 페이지의 검색 바 — Gemini가 사용자 질문을 보고 적합한 앱을 추천.
 // 추천 결과 카드 + 빠른 이동 칩(quick chips).
 import { useState } from "react";
-import { APP_MAP, APP_REGISTRY, THEME } from "../config/apps";
-import { useGlobal } from "../context/GlobalContext";
+import { APP_MAP, APP_REGISTRY } from "../config/apps";
+import { useGlobal, useTheme } from "../context/GlobalContext";
 import { GEMINI_API_KEY, geminiUrl } from "../lib/gemini";
 
 // 칩 라벨 → 이동할 앱 id. 사용자 친화적 문구로 두고 안쪽에서 매핑.
@@ -53,7 +53,8 @@ ${list}
 }
 
 export default function IndexSearchBar() {
-  const { navigate } = useGlobal();
+  const { navigate, isLight } = useGlobal();
+  const T = useTheme();
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -92,13 +93,13 @@ export default function IndexSearchBar() {
       {/* 검색 입력 */}
       <div style={{
         display:"flex", alignItems:"center", gap:8,
-        background: THEME.surface,
-        border: `1px solid ${THEME.border}`,
+        background: T.surface,
+        border: `1px solid ${T.border}`,
         borderRadius: 999,
         padding: "6px 6px 6px 22px",
-        boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
+        boxShadow: isLight ? "0 8px 28px rgba(0,0,0,0.08)" : "0 8px 28px rgba(0,0,0,0.35)",
       }}>
-        <span style={{ color: THEME.textMuted, fontSize: 16 }}>🔮</span>
+        <span style={{ color: T.textMuted, fontSize: 16 }}>🔮</span>
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -106,7 +107,7 @@ export default function IndexSearchBar() {
           placeholder="무엇을 만들고 싶으신가요?"
           style={{
             flex: 1, background: "transparent", border: 0, outline: "none",
-            color: THEME.text, fontSize: 14, padding: "10px 4px",
+            color: T.text, fontSize: 14, padding: "10px 4px",
             fontFamily: "'Noto Sans KR', sans-serif",
           }}
         />
@@ -115,7 +116,7 @@ export default function IndexSearchBar() {
           disabled={busy || !query.trim()}
           style={{
             padding: "8px 18px", borderRadius: 999,
-            background: busy || !query.trim() ? THEME.border : THEME.accent,
+            background: busy || !query.trim() ? T.border : T.accent,
             color: "#ffffff", border: 0, fontSize: 12, fontWeight: 700,
             cursor: busy || !query.trim() ? "not-allowed" : "pointer",
             transition: "background 0.12s",
@@ -133,14 +134,14 @@ export default function IndexSearchBar() {
               onClick={() => goApp(c.appId)}
               style={{
                 padding: "6px 14px", borderRadius: 999,
-                background: "rgba(255,255,255,0.04)",
-                border: `1px solid ${THEME.border}`,
-                color: THEME.textMuted, fontSize: 11, fontWeight: 600,
+                background: T.hoverBg,
+                border: `1px solid ${T.border}`,
+                color: T.textMuted, fontSize: 11, fontWeight: 600,
                 cursor: "pointer", transition: "all 0.12s",
                 fontFamily: "'Noto Sans KR', sans-serif",
               }}
               onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${target.color}aa`; e.currentTarget.style.color = target.color; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.color = THEME.textMuted; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; }}
             >
               <span style={{ color: target.color, marginRight: 5 }}>{target.icon}</span>
               {c.label}
@@ -153,7 +154,7 @@ export default function IndexSearchBar() {
       {result && recApp && (
         <div style={{
           marginTop: 18, padding: "16px 18px",
-          background: THEME.card, border: `1px solid ${recApp.color}55`,
+          background: T.card, border: `1px solid ${recApp.color}55`,
           borderRadius: 12, display: "flex", alignItems: "center", gap: 14,
           animation: "fadeUp 0.25s ease-out",
         }}>
@@ -162,8 +163,8 @@ export default function IndexSearchBar() {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", color: recApp.color, textTransform: "uppercase", marginBottom: 4 }}>추천</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: THEME.text, marginBottom: 4 }}>{recApp.sub}</div>
-            <div style={{ fontSize: 11, color: THEME.textMuted, lineHeight: 1.5 }}>{result.reason}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 4 }}>{recApp.sub}</div>
+            <div style={{ fontSize: 11, color: T.textMuted, lineHeight: 1.5 }}>{result.reason}</div>
           </div>
           <button onClick={() => goApp(result.appId)}
             style={{ padding: "8px 16px", borderRadius: 6, background: recApp.color, color: "#fff", border: 0, fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}

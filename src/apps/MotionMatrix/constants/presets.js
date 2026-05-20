@@ -150,8 +150,27 @@ export const EXPORT_MODE_INFO = {
   web_alpha: { title: "Web Alpha Focus (합성 최적화 모드)", desc: "영상을 애프터이펙트의 '스크린 모드'로 합성하거나, 웹사이트 배경에 올리고 싶을 때 사용합니다. 빛 번짐과 연기를 극단적으로 억제하여 외곽선을 예리하게 만듭니다." }
 };
 
+// 평면 배열 — 기존 import (PRESETS) 호환 유지. usePresets/handleApplyPreset 도 이걸 lookup.
 export const PRESETS = [
-  { id: 'premium_metal', label: 'Premium Metal', layers: { surface: 'metallic_sweep', edge: 'rim_trace', ambient: 'none', intensity: 'subtle', duration: '5s', flow: 'contour_trace', intro: 'fade_in', dynamics: 'smooth' } },
-  { id: 'dark_fantasy', label: 'Dark Fantasy Relic', layers: { surface: 'magma_cracks', edge: 'edge_pulse', ambient: 'ash_particles', intensity: 'medium', duration: '5s', flow: 'core_radiate', intro: 'ember_ignite', dynamics: 'organic_swell' } },
-  { id: 'cyber_scan', label: 'Cyber Data Scan', layers: { surface: 'data_scan', edge: 'thin_electric', ambient: 'none', intensity: 'medium', duration: '3s', flow: 'linear_sweep', intro: 'glitch_reveal', dynamics: 'erratic_bursts' } }
+  { id: 'premium_metal', label: 'Premium Metal',       description: '금속성 빛 흐름 + 윤곽선 트레이스. 절제된 프리미엄 모션.',                   layers: { surface: 'metallic_sweep', edge: 'rim_trace',      ambient: 'none',          intensity: 'subtle', duration: '5s', flow: 'contour_trace', intro: 'fade_in',       dynamics: 'smooth' } },
+  { id: 'dark_fantasy',  label: 'Dark Fantasy Relic',  description: '용암 균열 + 외곽선 펄스 + 어두운 재. 다크 판타지 유물 분위기.',             layers: { surface: 'magma_cracks',    edge: 'edge_pulse',     ambient: 'ash_particles', intensity: 'medium', duration: '5s', flow: 'core_radiate',  intro: 'ember_ignite',  dynamics: 'organic_swell' } },
+  { id: 'cyber_scan',    label: 'Cyber Data Scan',     description: '데이터 스캔 + 얇은 전류. 빠르고 불규칙한 사이버 디지털 모션.',              layers: { surface: 'data_scan',       edge: 'thin_electric',  ambient: 'none',          intensity: 'medium', duration: '3s', flow: 'linear_sweep',  intro: 'glitch_reveal', dynamics: 'erratic_bursts' } },
+];
+
+// RenderMatrix PRESET_GROUPS 패턴 — 그룹 탭으로 카테고리화. id 는 PRESETS 의 id 와 동일하게 매핑.
+// 새 프리셋은 PRESETS 에 추가한 뒤 여기 그룹 안에 같은 id 만 nest 하면 됨 (단일 진실 소스).
+const _presetMap = Object.fromEntries(PRESETS.map(p => [p.id, p]));
+export const PRESET_GROUPS = [
+  {
+    id: 'metal', icon: '🟡', name: '메탈',
+    presets: [_presetMap.premium_metal],
+  },
+  {
+    id: 'fantasy', icon: '⚔️', name: '판타지',
+    presets: [_presetMap.dark_fantasy],
+  },
+  {
+    id: 'tech', icon: '💻', name: '사이버',
+    presets: [_presetMap.cyber_scan],
+  },
 ];

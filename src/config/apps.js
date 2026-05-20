@@ -1,8 +1,25 @@
-export const THEME = {
+// 다크 — 기존 토큰. 모든 셸/앱이 기본으로 참조.
+export const THEME_DARK = {
   bg: "#0A0A0F", surface: "#111118", card: "#16161F",
   border: "#1E1E2E", accent: "#6C5CE7", accentSoft: "#2D2A4A",
   text: "#E8E6FF", textMuted: "#7A7A9A", textDim: "#3A3A5A",
+  // 다크 전용 보조(라이트와 톤이 다른 곳에서 사용)
+  hoverBg: "rgba(255,255,255,0.05)",
 };
+
+// 라이트 — Vercel / Linear 스타일 화이트 톤. surface=흰색, card=살짝 회색.
+export const THEME_LIGHT = {
+  bg: "#F7F7FA", surface: "#FFFFFF", card: "#F2F2F6",
+  border: "#E4E4EC", accent: "#6C5CE7", accentSoft: "#EFEDFE",
+  text: "#1A1A24", textMuted: "#6B6B80", textDim: "#9696A8",
+  hoverBg: "rgba(0,0,0,0.04)",
+};
+
+// 하위 호환 — 기존 `THEME` 참조는 다크를 가리킴.
+// 새 코드는 `useTheme()`(GlobalContext)을 통해 활성 토큰을 받아야 함.
+export const THEME = THEME_DARK;
+
+export const pickTheme = (isLight) => (isLight ? THEME_LIGHT : THEME_DARK);
 
 export const APP_REGISTRY = [
   { id: "prompt-arc",          label: "프롬프트 아크",      sub: "Prompt Arche",        abbr: "Pa", icon: "⊕", desc: "이지와 함께하는 프롬프트 공유 플랫폼",              group: "explore", color: "#6C5CE7", canReceive: ["typecore-sovereign","typecore-breeze","render-metrics","motion-metrics","design-lexicon"], canSend: ["typecore-sovereign","typecore-breeze","render-metrics","motion-metrics","design-eval"] },
@@ -29,9 +46,9 @@ export const APP_REGISTRY = [
   { id: "prompt-builder",      label: "Prompt Builder",     sub: "Prompt Builder",      abbr: "Pb", icon: "◐", desc: "카드형 프롬프트 조립 시스템",                          group: "generate", color: "#A29BFE", canReceive: ["prompt-arc","render-metrics","motion-metrics","typecore-sovereign","typecore-breeze"], canSend: ["prompt-arc","motion-metrics","render-metrics","design-eval"], disabled: true },
   { id: "rubicon-forge",       label: "루비콘 포지",        sub: "Rubicon Forge",       abbr: "Rf", icon: "⬢", desc: "버튼 · 카드 · 패널 등 캠페인 컴포넌트 생성기",        group: "generate", color: "#55EFC4", canReceive: [],                                                                              canSend: ["prompt-arc","design-eval"], disabled: true },
   { id: "logo-forge",          label: "Logo Forge",         sub: "Logo Forge",          abbr: "Lf", icon: "◈", desc: "로고 디자인 프롬프트 생성 도구",                       group: "generate", color: "#FD79A8", canReceive: ["prompt-arc","brief-studio"],                                                  canSend: ["prompt-arc","design-eval"], disabled: true },
-  { id: "design-lexicon",      label: "디자인 렉시콘",      sub: "Design Lexicon",      abbr: "Dl", icon: "⊟", desc: "디자인 용어·레퍼런스 사전 (준비 중)",                  group: "generate", color: "#55EFC4", canReceive: [],                                                                              canSend: ["prompt-arc","design-eval"], disabled: true, status: "coming-soon" },
+  { id: "design-lexicon",      label: "디자인 렉시콘",      sub: "Design Lexicon",      abbr: "Dl", icon: "⊟", desc: "디자인 방법론 지식 베이스 — 용어·이론·예시 검색",       group: "generate", color: "#55EFC4", canReceive: [],                                                                              canSend: ["prompt-arc","design-eval"], beta: true },
   { id: "design-eval",         label: "디자인 평가도구",    sub: "Design Evaluator",    abbr: "De", icon: "◉", desc: "브랜드 사이트 · 프로모션 · 배너 디자인 평가",          group: "explore", color: "#FD79A8", canReceive: ["banner-codex","prompt-arc","render-metrics","motion-metrics","rubicon-forge"], canSend: [], disabled: true },
-  { id: "banner-creator",       label: "배너 생성기",        sub: "Banner Creator",      abbr: "Bc", icon: "▣", desc: "이미지 업로드 후 Split 배너 즉시 제작 · 다운로드",         group: "production", color: "#E17055", canReceive: [],                                                                              canSend: [] },
+  { id: "banner-creator",      label: "배너 생성기",        sub: "Banner Creator",      abbr: "Bc", icon: "▣", desc: "이미지 업로드 후 Split 배너 즉시 제작 · 다운로드",         group: "production", color: "#E17055", canReceive: [],                                                                              canSend: [] },
   { id: "visual-flux",         label: "Visual Flux",        sub: "Visual Flux",         abbr: "Vf", icon: "▣", desc: "배너·비주얼 자동 생성 (준비 중)",                       group: "production", color: "#E17055", canReceive: ["banner-codex"],                                                              canSend: ["banner-codex","design-eval"], disabled: true, status: "coming-soon" },
   { id: "nexus-admin",         label: "NEXUS Admin",        sub: "NEXUS Admin",         abbr: "Na", icon: "⚙", desc: "플랫폼 관리자 전용 설정 및 관리 도구",                  group: "admin",    color: "#6C5CE7", canReceive: [],                                                                              canSend: [], adminOnly: true },
 ];

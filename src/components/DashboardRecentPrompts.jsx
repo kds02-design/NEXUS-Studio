@@ -4,8 +4,7 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot } from "firebase/firestore";
 import { db, appId } from "../lib/firebase";
-import { useGlobal } from "../context/GlobalContext";
-import { THEME } from "../config/apps";
+import { useGlobal, useTheme } from "../context/GlobalContext";
 import { cloudinaryVideoThumb } from "../apps/PromptArc/services/cloudinary";
 
 const toMillis = (t) => {
@@ -23,7 +22,8 @@ const pickVideo = (p) => (Array.isArray(p.videos) && typeof p.videos[0] === "str
 const isVideoOnly = (p) => !pickThumb(p) && !!pickVideo(p);
 
 export default function DashboardRecentPrompts() {
-  const { navigate } = useGlobal();
+  const { navigate, isLight } = useGlobal();
+  const T = useTheme();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -64,10 +64,10 @@ export default function DashboardRecentPrompts() {
   return (
     <div style={{ padding:"0 40px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box", marginBottom: 36 }}>
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: 14 }}>
-        <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.14em", color:THEME.textDim, textTransform:"uppercase", borderLeft:"2px solid rgba(255,255,255,0.03)", paddingLeft:10 }}>최근 프롬프트</div>
+        <div style={{ fontSize:11, fontWeight:700, letterSpacing:"0.14em", color:T.textDim, textTransform:"uppercase", borderLeft:`2px solid ${isLight ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.03)"}`, paddingLeft:10 }}>최근 프롬프트</div>
         <button
           onClick={() => navigate("prompt-arc", { source:"index", target:"prompt-arc", prompt:{ text:"", tags:[], style:"" }, image:{ url:"", metadata:{} }, params:{} })}
-          style={{ background:"none", border:`1px solid ${THEME.border}`, color:THEME.textMuted, padding:"4px 12px", borderRadius:6, fontSize:11, cursor:"pointer" }}
+          style={{ background:"none", border:`1px solid ${T.border}`, color:T.textMuted, padding:"4px 12px", borderRadius:6, fontSize:11, cursor:"pointer" }}
         >전체 보기 →</button>
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12 }}>
@@ -81,13 +81,13 @@ export default function DashboardRecentPrompts() {
             <button key={p.id} onClick={() => openPrompt(p)}
               title={p.title || "Untitled"}
               style={{
-                display:"block", position:"relative", width:"100%", border:`1px solid ${THEME.border}`,
+                display:"block", position:"relative", width:"100%", border:`1px solid ${T.border}`,
                 borderRadius:10, overflow:"hidden", cursor:"pointer", padding:0, margin:0,
-                background:THEME.card, transition:"all 0.2s",
+                background:T.card, transition:"all 0.2s",
                 aspectRatio:"16 / 9",
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${THEME.accent}88`; e.currentTarget.style.transform = "translateY(-2px)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = THEME.border; e.currentTarget.style.transform = "translateY(0)"; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${T.accent}88`; e.currentTarget.style.transform = "translateY(-2px)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.transform = "translateY(0)"; }}
             >
               {/* 블러 배경 — 같은 이미지(또는 영상 포스터)를 cover로 깔고 blur+scale 적용.
                   가로로 긴 이미지가 contain 으로 표시될 때 위/아래 빈 공간을 채워주는 역할.

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { THEME } from "../config/apps";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/GlobalContext";
 import { REDEEM_ERROR_MESSAGES } from "../lib/grades";
 
 const errorMessages = {
@@ -22,6 +22,7 @@ const friendly = (err) => {
 };
 
 export default function LoginScreen() {
+  const T = useTheme();
   const { signInEmail, signUpEmail, signInGoogle, setPendingInviteCode } = useAuth();
   const [mode, setMode] = useState("signin");
   const [email, setEmail] = useState("");
@@ -62,28 +63,28 @@ export default function LoginScreen() {
 
   const inputStyle = {
     width: "100%", boxSizing: "border-box", padding: "12px 14px", fontSize: 13,
-    background: THEME.bg, border: `1px solid ${THEME.border}`, borderRadius: 8,
-    color: THEME.text, outline: "none", transition: "border-color 0.15s",
+    background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8,
+    color: T.text, outline: "none", transition: "border-color 0.15s",
   };
 
   return (
     <div style={{
-      minHeight: "100vh", background: THEME.bg, color: THEME.text,
+      minHeight: "100vh", background: T.bg, color: T.text,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
       fontFamily: "'Noto Sans KR', sans-serif",
     }}>
       <div style={{
-        width: "100%", maxWidth: 380, background: THEME.surface,
-        border: `1px solid ${THEME.border}`, borderRadius: 14, padding: "36px 32px",
+        width: "100%", maxWidth: 380, background: T.surface,
+        border: `1px solid ${T.border}`, borderRadius: 14, padding: "36px 32px",
       }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.18em", color: THEME.accent, textTransform: "uppercase", marginBottom: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.18em", color: T.accent, textTransform: "uppercase", marginBottom: 6 }}>
             NEXUS Studio
           </div>
-          <div style={{ fontSize: 18, fontWeight: 600, color: THEME.text }}>
+          <div style={{ fontSize: 18, fontWeight: 600, color: T.text }}>
             {mode === "signin" ? "로그인" : "회원가입"}
           </div>
-          <div style={{ fontSize: 12, color: THEME.textMuted, marginTop: 6 }}>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 6 }}>
             {mode === "signin" ? "계정이 있으신가요?" : "새 계정을 만듭니다"}
           </div>
         </div>
@@ -107,46 +108,46 @@ export default function LoginScreen() {
         </button>
 
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "0 0 18px" }}>
-          <div style={{ flex: 1, height: 1, background: THEME.border }}/>
-          <span style={{ fontSize: 10, color: THEME.textDim, letterSpacing: "0.1em" }}>OR</span>
-          <div style={{ flex: 1, height: 1, background: THEME.border }}/>
+          <div style={{ flex: 1, height: 1, background: T.border }}/>
+          <span style={{ fontSize: 10, color: T.textDim, letterSpacing: "0.1em" }}>OR</span>
+          <div style={{ flex: 1, height: 1, background: T.border }}/>
         </div>
 
         <form onSubmit={onSubmit}>
           <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", fontSize: 11, color: THEME.textMuted, marginBottom: 6, letterSpacing: "0.04em" }}>이메일</label>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, letterSpacing: "0.04em" }}>이메일</label>
             <input
               type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com" disabled={busy} autoComplete="email"
               style={inputStyle}
-              onFocus={(e) => e.target.style.borderColor = THEME.accent}
-              onBlur={(e) => e.target.style.borderColor = THEME.border}
+              onFocus={(e) => e.target.style.borderColor = T.accent}
+              onBlur={(e) => e.target.style.borderColor = T.border}
             />
           </div>
           <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", fontSize: 11, color: THEME.textMuted, marginBottom: 6, letterSpacing: "0.04em" }}>비밀번호</label>
+            <label style={{ display: "block", fontSize: 11, color: T.textMuted, marginBottom: 6, letterSpacing: "0.04em" }}>비밀번호</label>
             <input
               type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
               placeholder="6자 이상" disabled={busy}
               autoComplete={mode === "signin" ? "current-password" : "new-password"}
               minLength={6}
               style={inputStyle}
-              onFocus={(e) => e.target.style.borderColor = THEME.accent}
-              onBlur={(e) => e.target.style.borderColor = THEME.border}
+              onFocus={(e) => e.target.style.borderColor = T.accent}
+              onBlur={(e) => e.target.style.borderColor = T.border}
             />
           </div>
           <div style={{ marginBottom: 18 }}>
-            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: THEME.textMuted, marginBottom: 6, letterSpacing: "0.04em" }}>
-              <span>초대 코드 <span style={{ color: THEME.textDim, marginLeft: 4 }}>(선택)</span></span>
-              <span style={{ fontSize: 10, color: THEME.textDim }}>Expert 등급 잠금 해제</span>
+            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: T.textMuted, marginBottom: 6, letterSpacing: "0.04em" }}>
+              <span>초대 코드 <span style={{ color: T.textDim, marginLeft: 4 }}>(선택)</span></span>
+              <span style={{ fontSize: 10, color: T.textDim }}>Expert 등급 잠금 해제</span>
             </label>
             <input
               type="text" value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
               placeholder="EXPERT-XXXX" disabled={busy} autoComplete="off"
               style={{ ...inputStyle, fontFamily: "'JetBrains Mono','Menlo',monospace", letterSpacing: "0.08em" }}
-              onFocus={(e) => e.target.style.borderColor = THEME.accent}
-              onBlur={(e) => e.target.style.borderColor = THEME.border}
+              onFocus={(e) => e.target.style.borderColor = T.accent}
+              onBlur={(e) => e.target.style.borderColor = T.border}
             />
           </div>
 
@@ -161,7 +162,7 @@ export default function LoginScreen() {
           <button
             type="submit" disabled={busy}
             style={{
-              width: "100%", padding: "12px 14px", background: THEME.accent, color: "#fff",
+              width: "100%", padding: "12px 14px", background: T.accent, color: "#fff",
               border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600,
               cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.6 : 1, transition: "opacity 0.15s",
             }}
@@ -170,12 +171,12 @@ export default function LoginScreen() {
           </button>
         </form>
 
-        <div style={{ textAlign: "center", marginTop: 18, fontSize: 12, color: THEME.textMuted }}>
+        <div style={{ textAlign: "center", marginTop: 18, fontSize: 12, color: T.textMuted }}>
           {mode === "signin" ? "계정이 없으신가요? " : "이미 계정이 있나요? "}
           <button
             type="button"
             onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setError(""); }}
-            style={{ background: "none", border: "none", color: THEME.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
+            style={{ background: "none", border: "none", color: T.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
           >
             {mode === "signin" ? "회원가입" : "로그인"}
           </button>

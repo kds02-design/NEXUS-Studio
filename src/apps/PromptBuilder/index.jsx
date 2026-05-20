@@ -800,7 +800,10 @@ function TemplatePickerModal({ onClose, onPickTemplate, onPickFromCategory }) {
 
 /* ════════ Main ════════ */
 export default function PromptBuilder() {
-  const { setNotification } = useGlobal();
+  const { setNotification, isLight } = useGlobal();
+  // Phase 2.5 — 루트만 light 대응. 내부 위젯은 T 토큰(다크) 그대로.
+  const rootBg   = isLight ? "#F7F7FA" : T.bg;
+  const rootText = isLight ? "#1A1A24" : T.text;
   const [category, setCategory] = useState("motion");
   const [allCards, setAllCards] = useState(() => loadJSON(STORAGE_STATE, null) || buildInitialState());
   const [selectedByCat, setSelectedByCat] = useState({
@@ -1005,7 +1008,7 @@ export default function PromptBuilder() {
 
   /* — render — */
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: T.bg, color: T.text, fontFamily: "'Noto Sans KR', sans-serif" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", background: rootBg, color: rootText, fontFamily: "'Noto Sans KR', sans-serif" }}>
       {/* HEADER */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${T.border}`, background: T.surface, flexShrink: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>

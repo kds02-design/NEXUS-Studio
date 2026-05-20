@@ -278,7 +278,10 @@ export default function PromptArcApp() {
               isAdminMode={isAdminMode} selectedItems={selectedItems} onToggleSelect={toggleSelectItem}
               onView={setViewPrompt}
               onDelete={(id) => setDeleteConfirm({ isOpen: true, id })}
+              onEdit={(p) => { setEditingPrompt({ ...p, initialStep: 0 }); setEditModalOpen(true); }}
               onNewPrompt={handleNewPrompt}
+              currentUid={user?.uid}
+              isAdmin={isAdmin}
             />
           </main>
         </div>

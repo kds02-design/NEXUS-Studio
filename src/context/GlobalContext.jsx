@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { APP_MAP } from "../config/apps";
+import { APP_MAP, pickTheme } from "../config/apps";
 import { useAuth } from "./AuthContext";
 
 const GlobalContext = createContext(null);
@@ -33,20 +33,10 @@ export function GlobalProvider({ children }) {
   // popstate에서 setCurrentApp 호출 시 다시 pushState하지 않도록 가드
   const skipPushRef = useRef(false);
 
-  // ─── 전역 테마 (다크 모드 강제 고정) ─────────────────────
-  // 라이트 모드는 미완성 상태라 임시로 비활성화. 다크로 강제 고정.
-  // 나중에 라이트 모드 완성되면 아래 블록 주석 해제 + 강제 고정 코드 제거.
-  const theme = "dark";
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-    document.documentElement.dataset.theme = "dark";
-    document.documentElement.classList.add("dark");
-  }, []);
-  // 토글 호출은 무시 (호출부 깨지지 않도록 no-op으로 유지)
-  const setTheme = useCallback(() => {}, []);
-  const toggleTheme = useCallback(() => {}, []);
-
-  /* ── 라이트/다크 토글 원본 (재활성화 시 위 블록 제거 후 아래 주석 해제) ──
+  // ─── 전역 테마 (라이트/다크 토글) ─────────────────────
+  // Shell 골조(Topbar/AppCard/ProfilePopover/Dashboard*)는 라이트 토큰을 따라가지만,
+  // 개별 앱(BannerCodex 외)은 아직 다크 하드코딩이라 라이트로 전환 시 mixed appearance.
+  // 완료된 앱: BannerCodex, PromotionArchive.
   const [theme, setThemeRaw] = useState(() => {
     if (typeof window === "undefined") return "dark";
     try {
@@ -70,7 +60,6 @@ export function GlobalProvider({ children }) {
   const toggleTheme = useCallback(() => {
     setThemeRaw((prev) => (prev === "light" ? "dark" : "light"));
   }, []);
-  ── */
 
   // 첫 마운트: 현재 URL의 history state를 표준화 (replaceState).
   useEffect(() => {
@@ -131,3 +120,9 @@ export function GlobalProvider({ children }) {
 }
 
 export function useGlobal() { return useContext(GlobalContext); }
+
+// 활성 테마 토큰 객체를 반환. 컴포넌트는 `const T = useTheme()` 후 T.bg / T.text 등 사용.
+export function useTheme() {
+  const ctx = useContext(GlobalContext);
+  return pickTheme(!!ctx?.isLight);
+}

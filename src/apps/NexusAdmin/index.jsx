@@ -79,7 +79,7 @@ export default function NexusAdminApp() {
   }
 
   return (
-    <div className="flex bg-[#0a0a0c] text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
+    <div className="flex bg-slate-50 text-slate-900 dark:bg-[#0a0a0c] dark:text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
       <AdminSidebar
         tab={tab}
         setTab={setTab}

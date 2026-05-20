@@ -10,6 +10,22 @@ import { processMultipleFiles } from "../services/cloudinary";
 import { analyzeWithGemini } from "../services/gemini";
 import { PromptImage } from "./ArcCard";
 
+// 프롬프트가 어떤 모델을 대상으로 작성됐는지 — type 에 따라 다른 옵션 노출.
+// 이미지: Gemini / ChatGPT(DALL·E) / Midjourney.
+// 영상: Gemini(Veo) / Runway / Kling / Sora / Luma.
+const IMAGE_MODELS = [
+  { id: 'gemini',     label: 'Gemini' },
+  { id: 'chatgpt',    label: 'ChatGPT' },
+  { id: 'midjourney', label: 'Midjourney' },
+];
+const VIDEO_MODELS = [
+  { id: 'gemini',  label: 'Gemini (Veo)' },
+  { id: 'runway',  label: 'Runway' },
+  { id: 'kling',   label: 'Kling' },
+  { id: 'sora',    label: 'Sora' },
+  { id: 'luma',    label: 'Luma' },
+];
+
 const copyToClipboard = async (text, onSuccess) => {
   try { await navigator.clipboard.writeText(text); onSuccess?.(); }
   catch {
@@ -168,15 +184,43 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
       <button onClick={onClose} className="fixed top-4 right-4 z-[110] p-3 bg-white/10 hover:bg-white/20 text-white rounded-full border border-white/10"><X size={22} /></button>
       <div className="w-full max-w-5xl h-[90vh] bg-[#111] rounded-2xl border border-white/10 flex overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="w-[60%] bg-[#050505] relative flex flex-col"
-          onDragOver={e => data.type === 'image' && e.preventDefault()}
-          onDragEnter={() => data.type === 'image' && setIsDragImg(true)}
+          // type 양쪽 모두에서 drag/drop 활성화. type 과 다른 매체 파일은 토스트로 안내 후 무시.
+          onDragOver={e => { e.preventDefault(); }}
+          onDragEnter={() => setIsDragImg(true)}
           onDragLeave={() => setIsDragImg(false)}
-          onDrop={e => { if (data.type !== 'image') return; e.preventDefault(); setIsDragImg(false); handleImgFiles(e.dataTransfer.files); }}>
+          onDrop={e => {
+            e.preventDefault();
+            setIsDragImg(false);
+            const files = Array.from(e.dataTransfer.files || []);
+            if (files.length === 0) return;
+            if (data.type === 'video') {
+              const v = files.find(isVideoFile);
+              if (v) handleVideoFiles([v]);
+              else showToast?.('영상 모드 — 영상 파일(mp4/webm/mov)을 드롭하세요.', 'error');
+            } else {
+              const imgs = files.filter(f => f.type.startsWith('image/'));
+              if (imgs.length) handleImgFiles(imgs);
+              else showToast?.('이미지 모드 — 이미지 파일을 드롭하세요.', 'error');
+            }
+          }}>
           <div className="absolute top-3 left-3 z-20 flex gap-1 p-1 rounded-lg bg-black/50 border border-white/10 backdrop-blur-sm">
-            <button onClick={() => setData(prev => ({ ...prev, type: 'image' }))}
+            <button onClick={() => {
+              if (data.type === 'image') return;
+              // video → image 전환. 영상 있으면 확인 후 제거 (이미지와 동시 등록 불가 정책).
+              if ((data.videos || []).length > 0 && !confirm('영상이 제거됩니다. 이미지 모드로 전환할까요?')) return;
+              setData(prev => ({ ...prev, type: 'image', videos: [] }));
+              setCustomPoster(null);
+              setMainIdx(0);
+            }}
               className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors flex items-center gap-1.5 ${data.type === 'image' ? 'bg-[#C8A969]/20 text-[#C8A969]' : 'text-zinc-500 hover:text-zinc-300'}`}
             ><ImageIcon size={11} /> 이미지</button>
-            <button onClick={() => setData(prev => ({ ...prev, type: 'video' }))}
+            <button onClick={() => {
+              if (data.type === 'video') return;
+              // image → video 전환. 이미지/스텝 데이터 있으면 확인 후 모두 제거.
+              if ((data.images || []).length > 0 && !confirm('이미지와 모든 스텝 정보가 제거됩니다. 영상 모드로 전환할까요?')) return;
+              setData(prev => ({ ...prev, type: 'video', images: [], stepPrompts: [''], stepTags: [['기타']], stepKeywords: [''], stepDescriptions: [''], stepLabels: [''] }));
+              setMainIdx(0);
+            }}
               className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors flex items-center gap-1.5 ${data.type === 'video' ? 'bg-[#C8A969]/20 text-[#C8A969]' : 'text-zinc-500 hover:text-zinc-300'}`}
             ><Film size={11} /> 영상</button>
           </div>
@@ -279,27 +323,8 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
             </>
           )}
 
-          <div className={`absolute right-4 z-10 ${canModerate ? 'top-[60px]' : 'top-4'}`}>
-            {videoPreviews.length === 0 ? (
-              <label className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-white/20 text-[11px] text-zinc-500 hover:text-zinc-300 hover:border-white/40 cursor-pointer bg-black/30 backdrop-blur-sm">
-                <Film size={13} /> 영상 추가
-                <input type="file" accept={VIDEO_ACCEPT} className="hidden" onChange={e => { handleVideoFiles(e.target.files); e.target.value = ''; }} />
-              </label>
-            ) : (
-              <div className="relative group/video w-32 h-20 rounded-lg overflow-hidden border-2 border-[#C8A969]/60 bg-black">
-                <video src={videoPreviews[0]} muted playsInline preload="metadata" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
-                  <Film size={18} className="text-white/90" />
-                </div>
-                <button onClick={() => handleRemoveVideo(0)} className="absolute top-1 right-1 p-1 bg-black/70 text-zinc-200 hover:text-red-400 rounded opacity-0 group-hover/video:opacity-100 transition-opacity" title="영상 제거"><X size={11} /></button>
-                {data.videos[0] instanceof File && (
-                  <div className="absolute bottom-1 left-1 text-[9px] text-white/80 font-mono bg-black/60 px-1.5 py-0.5 rounded">
-                    {(data.videos[0].size / 1024 / 1024).toFixed(1)}MB
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          {/* (제거됨) 좌측 우상단 "영상 추가" quick label —
+              이미지/영상 동시 등록을 유발했으므로 type 토글로만 모드 전환하도록 단일화. */}
           </>
           )}
         </div>
@@ -370,6 +395,26 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
                 />
               </div>
             )}
+            {/* MODEL — 프롬프트 대상 모델 선택. type(image/video)에 따라 다른 옵션. 단일 선택. */}
+            <div>
+              <div className="text-[10px] font-mono font-bold text-zinc-500 mb-1.5">&gt;_ MODEL</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(data.type === 'video' ? VIDEO_MODELS : IMAGE_MODELS).map(m => {
+                  const active = data.model === m.id;
+                  return (
+                    <button key={m.id}
+                      onClick={() => setData({ ...data, model: active ? '' : m.id })}
+                      className={`px-2.5 py-1 text-[10px] font-bold rounded border transition-colors ${
+                        active
+                          ? 'bg-[#C8A969]/15 text-[#C8A969] border-[#C8A969]/40'
+                          : 'border-white/10 text-zinc-500 hover:text-zinc-200 hover:border-white/20'
+                      }`}>
+                      {m.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-[10px] font-mono font-bold text-zinc-500">&gt;_ PROMPT{data.images?.length > 1 ? ` (Step ${mainIdx + 1})` : ''}</span>

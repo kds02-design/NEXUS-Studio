@@ -360,6 +360,10 @@ function App() {
     surfaceOptions: motion.surfaceOptions, edgeOptions: motion.edgeOptions, ambientOptions: motion.ambientOptions,
     exportMode: motion.exportMode, vfxTarget: motion.vfxTarget, setVfxTarget: motion.setVfxTarget,
     activePreset: presets.activePreset, setActivePreset: presets.setActivePreset, applyPreset: presets.applyPreset,
+    // RenderMatrix 패턴 — 그룹 탭 + 카드 (MatrixPresetPanel 이 사용)
+    activePresetGroup: presets.activePresetGroup, setActivePresetGroup: presets.setActivePresetGroup,
+    activePresetId: presets.activePresetId, isPresetModified: presets.isPresetModified,
+    onApplyPreset: presets.handleApplyPreset,
     isImportOpen, setIsImportOpen, importText, setImportText, onImport: handleImportPrompt,
     image, setImage, isImageDragging, setIsImageDragging, onImageChange: handleImageChange,
     directorNote, setDirectorNote, aiInterpretation, setAiInterpretation,
@@ -394,7 +398,7 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-[#0f1115] text-[#e3e3e3] p-5 overflow-hidden relative selection:bg-[#a8c7fa]/30" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+    <div className="flex flex-col h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0f1115] dark:text-[#e3e3e3] p-5 overflow-hidden relative selection:bg-[#a8c7fa]/30" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Space+Grotesk:wght@700&display=swap');
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }

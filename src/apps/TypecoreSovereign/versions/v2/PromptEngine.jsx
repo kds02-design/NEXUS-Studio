@@ -247,8 +247,9 @@ const App = ({ version, setVersion, versions } = {}) => {
     // === 1. HOOKS & STATE DECLARATIONS ===
     const apiKey = GEMINI_API_KEY;
     const { ensureCanGenerate, modal: usageModal } = useUsageGate();
-    const { payload, clearPayload } = useGlobal();
-    const [theme] = useState("dark");
+    const { payload, clearPayload, isLight } = useGlobal();
+    // 전역 테마와 동기화 — 루트 컨테이너만 light 대응. 내부 위젯은 다크 하드코딩.
+    const theme = isLight ? "light" : "dark";
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [currentView, setCurrentView] = useState("editor");
 
@@ -412,7 +413,7 @@ const App = ({ version, setVersion, versions } = {}) => {
     const hasManualBasePrompt = isEditMode ? editManualBasePrompt : manualBasePrompt;
 
     const t = {
-        bg: theme === 'dark' ? 'bg-[#0A0A0A]' : 'bg-zinc-200',
+        bg: theme === 'dark' ? 'bg-[#0A0A0A]' : 'bg-slate-50',
         sidebarLeft: theme === 'dark' ? 'bg-[#1A1A1A]/50 backdrop-blur-xl border-zinc-800/60' : 'bg-white border-zinc-300',
         textColor: theme === 'dark' ? 'text-zinc-100' : 'text-zinc-900',
     };

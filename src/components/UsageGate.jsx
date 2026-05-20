@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { THEME } from "../config/apps";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../context/GlobalContext";
 import { GRADE_LABEL, REDEEM_ERROR_MESSAGES } from "../lib/grades";
 
 const gradeColor = {
@@ -10,8 +10,9 @@ const gradeColor = {
 };
 
 export function GradeBadge({ compact = false }) {
+  const T = useTheme();
   const { grade, usageToday, dailyLimit } = useAuth();
-  const color = gradeColor[grade] || THEME.accent;
+  const color = gradeColor[grade] || T.accent;
   const limitText = dailyLimit === Infinity ? "∞" : dailyLimit;
   return (
     <div title={`등급: ${GRADE_LABEL[grade]} · 오늘 사용 ${usageToday}/${limitText}`}
@@ -25,7 +26,7 @@ export function GradeBadge({ compact = false }) {
       <span style={{ width: 6, height: 6, borderRadius: 999, background: color }}/>
       {GRADE_LABEL[grade]}
       {!compact && (
-        <span style={{ color: THEME.textMuted, fontWeight: 500, letterSpacing: 0 }}>
+        <span style={{ color: T.textMuted, fontWeight: 500, letterSpacing: 0 }}>
           {usageToday}/{limitText}
         </span>
       )}
@@ -34,6 +35,7 @@ export function GradeBadge({ compact = false }) {
 }
 
 export function LimitReachedModal({ onClose }) {
+  const T = useTheme();
   const { grade, dailyLimit, applyInviteCode } = useAuth();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,17 +61,17 @@ export function LimitReachedModal({ onClose }) {
       fontFamily: "'Noto Sans KR', sans-serif",
     }}>
       <div style={{
-        width: "100%", maxWidth: 380, background: THEME.surface,
-        border: `1px solid ${THEME.border}`, borderRadius: 14, padding: "28px 28px 24px",
-        color: THEME.text,
+        width: "100%", maxWidth: 380, background: T.surface,
+        border: `1px solid ${T.border}`, borderRadius: 14, padding: "28px 28px 24px",
+        color: T.text,
       }}>
-        <div style={{ fontSize: 11, letterSpacing: "0.16em", color: THEME.accent, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.16em", color: T.accent, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
           Daily Limit
         </div>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
           {done ? "Expert 등급으로 업그레이드됐어요" : "오늘 사용 한도에 도달했어요"}
         </div>
-        <div style={{ fontSize: 12, color: THEME.textMuted, lineHeight: 1.6, marginBottom: 18 }}>
+        <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6, marginBottom: 18 }}>
           {done
             ? "이제 모든 기능을 무제한으로 사용할 수 있어요."
             : <>현재 등급은 <b style={{ color: gradeColor[grade] }}>{GRADE_LABEL[grade]}</b> ({limitText}/일)입니다. 초대 코드가 있다면 입력해 Expert로 업그레이드할 수 있어요.</>}
@@ -82,8 +84,8 @@ export function LimitReachedModal({ onClose }) {
               placeholder="초대 코드" autoComplete="off" disabled={busy}
               style={{
                 width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 13,
-                background: THEME.bg, border: `1px solid ${THEME.border}`, borderRadius: 8,
-                color: THEME.text, outline: "none", marginBottom: 10,
+                background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8,
+                color: T.text, outline: "none", marginBottom: 10,
                 fontFamily: "'JetBrains Mono','Menlo',monospace", letterSpacing: "0.08em",
               }}/>
             {err && (
@@ -94,7 +96,7 @@ export function LimitReachedModal({ onClose }) {
               }}>{err}</div>
             )}
             <button type="submit" disabled={busy || !code.trim()} style={{
-              width: "100%", padding: "11px 14px", background: THEME.accent, color: "#fff",
+              width: "100%", padding: "11px 14px", background: T.accent, color: "#fff",
               border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600,
               cursor: busy ? "not-allowed" : "pointer", opacity: (busy || !code.trim()) ? 0.5 : 1,
               marginBottom: 8,
@@ -105,8 +107,8 @@ export function LimitReachedModal({ onClose }) {
         )}
 
         <button type="button" onClick={onClose} style={{
-          width: "100%", padding: "10px 14px", background: "transparent", color: THEME.textMuted,
-          border: `1px solid ${THEME.border}`, borderRadius: 8, fontSize: 12, fontWeight: 500,
+          width: "100%", padding: "10px 14px", background: "transparent", color: T.textMuted,
+          border: `1px solid ${T.border}`, borderRadius: 8, fontSize: 12, fontWeight: 500,
           cursor: "pointer",
         }}>
           {done ? "계속하기" : "닫기"}

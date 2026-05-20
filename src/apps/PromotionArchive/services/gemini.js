@@ -154,8 +154,11 @@ export const prepareImageForAI = async (imgSource, maxWidth = 1280, quality = 0.
     return dataUrl;
 };
 
-// 웹 디자인 평가 호출 (JSON 모드 + 자동 재시도)
-export const analyzeWebDesign = async (imagesBase64 = [], userComment = '') => {
+// 웹 디자인 평가 호출 (JSON 모드 + 자동 재시도).
+// options.apiKey 가 주어지면 그 키 사용 (예: 일괄 분석에서 공용 키로 호출).
+// 미지정 시 기본 apiKey (brandweb dedicated → 공용 fallback) 사용.
+export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', options = {}) => {
+    const keyToUse = (options.apiKey || apiKey || '').trim();
     const prompt = userComment
         ? `${DEFAULT_WEB_EVAL_PROMPT}\n\n[사용자 피드백]\n${userComment}\n`
         : DEFAULT_WEB_EVAL_PROMPT;
@@ -190,7 +193,7 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '') => {
 
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${keyToUse}`,
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },

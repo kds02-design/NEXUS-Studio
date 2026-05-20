@@ -4,8 +4,8 @@
 // 앱 목록은 group(허브/탐색·평가/프롬프트 생성/Admin) 별로 묶어서 표시하고,
 // 현재 앱(currentApp)만 app.color 로 하이라이트한다. 그 외에는 흰색 단일 컬러.
 import { useEffect, useMemo, useRef, useState } from "react";
-import { APP_REGISTRY, THEME } from "../config/apps";
-import { useGlobal } from "../context/GlobalContext";
+import { APP_REGISTRY } from "../config/apps";
+import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
 
 // 검색 매칭: app.sub 또는 app.label 에 대소문자 무시 부분일치.
@@ -28,7 +28,8 @@ const GROUP_LABELS = {
 };
 
 export default function CommandPalette({ open, onClose }) {
-  const { setCurrentApp, currentApp } = useGlobal();
+  const { setCurrentApp, currentApp, isLight } = useGlobal();
+  const T = useTheme();
   const { isAdmin } = useAuth();
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -139,12 +140,12 @@ export default function CommandPalette({ open, onClose }) {
 
   return (
     <>
-      {/* 백드롭 */}
+      {/* 백드롭 — 라이트에서는 약한 검정, 다크에서는 진한 검정 */}
       <div
         onClick={onClose}
         style={{
           position: "fixed", inset: 0, zIndex: 1200,
-          background: "rgba(5, 5, 12, 0.55)",
+          background: isLight ? "rgba(0, 0, 0, 0.25)" : "rgba(5, 5, 12, 0.55)",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
         }}
@@ -157,17 +158,17 @@ export default function CommandPalette({ open, onClose }) {
           position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)",
           width: "min(620px, calc(100vw - 32px))",
           zIndex: 1201,
-          background: THEME.card,
-          border: `1px solid ${THEME.border}`,
+          background: T.card,
+          border: `1px solid ${T.border}`,
           borderRadius: 14,
-          boxShadow: "0 24px 60px rgba(0,0,0,0.55)",
+          boxShadow: isLight ? "0 24px 60px rgba(0,0,0,0.15)" : "0 24px 60px rgba(0,0,0,0.55)",
           overflow: "hidden",
           fontFamily: "'Noto Sans KR', sans-serif",
         }}
       >
         {/* 검색 입력 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: `1px solid ${THEME.border}` }}>
-          <span style={{ color: THEME.textMuted, fontSize: 14 }}>⌘</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 18px", borderBottom: `1px solid ${T.border}` }}>
+          <span style={{ color: T.textMuted, fontSize: 14 }}>⌘</span>
           <input
             ref={inputRef}
             value={query}
@@ -175,17 +176,17 @@ export default function CommandPalette({ open, onClose }) {
             placeholder="앱 이름으로 검색..."
             style={{
               flex: 1, background: "transparent", border: 0, outline: "none",
-              color: THEME.text, fontSize: 14,
+              color: T.text, fontSize: 14,
               fontFamily: "'Noto Sans KR', sans-serif",
             }}
           />
-          <span style={{ fontSize: 10, color: THEME.textDim, letterSpacing: "0.08em", border: `1px solid ${THEME.border}`, padding: "2px 6px", borderRadius: 4 }}>ESC</span>
+          <span style={{ fontSize: 10, color: T.textDim, letterSpacing: "0.08em", border: `1px solid ${T.border}`, padding: "2px 6px", borderRadius: 4 }}>ESC</span>
         </div>
 
         {/* 항목 목록 */}
         <div ref={listRef} style={{ maxHeight: 400, overflowY: "auto", paddingBottom: 8 }}>
           {!hasApps && query.trim() ? (
-            <div style={{ padding: "24px 18px", textAlign: "center", color: THEME.textMuted, fontSize: 12 }}>
+            <div style={{ padding: "24px 18px", textAlign: "center", color: T.textMuted, fontSize: 12 }}>
               일치하는 앱이 없어요.
             </div>
           ) : items.map((item, idx) => {
@@ -198,7 +199,7 @@ export default function CommandPalette({ open, onClose }) {
                     padding: "14px 18px 6px",
                     fontSize: 10,
                     fontWeight: 700,
-                    color: THEME.textDim,
+                    color: T.textDim,
                     letterSpacing: "0.1em",
                     textTransform: "uppercase",
                   }}
@@ -211,8 +212,8 @@ export default function CommandPalette({ open, onClose }) {
             const selected = idx === selectedIndex;
             const dim = !!item.disabled;
             const isCurrent = item.kind === "app" && currentApp === item.id;
-            // 텍스트 색: 현재 앱만 app.color, 나머지는 흰색.
-            const titleColor = isCurrent ? item.color : THEME.text;
+            // 텍스트 색: 현재 앱만 app.color, 나머지는 테마 텍스트.
+            const titleColor = isCurrent ? item.color : T.text;
 
             return (
               <div
@@ -225,8 +226,8 @@ export default function CommandPalette({ open, onClose }) {
                   height: 40, minHeight: 40, maxHeight: 40,
                   padding: "0 18px",
                   cursor: dim ? "not-allowed" : "pointer",
-                  background: selected && !dim ? "rgba(255,255,255,0.06)" : "transparent",
-                  borderLeft: `2px solid ${selected && !dim ? "rgba(255,255,255,0.4)" : "transparent"}`,
+                  background: selected && !dim ? T.hoverBg : "transparent",
+                  borderLeft: `2px solid ${selected && !dim ? (isLight ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.4)") : "transparent"}`,
                   opacity: dim ? 0.4 : 1,
                   transition: "background 0.08s",
                 }}
@@ -237,7 +238,7 @@ export default function CommandPalette({ open, onClose }) {
                     {item.sub}
                   </div>
                   {item.kind === "home" && (
-                    <div style={{ fontSize: 10, color: THEME.textMuted, marginTop: 2 }}>{item.desc}</div>
+                    <div style={{ fontSize: 10, color: T.textMuted, marginTop: 2 }}>{item.desc}</div>
                   )}
                 </div>
                 {/* 우측 상태 뱃지 */}
@@ -247,12 +248,12 @@ export default function CommandPalette({ open, onClose }) {
                   </span>
                 )}
                 {dim && item.kind === "app" && (
-                  <span style={{ fontSize: 9, letterSpacing: "0.1em", color: THEME.textMuted, textTransform: "uppercase", background: "rgba(122,122,154,0.15)", border: `1px solid ${THEME.border}`, padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>
+                  <span style={{ fontSize: 9, letterSpacing: "0.1em", color: T.textMuted, textTransform: "uppercase", background: T.hoverBg, border: `1px solid ${T.border}`, padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>
                     준비 중
                   </span>
                 )}
                 {selected && !dim && !isCurrent && (
-                  <span style={{ fontSize: 10, color: THEME.textDim, letterSpacing: "0.08em", border: `1px solid ${THEME.border}`, padding: "2px 6px", borderRadius: 4 }}>↵</span>
+                  <span style={{ fontSize: 10, color: T.textDim, letterSpacing: "0.08em", border: `1px solid ${T.border}`, padding: "2px 6px", borderRadius: 4 }}>↵</span>
                 )}
               </div>
             );
