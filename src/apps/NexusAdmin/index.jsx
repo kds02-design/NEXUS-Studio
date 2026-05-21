@@ -2,18 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Users, ListChecks, Ticket, Settings as SettingsIcon,
   Shield, Plus, Trash2, Edit2, X, RefreshCw, AlertTriangle,
+  FileText, Upload, Download, Save, RotateCcw,
 } from "lucide-react";
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
   query, orderBy, serverTimestamp, writeBatch,
 } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { db, appId } from "../../lib/firebase";
 import { useAuth } from "../../context/AuthContext";
 import {
   listUsersByStatus, approveUser, rejectUser, deleteUserDoc,
   GRADES, GRADE_LABEL, STATUS,
 } from "../../lib/grades";
 import { migrateInitialCriteria } from "../../lib/evaluationCriteria";
+import { DEFAULT_AI_PROMPT } from "../BannerCodex/constants/categories";
 import { DEFAULT_HERO_IMAGE, fetchDashboardSettings, updateDashboardHeroImage } from "../../lib/dashboardSettings";
 import { uploadBase64 } from "../../lib/storage";
 
@@ -32,7 +34,8 @@ const NAV_SECTIONS = [
   {
     label: "콘텐츠",
     items: [
-      { id: "criteria", name: "평가 기준",   icon: <ListChecks size={18}/> },
+      { id: "criteria", name: "평가 기준",        icon: <ListChecks size={18}/> },
+      { id: "prompt",   name: "AI 평가 프롬프트", icon: <FileText size={18}/> },
     ],
   },
   {
@@ -90,6 +93,7 @@ export default function NexusAdminApp() {
         <div className="flex-1 overflow-y-auto p-6">
           {tab === "users"    && <UsersPanel/>}
           {tab === "criteria" && <CriteriaPanel/>}
+          {tab === "prompt"   && <PromptPanel/>}
           {tab === "invites"  && <InvitesPanel/>}
           {tab === "settings" && <SettingsPanel/>}
         </div>
@@ -1211,6 +1215,120 @@ function DashboardHeroSettings() {
         </button>
       </div>
     </div>
+  );
+}
+
+// ─────────────── AI 평가 프롬프트 ───────────────
+// BannerCodex 가 분석 시 subscribeToPrompt 로 읽어가는 단일 Firestore 문서를 편집.
+// 경로: artifacts/{appId}/public/data/settings/aiPrompt
+// 프롬프트 내부의 {{EVALUATION_CRITERIA_LIST}} placeholder 는 활성 평가 기준이 자동으로 끼어들고,
+// {{LEARNING_CONTEXT}} placeholder 는 사용자 피드백이 자동으로 끼어든다.
+function PromptPanel() {
+  const promptRef = doc(db, "artifacts", appId, "public", "data", "settings", "aiPrompt");
+  const [text, setText] = useState("");
+  const [original, setOriginal] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(promptRef);
+        const v = snap.exists() && typeof snap.data().text === "string" ? snap.data().text : "";
+        if (!cancelled) { setText(v); setOriginal(v); }
+      } catch (e) {
+        if (!cancelled) setError(e.message || "로드 실패");
+      } finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const dirty = text !== original;
+  const handleSave = async () => {
+    setSaving(true); setError("");
+    try {
+      await setDoc(promptRef, { text }, { merge: true });
+      setOriginal(text);
+      setSavedAt(Date.now());
+    } catch (e) { setError(e.message || "저장 실패"); }
+    finally { setSaving(false); }
+  };
+  const handleReset = () => {
+    if (!confirm("프롬프트를 기본값으로 되돌리시겠습니까? (저장 버튼을 눌러야 실제 반영됩니다)")) return;
+    setText(DEFAULT_AI_PROMPT);
+  };
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => setText(String(ev.target.result || ""));
+    reader.onerror = () => setError("파일 읽기에 실패했습니다.");
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+  const handleFileDownload = () => {
+    if (!text) { setError("내보낼 프롬프트 내용이 없습니다."); return; }
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ai_prompt_backup_${new Date().toISOString().slice(0, 10)}.txt`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <AdminSection
+      title="AI 평가 프롬프트"
+      subtitle="BannerCodex AI 분석 시 사용되는 시스템 프롬프트 (Firestore settings/aiPrompt 단일 문서). {{EVALUATION_CRITERIA_LIST}} / {{LEARNING_CONTEXT}} 자동 치환."
+    >
+      {error && <ErrorBanner message={error}/>}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-zinc-300 border border-white/10 rounded-md hover:bg-white/5 cursor-pointer">
+          <Upload size={11}/> .txt 불러오기
+          <input type="file" accept=".txt" className="hidden" onChange={handleFileUpload}/>
+        </label>
+        <button onClick={handleFileDownload}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-zinc-300 border border-white/10 rounded-md hover:bg-white/5">
+          <Download size={11}/> .txt 내보내기
+        </button>
+        <button onClick={handleReset}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-rose-300 border border-rose-500/30 rounded-md hover:bg-rose-500/10">
+          <RotateCcw size={11}/> 기본값으로 초기화
+        </button>
+        <div className="flex-1"/>
+        <div className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
+          💡 <span className="font-mono font-bold">{"{{LEARNING_CONTEXT}}"}</span> · <span className="font-mono font-bold">{"{{EVALUATION_CRITERIA_LIST}}"}</span> placeholder 자동 치환
+        </div>
+      </div>
+
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        disabled={loading}
+        spellCheck="false"
+        className="w-full min-h-[60vh] p-4 rounded-lg text-[12px] font-mono leading-relaxed resize-y bg-black border border-zinc-800 text-zinc-300 outline-none focus:border-zinc-600 disabled:opacity-50"
+      />
+
+      <div className="flex items-center justify-end gap-3">
+        {savedAt && !dirty && (
+          <span className="text-[11px] text-emerald-400">저장됨 · {new Date(savedAt).toLocaleTimeString("ko-KR")}</span>
+        )}
+        <button onClick={() => setText(original)} disabled={!dirty || saving}
+          className="px-4 py-2 rounded-md text-[12px] text-zinc-300 border border-white/10 hover:bg-white/5 disabled:opacity-40 disabled:cursor-not-allowed">
+          되돌리기
+        </button>
+        <button onClick={handleSave} disabled={!dirty || saving || loading}
+          className="flex items-center gap-1.5 px-5 py-2 rounded-md text-[12px] font-bold text-white shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: ACCENT }}>
+          <Save size={12}/> {saving ? "저장 중..." : "클라우드에 저장"}
+        </button>
+      </div>
+    </AdminSection>
   );
 }
 

@@ -1,10 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Upload, Image as ImageIcon, Loader2, Sparkles, Settings, X, Bot, BrainCircuit,
-  ChevronDown, Copy, Check, Edit3, Download, ZoomIn, MousePointer2
+  ChevronDown, Copy, Check, Edit3, Download, ZoomIn, MousePointer2,
+  Layers, Send, Plus, Clock, Trash2, ClipboardCheck,
 } from 'lucide-react';
+import { collection, addDoc, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../lib/gemini';
 import { fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES } from '../../lib/evaluationCriteria';
+import { db, appId } from '../../lib/firebase';
+import { useAuth } from '../../context/AuthContext';
+import { useGlobal } from '../../context/GlobalContext';
 
 const compressImage = (base64Str, maxWidth = 1024, quality = 0.8) => {
     return new Promise((resolve) => {
@@ -148,12 +153,39 @@ AI는 판별/지정된 카테고리에 따라 다음의 기준으로 평가하�
 - 구어체나 불필요한 미사여구를 빼고 핵심만 심플하게 작성하세요.`;
 
 export default function DesignEvaluator() {
+  const { user } = useAuth();
+  const { navigate } = useGlobal();
+  const [history, setHistory] = useState([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState(null);
+  // 좌측 메뉴 — 평가중(현재 작업) / 평가완료(저장 목록 그리드). 'detail' = 메인 영역에 이미지+결과, 'list' = 그리드.
+  const [viewMode, setViewMode] = useState('detail');
+  const [isCriteriaHelpOpen, setIsCriteriaHelpOpen] = useState(false);
   const [, setImageFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [aspectRatio, setAspectRatio] = useState(1);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [resultData, setResultData] = useState(null);
+
   const [manualScoreAdj, setManualScoreAdj] = useState(0);
+  // ── 새로고침 후 이미지/결과 유지 (localStorage) ──
+  // mount 1회 복원 + 변경 시마다 저장.
+  useEffect(() => {
+    try {
+      const pv = localStorage.getItem('designEval:previewUrl');
+      if (pv) setPreviewUrl(pv);
+      const ar = parseFloat(localStorage.getItem('designEval:aspectRatio'));
+      if (Number.isFinite(ar) && ar > 0) setAspectRatio(ar);
+      const rd = localStorage.getItem('designEval:resultData');
+      if (rd) { try { setResultData(JSON.parse(rd)); } catch {} }
+      const adj = parseInt(localStorage.getItem('designEval:manualScoreAdj'), 10);
+      if (Number.isFinite(adj) && adj >= -3 && adj <= 3) setManualScoreAdj(adj);
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { try { if (previewUrl) localStorage.setItem('designEval:previewUrl', previewUrl); else localStorage.removeItem('designEval:previewUrl'); } catch {} }, [previewUrl]);
+  useEffect(() => { try { localStorage.setItem('designEval:aspectRatio', String(aspectRatio)); } catch {} }, [aspectRatio]);
+  useEffect(() => { try { if (resultData) localStorage.setItem('designEval:resultData', JSON.stringify(resultData)); else localStorage.removeItem('designEval:resultData'); } catch {} }, [resultData]);
+  useEffect(() => { try { localStorage.setItem('designEval:manualScoreAdj', String(manualScoreAdj)); } catch {} }, [manualScoreAdj]);
   const [userComment, setUserComment] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
@@ -163,6 +195,199 @@ export default function DesignEvaluator() {
   const [notification, setNotification] = useState(null);
   const [isCopied, setIsCopied] = useState(false);
   const fileInputRef = useRef(null);
+
+  // ── 컬럼 너비 조절 (드래그) ──
+  // leftPct: lg 이상에서 좌측(이미지) 컬럼의 % 너비. localStorage 에 보존.
+  // 25 ~ 75 사이로 clamp 해서 한쪽이 사라지지 않도록.
+  const [leftPct, setLeftPct] = useState(() => {
+    try { const v = parseFloat(localStorage.getItem('designEval:leftPct')); return Number.isFinite(v) && v >= 25 && v <= 75 ? v : 50; }
+    catch { return 50; }
+  });
+  const [isLg, setIsLg] = useState(false);
+  const splitContainerRef = useRef(null);
+  const isResizingRef = useRef(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const update = () => setIsLg(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, []);
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!isResizingRef.current || !splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setLeftPct(Math.max(25, Math.min(75, pct)));
+    };
+    const onUp = () => {
+      if (!isResizingRef.current) return;
+      isResizingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem('designEval:leftPct', String(leftPct)); } catch {}
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [leftPct]);
+  const startResize = (e) => {
+    if (!isLg) return;
+    e.preventDefault();
+    isResizingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  // ── 평가 히스토리 — 로그인 사용자별 Firestore 컬렉션. ──
+  // path: artifacts/{appId}/users/{uid}/evaluations/{evalId}
+  // PromptArc favorites/folders 와 동일한 per-user 패턴.
+  const evaluationsCol = useMemo(
+    () => (user && db ? collection(db, "artifacts", appId, "users", user.uid, "evaluations") : null),
+    [user]
+  );
+  // Mount 시 localStorage 캐시를 먼저 띄움 → Firestore 응답 오기 전까지 빈 화면 방지.
+  useEffect(() => {
+    try {
+      const cached = localStorage.getItem('designEval:historyCache');
+      if (cached) {
+        const arr = JSON.parse(cached);
+        if (Array.isArray(arr) && arr.length > 0) setHistory(arr);
+      }
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!evaluationsCol) { /* 미로그인은 캐시 유지 */ return; }
+    const unsub = onSnapshot(evaluationsCol,
+      (snap) => {
+        const arr = snap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => {
+            const am = a.createdAt?.toMillis?.() || a.createdAt || 0;
+            const bm = b.createdAt?.toMillis?.() || b.createdAt || 0;
+            return bm - am;
+          });
+        setHistory(arr);
+      },
+      (err) => console.warn("[Evaluator] history subscribe err", err)
+    );
+    return () => unsub();
+  }, [evaluationsCol]);
+
+  // history 가 바뀌면 캐시 갱신. createdAt(Timestamp)은 직렬화 안 되므로 millis 로 변환.
+  // 용량 초과 시 image 필드 빼고 메타만 저장.
+  useEffect(() => {
+    if (history.length === 0) return;
+    const top = history.slice(0, 30).map(h => ({
+      ...h,
+      createdAt: h.createdAt?.toMillis?.() || h.createdAt || 0,
+    }));
+    try { localStorage.setItem('designEval:historyCache', JSON.stringify(top)); }
+    catch {
+      try {
+        const lite = top.map(({ image, ...rest }) => rest);
+        localStorage.setItem('designEval:historyCache', JSON.stringify(lite));
+      } catch {}
+    }
+  }, [history]);
+
+  // 평가 결과를 히스토리에 저장. 호출부에서 setResultData 후 await 으로 호출.
+  const saveEvaluationToHistory = async (result, image, category) => {
+    if (!evaluationsCol) return; // 미로그인
+    try {
+      // image 가 너무 크면 Firestore 1MB 제한에 걸리므로 압축.
+      const compressed = image && image.startsWith('data:')
+        ? await compressImage(image, 480, 0.7)
+        : image;
+      await addDoc(evaluationsCol, {
+        title: result.title || '제목 없음',
+        category: result.category || category || 'auto',
+        tags: result.tags || [],
+        scores: result.scores || {},
+        finalScore: getFinalScore100(result, 0),
+        image: compressed,
+        createdAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.warn("[Evaluator] save history failed", e);
+    }
+  };
+
+  // 히스토리 항목 클릭 → 평가 결과 복원.
+  const loadHistoryItem = (item) => {
+    setPreviewUrl(item.image || null);
+    setResultData({
+      title: item.title,
+      category: item.category,
+      tags: item.tags || [],
+      scores: item.scores || {},
+      // 저장 시 finalScore(0~99)를 넣으므로, 다시 사용할 수 있도록 그대로 보존.
+      // getFinalScore100 가 aiScore 없을 때 finalScore 폴백.
+      finalScore: item.finalScore,
+    });
+    setManualScoreAdj(0);
+    setSelectedHistoryId(item.id);
+    setViewMode('detail');
+  };
+
+  const deleteHistoryItem = async (e, id) => {
+    e.stopPropagation();
+    if (!evaluationsCol || !id) return;
+    if (!confirm('이 평가 기록을 삭제할까요?')) return;
+    try {
+      await deleteDoc(doc(evaluationsCol, id));
+      if (selectedHistoryId === id) setSelectedHistoryId(null);
+    } catch (err) { console.warn("[Evaluator] delete history failed", err); }
+  };
+
+  // ── 외부 앱으로 보내기 ──
+  // 카테고리에 따라 등록 대상이 달라짐:
+  //   - 브랜드웹/프로모션 → promotion-archive (Brand Web Library)
+  //   - 그 외 (배너 등) → banner-codex
+  const getRegisterTarget = (cat = '') => {
+    const c = String(cat).toLowerCase();
+    if (c.includes('브랜드') || c.includes('brand') || c.includes('프로모션') || c.includes('promotion')) {
+      return { id: 'promotion-archive', label: '브랜드 웹 라이브러리에 등록' };
+    }
+    return { id: 'banner-codex', label: '배너 코덱스에 등록' };
+  };
+  const registerTarget = getRegisterTarget(resultData?.category);
+
+  const sendToRegisterTarget = () => {
+    if (!resultData || !previewUrl) { setNotification("이미지와 평가 결과가 필요합니다."); setTimeout(() => setNotification(null), 2500); return; }
+    navigate(registerTarget.id, {
+      source: 'design-eval', target: registerTarget.id,
+      prompt: { text: resultData.title || '', tags: resultData.tags || [], style: resultData.category || '' },
+      image: { url: previewUrl, metadata: { finalScore: getFinalScore100(resultData, manualScoreAdj), scores: resultData.scores } },
+      params: { mode: 'register' },
+    });
+  };
+  // 배너 에디터 (Banner Creator) — 이미지를 출발점으로 디자인 편집 흐름 시작.
+  const sendToBannerCreator = () => {
+    if (!previewUrl) { setNotification("이미지를 먼저 업로드하세요."); setTimeout(() => setNotification(null), 2500); return; }
+    navigate('banner-creator', {
+      source: 'design-eval', target: 'banner-creator',
+      prompt: { text: resultData?.title || '', tags: resultData?.tags || [], style: resultData?.category || '' },
+      image: { url: previewUrl, metadata: {} },
+      params: {},
+    });
+  };
+  // Brand Web Review — 브랜드웹/프로모션 카테고리에서 컨펌·피드백 워크스페이스로 이동.
+  const sendToBrandWebReview = () => {
+    if (!previewUrl) { setNotification("이미지를 먼저 업로드하세요."); setTimeout(() => setNotification(null), 2500); return; }
+    navigate('brand-web-review', {
+      source: 'design-eval', target: 'brand-web-review',
+      prompt: { text: resultData?.title || '제목 없음', tags: resultData?.tags || [], style: resultData?.category || '' },
+      image: { url: previewUrl, metadata: { finalScore: getFinalScore100(resultData, manualScoreAdj) } },
+      params: { mode: 'review' },
+    });
+  };
   // eslint-disable-next-line no-unused-vars
   const txtFileInputRef = useRef(null);
 
@@ -458,15 +683,19 @@ ${evaluationCriteria}
               });
               let aiScoreRaw = weightedScoreSum / 10;
               let aiScore = Math.round(aiScoreRaw * 10) / 10;
-              setResultData({
+              const finalResult = {
                   title: primaryData.title,
                   category: detectedCategory,
                   tags: primaryData.tags || [],
                   scores: mergedScoresData,
                   aiScore: aiScore,
                   score: aiScore
-              });
+              };
+              setResultData(finalResult);
               showNotification("분석이 성공적으로 완료되었습니다.");
+              // 로그인 사용자면 히스토리에 자동 저장 (fire-and-forget).
+              if (user) saveEvaluationToHistory(finalResult, previewUrl, detectedCategory);
+              setSelectedHistoryId(null);
           } else {
               throw new Error("JSON 파싱 실패");
           }
@@ -480,8 +709,15 @@ ${evaluationCriteria}
 
   const getFinalScore100 = (data, adj) => {
       if (!data) return 0;
-      const base = Math.round(parseFloat(data.aiScore) * 10);
-      return Math.min(99, Math.max(0, base + adj));
+      // 우선순위: aiScore (0~10 분석 직후) → finalScore (히스토리 저장본, 이미 0~99) → 0
+      let base = 0;
+      if (Number.isFinite(parseFloat(data.aiScore))) {
+        base = Math.round(parseFloat(data.aiScore) * 10);
+      } else if (Number.isFinite(parseFloat(data.finalScore))) {
+        base = Math.round(parseFloat(data.finalScore));
+      }
+      const a = Number.isFinite(parseFloat(adj)) ? parseFloat(adj) : 0;
+      return Math.min(99, Math.max(0, base + a));
   };
 
   const copyResultJson = () => {
@@ -519,7 +755,9 @@ ${evaluationCriteria}
 
   return (
     <div
-        className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#0c0c0e] dark:text-zinc-300 font-sans selection:bg-[#df6a78]/30 overflow-x-hidden"
+        // Lexicon-style 레이아웃 — 좌측 히스토리 사이드바 + 우측 메인.
+        // 루트는 overflow:hidden + flex column. 사이드바와 메인이 독립 스크롤.
+        className="h-screen overflow-hidden flex flex-col bg-slate-50 text-slate-900 dark:bg-[#0c0c0e] dark:text-zinc-300 font-sans selection:bg-[#df6a78]/30"
         onDragEnter={() => setIsDragging(true)}
     >
         <style>{`
@@ -551,34 +789,164 @@ ${evaluationCriteria}
 
         <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
-        <header className="h-16 border-b border-white/5 flex items-center justify-end px-6 bg-[#0c0c0e]/80 sticky top-0 z-40 backdrop-blur-md">
-            <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded-full hover:bg-white/5 transition-colors text-zinc-400 hover:text-white">
-                <Settings className="w-5 h-5" />
-            </button>
-        </header>
+      {/* 상단 header(Settings) 제거됨 — API 키 설정 등은 ProfilePopover 또는 NEXUS Admin 에서 관리. */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* 좌측 사이드바 — 텍스트 메뉴 (평가중 / 평가완료). 클릭 시 우측 뷰모드 전환. */}
+        <aside className="w-[180px] shrink-0 bg-black/30 border-r border-white/5 flex flex-col">
+            <div className="p-4 border-b border-white/5">
+                <h2 className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">메뉴</h2>
+            </div>
+            <nav className="flex-1 p-2 flex flex-col gap-0.5">
+                {[
+                    { id: 'current', label: '평가중', icon: <Sparkles className="w-3.5 h-3.5" />, count: resultData || previewUrl ? 1 : 0, view: 'detail' },
+                    { id: 'completed', label: '평가완료', icon: <Layers className="w-3.5 h-3.5" />, count: history.length, view: 'list' },
+                ].map((m) => {
+                    const active = viewMode === m.view;
+                    return (
+                        <button
+                            key={m.id}
+                            onClick={() => {
+                                setViewMode(m.view);
+                                if (m.view === 'detail' && !previewUrl && !resultData) setSelectedHistoryId(null);
+                            }}
+                            className={`flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left transition-colors ${active ? 'bg-[#df6a78]/15 text-[#df6a78] border border-[#df6a78]/30' : 'text-zinc-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
+                        >
+                            <span className="flex items-center gap-2 text-[12px] font-medium">
+                                {m.icon} {m.label}
+                            </span>
+                            <span className={`text-[10px] font-mono tabular-nums ${active ? 'text-[#df6a78]' : 'text-zinc-600'}`}>{m.count}</span>
+                        </button>
+                    );
+                })}
+                <div className="border-t border-white/5 my-2" />
+                <button
+                    onClick={() => {
+                        setResultData(null); setPreviewUrl(null); setImageFile(null);
+                        setSelectedHistoryId(null); setManualScoreAdj(0); setAspectRatio(1);
+                        setViewMode('detail');
+                    }}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors text-zinc-400 hover:text-white hover:bg-white/5 text-[12px] font-medium"
+                ><Plus className="w-3.5 h-3.5" /> 새 평가</button>
+            </nav>
+            <div className="p-2 border-t border-white/5 flex flex-col gap-1">
+                <button
+                    onClick={() => setIsCriteriaHelpOpen(true)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors text-zinc-400 hover:text-white hover:bg-white/5 text-[12px] font-medium"
+                    title="카테고리별 평가 기준 보기"
+                >
+                    <BrainCircuit className="w-3.5 h-3.5" /> 평가 기준 도움말
+                </button>
+                <div className="px-3 pt-1 pb-2 text-[9px] text-zinc-600 leading-relaxed">
+                    {user ? `로그인: ${user.displayName || user.email?.split('@')[0]}` : '로그인하면 자동 저장'}
+                </div>
+            </div>
+        </aside>
 
-        <main className="max-w-[1200px] mx-auto p-6 md:p-8 flex flex-col gap-10 items-center min-h-[calc(100vh-64px)]">
+        {/* 우측 메인 — 자체 스크롤. 모드별로 다른 콘텐츠. */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+        <main className="w-full p-6 md:p-8">
 
-            <div className="w-full flex flex-col gap-4 z-30">
-                <div className={`w-full aspect-video bg-black/40 border rounded-2xl relative overflow-hidden group flex flex-col transition-all duration-300 shadow-inner ${isDragging ? 'border-[#df6a78] bg-[#df6a78]/10' : 'border-white/10'}`}>
-                    {previewUrl ? (
-                        <>
-                            {(() => {
-                                const currentCat = resultData ? resultData.category : selectedCategory;
-                                let isFitWidth = false;
-                                if (currentCat.includes('프로모션')) isFitWidth = true;
-                                else if (currentCat.includes('배너') || currentCat.includes('브랜드')) isFitWidth = false;
-                                else isFitWidth = aspectRatio < 0.75;
-                                return isFitWidth ? (
-                                    <div className="absolute inset-0 overflow-y-auto custom-scrollbar flex items-start justify-center p-2">
-                                        <img src={previewUrl} alt="Preview" className="w-full h-auto rounded-xl" />
+          {viewMode === 'list' ? (
+            // 평가완료 리스트 — BannerCodex 카드 그리드 스타일
+            <div className="w-full">
+                <div className="flex items-center justify-between mb-5">
+                    <h2 className="text-base font-bold text-white flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-[#df6a78]" /> 평가 완료 항목
+                        <span className="text-[11px] font-normal text-zinc-500">({history.length})</span>
+                    </h2>
+                </div>
+                {!user ? (
+                    <div className="text-center py-20 text-zinc-500 text-sm">로그인하면 평가 결과가 자동으로 저장됩니다.</div>
+                ) : history.length === 0 ? (
+                    <div className="text-center py-20 text-zinc-500 text-sm">아직 저장된 평가가 없습니다.<br/>좌측 메뉴에서 "새 평가" 를 눌러 시작하세요.</div>
+                ) : (
+                    <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
+                        {history.map((item) => (
+                            <div
+                                key={item.id}
+                                onClick={() => loadHistoryItem(item)}
+                                className="group relative rounded-xl overflow-hidden border border-white/5 hover:border-[#df6a78]/40 cursor-pointer transition-all bg-[#0a0a0a]"
+                            >
+                                {item.image ? (
+                                    <div className="relative w-full aspect-video bg-black overflow-hidden">
+                                        <img src={item.image} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
+                                        {typeof item.finalScore === 'number' && (
+                                            <span className="absolute top-2 right-2 px-2 py-0.5 text-[11px] font-bold rounded bg-black/70 text-[#df6a78] tabular-nums">
+                                                {item.finalScore}
+                                            </span>
+                                        )}
+                                        <button
+                                            onClick={(e) => deleteHistoryItem(e, item.id)}
+                                            title="삭제"
+                                            className="absolute top-2 left-2 p-1.5 rounded bg-black/60 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                        ><Trash2 className="w-3.5 h-3.5" /></button>
                                     </div>
                                 ) : (
-                                    <div className="absolute inset-0 flex items-center justify-center p-2">
-                                        <img src={previewUrl} alt="Preview" className="h-full w-auto object-contain rounded-xl shadow-lg" />
+                                    <div className="w-full aspect-video bg-zinc-900 flex items-center justify-center">
+                                        <ImageIcon className="w-8 h-8 text-zinc-700" />
                                     </div>
-                                );
-                            })()}
+                                )}
+                                <div className="p-3">
+                                    <div className="text-[12px] font-bold text-white truncate mb-0.5">{item.title || '제목 없음'}</div>
+                                    <div className="text-[10px] text-zinc-500 truncate">{item.category}</div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+          ) : (
+          <>
+          {/* TOP TOOLBAR — split 위에 분리. 양쪽 상단 라인을 동일 y 로 맞추기 위해
+              [카테고리 selector + 평가 시작] 컨트롤을 row 바깥으로 옮김. */}
+          <div className="w-full bg-white/5 border border-white/10 rounded-xl p-2 mb-4 flex gap-2 items-center shadow-lg">
+              <div className="relative flex-1">
+                  <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className="w-full bg-transparent border-none pl-3 pr-7 py-1.5 text-[11px] font-medium text-white appearance-none focus:outline-none cursor-pointer">
+                      <option value="auto" className="bg-zinc-900">✨ AI 자동 판별 (권장)</option>
+                      <option value="배너" className="bg-zinc-900">🖼️ 배너 (Banner)</option>
+                      <option value="프로모션 페이지" className="bg-zinc-900">📜 프로모션 페이지 (Landing)</option>
+                      <option value="브랜드웹_메인" className="bg-zinc-900">🌐 브랜드 사이트 (메인)</option>
+                      <option value="브랜드웹_서브" className="bg-zinc-900">🌐 브랜드 사이트 (서브)</option>
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
+              </div>
+              <div className="w-px h-5 bg-white/10 shrink-0"></div>
+              <button onClick={handleAnalyze} disabled={isAnalyzing || !previewUrl} className={`px-3 py-1.5 rounded-lg font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all whitespace-nowrap ${isAnalyzing ? 'bg-[#df6a78]/50 text-white cursor-not-allowed' : !previewUrl ? 'bg-transparent text-zinc-500 cursor-not-allowed' : 'bg-[#df6a78] hover:bg-[#c95160] text-white'}`}>
+                  {isAnalyzing ? (<><Loader2 className="w-3 h-3 animate-spin" /> 분석 중</>) : (<><Sparkles className="w-3 h-3" /> 평가 시작</>)}
+              </button>
+          </div>
+
+          <div
+            ref={splitContainerRef}
+            className={isLg ? "flex items-start gap-0" : "flex flex-col gap-6"}
+          >
+
+            {/* LEFT: 평가 대상 이미지 — lg 이상에서 sticky + 가변 너비 (leftPct%) */}
+            <div
+                className="lg:sticky lg:top-20 z-30 lg:pr-3"
+                style={isLg ? { width: `${leftPct}%`, flexShrink: 0 } : { width: '100%' }}
+            >
+                <div
+                    // 이미지가 있으면: 가로 꽉, 세로는 자연 비율로 늘어남. maxHeight 초과 시 내부 스크롤.
+                    // 이미지가 없으면: 16:9 placeholder.
+                    className={`w-full bg-black/40 border rounded-2xl relative group transition-all duration-300 shadow-inner ${previewUrl ? 'overflow-hidden' : 'overflow-hidden'} ${isDragging ? 'border-[#df6a78] bg-[#df6a78]/10' : 'border-white/10'}`}
+                    style={!previewUrl ? { aspectRatio: 16/9 } : undefined}
+                >
+                    {previewUrl ? (
+                        <>
+                            {/* 내부 스크롤 컨테이너 — 이미지를 width 100% 로 넣고 height 는 자연.
+                                긴 portrait/landing 이미지면 maxHeight 에 걸려 세로 스크롤 발생. */}
+                            <div
+                                className="w-full overflow-y-auto custom-scrollbar"
+                                style={{ maxHeight: 'calc(100vh - 6rem)' }}
+                            >
+                                <img
+                                    src={previewUrl}
+                                    alt="Preview"
+                                    className="w-full h-auto block"
+                                />
+                            </div>
                             <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 z-10">
                                 <button onClick={() => setIsImageModalOpen(true)} className="p-2.5 bg-black/70 hover:bg-[#df6a78] rounded-xl text-white transition-colors backdrop-blur-md border border-white/10 shadow-lg" title="원본 크게 보기">
                                     <ZoomIn className="w-5 h-5" />
@@ -603,26 +971,27 @@ ${evaluationCriteria}
                         </div>
                     )}
                 </div>
-
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-2.5 flex gap-2 items-center shadow-lg">
-                    <div className="relative flex-1">
-                        <select value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)} className="w-full bg-transparent border-none px-4 py-3 text-[13px] font-medium text-white appearance-none focus:outline-none cursor-pointer">
-                            <option value="auto" className="bg-zinc-900">✨ AI 자동 판별 (권장)</option>
-                            <option value="배너" className="bg-zinc-900">🖼️ 배너 (Banner)</option>
-                            <option value="프로모션 페이지" className="bg-zinc-900">📜 프로모션 페이지 (Landing)</option>
-                            <option value="브랜드웹_메인" className="bg-zinc-900">🌐 브랜드 사이트 (메인)</option>
-                            <option value="브랜드웹_서브" className="bg-zinc-900">🌐 브랜드 사이트 (서브)</option>
-                        </select>
-                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
-                    </div>
-                    <div className="w-px h-8 bg-white/10 shrink-0"></div>
-                    <button onClick={handleAnalyze} disabled={isAnalyzing || !previewUrl} className={`px-8 py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all whitespace-nowrap ${isAnalyzing ? 'bg-[#df6a78]/50 text-white cursor-not-allowed' : !previewUrl ? 'bg-transparent text-zinc-500 cursor-not-allowed' : 'bg-[#df6a78] hover:bg-[#c95160] text-white shadow-[0_0_15px_rgba(223,106,120,0.3)]'}`}>
-                        {isAnalyzing ? (<><Loader2 className="w-4 h-4 animate-spin" /> 분석 중</>) : (<><Sparkles className="w-4 h-4" /> 평가 시작</>)}
-                    </button>
-                </div>
             </div>
+            {/* /LEFT */}
 
-            <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-6 md:p-10 flex flex-col shadow-2xl">
+            {/* DIVIDER — lg 이상에서만 노출. 드래그로 좌우 너비 조절. */}
+            {isLg && (
+                <div
+                    onMouseDown={startResize}
+                    title="드래그로 너비 조절"
+                    className="sticky top-20 self-stretch flex items-center justify-center cursor-col-resize group select-none"
+                    style={{ width: 10, height: 'calc(100vh - 6rem)', flexShrink: 0 }}
+                >
+                    <div className="w-0.5 h-12 bg-white/10 group-hover:bg-[#df6a78]/60 rounded-full transition-colors" />
+                </div>
+            )}
+
+            {/* RIGHT: 평가 결과 — 가변 너비 (100 - leftPct)%. 상단 라인이 좌측 이미지와 일치. */}
+            <div
+                className="flex flex-col gap-4 min-w-0 lg:pl-3"
+                style={isLg ? { width: `calc(${100 - leftPct}% - 10px)`, flexShrink: 0 } : { width: '100%' }}
+            >
+                <div className="w-full bg-white/[0.02] border border-white/5 rounded-2xl p-5 md:p-6 flex flex-col shadow-2xl">
                 {!resultData && !isAnalyzing && (
                     <div className="flex-1 flex flex-col items-center justify-center text-center opacity-50 py-20">
                         <Bot className="w-16 h-16 text-zinc-600 mb-4" />
@@ -648,106 +1017,118 @@ ${evaluationCriteria}
                     const minScore = validScores.length > 0 ? Math.min(...validScores) : 101;
                     return (
                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-10 pb-8 border-b border-white/10">
-                                <div>
-                                    <div className="flex items-center gap-2 mb-3">
-                                        <span className="px-3 py-1.5 bg-[#df6a78]/20 border border-[#df6a78]/40 text-[#df6a78] text-[12px] font-bold rounded-md shadow-sm">
-                                            {resultData.category}
-                                        </span>
-                                    </div>
-                                    <h2 className="text-3xl lg:text-4xl font-bold text-white mb-4 truncate max-w-2xl leading-tight">{resultData.title}</h2>
-                                    <div className="flex flex-wrap gap-2">
-                                        {resultData.tags?.map((tag, idx) => (
-                                            <span key={idx} className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-sm font-medium text-zinc-300">#{tag}</span>
-                                        ))}
+                            {/* 헤더 — Lexicon 스타일 compact: 카테고리 뱃지 + 제목 + 태그 + 최종 점수 (작은 버전) */}
+                            <div className="flex items-start justify-between gap-4 mb-6 pb-5 border-b border-white/10">
+                                <div className="flex-1 min-w-0">
+                                    <span className="inline-block px-2 py-0.5 bg-[#df6a78]/15 border border-[#df6a78]/40 text-[#df6a78] text-[10px] font-bold rounded uppercase tracking-wider mb-2">
+                                        {resultData.category}
+                                    </span>
+                                    <h2 className="text-base font-bold text-white leading-snug break-words mb-2">{resultData.title}</h2>
+                                    {resultData.tags?.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mb-2">
+                                            {resultData.tags.map((tag, idx) => (
+                                                <span key={idx} className="text-[10px] px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-zinc-400">#{tag}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {/* 액션 아이콘 행 — 결과 복사 / 등록 / 에디터로 보내기.
+                                        에디터 보내기는 배너 카테고리에서만 의미가 있어 프로모션/브랜드웹에서는 숨김. */}
+                                    <div className="flex gap-1.5">
+                                        <button onClick={copyResultJson}
+                                            title={isCopied ? '복사 완료' : '결과 JSON 복사'}
+                                            className={`p-1.5 rounded-md border transition-colors ${isCopied ? 'bg-[#df6a78]/15 border-[#df6a78]/40 text-[#df6a78]' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-400 hover:text-white'}`}>
+                                            {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                                        </button>
+                                        <button onClick={sendToRegisterTarget}
+                                            title={registerTarget.label}
+                                            className="p-1.5 rounded-md bg-[#0eb9b3]/10 hover:bg-[#0eb9b3]/20 border border-[#0eb9b3]/40 text-[#0eb9b3] transition-colors">
+                                            <Layers className="w-3.5 h-3.5" />
+                                        </button>
+                                        {registerTarget.id === 'banner-codex' && (
+                                            <button onClick={sendToBannerCreator}
+                                                title="배너 에디터로 보내기"
+                                                className="p-1.5 rounded-md bg-[#E17055]/10 hover:bg-[#E17055]/20 border border-[#E17055]/40 text-[#E17055] transition-colors">
+                                                <Send className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                        {registerTarget.id === 'promotion-archive' && (
+                                            <button onClick={sendToBrandWebReview}
+                                                title="브랜드 웹 리뷰로 보내기 (컨펌·피드백 워크스페이스)"
+                                                className="p-1.5 rounded-md bg-[#FD79A8]/10 hover:bg-[#FD79A8]/20 border border-[#FD79A8]/40 text-[#FD79A8] transition-colors">
+                                                <ClipboardCheck className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="text-right shrink-0">
-                                    <div className="text-zinc-400 text-xs font-bold mb-1 tracking-wider uppercase flex items-center justify-end gap-1">최종 환산 점수 <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-zinc-300 lowercase">가중치 적용</span></div>
-                                    <div className="text-[90px] font-black text-[#f15d72] leading-[0.8] drop-shadow-[0_4px_24px_rgba(241,93,114,0.2)] mt-2">
+                                <div className="shrink-0 text-right">
+                                    <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1">최종</div>
+                                    <div className="font-black text-[#f15d72] leading-[0.85] tabular-nums" style={{ fontSize: '72px', letterSpacing: '-0.02em' }}>
                                         {getFinalScore100(resultData, manualScoreAdj)}
                                     </div>
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-12">
+                            {/* 점수 카드 그리드 — 구분선 없음, 점수 컬러 복원, 최고/최저 카드 배경 차등. */}
+                            <div className="grid gap-2 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
                                 {fixedOrder.map((key) => {
                                     const data = resultData.scores?.[key];
                                     if (!data) return null;
                                     const scoreVal = Math.round(data.score);
                                     const isMax = validScores.length > 1 && scoreVal === maxScore && maxScore !== minScore;
                                     const isMin = validScores.length > 1 && scoreVal === minScore && maxScore !== minScore;
-                                    const boxBgClass = isMax
-                                        ? 'bg-[#0eb9b3]/15 border-[#0eb9b3]/40 hover:bg-[#0eb9b3]/25'
+                                    // 카드 배경 — 최고/최저는 살짝 컬러 틴트, 보더도 같이 강조.
+                                    const cardClass = isMax
+                                        ? 'bg-[#0eb9b3]/10 border-[#0eb9b3]/30 hover:bg-[#0eb9b3]/15'
                                         : isMin
-                                            ? 'bg-red-500/10 border-red-500/20 hover:bg-red-500/20'
-                                            : 'bg-black/30 border-white/[0.08] hover:bg-black/50';
-                                    const scoreColorClass = isMax ? 'text-[#0eb9b3]' : 'text-[#df6a78]';
+                                            ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/15'
+                                            : 'bg-[#18181B] border-zinc-800 hover:border-zinc-700';
+                                    // 점수 컬러 — 저채도 톤, 카드 배경과 어우러지게.
+                                    const scoreColor = isMax ? '#7FB5B0' : isMin ? '#C77E83' : '#A1A1AA';
                                     return (
-                                        <div key={key} className={`${boxBgClass} border rounded-2xl px-6 py-4 transition-colors flex items-center gap-6 shadow-sm`}>
-                                            <div className="w-[160px] shrink-0 flex flex-col justify-center">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-sm text-zinc-200 font-bold tracking-tight">
-                                                        {getScoreLabel(key, resultData.category)}
-                                                    </span>
-                                                </div>
-                                                {data.weight && (
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="h-1 flex-1 bg-white/10 rounded-full overflow-hidden">
-                                                            <div className="h-full bg-zinc-600 rounded-full" style={{ width: `${(data.weight / 15) * 100}%` }}></div>
-                                                        </div>
-                                                        <span className="text-[10px] text-zinc-500 font-medium w-6 text-right">
-                                                            {data.weight}%
-                                                        </span>
-                                                    </div>
-                                                )}
+                                        <div key={key}
+                                            className={`${cardClass} border rounded-lg overflow-hidden transition-colors flex flex-col px-3 py-2.5 gap-1.5`}
+                                        >
+                                            {/* 타이틀 행 — 구분선/배경 없이 흘러서 카드와 합쳐짐 */}
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-[11px] font-bold text-white leading-tight break-words flex-1 uppercase tracking-wider" style={{ letterSpacing: '0.04em' }}>
+                                                    {getScoreLabel(key, resultData.category)}
+                                                </span>
+                                                <span className="text-[18px] font-bold leading-none tabular-nums shrink-0" style={{ color: scoreColor }}>
+                                                    {scoreVal}
+                                                </span>
                                             </div>
-                                            <div className="w-px h-10 bg-white/10 shrink-0"></div>
-                                            <div className="w-12 shrink-0 text-center">
-                                                <span className={`text-3xl font-bold ${scoreColorClass} leading-none`}>{scoreVal}</span>
-                                            </div>
-                                            <p className="text-sm font-normal leading-relaxed text-zinc-300 break-keep flex-1">{data.reason}</p>
+                                            {/* 평가 코멘트 — Noto Sans KR (프로젝트 기본), 한 단계 큰 사이즈 */}
+                                            <p
+                                                className="text-zinc-400 leading-relaxed break-words break-keep flex-1"
+                                                style={{
+                                                    fontFamily: "'Noto Sans KR', sans-serif",
+                                                    fontSize: '12px',
+                                                    lineHeight: 1.6,
+                                                }}
+                                            >
+                                                {data.reason}
+                                            </p>
                                         </div>
                                     );
                                 })}
                             </div>
 
-                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mt-auto">
-                                <div className="bg-white/5 border border-white/10 rounded-2xl p-6 shadow-lg flex flex-col justify-center">
-                                    <div className="flex justify-between items-center mb-6">
-                                        <label className="text-sm font-bold text-white flex items-center gap-2"><Settings className="w-4 h-4 text-[#df6a78]" />점수 보정</label>
-                                        <span className={`text-sm text-xl font-bold px-4 py-1 rounded-lg border leading-none pt-1.5 ${manualScoreAdj > 0 ? 'bg-[#df6a78]/20 text-[#df6a78] border-[#df6a78]/30' : manualScoreAdj < 0 ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-white/10 text-zinc-300 border-white/10'}`}>
-                                            {manualScoreAdj > 0 ? '+' : ''}{manualScoreAdj}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-3">
-                                        <button onClick={() => setManualScoreAdj(Math.max(-3, manualScoreAdj - 1))} className="text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/20 text-zinc-400 hover:text-white transition-colors">-</button>
-                                        <input type="range" min="-3" max="3" step="1" value={manualScoreAdj} onChange={(e) => setManualScoreAdj(parseInt(e.target.value))} className="flex-1 h-2 rounded-full appearance-none cursor-pointer focus:outline-none shadow-inner mx-2" style={{ background: `linear-gradient(to right, #ef4444 0%, #52525b 50%, #f15d72 100%)` }} />
-                                        <button onClick={() => setManualScoreAdj(Math.min(3, manualScoreAdj + 1))} className="text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/20 text-zinc-400 hover:text-white transition-colors">+</button>
-                                    </div>
-                                </div>
-
-                                <div className="bg-white/5 border border-white/10 rounded-2xl p-5 xl:col-span-2 flex flex-col sm:flex-row gap-5 shadow-lg items-center">
-                                    <div className="flex-1 flex flex-col w-full">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <label className="text-sm font-bold flex items-center gap-2 text-white"><Edit3 className="w-4 h-4 text-violet-400" /> 코멘트 (기준 업데이트용)</label>
-                                            <button onClick={handleUpdateCriteria} className="text-[11px] px-2.5 py-1 rounded-md bg-violet-500/20 border border-violet-500/30 text-violet-300 hover:bg-violet-500/30 transition-colors flex items-center gap-1">
-                                                <BrainCircuit className="w-3 h-3" /> 프롬프트에 추가
-                                            </button>
-                                        </div>
-                                        <textarea value={userComment} onChange={(e) => setUserComment(e.target.value)} placeholder="아쉬웠던 점이나 새로운 기준을 적고 '프롬프트에 추가'를 누르면, AI가 다음 평가부터 이 기준을 학습하여 채점합니다." className="w-full flex-1 p-4 rounded-xl border border-white/10 bg-black/40 text-[13px] font-normal resize-none focus:border-violet-500 focus:outline-none transition-all text-white placeholder:text-zinc-600 custom-scrollbar min-h-[80px]" />
-                                    </div>
-                                    <button onClick={copyResultJson} className={`shrink-0 w-full sm:w-[140px] h-[80px] sm:h-full rounded-xl flex flex-col items-center justify-center gap-2 transition-all border shadow-lg ${isCopied ? 'bg-[#df6a78]/20 border-[#df6a78]/50 text-[#df6a78]' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 hover:text-white'}`}>
-                                        {isCopied ? <Check className="w-7 h-7" /> : <Copy className="w-7 h-7" />}
-                                        <span className="text-sm font-bold">{isCopied ? '복사 완료!' : '결과 복사'}</span>
-                                    </button>
-                                </div>
-                            </div>
+                            {/* 점수 보정 + 코멘트 + 하단 액션 행 모두 제거 — 액션 아이콘은 헤더 우측 태그 아래로 이동됨. */}
                         </div>
                     );
                 })()}
+                </div>
             </div>
+            {/* /RIGHT */}
+
+          </div>
+          </>
+          )}
         </main>
+        </div>
+        {/* /main scroll wrapper */}
+      </div>
+      {/* /flex 컨테이너 (sidebar + main) */}
 
         {isSettingsOpen && (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in" onClick={() => setIsSettingsOpen(false)}>
@@ -799,6 +1180,67 @@ ${evaluationCriteria}
                     </div>
                     <div className="p-6 pt-0 shrink-0">
                         <button onClick={() => setIsSettingsOpen(false)} className="w-full py-3 bg-white/10 hover:bg-white/20 border border-white/10 rounded-xl text-sm font-bold text-white transition-colors">저장 및 닫기</button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {isCriteriaHelpOpen && (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[150] flex items-center justify-center p-4 animate-in fade-in"
+                onClick={() => setIsCriteriaHelpOpen(false)}>
+                <div className="bg-[#111] border border-zinc-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden"
+                    onClick={(e) => e.stopPropagation()}>
+                    <div className="px-6 py-4 border-b border-white/5 flex items-center justify-between shrink-0">
+                        <h2 className="text-base font-bold text-white flex items-center gap-2"><BrainCircuit className="w-4 h-4 text-[#df6a78]" /> 평가 기준 도움말</h2>
+                        <button onClick={() => setIsCriteriaHelpOpen(false)} className="p-1.5 rounded text-zinc-500 hover:text-white hover:bg-white/5"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-5 space-y-5 text-[12px] text-zinc-300 leading-relaxed">
+                        <section>
+                            <h3 className="text-[11px] font-bold text-[#df6a78] uppercase tracking-widest mb-2">평가 방식</h3>
+                            <p>업로드된 이미지의 카테고리를 AI 가 자동 판별(또는 수동 선택)한 뒤, 카테고리별 10개 세부 항목을 0~10점으로 채점합니다. 각 항목에는 가중치가 있어 최종 0~99점으로 환산됩니다. 우측 "결과 복사" 로 JSON 내보내기, 좌측 "평가완료" 에 자동 저장됩니다.</p>
+                        </section>
+                        <section>
+                            <h3 className="text-[11px] font-bold text-[#df6a78] uppercase tracking-widest mb-2">카테고리</h3>
+                            <ul className="space-y-1 ml-3 list-disc list-outside marker:text-zinc-600">
+                                <li><span className="text-white font-semibold">배너 (Banner)</span> — 캠페인·이벤트 단일 비주얼. 임팩트·메시지·가독성 위주.</li>
+                                <li><span className="text-white font-semibold">프로모션 페이지 (Landing)</span> — 스토리텔링형 긴 페이지. 스크롤 흐름·전환·디테일 평가.</li>
+                                <li><span className="text-white font-semibold">브랜드 사이트 (메인)</span> — 브랜드의 첫인상. 정체성·세계관 몰입도 위주.</li>
+                                <li><span className="text-white font-semibold">브랜드 사이트 (서브)</span> — 정보 페이지. 구조·가독성·운영 안정성 위주.</li>
+                            </ul>
+                        </section>
+                        <section>
+                            <h3 className="text-[11px] font-bold text-[#df6a78] uppercase tracking-widest mb-2">10가지 세부 항목 (배너 기준)</h3>
+                            <p className="text-[11px] text-zinc-500 mb-2">* 카테고리에 따라 항목 이름이 달라질 수 있습니다.</p>
+                            <ul className="space-y-1 ml-3 list-disc list-outside marker:text-zinc-600">
+                                <li><span className="text-white font-semibold">첫인상 / 임팩트</span> — 클릭하고 싶게 만드는 시각적 끌림</li>
+                                <li><span className="text-white font-semibold">컨셉 명확성</span> — 메시지·테마 전달의 직관성</li>
+                                <li><span className="text-white font-semibold">레이아웃 균형</span> — 요소 배치·여백·시선 흐름</li>
+                                <li><span className="text-white font-semibold">타이포그래피</span> — 폰트 선택·위계·정렬</li>
+                                <li><span className="text-white font-semibold">컬러</span> — 팔레트·대비·브랜드 정합성</li>
+                                <li><span className="text-white font-semibold">가독성</span> — 메인 카피·서브 카피의 식별성</li>
+                                <li><span className="text-white font-semibold">브랜드 일관성</span> — 톤앤매너·로고·심볼 활용</li>
+                                <li><span className="text-white font-semibold">시각 흐름 / 스크롤</span> — 시선 유도·정보 위계</li>
+                                <li><span className="text-white font-semibold">디테일 완성도</span> — 폰트 커닝·정렬·소품·이펙트 마감</li>
+                                <li><span className="text-white font-semibold">전환 / 기억성</span> — CTA·메시지가 행동/회상으로 이어지는지</li>
+                            </ul>
+                        </section>
+                        <section>
+                            <h3 className="text-[11px] font-bold text-[#df6a78] uppercase tracking-widest mb-2">점수 색상</h3>
+                            <ul className="space-y-1 ml-3 list-disc list-outside marker:text-zinc-600">
+                                <li><span style={{ color: '#7FB5B0' }} className="font-bold">muted teal</span> — 카테고리 내 최고 점수 항목 (강점)</li>
+                                <li><span style={{ color: '#C77E83' }} className="font-bold">muted rose</span> — 카테고리 내 최저 점수 항목 (개선점)</li>
+                                <li><span className="text-zinc-400 font-bold">zinc</span> — 그 외 일반 항목</li>
+                            </ul>
+                        </section>
+                        <section>
+                            <h3 className="text-[11px] font-bold text-[#df6a78] uppercase tracking-widest mb-2">결과 활용</h3>
+                            <ul className="space-y-1 ml-3 list-disc list-outside marker:text-zinc-600">
+                                <li>"결과 복사" — JSON 으로 클립보드 복사 (외부 노션·스프레드시트에 붙여넣기)</li>
+                                <li>"배너 코덱스 / Brand Web Library 에 등록" — 카테고리에 따라 자동 분기되어 등록</li>
+                                <li>"배너 에디터로 보내기" — 평가한 이미지를 Banner Creator 로 가져가서 편집 시작</li>
+                                <li>"코멘트 (기준 업데이트용)" — 부족했던 평가 기준을 입력하고 "프롬프트에 추가" 누르면 AI 가 다음 평가부터 학습</li>
+                            </ul>
+                        </section>
                     </div>
                 </div>
             </div>

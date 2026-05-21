@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useReducer, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useReducer, useCallback, useRef, useState } from 'react';
 import {
-  X, Heart, Monitor, Smartphone, Download, Copy, Plus,
+  X, Heart, Monitor, Smartphone, Download, Copy, Check, Plus,
   Lock, ZoomIn, ZoomOut, Layers, Edit3,
   Signal, Wifi, Battery, Link as LinkIcon, Sparkles, Frame,
   ChevronLeft, ChevronRight, RotateCw, Star,
@@ -22,7 +22,7 @@ const initialState = {
 
 function reducer(state, action) {
   switch (action.type) {
-    case "SET_TAB": return { ...state, activeTab: action.tab, isFullView: false, isActualSize: false };
+    case "SET_TAB": return { ...state, activeTab: action.tab };
     case "TOGGLE_FULL_VIEW": return { ...state, isFullView: !state.isFullView, isActualSize: false };
     case "TOGGLE_ACTUAL_SIZE": return { ...state, isActualSize: !state.isActualSize, isPanning: false };
     case "PAN_START": return { ...state, isPanning: true, panStart: action.payload };
@@ -41,6 +41,9 @@ const PreviewModal = ({
 }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const scrollRef = useRef(null);
+  // 경로 복사 후 1.5초 동안 버튼에 체크 + "복사됨" 표시.
+  const [pathCopied, setPathCopied] = useState(false);
+  const copyResetRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -59,12 +62,18 @@ const PreviewModal = ({
     [state.now]
   );
 
+  // 복사 성공 시 alert 대신 버튼 자체에 인라인 피드백.
   const handleCopyPath = async (text) => {
     if (!text) return;
+    const flashCopied = () => {
+      setPathCopied(true);
+      if (copyResetRef.current) clearTimeout(copyResetRef.current);
+      copyResetRef.current = setTimeout(() => setPathCopied(false), 1500);
+    };
     try {
       if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(text);
-        alert("경로가 복사되었습니다.");
+        flashCopied();
       } else {
         const textArea = document.createElement("textarea");
         textArea.value = text;
@@ -76,13 +85,17 @@ const PreviewModal = ({
         textArea.select();
         const successful = document.execCommand('copy');
         document.body.removeChild(textArea);
-        if (successful) alert("경로가 복사되었습니다.");
+        if (successful) flashCopied();
         else throw new Error('복사 실패');
       }
     } catch (_err) {
-      alert("복사에 실패했습니다.");
+      // 실패 시에도 alert 대신 조용히 처리 — 콘솔에만 흔적.
+      console.warn('[PreviewModal] 경로 복사 실패', _err);
     }
   };
+
+  // 언마운트 / 모달 닫힘 시 타이머 정리.
+  useEffect(() => () => { if (copyResetRef.current) clearTimeout(copyResetRef.current); }, []);
 
   const onPointerDown = (e) => {
     if (!state.isActualSize || !scrollRef.current) return;
@@ -125,8 +138,8 @@ const PreviewModal = ({
 
   if (!isOpen || !banner) return null;
 
-  const labelStyle = "text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block";
-  const inputStyle = "w-full bg-zinc-900 border border-zinc-700 rounded-md px-2.5 py-1.5 text-xs text-zinc-300 outline-none focus:ring-0 focus:border-[#d8b17e] transition-colors";
+  const labelStyle = "text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1 block";
+  const inputStyle = "w-full bg-zinc-900 border border-zinc-700 rounded-md px-2.5 py-1.5 text-[13px] text-zinc-300 outline-none focus:ring-0 focus:border-[#d8b17e] transition-colors";
   const hasEval = hasWebEvaluation(banner);
 
   return (
@@ -162,52 +175,40 @@ const PreviewModal = ({
               >
                 <Download className="w-3.5 h-3.5" /> 이미지 저장
               </button>
-              <button
-                onClick={() => onToggleLike(banner?.id)}
-                className={`flex items-center justify-center p-2 rounded-md border transition-all ${
-                  banner?.liked
-                    ? "bg-pink-500/20 text-pink-500 border-pink-500/30"
-                    : "bg-black/50 text-zinc-300 border-white/10 hover:bg-white/10"
-                }`}
-                title="좋아요"
-              >
-                <Heart size={14} className={banner?.liked ? "fill-pink-500" : ""} />
-              </button>
             </div>
 
-            {/* 프레임 토글(좌) + 데스크톱/모바일 세그먼트(우) — 가로 정렬.
-                프레임/원본/맞춤은 데스크톱 탭에서만 노출. */}
+            {/* 프레임 아이콘 토글 — ON 이면 데스크톱은 브라우저 윈도우, 모바일은 폰 베젤이 함께 적용.
+                OFF 이면 둘 다 raw 이미지(풀뷰). 활성 시 시안 액센트로 강조.
+                원본/맞춤은 풀뷰(OFF) 상태에서만 노출. */}
             <div className="flex items-center gap-2">
-              {state.activeTab === "pc" && (
-                <div className="inline-flex items-center gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full px-1.5 py-1 animate-in fade-in slide-in-from-left-1 duration-200">
+              <div className="inline-flex items-center gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full px-1.5 py-1">
+                <button
+                  onClick={() => dispatch({ type: "TOGGLE_FULL_VIEW" })}
+                  className={`flex items-center justify-center w-7 h-7 rounded-full transition-all ${
+                    !state.isFullView
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      : "text-zinc-400 hover:text-zinc-200 border border-transparent"
+                  }`}
+                  title={state.isFullView ? "프레임 켜기" : "프레임 끄기 (풀뷰)"}
+                  aria-pressed={!state.isFullView}
+                >
+                  <Frame size={12} />
+                </button>
+                {state.isFullView && (
                   <button
-                    onClick={() => dispatch({ type: "TOGGLE_FULL_VIEW" })}
+                    onClick={() => dispatch({ type: "TOGGLE_ACTUAL_SIZE" })}
                     className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
-                      state.isFullView
-                        ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      state.isActualSize
+                        ? "bg-orange-500/20 text-orange-300 border border-orange-500/40"
                         : "text-zinc-400 hover:text-zinc-200 border border-transparent"
                     }`}
-                    title="프레임 보기 / 풀뷰"
+                    title="실제 크기"
                   >
-                    <Frame size={10} />
-                    {state.isFullView ? '풀뷰' : '프레임'}
+                    {state.isActualSize ? <ZoomOut size={10} /> : <ZoomIn size={10} />}
+                    {state.isActualSize ? '맞춤' : '원본'}
                   </button>
-                  {state.isFullView && (
-                    <button
-                      onClick={() => dispatch({ type: "TOGGLE_ACTUAL_SIZE" })}
-                      className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
-                        state.isActualSize
-                          ? "bg-orange-500/20 text-orange-300 border border-orange-500/40"
-                          : "text-zinc-400 hover:text-zinc-200 border border-transparent"
-                      }`}
-                      title="실제 크기"
-                    >
-                      {state.isActualSize ? <ZoomOut size={10} /> : <ZoomIn size={10} />}
-                      {state.isActualSize ? '맞춤' : '원본'}
-                    </button>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
               <div className="inline-flex items-center rounded-full bg-white/[0.06] backdrop-blur-xl border border-white/10 p-1">
                 {[
                   { id: 'pc', label: '데스크톱', Icon: Monitor },
@@ -320,6 +321,25 @@ const PreviewModal = ({
                   )}
                 </div>
               </div>
+            ) : state.isFullView ? (
+              // 모바일 풀뷰 — 폰 베젤 없이 raw 모바일 이미지. PC 풀뷰와 동일 패턴
+              // (스크롤/팬). isActualSize 면 실제 픽셀 폭으로 노출, 아니면 화면 너비에 맞춤.
+              <div
+                ref={scrollRef}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+                className={`w-full h-full relative touch-none scrollbar-hide ${
+                  state.isActualSize ? "overflow-auto cursor-grab active:cursor-grabbing" : "overflow-y-auto"
+                }`}
+              >
+                <div className="min-h-full flex flex-col items-center justify-center p-0">
+                  <div className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} bg-white shadow-2xl transition-all duration-300`}>
+                    <img src={moImage} alt="Mobile" className={`${state.isActualSize ? "w-auto max-w-none" : "w-full"} block`} draggable={false} />
+                  </div>
+                </div>
+              </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center p-8 animate-in fade-in duration-300">
                 {/* 디바이스 외부 베젤 (티타늄) */}
@@ -406,7 +426,7 @@ const PreviewModal = ({
                     <h2 className="text-lg font-bold leading-tight mb-1.5 break-words pr-2 text-white" title={editedBanner?.title}>
                       {editedBanner?.title || "(제목 없음)"}
                     </h2>
-                    <div className="text-[11px] font-medium text-zinc-500">
+                    <div className="text-[12px] font-medium text-zinc-500">
                       {editedBanner?.year || "-"}년 {editedBanner?.month ? `${editedBanner.month}월` : ""}
                     </div>
                   </>
@@ -454,11 +474,11 @@ const PreviewModal = ({
                 </select>
               ) : (
                 editedBanner?.game ? (
-                  <span className="inline-flex items-center px-2 py-0.5 text-[11px] font-bold rounded border bg-[#d8b17e]/15 text-[#d8b17e] border-[#d8b17e]/40">
+                  <span className="inline-flex items-center px-2 py-0.5 text-[12px] font-bold rounded border bg-[#d8b17e]/15 text-[#d8b17e] border-[#d8b17e]/40">
                     {editedBanner.game}
                   </span>
                 ) : (
-                  <span className="text-[11px] text-zinc-600">미지정</span>
+                  <span className="text-[12px] text-zinc-600">미지정</span>
                 )
               )}
             </div>
@@ -468,7 +488,7 @@ const PreviewModal = ({
               <label className={labelStyle}>Tags</label>
               <div className="flex flex-wrap gap-1 mb-2">
                 {editedBanner?.tags?.map((tag, idx) => (
-                  <span key={`tag-${tag}-${idx}`} className="flex items-center gap-1 px-1.5 py-0.5 text-zinc-400 text-[10px] font-bold border border-white/10 rounded hover:text-zinc-200">
+                  <span key={`tag-${tag}-${idx}`} className="flex items-center gap-1 px-1.5 py-0.5 text-zinc-400 text-[11px] font-bold border border-white/10 rounded hover:text-zinc-200">
                     #{tag}
                     {state.isEditing && (
                       <X size={9} className="cursor-pointer hover:text-red-400"
@@ -477,11 +497,11 @@ const PreviewModal = ({
                   </span>
                 ))}
                 {(!editedBanner?.tags || editedBanner.tags.length === 0) && !state.isEditing && (
-                  <span className="text-[11px] text-zinc-600">없음</span>
+                  <span className="text-[12px] text-zinc-600">없음</span>
                 )}
               </div>
               {state.isEditing && (
-                <input className="w-full bg-transparent border-0 border-b border-white/5 focus:border-[#d8b17e] outline-none px-0 py-1 text-[11px] text-zinc-300 placeholder:text-zinc-600 transition-colors"
+                <input className="w-full bg-transparent border-0 border-b border-white/5 focus:border-[#d8b17e] outline-none px-0 py-1 text-[12px] text-zinc-300 placeholder:text-zinc-600 transition-colors"
                   placeholder="New tag…"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && e.target.value.trim()) {
@@ -496,13 +516,21 @@ const PreviewModal = ({
             <div className="mb-5 pb-5 border-b border-white/5">
               <label className={labelStyle}>Asset Path</label>
               <div className="flex gap-1.5">
-                <div className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-md px-2.5 py-2 text-[10px] text-zinc-500 font-mono break-all leading-relaxed">
+                <div className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-md px-2.5 py-2 text-[11px] text-zinc-500 font-mono break-all leading-relaxed">
                   {banner?.path || '경로 없음'}
                 </div>
+                {/* 고정 width 아이콘 버튼 — 복사 전/후 폭이 동일해야 path 박스 width 가 흔들리지 않음.
+                    텍스트 없이 컬러만 emerald 로 전환되어 시각 피드백 (1.5초 후 원복). */}
                 <button onClick={() => handleCopyPath(banner?.path)}
-                  className="p-1.5 rounded-md text-[#d8b17e] bg-[#d8b17e]/10 border border-[#d8b17e]/40 hover:bg-[#d8b17e] hover:text-black transition-colors self-start shrink-0"
-                  title="경로 복사">
-                  <Copy size={12} />
+                  className={`w-9 h-9 flex items-center justify-center rounded-md border transition-colors self-start shrink-0 ${
+                    pathCopied
+                      ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/40'
+                      : 'text-[#d8b17e] bg-[#d8b17e]/10 border-[#d8b17e]/40 hover:bg-[#d8b17e] hover:text-black'
+                  }`}
+                  title={pathCopied ? "복사됨" : "경로 복사"}
+                  aria-label={pathCopied ? "경로 복사됨" : "경로 복사"}
+                  aria-live="polite">
+                  {pathCopied ? <Check size={14} /> : <Copy size={14} />}
                 </button>
               </div>
             </div>
@@ -510,8 +538,8 @@ const PreviewModal = ({
             {/* Upload + Link */}
             <div className="mb-5 pb-5 border-b border-white/5 space-y-3">
               <div className="flex justify-between items-center">
-                <label className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Initial Upload</label>
-                <span className="text-[10px] text-zinc-400 font-mono">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Initial Upload</label>
+                <span className="text-[11px] text-zinc-400 font-mono">
                   {banner?.created_at ? new Date(banner.created_at).toLocaleDateString() : "-"}
                 </span>
               </div>
@@ -521,7 +549,7 @@ const PreviewModal = ({
                   <div className="relative">
                     <LinkIcon className="absolute left-0 top-1/2 -translate-y-1/2 text-zinc-500" size={12} />
                     <input
-                      className="w-full bg-transparent border-0 border-b border-white/5 focus:border-[#d8b17e] outline-none pl-5 py-1 text-[11px] text-zinc-300 placeholder:text-zinc-600 transition-colors disabled:cursor-not-allowed"
+                      className="w-full bg-transparent border-0 border-b border-white/5 focus:border-[#d8b17e] outline-none pl-5 py-1 text-[12px] text-zinc-300 placeholder:text-zinc-600 transition-colors disabled:cursor-not-allowed"
                       placeholder="https://…"
                       value={editedBanner?.promotionUrl || ""}
                       onChange={(e) => onEditChange("promotionUrl", e.target.value)}
@@ -531,7 +559,7 @@ const PreviewModal = ({
                 ) : (
                   <button onClick={() => state.isEditing && dispatch({ type: "SET_LINK_VISIBLE", value: true })}
                     disabled={!state.isEditing}
-                    className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-[#d8b17e] disabled:opacity-50 disabled:hover:text-zinc-500 transition-colors">
+                    className="flex items-center gap-1.5 text-[12px] text-zinc-500 hover:text-[#d8b17e] disabled:opacity-50 disabled:hover:text-zinc-500 transition-colors">
                     <Plus size={12} /> URL 추가
                   </button>
                 )}
@@ -543,14 +571,14 @@ const PreviewModal = ({
               className="w-full flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/[0.02] hover:border-[#d8b17e]/50 hover:bg-[#d8b17e]/5 transition-all group">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-zinc-500 group-hover:text-[#d8b17e] transition-colors" />
-                <span className="text-xs font-bold text-zinc-300 group-hover:text-white transition-colors">AI 디자인 분석</span>
+                <span className="text-[13px] font-bold text-zinc-300 group-hover:text-white transition-colors">AI 디자인 분석</span>
               </div>
               {hasEval ? (
                 <div className="text-2xl font-black text-[#d8b17e] font-mono tracking-tighter leading-none">
                   {getWebFinalScore100(banner)}
                 </div>
               ) : (
-                <span className="text-[10px] font-medium text-zinc-500 tracking-wider group-hover:text-zinc-300 transition-colors">미분석 ›</span>
+                <span className="text-[11px] font-medium text-zinc-500 tracking-wider group-hover:text-zinc-300 transition-colors">미분석 ›</span>
               )}
             </button>
           </div>

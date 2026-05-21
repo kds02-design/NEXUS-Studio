@@ -11,7 +11,7 @@ import {
 } from '../../lib/folderPicker';
 
 import { getFolderName } from './constants/categories';
-import { auth, db, fetchBannerImage, savePromptToCloud, saveGameLogo, removeGameLogo, delay, WRITE_DELAY_MS } from './services/firebase';
+import { auth, db, fetchBannerImage, saveGameLogo, removeGameLogo, delay, WRITE_DELAY_MS } from './services/firebase';
 import { blobUrlToBase64, compressImage } from './services/cloudinary';
 import { callGeminiAPI } from './services/gemini';
 import { useBanners } from './hooks/useBanners';
@@ -24,7 +24,7 @@ import CodexGrid from './components/CodexGrid';
 import CodexCard from './components/CodexCard';
 import CodexDetailModal from './components/CodexDetailModal';
 import {
-  UploadModal, BatchEditModal, ConfirmModal, PromptManagerModal, LogoManagerModal,
+  UploadModal, BatchEditModal, ConfirmModal, LogoManagerModal,
   DuplicateModal, OCRProgressModal, UploadProgressModal, ProcessingFilesModal,
   NotificationToast, BatchProcessingPill, GlobalDragOverlay, SelectionToolbar
 } from './components/CodexEditModal';
@@ -131,8 +131,6 @@ export default function App() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
-  const [isPromptManagerOpen, setIsPromptManagerOpen] = useState(false);
-  const [editingPromptText, setEditingPromptText] = useState("");
   const [isLogoManagerOpen, setIsLogoManagerOpen] = useState(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [duplicateGroups, setDuplicateGroups] = useState([]);
@@ -231,7 +229,6 @@ export default function App() {
         if (hasChanges || isEditingPreview) { if (confirm("변경사항을 취소하시겠습니까?")) { setPreviewModalOpen(false); setIsEditingPreview(false); } }
         else setPreviewModalOpen(false);
       } else if (isAllGamesModalOpen) setIsAllGamesModalOpen(false);
-      else if (isPromptManagerOpen) setIsPromptManagerOpen(false);
       else if (isDuplicateModalOpen) setIsDuplicateModalOpen(false);
       else if (isLogoManagerOpen) setIsLogoManagerOpen(false);
       else if (isUploadModalOpen) setIsUploadModalOpen(false);
@@ -244,7 +241,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [previewModalOpen, isUploadModalOpen, isBatchEditModalOpen, isSettingsOpen, isFilterMenuOpen, isSidebarOpen, hasChanges, isEditingPreview, selectedIds, isDuplicateModalOpen, ocrProgress.isOpen, ocrProgress.status, isPromptManagerOpen, isAllGamesModalOpen, isLogoManagerOpen, setOcrProgress]);
+  }, [previewModalOpen, isUploadModalOpen, isBatchEditModalOpen, isSettingsOpen, isFilterMenuOpen, isSidebarOpen, hasChanges, isEditingPreview, selectedIds, isDuplicateModalOpen, ocrProgress.isOpen, ocrProgress.status, isAllGamesModalOpen, isLogoManagerOpen, setOcrProgress]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -508,28 +505,6 @@ export default function App() {
     try { await removeGameLogo(gameName); showNotification(`${gameName} 로고가 삭제되었습니다.`); }
     catch { showNotification("로고 삭제에 실패했습니다."); }
   };
-  const handleSavePrompt = async () => {
-    try { await savePromptToCloud(editingPromptText); setIsPromptManagerOpen(false); showNotification("AI 평가 프롬프트가 성공적으로 저장되었습니다."); }
-    catch (e) { showNotification("프롬프트 저장에 실패했습니다."); }
-  };
-  const handlePromptFileUpload = (e) => {
-    const file = e.target.files[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => { setEditingPromptText(ev.target.result); showNotification("파일에서 프롬프트를 불러왔습니다. 확인 후 저장해주세요."); };
-    reader.onerror = () => showNotification("파일 읽기에 실패했습니다.");
-    reader.readAsText(file); e.target.value = '';
-  };
-  const handlePromptFileDownload = () => {
-    if (!editingPromptText) { showNotification("내보낼 프롬프트 내용이 없습니다."); return; }
-    const blob = new Blob([editingPromptText], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url;
-    a.download = `ai_prompt_backup_${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showNotification("프롬프트가 .txt 파일로 저장되었습니다.");
-  };
-
   // AI search
   const handleSearch = async () => {
     if (!searchQuery.trim()) { setAiSearchIds(null); return; }
@@ -954,7 +929,6 @@ export default function App() {
         isSettingsOpen={isSettingsOpen} setIsSettingsOpen={setIsSettingsOpen} settingsRef={settingsRef}
         adminModeEnabled={adminModeEnabled} toggleAdminMode={toggleAdminMode}
         handleSaveLibrary={handleSaveLibrary} handleLoadLibrary={handleLoadLibrary} isSaving={isSaving}
-        setEditingPromptText={setEditingPromptText} setIsPromptManagerOpen={setIsPromptManagerOpen} customAiPrompt={customAiPrompt}
         setIsLogoManagerOpen={setIsLogoManagerOpen} handleFolderUpload={handleFolderUpload} isUploading={isUploading}
         lastFolderName={lastFolderName} handlePickFolder={handlePickFolder}
         handleReopenLastFolder={handleReopenLastFolder} handleForgetLastFolder={handleForgetLastFolder}
@@ -963,10 +937,6 @@ export default function App() {
         handleOpenDuplicateManager={handleOpenDuplicateManager} handleSidebarClick={handleSidebarClick}
       />
 
-      <PromptManagerModal isOpen={isPromptManagerOpen} onClose={() => setIsPromptManagerOpen(false)}
-        isLightMode={isLightMode} editingPromptText={editingPromptText} setEditingPromptText={setEditingPromptText}
-        handlePromptFileUpload={handlePromptFileUpload} handlePromptFileDownload={handlePromptFileDownload}
-        handleSavePrompt={handleSavePrompt} />
       <LogoManagerModal isOpen={isLogoManagerOpen} onClose={() => setIsLogoManagerOpen(false)}
         isLightMode={isLightMode} availableGames={availableGames} gameLogos={gameLogos}
         handleUpdateLogo={handleUpdateLogo} handleRemoveLogo={handleRemoveLogo} />

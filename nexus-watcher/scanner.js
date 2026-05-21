@@ -21,6 +21,41 @@ export function hasValidExtension(filePath, extensions = []) {
   return extensions.map((e) => e.toLowerCase()).includes(ext);
 }
 
+// 화이트리스트 검사. include 규칙이 비어있으면 무조건 통과.
+// - includeYears: 경로 segment 중 하나가 정확히 일치 (예: "2026")
+// - includeSegments: 경로 segment 중 하나가 substring 매치 (예: "03.디자인")
+// - includeFilenameKeywords: 파일명(확장자 제외) substring 매치 (예: "1180")
+// 셋 다 AND 조합 — 하나라도 실패하면 reject.
+export function matchesInclude(filePath, {
+  includeYears = [],
+  includeSegments = [],
+  includeFilenameKeywords = [],
+} = {}) {
+  const segments = filePath.split(/[\\/]/);
+  const fileName = basename(filePath, extname(filePath));
+
+  if (includeYears.length) {
+    const yearsSet = new Set(includeYears.map(String));
+    const ok = segments.some((seg) => yearsSet.has(seg));
+    if (!ok) return false;
+  }
+  if (includeSegments.length) {
+    const low = includeSegments.map((s) => String(s).toLowerCase());
+    const ok = segments.some((seg) => {
+      const s = seg.toLowerCase();
+      return low.some((inc) => inc && s.includes(inc));
+    });
+    if (!ok) return false;
+  }
+  if (includeFilenameKeywords.length) {
+    const lowName = fileName.toLowerCase();
+    const low = includeFilenameKeywords.map((s) => String(s).toLowerCase());
+    const ok = low.some((kw) => kw && lowName.includes(kw));
+    if (!ok) return false;
+  }
+  return true;
+}
+
 // 재귀적으로 모든 파일을 수집. 디렉터리 단위 exclude 도 여기서 한 번 더 가지치기.
 export async function walkDir(rootPath, { extensions = [], exclude = [] } = {}) {
   const found = [];

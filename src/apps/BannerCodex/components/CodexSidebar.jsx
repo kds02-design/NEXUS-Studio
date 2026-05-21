@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, LayoutGrid, Heart, Layers, Zap, Star, Settings, ShieldCheck,
-  Save, FileJson, FileText, Image as ImageIcon, FolderPlus, Upload,
+  Save, FileJson, Image as ImageIcon, FolderPlus, Upload,
   CheckSquare, Trash2
 } from 'lucide-react';
 import CodexFolderSelector from './CodexFolderSelector';
-import { gameNameMap, DEFAULT_AI_PROMPT } from '../constants/categories';
+import { gameNameMap } from '../constants/categories';
 
 const renderGameItem = ({
   gameKey, banners, pinnedGames, activeCategory, isLightMode,
@@ -54,7 +54,6 @@ const CodexSidebar = ({
   isSettingsOpen, setIsSettingsOpen, settingsRef,
   adminModeEnabled, toggleAdminMode,
   handleSaveLibrary, handleLoadLibrary, isSaving,
-  setEditingPromptText, setIsPromptManagerOpen, customAiPrompt,
   setIsLogoManagerOpen, handleFolderUpload, isUploading,
   lastFolderName, handlePickFolder, handleReopenLastFolder, handleForgetLastFolder,
   isProcessingFiles, handleFileUpload, skipDuplicates, setSkipDuplicates,
@@ -202,10 +201,6 @@ const CodexSidebar = ({
                         <input type="file" accept=".json" className="hidden" onChange={handleLoadLibrary} />
                       </label>
                       <div className={`h-px w-full my-1 ${isLightMode ? 'bg-slate-100' : 'bg-white/5'}`}></div>
-                      <button onClick={(e) => { e.stopPropagation(); setEditingPromptText(customAiPrompt || DEFAULT_AI_PROMPT); setIsPromptManagerOpen(true); setIsSettingsOpen(false); }}
-                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'text-[#0eb9b3] hover:bg-slate-100' : 'text-[#0eb9b3] hover:bg-white/5'}`}>
-                        <FileText className="w-4 h-4 shrink-0" /> <span className="font-bold">AI 평가 프롬프트 관리</span>
-                      </button>
                       <button onClick={(e) => { e.stopPropagation(); setIsLogoManagerOpen(true); setIsSettingsOpen(false); }}
                         className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}>
                         <ImageIcon className="w-4 h-4 shrink-0" /> <span>로고 관리</span>

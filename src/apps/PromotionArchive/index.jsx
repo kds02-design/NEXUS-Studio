@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  collection, doc, updateDoc, onSnapshot, writeBatch,
+  collection, doc, updateDoc, onSnapshot, writeBatch, getDocs,
 } from 'firebase/firestore';
 import { db, appId } from '../../lib/firebase';
 import { uploadBase64 } from '../../lib/storage';
@@ -26,23 +26,149 @@ import FloatingActionBar from './components/layout/FloatingActionBar';
 const GAMES = ['아이온', '블소', '리니지', '기타'];
 
 // 원본 폴더 경로 prefix — 실제 서버 share 루트.
-// 사용자가 \\ppc-file\1.리니지\ 같은 폴더를 선택하면 webkitRelativePath 는 1.리니지/... 로 시작하므로
-// prefix(\\ppc-file\) + relPath 만 결합하면 \\ppc-file\1.리니지\... 정식 경로 복원.
-// localStorage('pa_pathPrefix')로 덮어쓰기 가능.
+// 정식 경로 형식: \\ppc-file\{게임폴더}\{연도}\프로모션\{캠페인폴더}\03.디자인\pc\
+// localStorage('pa_pathPrefix') 로 prefix 자체를 덮어쓰기 가능.
 const DEFAULT_PATH_PREFIX = '\\\\ppc-file\\';
 const getCanonicalPrefix = () => {
     try { return localStorage.getItem('pa_pathPrefix') || DEFAULT_PATH_PREFIX; }
     catch { return DEFAULT_PATH_PREFIX; }
 };
+
+// 게임명 → 서버 폴더명 매핑. 새 게임 추가 시 여기에만 등록하면 path 자동 정규화됨.
+// 사용자가 \\ppc-file\프로모션\ 같이 게임/연도가 빠진 폴더를 선택해도
+// upload 시 game/year 폴더가 path 에 자동 prefix 된다.
+// 한 폴더에 여러 game 표기가 매핑될 수 있음 (예: '리니지'/'리니지M'/'리니지2M' → '1.리니지').
+const GAME_FOLDER_MAP = {
+    '리니지':       '1.리니지',
+    '리니지M':      '1.리니지',
+    '리니지2M':     '1.리니지',
+    '리니지W':      '1.리니지',
+    'lineage':      '1.리니지',
+    '아이온':       '2.아이온',
+    '아이온2':      '2.아이온',
+    'aion':         '2.아이온',
+    '블소':         '4.블레이드앤소울',
+    '블레이드앤소울': '4.블레이드앤소울',
+    'bns':          '4.블레이드앤소울',
+    '기타':         '',
+};
+// 정확 매치 우선, 실패 시 부분 일치 fallback — '리니지M' 같이 매핑 키와 다르게 저장된 값도 잡아냄.
+const getGameFolder = (game) => {
+    if (!game) return '';
+    if (GAME_FOLDER_MAP[game] !== undefined) return GAME_FOLDER_MAP[game];
+    const g = String(game).toLowerCase().trim();
+    if (!g) return '';
+    for (const [key, folder] of Object.entries(GAME_FOLDER_MAP)) {
+        if (!folder) continue;
+        const k = key.toLowerCase();
+        // 양방향 부분 일치 — 'lineage' / '리니지' / '리니지M' 모두 '1.리니지' 로 보냄.
+        if (g.includes(k) || k.includes(g)) return folder;
+    }
+    return '';
+};
+// path 가 이미 게임/연도 폴더 형태를 포함하는지 검사용.
+// 게임 폴더는 \\ppc-file\ 직후 첫 segment 에서만 평가 — '03.디자인' 같은
+// 중간 폴더(번호.단계)가 게임 폴더로 오인되는 것을 방지.
+const hasGameSegment = (path) => {
+    if (!path || typeof path !== 'string') return false;
+    if (!path.startsWith(DEFAULT_PATH_PREFIX)) return false;
+    const firstSeg = path.slice(DEFAULT_PATH_PREFIX.length).split('\\')[0] || '';
+    // 게임 폴더 형식: '1.리니지', '2.아이온', '4.블레이드앤소울' 등 (1~2자리 숫자 + .)
+    return /^\d{1,2}\./.test(firstSeg);
+};
+const hasYearSegment = (path) => /\\(20\d{2})\\/.test(path || '');
+
 // File 의 webkitRelativePath 에서 부모 폴더만 추출 → prefix + 슬래시→백슬래시 변환.
-const buildCanonicalPath = (file) => {
+// game/year 인자가 주어지면 webkitRelativePath 가 게임/연도 폴더로 시작하지 않을 때 자동 보정.
+// year 가 비어있어도 폴더명(예: '20260121_새로...')의 앞 4자리에서 자동 추출 시도.
+const buildCanonicalPath = (file, game, year) => {
     if (!file) return '';
     const rel = file.webkitRelativePath || file.name || '';
     const parts = rel.split('/');
     parts.pop(); // 파일명 제거 → 부모 폴더만
+
+    // game/year 자동 prefix 삽입.
+    const gameFolder = getGameFolder(game);
+    let yearStr = String(year || '').trim();
+    if (!/^20\d{2}$/.test(yearStr)) {
+        // 폴더명 prefix 에서 추출 (예: '20260121_새로...' → 2026).
+        const dated = parts.find(p => /^20\d{2}\d{4}/.test(p));
+        if (dated) yearStr = dated.slice(0, 4);
+        else {
+            const ySeg = parts.find(p => /^20\d{2}$/.test(p));
+            if (ySeg) yearStr = ySeg;
+        }
+    }
+    const firstSeg = parts[0] || '';
+    const startsWithGameFolder = /^\d+\./.test(firstSeg);
+
+    if (gameFolder && !startsWithGameFolder) {
+        // 게임 폴더 누락 — 맨 앞에 삽입.
+        parts.unshift(gameFolder);
+        // 연도도 빠져 있으면 게임 폴더 바로 다음에 삽입 (정식 형식 맞춤).
+        if (yearStr && !parts.slice(1).some(p => /^20\d{2}$/.test(p))) {
+            parts.splice(1, 0, yearStr);
+        }
+    } else if (yearStr && !parts.some(p => /^20\d{2}$/.test(p))) {
+        // 게임 폴더는 있는데 연도가 없으면 게임 폴더 다음 위치에 연도 삽입.
+        parts.splice(1, 0, yearStr);
+    }
+
     const folderRel = parts.join('/');
     if (!folderRel) return getCanonicalPrefix();
     return getCanonicalPrefix() + folderRel.replace(/\//g, '\\') + '\\';
+};
+
+// 기존 doc 의 path 한 건 정규화 — game/year 매핑에 따라 누락된 segment 를 채워 넣음.
+// 이미 올바른 형식이면 null 반환 (변경 불필요).
+// year 는 doc.year 가 비어 있어도 path 자체에서 추출 시도:
+//   1) 8자리 yyyymmdd 폴더명 prefix (예: \20260401_시그니처\) → 앞 4자리
+//   2) 4자리 연도 단독 segment (예: \2026\)
+const extractYearFromPath = (path) => {
+    if (!path) return '';
+    // \20260401_ ... 형태 — 8자리 숫자 + _ 로 시작하는 폴더명에서 앞 4자리
+    const m8 = path.match(/\\(20\d{2})\d{4}[_\-\\]/);
+    if (m8) return m8[1];
+    // \2026\ 형태 — 단독 4자리 연도 폴더
+    const m4 = path.match(/\\(20\d{2})\\/);
+    if (m4) return m4[1];
+    return '';
+};
+const normalizePromoPath = (oldPath, game, year) => {
+    if (!oldPath || typeof oldPath !== 'string') return null;
+    const prefix = DEFAULT_PATH_PREFIX;
+    if (!oldPath.startsWith(prefix)) return null;
+    const gameFolder = getGameFolder(game);
+    // year 우선순위:
+    //  1) path 의 yyyymmdd 폴더명 prefix (예: '20260121_새로...' → 2026) — 실제 캠페인 날짜라 가장 신뢰.
+    //  2) doc.year (4자리 유효) — fallback.
+    //  3) ''  — 둘 다 없으면 skip.
+    let yearStr = extractYearFromPath(oldPath);
+    if (!yearStr) {
+        const docY = String(year || '').trim();
+        if (/^20\d{2}$/.test(docY)) yearStr = docY;
+    }
+    const needGame = gameFolder && !hasGameSegment(oldPath);
+    // path 안에 이미 들어가 있는 year segment 가 yearStr 와 다르면 교정 필요.
+    const existingYear = (oldPath.match(/\\(20\d{2})\\/) || [])[1] || '';
+    const needYear = !!yearStr && (!existingYear || existingYear !== yearStr);
+    if (!needGame && !needYear) return null;
+    // 잘못된 기존 year segment 가 있으면 먼저 교체 후 가공.
+    let workingPath = oldPath;
+    if (existingYear && existingYear !== yearStr) {
+        workingPath = workingPath.replace(new RegExp('\\\\' + existingYear + '\\\\'), '\\' + yearStr + '\\');
+    }
+    const rest = workingPath.slice(prefix.length);
+    let restWithFix = rest;
+    if (needGame) {
+        // 게임 폴더 누락 — 맨 앞에 game/year 삽입.
+        restWithFix = gameFolder + '\\' + (yearStr && !hasYearSegment(workingPath) ? yearStr + '\\' : '') + rest;
+    } else if (yearStr && !hasYearSegment(workingPath)) {
+        // 게임 폴더는 있는데 year segment 자체가 없으면 게임 폴더 다음에 삽입.
+        restWithFix = rest.replace(/^(\d{1,2}\.[^\\]+)\\/, `$1\\${yearStr}\\`);
+    }
+    const newPath = prefix + restWithFix;
+    return newPath === oldPath ? null : newPath;
 };
 
 // 컬렉션 경로 — BannerCodex/PromptArc와 같은 패턴으로 통일.
@@ -83,6 +209,75 @@ function App() {
         if (!isAdmin && isAdminMode) setIsAdminMode(false);
     }, [isAdmin, isAdminMode]);
     // 관리자 모드 토글 시 다중 선택 초기화는 setSelectedItems 선언 이후로 이동 (아래 별도 effect)
+
+    // 일괄 경로 정규화 — 기존 doc 의 path 에 게임/연도 폴더가 누락된 항목을 GAME_FOLDER_MAP 기반으로 보정.
+    // 관리자 모드에서 한 번만 실행하면 됨. dry-run preview 후 confirm.
+    const [isNormalizing, setIsNormalizing] = useState(false);
+    const handleNormalizePaths = useCallback(async () => {
+        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
+        if (isNormalizing) return;
+        setIsNormalizing(true);
+        try {
+            const snap = await getDocs(promoColRef());
+            const updates = [];
+            const skipped = { wrongPrefix: 0, noGameMapping: 0, alreadyNormalized: 0, noPath: 0 };
+            const skipSamples = { wrongPrefix: [], noGameMapping: [], alreadyNormalized: [] };
+            snap.docs.forEach(d => {
+                const data = d.data();
+                const oldPath = data.path || '';
+                if (!oldPath || typeof oldPath !== 'string') { skipped.noPath++; return; }
+                if (!oldPath.startsWith(DEFAULT_PATH_PREFIX)) {
+                    skipped.wrongPrefix++;
+                    if (skipSamples.wrongPrefix.length < 2) skipSamples.wrongPrefix.push(`${data.game || '?'}: ${oldPath}`);
+                    return;
+                }
+                const gameFolder = getGameFolder(data.game);
+                if (!gameFolder) {
+                    skipped.noGameMapping++;
+                    if (skipSamples.noGameMapping.length < 2) skipSamples.noGameMapping.push(`game="${data.game || '?'}"`);
+                    return;
+                }
+                const newPath = normalizePromoPath(oldPath, data.game, data.year);
+                if (newPath) {
+                    updates.push({ id: d.id, old: oldPath, new: newPath, game: data.game, year: data.year });
+                } else {
+                    skipped.alreadyNormalized++;
+                    if (skipSamples.alreadyNormalized.length < 2) skipSamples.alreadyNormalized.push(oldPath);
+                }
+            });
+            const total = snap.docs.length;
+            const report = [
+                `검사 결과 (총 ${total}건):`,
+                `  • 변경 대상: ${updates.length}`,
+                `  • 이미 정상: ${skipped.alreadyNormalized}${skipSamples.alreadyNormalized.length ? '\n     예: ' + skipSamples.alreadyNormalized.join('\n     ') : ''}`,
+                `  • 게임 매핑 없음: ${skipped.noGameMapping}${skipSamples.noGameMapping.length ? '\n     예: ' + skipSamples.noGameMapping.join(', ') : ''}`,
+                `  • prefix 불일치: ${skipped.wrongPrefix}${skipSamples.wrongPrefix.length ? '\n     예: ' + skipSamples.wrongPrefix.join('\n     ') : ''}`,
+                `  • path 없음: ${skipped.noPath}`,
+            ].join('\n');
+            console.log('[PromotionArchive] normalize report\n' + report);
+
+            if (updates.length === 0) {
+                alert(`변경할 경로가 없습니다.\n\n${report}\n\n게임 매핑이 없으면 GAME_FOLDER_MAP 에 추가하세요.`);
+                return;
+            }
+            const preview = updates.slice(0, 5).map(u => `[${u.game}/${u.year || '?'}]\n  ${u.old}\n  → ${u.new}`).join('\n\n');
+            if (!confirm(`${report}\n\n미리보기 (처음 5건):\n\n${preview}\n\n계속할까요?`)) return;
+
+            // 400개씩 batch — Firestore 단일 batch 최대 500.
+            const CHUNK = 400;
+            for (let i = 0; i < updates.length; i += CHUNK) {
+                const batch = writeBatch(db);
+                updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.new }));
+                await batch.commit();
+            }
+            alert(`✅ ${updates.length}건 경로 정규화 완료`);
+        } catch (e) {
+            console.error('[PromotionArchive] normalize paths failed', e);
+            alert(`❌ 정규화 실패: ${e.message || e.code}`);
+        } finally {
+            setIsNormalizing(false);
+        }
+    }, [isAdmin, isNormalizing]);
 
     // 게임 로고 — BannerCodex 와 동일한 Firestore 컬렉션 공유 (artifacts/{appId}/public/data/settings/gameLogos).
     // PreviewModal 헤더에서 게임 로고 표시용. 관리자가 BannerCodex 설정에서 등록하면 여기에도 자동 반영.
@@ -462,7 +657,7 @@ function App() {
                         title: item.title,
                         game: uploadSettings.game,
                         year: uploadSettings.year,
-                        path: buildCanonicalPath(item.pcFile || item.mobileFile),
+                        path: buildCanonicalPath(item.pcFile || item.mobileFile, uploadSettings.game, uploadSettings.year),
                         preview: pcData?.thumbnail || moData?.thumbnail,
                         full_image: pcData?.detail || null,
                         mobile_image: moData?.detail || null,
@@ -786,7 +981,9 @@ function App() {
                     )}
                 </main>
 
-                {isAdminMode && selectedItems.length > 0 && (
+                {/* 하단 중앙 floating bar — 다중 선택 또는 admin 액션 있을 때 표시.
+                    FloatingActionBar 내부에서 selection/admin 그룹을 독립적으로 렌더. */}
+                {isAdminMode && (
                     <FloatingActionBar
                         selectedCount={selectedItems.length}
                         onAddToCollection={handleBulkAddToCollection}
@@ -794,6 +991,9 @@ function App() {
                         onDeselectAll={() => setSelectedItems([])}
                         onAiAnalysis={() => setIsAiModalOpen(true)}
                         onDelete={handleDelete}
+                        // admin 전용 — admin 모드일 때 항상 노출
+                        onNormalizePaths={isAdmin ? handleNormalizePaths : undefined}
+                        isNormalizing={isNormalizing}
                     />
                 )}
 

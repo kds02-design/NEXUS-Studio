@@ -11,7 +11,7 @@ import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import chokidar from 'chokidar';
 
-import { walkDir, isExcluded, hasValidExtension, waitForStableSize, buildFileMeta } from './scanner.js';
+import { walkDir, isExcluded, hasValidExtension, matchesInclude, waitForStableSize, buildFileMeta } from './scanner.js';
 import { initFirebase, initCloudinary, findExistingDoc, createDoc, uploadToCloudinary } from './uploader.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -111,6 +111,13 @@ async function processFile(filePath) {
     // 어느 watch entry 인지 매칭.
     const entry = findWatchEntryFor(filePath);
     if (!entry) { log.warn(`watch 매칭 실패: ${filePath}`); return; }
+
+    // entry 별 include 규칙 (연도/경로/파일명 화이트리스트) 통과 여부.
+    if (!matchesInclude(filePath, entry)) {
+      // 너무 많이 찍히지 않도록 debug 레벨로만 흘려둠 (지금은 info 로 남겨 확인).
+      log.info(`SKIP (include 규칙 미충족) [${entry.app}] ${filePath}`);
+      return;
+    }
 
     // 파일이 아직 복사 중이면 안정될 때까지 대기.
     const stable = await waitForStableSize(filePath);
