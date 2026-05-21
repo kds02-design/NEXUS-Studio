@@ -9,6 +9,7 @@
       "includeFilenameKeywords": ["1180"]
     },
     {
+      "_comment": "cleanup.js 용 임시 복구 엔트리. cleanup 끝나면 이 블록 다시 제거할 것. watcher 가 안 돌면 자동 등록 일어나지 않음.",
       "path": "Z:\\1.리니지\\",
       "app": "promotion-archive",
       "game": "리니지",
@@ -35,6 +36,10 @@
     "참고",
     "temp",
     "백업",
-    "원본"
+    "원본",
+    "아이템",
+    "아이콘",
+    "SD캐릭터",
+    "crop"
   ]
 }

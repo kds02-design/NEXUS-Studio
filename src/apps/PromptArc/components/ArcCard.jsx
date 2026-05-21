@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Image as ImageIcon, Trash2, Edit2, Play, Link2 } from "lucide-react";
+import { Image as ImageIcon, Trash2, Edit2, Play, Link2, Lock, ShieldCheck } from "lucide-react";
 import { cloudinaryVideoThumb } from "../services/cloudinary";
+import { useGlobal } from "../../../context/GlobalContext";
 
 export const PromptImage = ({ src, alt, className }) => {
   const [error, setError] = useState(false);
@@ -10,6 +11,26 @@ export const PromptImage = ({ src, alt, className }) => {
 };
 
 export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode, isSelected, onToggleSelect, currentUid, isAdmin }) {
+  const { navigate } = useGlobal();
+  // 프롬프트 본문 추출 — stepPrompts 우선, content/text 폴백.
+  const extractText = () => {
+    if (Array.isArray(prompt.stepPrompts) && prompt.stepPrompts.length > 0) {
+      return prompt.stepPrompts.filter(Boolean).join("\n\n");
+    }
+    return prompt.content || prompt.text || "";
+  };
+  const sendToAudit = (e) => {
+    e?.stopPropagation();
+    const text = extractText();
+    if (!text) return;
+    navigate?.('prompt-audit', {
+      source: 'prompt-arc', target: 'prompt-audit',
+      prompt: { text, tags: prompt.tags || [], style: '' },
+      image: { url: '', metadata: {} },
+      params: { sourceId: prompt.id, sourceMeta: { title: prompt.title || '' } },
+      timestamp: Date.now(),
+    });
+  };
   // 본인 프롬프트 또는 관리자만 수정/삭제 가능. ownerUid 가 없는 구프롬프트는 authorId 폴백.
   const isAuthor = (prompt.ownerUid && prompt.ownerUid === currentUid) || (!prompt.ownerUid && (!prompt.authorId || prompt.authorId === currentUid));
   const canEdit = isAuthor || isAdmin;
@@ -80,6 +101,11 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
         )}
       </div>
       {prompt.isLive && <div className="absolute top-0 left-0 px-2 py-0.5 bg-rose-950/80 text-rose-200 text-[9px] font-bold rounded-br-lg z-30 tracking-wider">LIVE</div>}
+      {prompt.visibility === 'private' && (
+        <div className="absolute top-2 left-2 z-30 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-bold backdrop-blur-sm" title="나만 볼 수 있는 비공개 항목">
+          <Lock size={10} strokeWidth={2.5} /> 비공개
+        </div>
+      )}
       {videoUrl && (
         <div className="absolute bottom-2 left-2 z-30 flex items-center gap-1.5 max-w-[calc(100%-1rem)]">
           <div className="flex items-center gap-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-bold text-white shrink-0">
@@ -105,12 +131,13 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
           <input type="checkbox" checked={isSelected} onChange={e => { e.stopPropagation(); onToggleSelect(prompt.id); }} className="w-3.5 h-3.5 accent-purple-500 cursor-pointer" />
         </div>
       )}
-      {canEdit && (
-        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-40">
+      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-40">
+        <button onClick={sendToAudit} className="p-1.5 rounded-lg bg-[#151515]/80 text-zinc-300 hover:text-[#A29BFE] backdrop-blur-sm" title="프롬프트 최적화로 보내기 (충돌 분석, 1c)"><ShieldCheck size={13} /></button>
+        {canEdit && (<>
           <button onClick={e => { e.stopPropagation(); onEdit?.(prompt); }} className="p-1.5 rounded-lg bg-[#151515]/80 text-zinc-300 hover:text-white backdrop-blur-sm" title={isAuthor ? '수정' : '관리자 권한으로 수정'}><Edit2 size={13} /></button>
           <button onClick={e => { e.stopPropagation(); onDelete(prompt.id); }} className="p-1.5 rounded-lg bg-[#151515]/80 text-zinc-300 hover:text-red-400 backdrop-blur-sm" title={isAuthor ? '삭제' : '관리자 권한으로 삭제'}><Trash2 size={13} /></button>
-        </div>
-      )}
+        </>)}
+      </div>
       <div className="absolute bottom-2 left-2 flex flex-wrap gap-1 opacity-0 group-hover:opacity-100 z-20 pointer-events-none">
         {!videoUrl && (prompt.tags || []).map((tag, i) => <span key={i} className="px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-bold text-zinc-300">#{tag}</span>)}
       </div>

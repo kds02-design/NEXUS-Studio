@@ -9,6 +9,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { GRADE_LABEL, GRADES } from "../lib/grades";
+import useWeeklyCredits from "../lib/useWeeklyCredits";
 import UserAvatar from "./UserAvatar";
 import AvatarPicker from "./AvatarPicker";
 import UpgradeRequestModal from "./UpgradeRequestModal";
@@ -17,16 +18,18 @@ import InviteCodeModal from "./InviteCodeModal";
 const APP_VERSION = "NEXUS Studio v0.4.0";
 
 const gradeColor = {
-  [GRADES.general]: "#7A7A9A",
-  [GRADES.pro]:     "#C8A969",
-  [GRADES.expert]:  "#0eb9b3",
+  [GRADES.general]:  "#7A7A9A",
+  [GRADES.pro]:      "#C8A969",
+  [GRADES.pro_plus]: "#A29BFE",
+  [GRADES.expert]:   "#0eb9b3",
 };
 
 // Shell 골조는 라이트 지원 완료. 개별 앱(BannerCodex 외)은 아직 다크 하드코딩 — 라이트 전환 시 mixed 표시 가능.
 const THEME_SWITCH_LOCKED = false;
 
 export default function ProfilePopover({ open, onClose }) {
-  const { user, profile, grade, isAdmin, signOut, usageToday, dailyLimit } = useAuth();
+  const { user, profile, grade, isAdmin, signOut } = useAuth();
+  const { used: weekUsed, cap: weekCap, byAction: weekByAction } = useWeeklyCredits();
   const { setCurrentApp, isLight, toggleTheme } = useGlobal();
   const T = useTheme();
   const panelRef = useRef(null);
@@ -50,7 +53,10 @@ export default function ProfilePopover({ open, onClose }) {
   const gColor = gradeColor[grade] || T.accent;
   const showUpgrade = grade === GRADES.general || grade === GRADES.pro;
   const showInvite  = grade === GRADES.general;
-  const limitText   = dailyLimit === Infinity ? "∞" : dailyLimit;
+  const creditText  = `${weekUsed}/${weekCap}`;
+  const imageUsed   = weekByAction?.image || 0;
+  const videoUsed   = weekByAction?.video || 0;
+  const analysisUsed= weekByAction?.analysis || 0;
 
   const goNexusAdmin = () => { setCurrentApp("nexus-admin"); onClose?.(); };
   const doLogout = async () => {
@@ -62,7 +68,7 @@ export default function ProfilePopover({ open, onClose }) {
     <>
       {open && (
         <div ref={panelRef} style={{
-          position:"absolute", top: 56, right: 20, width: 300, zIndex: 200,
+          position:"absolute", top: 56, right: 20, width: 300, zIndex: 50001,
           background: T.surface, border: `1px solid ${T.border}`,
           borderRadius: 12, boxShadow: "0 18px 40px rgba(0,0,0,0.5)",
           color: T.text, fontFamily:"'Noto Sans KR', sans-serif",
@@ -79,10 +85,10 @@ export default function ProfilePopover({ open, onClose }) {
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:14, fontWeight:700, color:T.text, marginBottom:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{displayName}</div>
               <div style={{ fontSize:11, color:T.textMuted, marginBottom:8, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{user.email}</div>
-              <div title={`오늘 사용 ${usageToday}/${limitText}`} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"2px 8px", background:`${gColor}1A`, border:`1px solid ${gColor}55`, borderRadius:999, fontSize:9, fontWeight:700, color:gColor, letterSpacing:"0.08em" }}>
+              <div title={`이번 주 크레딧 ${creditText}\n· 이미지 생성 ${imageUsed}c (10c/회)\n· 영상 생성 ${videoUsed}c (30c/회)\n· 분석/최적화 ${analysisUsed}c (1c/회)`} style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"2px 8px", background:`${gColor}1A`, border:`1px solid ${gColor}55`, borderRadius:999, fontSize:9, fontWeight:700, color:gColor, letterSpacing:"0.08em" }}>
                 <span style={{ width:5, height:5, borderRadius:999, background:gColor }} />
                 {GRADE_LABEL[grade]?.toUpperCase()}
-                <span style={{ color:T.textMuted, fontWeight:500, letterSpacing:0, marginLeft:3 }}>{usageToday}/{limitText}</span>
+                <span style={{ color:T.textMuted, fontWeight:500, letterSpacing:0, marginLeft:3 }}>{creditText}</span>
               </div>
             </div>
           </div>

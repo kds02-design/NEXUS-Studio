@@ -25,20 +25,16 @@ const App = ({ version, setVersion, versions } = {}) => {
 
     const rp = useSovereignPromptV1({ apiKey });
 
-    const t = {
-        bg: theme === 'dark' ? 'bg-black' : 'bg-slate-50',
-        textColor: theme === 'dark' ? 'text-zinc-100' : 'text-slate-900',
-    };
-
     return (
-        <div className={`flex flex-col h-screen ${t.bg} ${t.textColor} overflow-hidden transition-colors duration-500 relative p-4`}>
+        // RenderMatrix 톤 통일 + h-screen → h-full (Shell Topbar 52px 만큼 잘림 방지).
+        <div className={`flex flex-col h-full ${theme === 'dark' ? 'bg-[#09090B] text-zinc-100' : 'bg-slate-50 text-slate-900'} overflow-hidden transition-colors duration-500 relative p-5 font-sans`}>
             <style>{`
-                .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-                .custom-scrollbar::-webkit-scrollbar-track { margin: 10px; background: transparent; }
-                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(63, 63, 70, 0.5); border-radius: 10px; }
-                .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(82, 82, 91, 0.5); }
+                .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+                .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+                .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.2); border-radius: 4px; transition: background 0.2s; }
+                .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.5); }
             `}</style>
-            <main className="flex-1 flex overflow-hidden gap-4">
+            <main className="flex-1 flex overflow-hidden gap-5 min-h-0">
                 <LeftNav
                     isSidebarOpen={rp.isSidebarOpen}
                     setIsSidebarOpen={rp.setIsSidebarOpen}

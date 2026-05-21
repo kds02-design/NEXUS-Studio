@@ -89,7 +89,7 @@ export default function PromptArcApp() {
   const [isLinking, setIsLinking] = useState(false);
   const { folders, createFolder, renameFolder, deleteFolder, toggleFolderItem } =
     useFolders({ user, showToast, setCategory, category });
-  const filteredPrompts = useFilter({ prompts, searchTerm, category, sortOption, favoriteIds, folders, filters });
+  const filteredPrompts = useFilter({ prompts, searchTerm, category, sortOption, favoriteIds, folders, filters, currentUid: user?.uid || null });
   const { exportData, importData } = useImportExport({ user, prompts, showToast, setVisibleCount });
 
   // 다른 앱에서 payload 로 프롬프트가 전달되면 신규 등록 모달 오픈.
@@ -267,7 +267,7 @@ export default function PromptArcApp() {
             sortOption={sortOption} setSortOption={setSortOption}
             filterPopoverOpen={filterPopoverOpen} setFilterPopoverOpen={setFilterPopoverOpen}
             sortPopoverOpen={sortPopoverOpen} setSortPopoverOpen={setSortPopoverOpen}
-            isAdmin={isAdmin} totalCount={filteredPrompts.length}
+            isAdmin={isAdmin} totalCount={filteredPrompts.length} totalAll={prompts.length}
           />
           <main ref={mainScrollRef} onScroll={e => setShowTopBtn(e.target.scrollTop > 300)}
             className="flex-1 overflow-y-auto arc-scrollbar px-6 pt-4 pb-8">

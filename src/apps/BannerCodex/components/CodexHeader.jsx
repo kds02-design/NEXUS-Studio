@@ -218,8 +218,8 @@ const CodexHeader = ({
           )}
         </div>
 
-        {/* 카운트 */}
-        <span className="text-xs font-mono font-bold ml-1 text-[#0eb9b3] shrink-0">{filteredBannersCount}</span>
+        {/* 카운트 — 자릿수 변동에도 폭 고정 (tabular-nums + min-w). */}
+        <span className="text-xs font-mono font-bold ml-1 text-[#0eb9b3] shrink-0 tabular-nums inline-block text-right" style={{ minWidth: 36 }}>{filteredBannersCount}</span>
       </div>
     </header>
   );

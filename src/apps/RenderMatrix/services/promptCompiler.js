@@ -174,8 +174,8 @@ export const compileNanoBanana = (ir, state) => {
   }
   const scaleTag = ir.subject.scale;
   const lensTag = ir.camera_and_depth.lens;
-  const frontVolumeModifier = frontVolumeModifierFor(ir.surface_morphology.reliefId);
-  const projectionDesc = ir.camera_and_depth.isMinimal ? `It is presented as a solid structural body with minimal side thickness. Absolutely no rear extrusion, BUT ${frontVolumeModifier}.` : "It is presented with 3D depth and extrusion.";
+  // prose 는 '얇기/돌출' 골격만 담고, 구체 sculpting 디테일(MicroBevel/Crystalline 등)은 posTags 의 ir.surface_morphology.relief 에서만 한 번 출력 — 같은 정보를 두 번 다른 표현으로 박으면 옵티마이저가 "shallow relief" 같은 잘못된 가중치 태그를 만들어냄.
+  const projectionDesc = ir.camera_and_depth.isMinimal ? "It is presented as a solid structural standalone body with minimal side thickness and absolutely no rear extrusion." : "It is presented with 3D depth and extrusion.";
   const prose = `An epic cinematic typography graphic rendered in a ${ir._meta.persona.name.split(' ')[1]} style. ${scaleTag}. ${lensTag}. The text is crafted from ${ir.material_stack.base} featuring ${ir.material_stack.internal_texture}. ${projectionDesc}`;
   const posTags = [
     prose,
@@ -283,7 +283,7 @@ export const compileChatGPT = (ir, state) => {
 
 ### 2. Camera & Depth
 - **Perspective**: ${depthStr}${lensDirective}
-- **Relief**: ${ir.surface_morphology.relief} with ${ir.surface_morphology.treatment}
+- **Front-Face Sculpting**: ${ir.surface_morphology.relief} with ${ir.surface_morphology.treatment}. CRITICAL: This describes the front-face carving of the isolated typography itself — it MUST NOT be interpreted as a relief carved onto a background wall, plaque, or solid slab. The text is a standalone graphic, not a relief mounted on a surface.
 
 ### 3. Layered Material Stack
 - **Base Material**: ${ir.material_stack.base} (${ir.surface_morphology.wear})

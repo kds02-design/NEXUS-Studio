@@ -19,6 +19,11 @@ export const CRITERIA_TYPES = {
   promotion: "promotion",
   brandweb: "brandweb",
   prompt: "prompt",
+  // ─── 타이포그래피 전용 평가 타입 (2026-05 추가) ─────────────
+  // 각 타이포 성격에 맞는 항목으로 시드. 관리자가 NexusAdmin 에서 가중치/항목 자유 조정.
+  typo2d: "typo2d",         // 2D 평면 타이포그래피 (벡터, 평면 디자인)
+  typoRender: "typoRender", // 렌더링 타이포 (3D/PBR — Render Matrix 결과물)
+  typoMotion: "typoMotion", // 모션 타이포 (영상/모션 — Motion Matrix 결과물 키프레임)
 };
 
 // ─── 시드 (v1.0) ────────────────────────────────────────
@@ -66,11 +71,61 @@ const BRANDWEB_SEED = [
 // 프롬프트 평가 — placeholder. 사용자가 NexusAdmin 에서 직접 채워 넣을 수 있도록 빈 시드.
 const PROMPT_SEED = [];
 
+// ─── 2D 타이포그래피 (평면 디자인 — 벡터/플랫) ───────────────────────────
+// 조판/리듬/그리드 같은 평면 디자인 본질에 집중.
+// id 는 Gemini responseSchema 가 강제하는 10개 표준 키와 동일하게 유지.
+// (관리자가 NexusAdmin 에서 name/weight/description 자유 편집 가능. id 는 schema 호환 위해 유지 권장.)
+const TYPO2D_SEED = [
+  { id: "impression",  name: "첫인상 / 시각 임팩트", weight: 10, maxScore: 100, description: "한눈에 시선을 사로잡는 강렬함. 평범한 폰트 + 평이한 색 조합이면 70점대." },
+  { id: "concept",     name: "콘셉트 표현력",        weight: 10, maxScore: 100, description: "메시지/감정이 타이포 자체로 전달되는지. 글꼴 선택이 메시지 톤과 맞는지." },
+  { id: "layout",      name: "구성/여백",            weight: 10, maxScore: 100, description: "화면 분할과 여백 활용. 답답하지 않고 의도된 호흡이 있는지." },
+  { id: "typography",  name: "자간/조판 정밀도",     weight: 14, maxScore: 100, description: "자간/장평/베이스라인 정밀도. 자모 균형, 글자 간격의 일관성. 타이포 디자인의 핵심." },
+  { id: "color",       name: "색 조화",              weight: 10, maxScore: 100, description: "배경/텍스트 색 조합의 조화. 콘트라스트가 적절하고 톤이 일관된지." },
+  { id: "readability", name: "가독성",               weight: 12, maxScore: 100, description: "폰트 선택, 크기, 색 대비가 빠른 식별성을 보장하는지. 작은 크기에서도 읽히는지." },
+  { id: "brand",       name: "브랜드 톤 일치",       weight: 8,  maxScore: 100, description: "브랜드/제품의 톤앤매너에 부합하는 폰트와 스타일인지." },
+  { id: "flow",        name: "시각 리듬",            weight: 10, maxScore: 100, description: "굵기 대비, 크기 대비, 간격의 반복 패턴이 시각적 리듬을 만드는지." },
+  { id: "detail",      name: "마감/디테일",          weight: 8,  maxScore: 100, description: "픽셀 단위 디테일의 완성도. 깨진 외곽, 어색한 자모, 미세 정렬 오차 없음." },
+  { id: "conversion",  name: "정렬/그리드 정확성",   weight: 8,  maxScore: 100, description: "수학적 정렬과 그리드 준수 + 시각적 정렬(optical) 보정." },
+];
+
+// ─── 렌더링 타이포 (3D/PBR — Render Matrix 산출물) ───────────────────────
+// 재질/조명/실루엣 보존/이펙트 통합 등 3D 렌더의 본질에 집중.
+const TYPO_RENDER_SEED = [
+  { id: "impression",  name: "시네마틱 임팩트",      weight: 10, maxScore: 100, description: "한 장의 시안으로 임팩트가 있는지. AAA 게임 타이틀급 무게감/존재감." },
+  { id: "concept",     name: "콘셉트 일치도",        weight: 10, maxScore: 100, description: "의도한 분위기(다크판타지/하이테크/프리미엄 등)가 정확히 전달되는지." },
+  { id: "layout",      name: "입체감 (Volume)",      weight: 8,  maxScore: 100, description: "정면 부조/후면 돌출의 균형. 두께가 과하거나 부족하지 않고 의도된 깊이인지." },
+  { id: "typography",  name: "실루엣 보존",          weight: 14, maxScore: 100, description: "원본 타이포의 윤곽이 정확히 유지되는지. 변형/녹아내림/형태 왜곡이 없는지." },
+  { id: "color",       name: "컬러 그레이딩",        weight: 8,  maxScore: 100, description: "시네마틱 톤매핑. 채도/대비/색온도가 분위기에 맞고 영상미가 있는지." },
+  { id: "readability", name: "모서리/엣지 정밀도",   weight: 8,  maxScore: 100, description: "외곽선이 깔끔하고 색번짐/blob 없음. 모서리가 살아 있는지." },
+  { id: "brand",       name: "재질 표현 (Material)", weight: 14, maxScore: 100, description: "PBR 재질의 사실성. 금속/얼음/돌 등이 진짜 같은지, 가짜 셰이딩이나 플라스틱 느낌 없는지." },
+  { id: "flow",        name: "라이팅 (Lighting)",    weight: 10, maxScore: 100, description: "주광/측광/림라이트의 자연스러움. 그림자/하이라이트가 형태에 부합하고 입체감을 살리는지." },
+  { id: "detail",      name: "표면 디테일",          weight: 10, maxScore: 100, description: "미세 텍스처(스크래치, 결, 균열)의 밀도와 사실성. 너무 매끄럽거나 너무 지저분하지 않은지." },
+  { id: "conversion",  name: "배경 분리 / 기술 완성도", weight: 8, maxScore: 100, description: "깔끔한 컷아웃. plaque(벽면 부조)처럼 보이지 않고, AI 아티팩트/노이즈 없음." },
+];
+
+// ─── 모션 타이포 (영상/모션 — Motion Matrix 산출물 / 키프레임) ───────────
+// 영상은 대표 키프레임 기준으로 평가하지만 motion blur / sequential frames / easing 흔적도 추론하여 채점.
+const TYPO_MOTION_SEED = [
+  { id: "impression",  name: "모션 임팩트",          weight: 10, maxScore: 100, description: "키프레임 한 장에서도 모션의 박력/매력이 전달되는지. Hollywood title sequence 의 한 컷 같은지." },
+  { id: "concept",     name: "콘셉트 표현",          weight: 10, maxScore: 100, description: "분위기/장르(다크/팝/하이테크)가 모션 전반에서 일관되게 전달되는지." },
+  { id: "layout",      name: "카메라 무빙",          weight: 8,  maxScore: 100, description: "카메라 움직임의 안정성. 의도 없는 zoom/drift 가 없고 의도한 동선과 부합하는지." },
+  { id: "typography",  name: "형태 안정성",          weight: 14, maxScore: 100, description: "모션 중에도 글자 외곽이 흔들리거나 변형되지 않는지. wobble/morph/melting 없는지." },
+  { id: "color",       name: "컬러 그레이딩",        weight: 8,  maxScore: 100, description: "시네마틱 컬러 룩. 모션 중 색상이 자연스럽게 흐르는지." },
+  { id: "readability", name: "모션 중 가독성",       weight: 10, maxScore: 100, description: "움직이는 동안에도 텍스트가 읽히는지. 모션 블러/이펙트가 가독성을 해치지 않는지." },
+  { id: "brand",       name: "모션 리듬",            weight: 10, maxScore: 100, description: "easing 곡선과 박자감. 기계적이지 않고 살아있는 움직임의 흔적이 보이는지." },
+  { id: "flow",        name: "타이밍 (호흡)",        weight: 12, maxScore: 100, description: "등장/유지/퇴장의 호흡. 시작이 너무 갑작스럽거나 끝이 어색하지 않은지." },
+  { id: "detail",      name: "기술 품질",            weight: 8,  maxScore: 100, description: "압축 아티팩트/깜빡임/프레임 드롭 없음. 색 번짐이나 코덱 이슈 없는지." },
+  { id: "conversion",  name: "루프/이펙트 완성도",   weight: 10, maxScore: 100, description: "무한 반복일 경우 시작/끝점 연결의 자연스러움 + 파티클이 프레임을 이탈하지 않는지." },
+];
+
 const SEEDS = {
-  [CRITERIA_TYPES.banner]:    { items: BANNER_SEED,    name: "v1.0 (시드)" },
-  [CRITERIA_TYPES.promotion]: { items: PROMOTION_SEED, name: "v1.0 (시드)" },
-  [CRITERIA_TYPES.brandweb]:  { items: BRANDWEB_SEED,  name: "v1.0 (시드)" },
-  [CRITERIA_TYPES.prompt]:    { items: PROMPT_SEED,    name: "v1.0 (시드)" },
+  [CRITERIA_TYPES.banner]:     { items: BANNER_SEED,       name: "v1.0 (시드)" },
+  [CRITERIA_TYPES.promotion]:  { items: PROMOTION_SEED,    name: "v1.0 (시드)" },
+  [CRITERIA_TYPES.brandweb]:   { items: BRANDWEB_SEED,     name: "v1.0 (시드)" },
+  [CRITERIA_TYPES.prompt]:     { items: PROMPT_SEED,       name: "v1.0 (시드)" },
+  [CRITERIA_TYPES.typo2d]:     { items: TYPO2D_SEED,       name: "v1.0 (시드)" },
+  [CRITERIA_TYPES.typoRender]: { items: TYPO_RENDER_SEED,  name: "v1.0 (시드)" },
+  [CRITERIA_TYPES.typoMotion]: { items: TYPO_MOTION_SEED,  name: "v1.0 (시드)" },
 };
 
 const versionsCol = (type) => collection(db, "evaluationCriteria", type, "versions");

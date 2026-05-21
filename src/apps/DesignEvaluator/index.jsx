@@ -70,6 +70,33 @@ const getScoreLabel = (key, category = '') => {
         };
         return map[key.toLowerCase()] || key;
     }
+    // ─── 2D 타이포 ───
+    if (cat.includes('2d') && cat.includes('타이포')) {
+        const map = {
+            impression: '첫인상 / 시각 임팩트', concept: '콘셉트 표현력', layout: '구성/여백', typography: '자간/조판 정밀도',
+            color: '색 조화', readability: '가독성', brand: '브랜드 톤 일치', flow: '시각 리듬',
+            detail: '마감/디테일', conversion: '정렬/그리드 정확성'
+        };
+        return map[key.toLowerCase()] || key;
+    }
+    // ─── 렌더링 타이포 ───
+    if (cat.includes('렌더링') && cat.includes('타이포')) {
+        const map = {
+            impression: '시네마틱 임팩트', concept: '콘셉트 일치도', layout: '입체감 (Volume)', typography: '실루엣 보존',
+            color: '컬러 그레이딩', readability: '모서리/엣지 정밀도', brand: '재질 표현 (Material)', flow: '라이팅 (Lighting)',
+            detail: '표면 디테일', conversion: '배경 분리 / 기술 완성도'
+        };
+        return map[key.toLowerCase()] || key;
+    }
+    // ─── 모션 타이포 ───
+    if (cat.includes('모션') && cat.includes('타이포')) {
+        const map = {
+            impression: '모션 임팩트', concept: '콘셉트 표현', layout: '카메라 무빙', typography: '형태 안정성',
+            color: '컬러 그레이딩', readability: '모션 중 가독성', brand: '모션 리듬', flow: '타이밍 (호흡)',
+            detail: '기술 품질', conversion: '루프/이펙트 완성도'
+        };
+        return map[key.toLowerCase()] || key;
+    }
     const map = {
         impression: '첫인상 / 주목도', concept: '콘셉트 전달력', layout: '레이아웃 균형', typography: '타이포그래피',
         color: '컬러 완성도', readability: '정보 가독성', brand: '브랜드 적합성', flow: '시선 흐름',
@@ -88,6 +115,16 @@ const getCategoryWeights = (category = '') => {
     }
     if (cat.includes('프로모션') || cat.includes('promotion')) {
         return { impression: 10, brand: 8, concept: 10, color: 15, layout: 10, typography: 10, conversion: 10, readability: 12, flow: 8, detail: 7 };
+    }
+    // ─── 타이포 카테고리 (시드와 weight 동기화) ───
+    if (cat.includes('2d') && cat.includes('타이포')) {
+        return { impression: 10, concept: 10, layout: 10, typography: 14, color: 10, readability: 12, brand: 8, flow: 10, detail: 8, conversion: 8 };
+    }
+    if (cat.includes('렌더링') && cat.includes('타이포')) {
+        return { impression: 10, concept: 10, layout: 8, typography: 14, color: 8, readability: 8, brand: 14, flow: 10, detail: 10, conversion: 8 };
+    }
+    if (cat.includes('모션') && cat.includes('타이포')) {
+        return { impression: 10, concept: 10, layout: 8, typography: 14, color: 8, readability: 10, brand: 10, flow: 12, detail: 8, conversion: 10 };
     }
     return { impression: 10, concept: 10, layout: 10, typography: 10, color: 10, readability: 10, brand: 10, flow: 10, detail: 10, conversion: 10 };
 };
@@ -251,6 +288,7 @@ export default function DesignEvaluator() {
     [user]
   );
   // Mount 시 localStorage 캐시를 먼저 띄움 → Firestore 응답 오기 전까지 빈 화면 방지.
+  // 캐시는 메타 only(image 제외)이므로 그리드의 image src 는 잠깐 placeholder 였다가 Firestore 응답 후 채워짐.
   useEffect(() => {
     try {
       const cached = localStorage.getItem('designEval:historyCache');
@@ -273,6 +311,9 @@ export default function DesignEvaluator() {
             const bm = b.createdAt?.toMillis?.() || b.createdAt || 0;
             return bm - am;
           });
+        // 진단 — image 보유 비율 콘솔 (이미지 안 뜸 보고 추적용).
+        const withImage = arr.filter(x => typeof x.image === 'string' && x.image.length > 100).length;
+        console.log(`[Evaluator] history loaded: ${arr.length}건 (image 포함 ${withImage}건)`);
         setHistory(arr);
       },
       (err) => console.warn("[Evaluator] history subscribe err", err)
@@ -280,31 +321,42 @@ export default function DesignEvaluator() {
     return () => unsub();
   }, [evaluationsCol]);
 
-  // history 가 바뀌면 캐시 갱신. createdAt(Timestamp)은 직렬화 안 되므로 millis 로 변환.
-  // 용량 초과 시 image 필드 빼고 메타만 저장.
+  // history 가 바뀌면 캐시 갱신.
+  // ★ 변경: image 필드는 캐시에 절대 저장하지 않음 (quota 회피 + 옛 quota-실패 캐시가 메타만 남아 영영 그대로 표시되는 버그 회피).
+  //   이미지는 항상 Firestore 에서 받아 표시. 캐시는 "응답 대기 중 메타만" 용도.
   useEffect(() => {
     if (history.length === 0) return;
-    const top = history.slice(0, 30).map(h => ({
-      ...h,
-      createdAt: h.createdAt?.toMillis?.() || h.createdAt || 0,
-    }));
+    const top = history.slice(0, 30).map(h => {
+      const { image: _img, ...rest } = h;
+      return {
+        ...rest,
+        createdAt: h.createdAt?.toMillis?.() || h.createdAt || 0,
+      };
+    });
     try { localStorage.setItem('designEval:historyCache', JSON.stringify(top)); }
-    catch {
-      try {
-        const lite = top.map(({ image, ...rest }) => rest);
-        localStorage.setItem('designEval:historyCache', JSON.stringify(lite));
-      } catch {}
-    }
+    catch (e) { console.warn('[Evaluator] history cache write failed', e); }
   }, [history]);
 
   // 평가 결과를 히스토리에 저장. 호출부에서 setResultData 후 await 으로 호출.
+  // image 압축 → Firestore 저장. 실패 시 alert 으로 사용자에게 알림(silent 방지).
   const saveEvaluationToHistory = async (result, image, category) => {
     if (!evaluationsCol) return; // 미로그인
+    let compressed = image;
     try {
       // image 가 너무 크면 Firestore 1MB 제한에 걸리므로 압축.
-      const compressed = image && image.startsWith('data:')
-        ? await compressImage(image, 480, 0.7)
-        : image;
+      if (image && image.startsWith('data:')) {
+        compressed = await compressImage(image, 480, 0.7);
+      }
+    } catch (e) {
+      console.error('[Evaluator] image compress failed', e);
+      compressed = image; // 압축 실패 시 원본으로 시도
+    }
+    // 안전장치 — 1MB 근접 시 한 번 더 작게 압축.
+    if (typeof compressed === 'string' && compressed.length > 900_000) {
+      console.warn(`[Evaluator] image still too large (${compressed.length}b), recompressing 320/0.6`);
+      try { compressed = await compressImage(image, 320, 0.6); } catch {}
+    }
+    try {
       await addDoc(evaluationsCol, {
         title: result.title || '제목 없음',
         category: result.category || category || 'auto',
@@ -315,7 +367,8 @@ export default function DesignEvaluator() {
         createdAt: serverTimestamp(),
       });
     } catch (e) {
-      console.warn("[Evaluator] save history failed", e);
+      console.error('[Evaluator] save history failed', e);
+      alert(`평가 저장 실패: ${e.message || e.code}\n\n이미지가 너무 크거나 권한 문제일 수 있습니다.`);
     }
   };
 
@@ -395,11 +448,14 @@ export default function DesignEvaluator() {
   const [openAiApiKey, setOpenAiApiKey] = useState(() => typeof window !== 'undefined' ? localStorage.getItem('openAiApiKey') || '' : '');
 
   // ─── Firestore evaluationCriteria 동기화 ───
-  // banner / promotion / brandweb 활성 버전을 한꺼번에 로드 → 카테고리별 기준 텍스트로 합성
+  // banner / promotion / brandweb / typo2d / typoRender / typoMotion 활성 버전을 한꺼번에 로드 → 카테고리별 기준 텍스트로 합성
   const [criteriaByType, setCriteriaByType] = useState({
-    banner:    { items: getSeedCriteria(CRITERIA_TYPES.banner),    versionName: "(시드)" },
-    promotion: { items: getSeedCriteria(CRITERIA_TYPES.promotion), versionName: "(시드)" },
-    brandweb:  { items: getSeedCriteria(CRITERIA_TYPES.brandweb),  versionName: "(시드)" },
+    banner:     { items: getSeedCriteria(CRITERIA_TYPES.banner),     versionName: "(시드)" },
+    promotion:  { items: getSeedCriteria(CRITERIA_TYPES.promotion),  versionName: "(시드)" },
+    brandweb:   { items: getSeedCriteria(CRITERIA_TYPES.brandweb),   versionName: "(시드)" },
+    typo2d:     { items: getSeedCriteria(CRITERIA_TYPES.typo2d),     versionName: "(시드)" },
+    typoRender: { items: getSeedCriteria(CRITERIA_TYPES.typoRender), versionName: "(시드)" },
+    typoMotion: { items: getSeedCriteria(CRITERIA_TYPES.typoMotion), versionName: "(시드)" },
   });
   const [criteriaLoading, setCriteriaLoading] = useState(true);
   useEffect(() => {
@@ -407,19 +463,25 @@ export default function DesignEvaluator() {
     (async () => {
       setCriteriaLoading(true);
       try {
-        const [b, p, w] = await Promise.all([
+        const [b, p, w, t2, tr, tm] = await Promise.all([
           fetchActiveCriteria(CRITERIA_TYPES.banner),
           fetchActiveCriteria(CRITERIA_TYPES.promotion),
           fetchActiveCriteria(CRITERIA_TYPES.brandweb),
+          fetchActiveCriteria(CRITERIA_TYPES.typo2d),
+          fetchActiveCriteria(CRITERIA_TYPES.typoRender),
+          fetchActiveCriteria(CRITERIA_TYPES.typoMotion),
         ]);
         if (cancelled) return;
-        const useOrSeed = (v, type) => (v && Array.isArray(v.criteria) && v.criteria.length > 0)
+        const pickOrSeed = (v, type) => (v && Array.isArray(v.criteria) && v.criteria.length > 0)
           ? { items: v.criteria, versionName: v.name || "active" }
           : { items: getSeedCriteria(type), versionName: "(시드 fallback)" };
         setCriteriaByType({
-          banner:    useOrSeed(b, CRITERIA_TYPES.banner),
-          promotion: useOrSeed(p, CRITERIA_TYPES.promotion),
-          brandweb:  useOrSeed(w, CRITERIA_TYPES.brandweb),
+          banner:     pickOrSeed(b,  CRITERIA_TYPES.banner),
+          promotion:  pickOrSeed(p,  CRITERIA_TYPES.promotion),
+          brandweb:   pickOrSeed(w,  CRITERIA_TYPES.brandweb),
+          typo2d:     pickOrSeed(t2, CRITERIA_TYPES.typo2d),
+          typoRender: pickOrSeed(tr, CRITERIA_TYPES.typoRender),
+          typoMotion: pickOrSeed(tm, CRITERIA_TYPES.typoMotion),
         });
       } catch (e) {
         console.warn("[DesignEvaluator] criteria load failed; using seeds", e);
@@ -429,12 +491,16 @@ export default function DesignEvaluator() {
   }, []);
 
   // 동적으로 카테고리별 평가 기준 텍스트 생성 (Gemini 프롬프트에 주입)
+  // 타이포 평가 항목 id 는 기존 일반 디자인 평가 id 와 다르므로 (kerning/material/timing 등),
+  // Gemini 가 카테고리에 맞는 id 키로 출력하도록 명시적으로 노출.
   const evaluationCriteria = useMemo(() => {
-    return `[임무 2: 10대 평가 항목 (100점 만점)]
+    return `[임무 2: 카테고리별 평가 항목 (각 100점 만점)]
 각 항목에 대해 100점 만점 기준의 점수(score)와 핵심을 찌르는 심플한 한 줄 평가(reason)를 작성하세요.
 
 [★ 카테고리별 평가 항목, 가중치, JSON 키 매핑 ★]
-AI는 판별/지정된 카테고리에 따라 다음의 기준으로 평가하고, 반드시 괄호 안의 (JSON 키)에 맞춰 점수와 이유를 기입하세요.
+AI는 판별/지정된 카테고리에 따라 다음의 기준으로 평가하고, **반드시 괄호 안의 (JSON 키)에 맞춰** 점수와 이유를 기입하세요.
+카테고리에 따라 평가 항목 키가 완전히 다르므로 (예: 일반 디자인은 impression/concept/..., 타이포는 kerning/material/timing 등),
+판별된 카테고리에 정확히 일치하는 키 셋을 사용하세요.
 
 ▶ [배너] 및 [기타] 카테고리:
 ${formatCriteriaList(criteriaByType.banner.items)}
@@ -445,10 +511,20 @@ ${formatCriteriaList(criteriaByType.promotion.items)}
 ▶ [브랜드웹_메인] / [브랜드웹_서브] 카테고리:
 ${formatCriteriaList(criteriaByType.brandweb.items)}
 
+▶ [2D 타이포] 카테고리 (평면 디자인 — 벡터/플랫):
+${formatCriteriaList(criteriaByType.typo2d.items)}
+
+▶ [렌더링 타이포] 카테고리 (3D/PBR — Render Matrix 산출물):
+${formatCriteriaList(criteriaByType.typoRender.items)}
+
+▶ [모션 타이포] 카테고리 (영상/모션 — 대표 키프레임 기준):
+${formatCriteriaList(criteriaByType.typoMotion.items)}
+
 [중요: 이유(reason) 작성 시 강력한 규칙]
 - 고점 항목 (85점 이상): 어떤 디자인 요소가 훌륭한지 구체적으로 짚어 명확히 칭찬하세요.
 - 저점 항목 (80점 미만): 절대 칭찬하거나 "무난하다"고 타협하지 마세요. 명확한 단점과 아쉬운 점을 날카롭게 비판하고 지적하세요.
-- 구어체나 불필요한 미사여구를 빼고 핵심만 심플하게 작성하세요.`;
+- 구어체나 불필요한 미사여구를 빼고 핵심만 심플하게 작성하세요.
+- 모션 타이포 카테고리는 키프레임 한 장으로 평가하지만, 가능한 한 시간 축의 흔적(motion blur, sequential frames, easing 흔적 등)을 추론하여 timing/loop/모션 관련 항목에도 점수를 매기세요.`;
   }, [criteriaByType]);
 
   useEffect(() => {
@@ -622,7 +698,15 @@ ${formatCriteriaList(criteriaByType.brandweb.items)}
           }
 
           const categoryInstruction = selectedCategory === 'auto'
-              ? '- category: 이미지의 형태와 목적에 따라 "배너", "프로모션 페이지", "브랜드웹_메인", "브랜드웹_서브", "기타" 중 하나로 정확히 분류하세요. (세로로 긴 정보성 페이지는 프로모션 페이지나 브랜드웹_서브입니다.)'
+              ? `- category: 이미지의 형태와 목적에 따라 다음 중 하나로 정확히 분류하세요:
+  · "배너" (캠페인/이벤트 배너)
+  · "프로모션 페이지" (세로로 긴 랜딩 페이지)
+  · "브랜드웹_메인" / "브랜드웹_서브" (게임/브랜드 사이트)
+  · "2D 타이포" (글자 자체가 주인공인 평면 타이포그래피 디자인 — 벡터/플랫, 배경 효과 거의 없음)
+  · "렌더링 타이포" (3D/PBR 렌더링된 타이포 — 금속/얼음/돌 재질감, 라이팅, 깊이감)
+  · "모션 타이포" (영상이나 모션이 강하게 느껴지는 키프레임 — 모션 블러, 파티클 궤적, 시퀀스 흔적, 글자가 시간 축으로 움직이는 인상)
+  · "기타"
+  (구분 팁: 글자 자체에 3D 입체감/재질감이 있으면 "렌더링 타이포". 모션블러나 글자 주변에 시간성 효과(궤적)가 있으면 "모션 타이포". 평면이면 "2D 타이포".)`
               : `- category: 이 디자인은 "${selectedCategory}"입니다. 반드시 이 값으로 고정하여 출력하고, 평가 기준도 해당 카테고리에 맞춰 진행하세요.`;
           const introInstruction = selectedCategory === 'auto'
               ? '첨부된 이미지를 분석하여 디자인 카테고리를 분류하고,'
@@ -883,8 +967,13 @@ ${evaluationCriteria}
                                         ><Trash2 className="w-3.5 h-3.5" /></button>
                                     </div>
                                 ) : (
-                                    <div className="w-full aspect-video bg-zinc-900 flex items-center justify-center">
+                                    <div className="w-full aspect-video bg-zinc-900 flex items-center justify-center relative">
                                         <ImageIcon className="w-8 h-8 text-zinc-700" />
+                                        {/* Firestore 응답 전 캐시 메타만 있을 때(.image 없음) → 로딩 표시.
+                                            응답 후에도 image 가 없으면 진짜 빠진 데이터. */}
+                                        <div className="absolute bottom-1.5 left-1.5 text-[9px] text-zinc-600">
+                                            이미지 로딩…
+                                        </div>
                                     </div>
                                 )}
                                 <div className="p-3">
@@ -908,6 +997,9 @@ ${evaluationCriteria}
                       <option value="프로모션 페이지" className="bg-zinc-900">📜 프로모션 페이지 (Landing)</option>
                       <option value="브랜드웹_메인" className="bg-zinc-900">🌐 브랜드 사이트 (메인)</option>
                       <option value="브랜드웹_서브" className="bg-zinc-900">🌐 브랜드 사이트 (서브)</option>
+                      <option value="2D 타이포" className="bg-zinc-900">🅰️ 2D 타이포 (평면)</option>
+                      <option value="렌더링 타이포" className="bg-zinc-900">💎 렌더링 타이포 (3D/PBR)</option>
+                      <option value="모션 타이포" className="bg-zinc-900">🎬 모션 타이포 (영상 키프레임)</option>
                   </select>
                   <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-400 pointer-events-none" />
               </div>

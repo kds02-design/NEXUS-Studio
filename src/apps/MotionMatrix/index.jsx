@@ -1,5 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { doc, setDoc } from 'firebase/firestore';
 import { useGlobal } from '../../context/GlobalContext';
+import { useAuth } from '../../context/AuthContext';
+import { useUsageGate } from '../../components/UsageGate';
 import { useMotionPrompt } from './hooks/useMotionPrompt';
 import { usePresets } from './hooks/usePresets';
 import {
@@ -15,6 +18,21 @@ import {
 } from './constants/presets';
 import MatrixSidebar from './components/MatrixSidebar';
 import MatrixResultPanel, { AnalysisModal } from './components/MatrixResultPanel';
+import { renderWithVeo, VEO_MODELS } from '../../lib/veoRender';
+import { uploadBase64, uploadVideoFile } from '../../lib/storage';
+import { db, appId } from '../../lib/firebase';
+import { serializeForFirestore } from '../PromptArc/services/firebase';
+
+// dataURL(data:video/mp4;base64,...) → File 로 변환 (Cloudinary 영상 업로드용).
+function dataUrlToFile(dataUrl, filename = `motion_${Date.now()}.mp4`) {
+  const [meta, base64] = dataUrl.split(',');
+  const mime = meta.match(/data:([^;]+);/)?.[1] || 'video/mp4';
+  const bin = atob(base64);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+  return new File([bytes], filename, { type: mime });
+}
 
 function App() {
   const motion = useMotionPrompt();
@@ -22,6 +40,10 @@ function App() {
 
   const [activeTab, setActiveTab] = useState('generate');
   const { payload, clearPayload } = useGlobal();
+  const { user, grade } = useAuth();
+  const { ensureCanGenerate, modal: usageModal } = useUsageGate();
+  const canRender = grade === 'pro' || grade === 'pro_plus' || grade === 'expert';
+
   const [incomingFromRender, setIncomingFromRender] = useState(null);
   const [arcRecommended, setArcRecommended] = useState(null);
   const [isArcAnalyzing, setIsArcAnalyzing] = useState(false);
@@ -63,6 +85,13 @@ function App() {
   const [qaDragActiveVideo, setQaDragActiveVideo] = useState(false);
   const qaVideoRef = useRef(null);
 
+  // ─── Veo 렌더 상태 ───
+  const [selectedVeoModel, setSelectedVeoModel] = useState(VEO_MODELS[0].id);
+  const [rendering, setRendering] = useState(false);
+  const [renderedVideo, setRenderedVideo] = useState(null); // { dataUrl, modelId, durationSeconds, aspectRatio }
+  const [renderError, setRenderError] = useState(null);
+  const [savingToArc, setSavingToArc] = useState(false);
+
   function showToast(msg) {
     setToastMsg(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -87,7 +116,6 @@ function App() {
     try { clearPayload(); } catch {}
 
     (async () => {
-      // 1) 이미지 fetch → dataURL → setImage (레퍼런스 이미지 영역 자동 임포트)
       let dataUrl = null;
       if (imgUrl) {
         try {
@@ -111,7 +139,6 @@ function App() {
       }
       if (text) setDirectorNote(text);
 
-      // 2) tag/text 기반 추천 (기존 동작) — text 있고 API 키 있을 때만
       if (text && apiKey) {
         setIsArcAnalyzing(true);
         const ctrl = new AbortController();
@@ -130,20 +157,15 @@ function App() {
         setIncomingFromRender((s) => (s ? { ...s, status: dataUrl ? 'image-only' : 'no-text' } : null));
       }
 
-      // 3) 이미지 + 텍스트가 모두 들어오면 AI Director 자동 분석 트리거.
-      //    state 가 commit 된 이후 두번째 effect 에서 handleAiAnalysis(false) 호출.
       if (dataUrl || text) setPendingPayloadAnalysis(true);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload?.timestamp, payload?.target]);
 
-  // pendingPayloadAnalysis 가 true 가 되고 image 가 commit 된 직후 → AI Director 자동 실행.
   useEffect(() => {
     if (!pendingPayloadAnalysis) return;
-    // image 가 비어있고 directorNote 도 비어있으면 분석할 게 없다.
     if (!image && !directorNote.trim()) return;
     setPendingPayloadAnalysis(false);
-    // handleAiAnalysis 가 같은 render scope 안에서 정의되므로 다음 microtask 로 미뤄 호출.
     Promise.resolve().then(() => { try { handleAiAnalysis(false); } catch (e) { console.error('[MotionMatrix] 자동 분석 호출 실패', e); } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingPayloadAnalysis, image, directorNote]);
@@ -170,6 +192,7 @@ function App() {
     setDirectorNote(''); setAiInterpretation(''); motion.setIsOptimized(true);
     setQaVideoSrc(null); setQaBgImageSrc(null); setQaBgType('checker-dark'); setQaBlendMode('screen');
     setQaSettings({ scale: 100, x: 0, y: 0 });
+    setRenderedVideo(null); setRenderError(null);
     showToast('초기화되었습니다.');
   };
 
@@ -267,6 +290,116 @@ function App() {
     else if (file) showToast('❌ 영상 파일(.mp4, .webm)만 업로드 가능합니다.');
   };
 
+  // ─── Veo 렌더 + PromptArc 자동 저장 ───
+  const saveVideoToPromptArc = useCallback(async (promptText, video, sourceImage) => {
+    if (!user?.uid || !video?.dataUrl) return;
+    setSavingToArc(true);
+    try {
+      // 영상 → Cloudinary (video 파일 업로드)
+      const file = dataUrlToFile(video.dataUrl);
+      const videoUrl = await uploadVideoFile(file);
+      // 참조 이미지가 dataURL 이면 Cloudinary 로 함께 업로드 (있을 때만)
+      let thumbUrl = null;
+      if (sourceImage) {
+        try { thumbUrl = await uploadBase64(sourceImage); } catch (e) { console.warn('[MotionMatrix] 참조 이미지 업로드 실패', e); }
+      }
+      const id = Math.random().toString(36).slice(2);
+      const now = Date.now();
+      const modelLabel = VEO_MODELS.find((m) => m.id === video.modelId)?.label || video.modelId || 'Veo';
+      const title = `MotionMatrix · ${new Date(now).toLocaleString('ko-KR')}`;
+      const record = {
+        id,
+        title,
+        content: promptText || '',
+        videos: [videoUrl],
+        images: thumbUrl ? [thumbUrl] : [],
+        thumbnail: thumbUrl || '',
+        stepPrompts: [promptText || ''],
+        stepLabels: ['MotionMatrix'],
+        stepTags: [['MotionMatrix', 'Veo', modelLabel]],
+        stepKeywords: [''],
+        stepDescriptions: [''],
+        tags: ['MotionMatrix', 'Veo', modelLabel],
+        visibility: 'private',
+        ownerUid: user.uid,
+        authorName: user.displayName || user.email || '',
+        likeCount: 0,
+        relatedIds: [],
+        type: 'video',
+        createdAt: now,
+        updatedAt: now,
+      };
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', id), serializeForFirestore(record));
+      showToast('✨ PromptArc 내 폴더에 저장됐어요');
+      return id;
+    } catch (e) {
+      console.error('[MotionMatrix] save to PromptArc failed', e);
+      showToast(`PromptArc 저장 실패: ${e.message || e.code}`);
+    } finally {
+      setSavingToArc(false);
+    }
+  }, [user]);
+
+  const handleRender = useCallback(async (promptText) => {
+    if (!promptText) return;
+    if (!canRender) {
+      setRenderError('Veo 영상 렌더는 Pro 등급 이상만 사용할 수 있습니다.');
+      return;
+    }
+    if (!image) {
+      const msg = '참조 이미지를 먼저 등록해주세요. ("기본 이미지" 영역)';
+      setRenderError(msg);
+      showToast(msg);
+      return;
+    }
+    // 주간 크레딧 30c 차감 (video). 부족하면 LimitReachedModal 자동 노출.
+    const canGen = await ensureCanGenerate?.('video');
+    if (canGen === false) {
+      setRenderError('이번 주 크레딧이 부족합니다. (영상 생성 30c 필요)');
+      return;
+    }
+    setRendering(true);
+    setRenderError(null);
+    setRenderedVideo(null);
+    try {
+      const result = await renderWithVeo(promptText, selectedVeoModel, image, {
+        durationSeconds: 8,
+        aspectRatio: '16:9',
+        onProgress: (p) => {
+          if (p.status === 'polling' && p.elapsedMs && p.elapsedMs % 30_000 < 5_000) {
+            showToast(`Veo 생성 중… ${Math.floor(p.elapsedMs / 1000)}s 경과`);
+          }
+        },
+      });
+      setRenderedVideo(result);
+      if (user?.uid && result?.dataUrl) {
+        saveVideoToPromptArc(promptText, result, image);
+      }
+    } catch (e) {
+      console.error('[MotionMatrix] veo failed', e);
+      setRenderError(e.message || String(e));
+    } finally {
+      setRendering(false);
+    }
+  }, [canRender, image, selectedVeoModel, user, saveVideoToPromptArc, ensureCanGenerate]);
+
+  const handleDownloadRendered = useCallback(() => {
+    if (!renderedVideo?.dataUrl) return;
+    const a = document.createElement('a');
+    a.href = renderedVideo.dataUrl;
+    a.download = `motionmatrix_${Date.now()}.mp4`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [renderedVideo]);
+
+  const handleSaveToPromptArc = useCallback(async (promptText) => {
+    if (!user?.uid) { showToast('로그인이 필요합니다'); return; }
+    if (!renderedVideo?.dataUrl) return;
+    if (savingToArc) return;
+    await saveVideoToPromptArc(promptText, renderedVideo, image);
+  }, [user, renderedVideo, savingToArc, image, saveVideoToPromptArc]);
+
   // Compositing (QA) handlers
   const processQaVideoFile = (file) => {
     if (file && file.type.startsWith('video/')) {
@@ -348,11 +481,9 @@ function App() {
   const promptLength = combinedOutput ? combinedOutput.length : 0;
   const isOverLimit = promptLength > motion.currentMaxLimit;
 
-  // Sidebar/result props bag (single spread on each side)
   const sidebarProps = {
     activeTab, setActiveTab, onReset: handleReset,
     incomingFromRender, setIncomingFromRender, isArcAnalyzing, setArcRecommended, arcRecommended,
-    // generate tab
     animationMode: motion.animationMode, setAnimationMode: motion.setAnimationMode,
     targetModel: motion.targetModel, setTargetModel: motion.setTargetModel,
     targetMaterial: motion.targetMaterial, handleTargetMaterialChange: presets.handleTargetMaterialChange,
@@ -360,21 +491,19 @@ function App() {
     surfaceOptions: motion.surfaceOptions, edgeOptions: motion.edgeOptions, ambientOptions: motion.ambientOptions,
     exportMode: motion.exportMode, vfxTarget: motion.vfxTarget, setVfxTarget: motion.setVfxTarget,
     activePreset: presets.activePreset, setActivePreset: presets.setActivePreset, applyPreset: presets.applyPreset,
-    // RenderMatrix 패턴 — 그룹 탭 + 카드 (MatrixPresetPanel 이 사용)
     activePresetGroup: presets.activePresetGroup, setActivePresetGroup: presets.setActivePresetGroup,
     activePresetId: presets.activePresetId, isPresetModified: presets.isPresetModified,
     onApplyPreset: presets.handleApplyPreset,
+    auditIssues: motion.auditIssues, applyAuditFix: motion.applyAuditFix,
     isImportOpen, setIsImportOpen, importText, setImportText, onImport: handleImportPrompt,
     image, setImage, isImageDragging, setIsImageDragging, onImageChange: handleImageChange,
     directorNote, setDirectorNote, aiInterpretation, setAiInterpretation,
     isAnalyzing, onAnalyze: handleAiAnalysis,
     downloadBlackFrame,
-    // validate tab
     resultVideo, analyzedFrames, isResultAnalyzing, isResultDragging, setIsResultDragging,
     onResultChange: handleResultChange, resultVideoRef,
     evalChecks, setEvalChecks, aiDetectedErrors,
     onClearValidate: () => { setEvalChecks({ cameraMoved: false, shapeMutated: false, loopBroken: false, particlesEscaped: false, alphaDirty: false }); setAiDetectedErrors(null); setResultVideo(null); setAnalyzedFrames([]); },
-    // compositing tab
     qaVideoSrc, qaVideoInfo, qaDuration,
     qaDragActiveVideo, setQaDragActiveVideo, onQaDropMain: handleQaDropMain,
     onProcessQaVideoFile: processQaVideoFile, onProcessQaBgImageFile: processQaBgImageFile,
@@ -388,7 +517,19 @@ function App() {
     logs: motion.logs, currentMaxLimit: motion.currentMaxLimit,
     combinedOutput, finalOutput, promptLength, isOverLimit, handleCopy,
     baseValidatePrompt, setBaseValidatePrompt,
-    // compositing canvas + header playback
+    // 기본 이미지 (참조)
+    image, setImage, onImageChange: handleImageChange,
+    // Veo 렌더
+    veoModels: VEO_MODELS,
+    selectedVeoModel, setSelectedVeoModel,
+    onRender: handleRender,
+    rendering, renderedVideo, renderError,
+    onDownloadRendered: handleDownloadRendered,
+    onSaveToPromptArc: handleSaveToPromptArc,
+    savingToArc,
+    isLoggedIn: !!user?.uid,
+    canRender, grade,
+    // compositing
     qaVideoSrc, qaVideoRef, qaIsPlaying, toggleQaPlay,
     qaIsLooping, setQaIsLooping, qaPlaybackRate, handleQaSpeedChange,
     qaCurrentTime, qaDuration, handleQaSeek, handleQaTimeUpdate, handleQaLoadedMetadata, formatTime,
@@ -398,13 +539,14 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-50 text-slate-900 dark:bg-[#0f1115] dark:text-[#e3e3e3] p-5 overflow-hidden relative selection:bg-[#a8c7fa]/30" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+    <div className="flex flex-col h-full w-full bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 overflow-hidden relative selection:bg-[#FDCB6E]/30 font-sans">
+      {usageModal}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&family=Space+Grotesk:wght@700&display=swap');
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #2b2d31; border-radius: 3px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #4b4d52; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(161,161,170,0.2); border-radius: 4px; transition: background 0.2s; }
+        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(161,161,170,0.5); }
         @keyframes fadeInDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in-down { animation: fadeInDown 0.2s ease-out forwards; }
         .bg-checker-dark {
@@ -418,7 +560,7 @@ function App() {
       `}</style>
 
       {toastMsg && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#181a1f] text-[#e3e3e3] px-5 py-2.5 rounded-full shadow-2xl font-medium text-[11px] border border-[#2b2d31] transition-all duration-300 animate-fade-in-down flex items-center gap-2">
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 text-white px-6 py-3 rounded-full font-bold text-[12px] shadow-2xl z-[1000] flex items-center gap-2 animate-fade-in-down whitespace-nowrap border backdrop-blur-md bg-emerald-500/90 border-emerald-400/50 shadow-[0_10px_30px_rgba(16,185,129,0.3)]">
           {toastMsg}
         </div>
       )}

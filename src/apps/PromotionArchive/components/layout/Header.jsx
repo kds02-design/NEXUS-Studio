@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
   Search, Sparkles, Loader2, X, Menu, ArrowLeft, Layers, ArrowRight, CheckSquare,
-  Filter as FilterIcon, ArrowUpDown, Maximize2, Layout, Check, ChevronUp, ChevronDown, Pin,
+  Filter as FilterIcon, ArrowUpDown, Maximize2, Layout, LayoutGrid, Grip, Check, ChevronUp, ChevronDown, Pin,
 } from 'lucide-react';
 
 const ACCENT = '#d8b17e';
@@ -123,8 +123,8 @@ const Header = ({
   topTags = [], availableGames = [], pinnedGames = [],
   // sort
   isSortMenuOpen, setIsSortMenuOpen, sortOrder, setSortOrder, sortRef,
-  // grid
-  isLargeGrid, setIsLargeGrid,
+  // grid (3단계 — BannerCodex 와 동일)
+  gridSize, setGridSize,
 }) => {
   const f = activeFilters || {};
   const filterCount =
@@ -215,7 +215,7 @@ const Header = ({
           <input
             type="text"
             placeholder={isAiSearchMode ? 'AI 검색...' : '검색...'}
-            className={`w-full pl-9 pr-16 py-1.5 bg-[#121212] border rounded-lg text-white text-xs transition-all placeholder:text-zinc-600 focus:outline-none ${
+            className={`w-full pl-9 pr-16 py-1.5 bg-[#121212] border rounded-lg text-white text-xs transition-colors placeholder:text-zinc-600 focus:outline-none ${
               isAiSearchMode
                 ? 'border-violet-500/50 focus:border-violet-500'
                 : 'border-white/10 focus:border-[#d8b17e]/50'
@@ -245,19 +245,26 @@ const Header = ({
 
         {!isCollectionMode && (
           <>
-            {/* 그리드 토글 그룹 */}
+            {/* 그리드 토글 그룹 (3-way) — BannerCodex 동일 패턴 */}
             <div className="hidden md:flex items-center bg-white/5 rounded-lg p-0.5 shrink-0">
               <button
-                onClick={() => setIsLargeGrid(false)}
-                className={`p-1.5 rounded transition-colors ${!isLargeGrid ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
-                title="기본 보기"
+                onClick={() => setGridSize('small')}
+                title="작게"
+                className={`p-1.5 rounded transition-colors ${gridSize === 'small' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
-                <Layout className="w-3.5 h-3.5" />
+                <Grip className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => setIsLargeGrid(true)}
-                className={`p-1.5 rounded transition-colors ${isLargeGrid ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
-                title="크게 보기"
+                onClick={() => setGridSize('medium')}
+                title="보통"
+                className={`p-1.5 rounded transition-colors ${gridSize === 'medium' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setGridSize('large')}
+                title="크게"
+                className={`p-1.5 rounded transition-colors ${gridSize === 'large' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
                 <Maximize2 className="w-3.5 h-3.5" />
               </button>
@@ -456,12 +463,10 @@ const Header = ({
           </>
         )}
 
-        {/* 카운트 */}
-        <span className="text-xs font-mono text-[#d8b17e] font-bold ml-1 shrink-0">
+        {/* 카운트 — 항상 N/M 고정 형태 + tabular-nums + min-w 로 reflow 차단. */}
+        <span className="text-xs font-mono text-[#d8b17e] font-bold ml-1 shrink-0 tabular-nums inline-block text-right" style={{ minWidth: 72 }}>
           {filteredBanners?.length ?? 0}
-          {filteredBanners && banners && filteredBanners.length !== banners.length && (
-            <span className="text-zinc-600 font-normal">/{banners.length}</span>
-          )}
+          <span className="text-zinc-600 font-normal">/{banners?.length ?? 0}</span>
         </span>
       </div>
     </header>

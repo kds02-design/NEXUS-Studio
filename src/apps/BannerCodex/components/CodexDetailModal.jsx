@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import {
   X, Download, Loader2, Copy, Check, Trash2, Edit3, Heart, Layers, Star,
-  Bot, Wand2, MoreHorizontal, Cpu, Box, Save
+  Bot, Wand2, MoreHorizontal, Cpu, Box, Save, Scissors,
 } from 'lucide-react';
 import CodexEvalPanel, { getFinalScore100 } from './CodexEvalPanel';
+import RegionPicker from '../../AssetLibrary/components/RegionPicker';
 
 const safeRender = (v, fb = '') => {
   if (v == null) return fb;
@@ -23,6 +24,12 @@ const CodexDetailModal = ({
   handleSmartAnalysis, processingBannerId, handleCopy, showNotification,
 }) => {
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [pickMode, setPickMode] = useState(false);
+  const [pickToast, setPickToast] = useState(null);
+  const showPickToast = (msg, type = "info") => {
+    setPickToast({ msg, type });
+    setTimeout(() => setPickToast(null), 2000);
+  };
   if (!isOpen || !selectedBanner) return null;
   const wantsConfirmClose = (action) => {
     if (hasChanges || isEditingPreview) {
@@ -42,11 +49,44 @@ const CodexDetailModal = ({
         <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center bg-black"
           onWheel={dragHandlers.onWheel} onMouseDown={dragHandlers.onMouseDown} onMouseMove={dragHandlers.onMouseMove}
           onMouseUp={dragHandlers.onMouseUp} onMouseLeave={dragHandlers.onMouseLeave}>
-          <div className="absolute top-6 left-6 z-[510]">
+          <div className="absolute top-6 left-6 z-[510] flex gap-1.5">
             <button onClick={handleDownloadImage} className="flex items-center gap-2 px-3 py-2 rounded-md text-[11px] font-bold border bg-black/50 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 backdrop-blur-md transition-all">
               <Download className="w-3.5 h-3.5" /> 이미지 저장
             </button>
+            <button
+              onClick={() => setPickMode((v) => !v)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-md text-[11px] font-bold border backdrop-blur-md transition-all ${
+                pickMode
+                  ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200'
+                  : 'bg-black/50 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
+              }`}
+              title="배너에서 타이틀/버튼/아이콘 영역을 드래그로 잘라 에셋 라이브러리에 저장"
+            >
+              <Scissors className="w-3.5 h-3.5" /> {pickMode ? '에셋 추출 ON' : '에셋 추출'}
+            </button>
           </div>
+          {/* 에셋 추출 오버레이 */}
+          <RegionPicker
+            active={pickMode}
+            imageUrl={highResImage}
+            onCancel={() => setPickMode(false)}
+            onSaved={(asset) => { showPickToast(`에셋 저장: ${asset.category}`); }}
+            source={{
+              app: 'banner-codex',
+              bannerId: selectedBanner?.id || null,
+              bannerTitle: selectedBanner?.title || '',
+            }}
+            showToast={showPickToast}
+          />
+          {pickToast && (
+            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-[2020] pointer-events-none animate-in fade-in slide-in-from-bottom-2">
+              <div className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xl border ${
+                pickToast.type === "error"
+                  ? "bg-rose-500/90 border-rose-400 text-white"
+                  : "bg-emerald-500/90 border-emerald-400 text-white"
+              }`}>{pickToast.msg}</div>
+            </div>
+          )}
           {highResImage ? (
             <img src={highResImage} alt="Preview"
               style={{ transform: `translate(${panPos.x}px, ${panPos.y}px) scale(${zoomScale})`, cursor: isDragging ? 'grabbing' : 'grab', transition: isDragging ? 'none' : 'transform 0.1s ease-out' }}

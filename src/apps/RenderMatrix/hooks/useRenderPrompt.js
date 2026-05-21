@@ -244,26 +244,68 @@ export function useRenderPrompt() {
   };
 
   const handleOptimizePrompt = async () => {
-    if (!currentIR) return;
-    if (!(await ensureCanGenerate())) return;
+    if (!currentIR) {
+      showToast("⚠️ 옵션을 먼저 설정해주세요. 베이스 프롬프트가 비어있습니다.");
+      return;
+    }
+    const basePrompt = compiledOutputs[aiModel];
+    if (!basePrompt) {
+      showToast("⚠️ 현재 모델의 베이스 프롬프트가 비어있습니다.");
+      return;
+    }
+    // 사용 한도/권한 체크. LIMIT_EXCEEDED 는 모달이 뜨지만 그 외(NO_PROFILE 등) 은 silent fail 이었음 → 토스트로 명시.
+    const canGen = await ensureCanGenerate();
+    if (!canGen) {
+      // ensureCanGenerate 가 false 면 (1) LIMIT 모달이 떴거나 (2) NO_PROFILE 등 콘솔 warn.
+      // 모달이 뜬 케이스는 사용자가 인지하므로, 그 외 케이스에 한정해 안내.
+      showToast("⚠️ 사용 권한을 확인할 수 없습니다. 로그인 상태를 확인해 주세요.");
+      return;
+    }
     setIsOptimizing(true);
     try {
       const isVfxPass = currentIR.vfxPassMode === true;
       const isOrthographic = currentIR.camera_and_depth?.isMinimal || currentIR.constraints?.extrusion?.includes("MINIMAL");
       const currentIntentText = currentView === 'editor' ? userIntent : (currentView === 'edit' ? editIntent : motionIntent);
+      console.log('[RenderMatrix] optimize start', { aiModel, baseLen: basePrompt.length, isVfxPass, isOrthographic });
       const parsed = await optimizePrompt({
         aiModel,
-        basePrompt: compiledOutputs[aiModel],
+        basePrompt,
         currentIntentText,
         isVfxPass, isOrthographic,
       });
-      if (parsed && parsed.en) {
-        setOptimizedPrompts(prev => ({ ...prev, [aiModel]: parsed.en }));
-        if (parsed.ko) setOptimizedPromptsKo(prev => ({ ...prev, [aiModel]: parsed.ko }));
-        showToast("✨ AI 최적화 완료!", 4000);
+      if (!parsed) {
+        console.warn('[RenderMatrix] optimize returned null (response parse failed)');
+        showToast("❌ AI 응답을 해석하지 못했습니다. 다시 시도해 주세요.");
+        return;
       }
-    } catch (e) { console.error(e); showToast("❌ 최적화 중 오류가 발생했습니다."); }
-    finally { setIsOptimizing(false); }
+      if (!parsed.en) {
+        console.warn('[RenderMatrix] optimize parsed but `en` missing', parsed);
+        showToast("❌ 최적화 결과가 비어있습니다.");
+        return;
+      }
+      // 가드: 옵티마이저가 negative 섹션을 통째로 누락하는 사고가 자주 발생.
+      // negative 가드(plaque/배경판/면적 점유 차단 태그)가 빠지면 결과가 무너지므로 원본에서 복원.
+      let finalEn = parsed.en;
+      const nanoMarker = '\n\nNegative prompt:';
+      const mjMarker = '--no ';
+      if (basePrompt.includes(nanoMarker) && !finalEn.includes('Negative prompt:')) {
+        const original = basePrompt.split(nanoMarker)[1] || '';
+        finalEn = `${finalEn.trim()}${nanoMarker}${original}`;
+        console.warn('[RenderMatrix] optimizer dropped Negative prompt section — restored from base');
+        showToast('⚠️ Negative 가드가 누락돼 원본으로 복원했어요');
+      } else if (basePrompt.includes(mjMarker) && !finalEn.includes(mjMarker)) {
+        const original = basePrompt.slice(basePrompt.indexOf(mjMarker));
+        finalEn = `${finalEn.trim()} ${original}`;
+        console.warn('[RenderMatrix] optimizer dropped --no flag — restored from base');
+        showToast('⚠️ Midjourney --no 가드가 누락돼 원본으로 복원했어요');
+      }
+      setOptimizedPrompts(prev => ({ ...prev, [aiModel]: finalEn }));
+      if (parsed.ko) setOptimizedPromptsKo(prev => ({ ...prev, [aiModel]: parsed.ko }));
+      showToast("✨ AI 최적화 완료!", 4000);
+    } catch (e) {
+      console.error('[RenderMatrix] optimize failed', e);
+      showToast(`❌ 최적화 실패: ${e?.message || e}`);
+    } finally { setIsOptimizing(false); }
   };
 
   const handleExpandIntent = async () => {
@@ -377,7 +419,7 @@ export function useRenderPrompt() {
 
   return {
     // misc
-    usageModal,
+    usageModal, ensureCanGenerate,
     // view / model / options
     currentView, setCurrentView,
     aiModel, setAiModel,

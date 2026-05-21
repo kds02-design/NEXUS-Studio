@@ -118,17 +118,21 @@ export async function optimizePrompt({ aiModel, basePrompt, currentIntentText, i
     systemPrompt += `\n\nCRITICAL MISSION 1 (STRICT MATTE PASS - ABSOLUTE PRIORITY): This is a VFX extraction pass. The typography MUST be a pure Vantablack (#000000) flat silhouette. It acts as an unlit holdout matte. You MUST forcefully prohibit any rim lights, edge highlights, 3D thickness, bevels, reflections, or surface details ON THE TEXT ITSELF. Use heavy negative weights.\nCRITICAL MISSION 2 (ENHANCE SURROUNDING FX): Enhance descriptive quality of surrounding glowing effects and the background canvas.`;
     if (hasCustomIntent) systemPrompt += `\nCRITICAL MISSION 3 (PRESERVE USER INTENT): The user provided a custom directive in Korean. Translate and integrate into English focusing ONLY on VFX/atmosphere. NEVER apply to text body material.`;
   } else {
-    systemPrompt += `\n\nCRITICAL MISSION 1 (ANTI-DEEP-3D & RELIEF): If the base prompt indicates "minimal side thickness" or "zero deep rear extrusion", you MUST rewrite to destroy the AI's tendency to generate heavy 3D blocks. Use negative weights.\nReinforce the requested front relief. STRICTLY AVOID cheap "photoshop bevel and emboss" looks. Ensure it remains an ISOLATED typography graphic.`;
+    systemPrompt += `\n\nCRITICAL MISSION 1 (ANTI-DEEP-3D & FRONT-FACE SCULPTING FIDELITY): If the base prompt indicates "minimal side thickness" or "zero deep rear extrusion", you MUST rewrite to destroy the AI's tendency to generate heavy 3D blocks. Use negative weights.\nReinforce the requested front-face sculpting style. Do NOT use the word "relief" — it implies a plaque/wall mount and causes the AI to fill the negative space between letters with a backing slab. Use "front-face sculpting" / "edge bevel" / "surface chiseling" / "front-face carving" instead. STRICTLY AVOID cheap "photoshop bevel and emboss" looks. The output MUST remain an ISOLATED standalone typography graphic — NEVER engraved onto a background plate, plaque, signboard, or solid block.`;
     if (hasCustomIntent) {
       systemPrompt += `\n\nCRITICAL MISSION 2 (PRESERVE USER INTENT): User provided a custom directive (Korean). Translate Korean into high-quality English tags and integrate. NEVER omit creative flavor.\n**CRITICAL**: If intent describes physical damage/wear/scratches/dents, include them as highly weighted positive tags. Do NOT smooth them out!`;
     } else {
       systemPrompt += `\n\nCRITICAL MISSION 2 (ENHANCE EXISTING THEME): No custom directive. Refine the existing descriptive tags based on persona/materials. Do NOT invent new features or claim user requested them.`;
     }
   }
+  // ABSOLUTE RULE A — 옵티마이저가 negative 섹션을 통째로 누락하면 plaque/배경판 가드가 사라져 결과가 무너짐.
+  systemPrompt += `\n\nABSOLUTE RULE A (NEGATIVE PROMPT PRESERVATION): If the base prompt contains a "Negative prompt:" section (NanoBanana syntax) or "--no ..." flag (Midjourney syntax), you MUST preserve it verbatim or strengthened in your output. NEVER drop, summarize, or fold negative tags into positive descriptions. The negative tags guard against background plates, plaque mounting, shape mutation, and area-spreading textures — removing them causes catastrophic failure.`;
+  // ABSOLUTE RULE B — 면적 점유 키워드 차단. 사용자가 "젖은/번짐/스밈" 같은 한국어를 적어도 표면 효과로만 변환.
+  systemPrompt += `\n\nABSOLUTE RULE B (AREA-EXPANSION KEYWORDS FORBIDDEN): NEVER introduce keywords that demand large surface area to render — these cause the AI to fill the negative space between letters with backing material, destroying the isolated typography silhouette. STRICTLY FORBIDDEN positive tags: ink bleed, ink seep, ink spread, stain spread, wet stain, water stain, water-logged, rain-soaked, swollen fibers, fiber absorption, fiber texture, liquid spread, drip pattern, spreading hue, transparent gradation across surface, paper saturation, surface saturation, moisture spreading, wet patch, dampness pattern. If the user's Korean intent describes "젖은/물에 잠긴/잉크 번짐/얼룩 스밈", translate ONLY as contained surface effects: micro water droplets clinging to sharp edges, localized specular sheen on metal corners, glossy wet surface highlight, NEVER as area-spreading patterns. These rules override all creative flavor — silhouette integrity is non-negotiable.`;
   const koInstruction = hasCustomIntent
     ? `"ko": A detailed Korean explanation (2-3 sentences) explaining exactly how the user's specific Korean intent was translated into the English tags.`
     : `"ko": A detailed Korean explanation (2-3 sentences) explaining how the selected theme and parameters were optimized. CRITICAL: DO NOT say "사용자의 요청을 반영하여" or "요청하신 대로". Just explain what was optimized.`;
-  systemPrompt += `\n\nMaintain the model's syntax (e.g., NanoBanana uses tags + Negative prompt).\nOutput JSON with exactly two keys:\n"en": The heavily optimized prompt string in English.\n${koInstruction}`;
+  systemPrompt += `\n\nMaintain the model's syntax (e.g., NanoBanana uses tags + "Negative prompt:" section, Midjourney uses "--no" flag).\nOutput JSON with exactly two keys:\n"en": The heavily optimized prompt string in English.\n${koInstruction}`;
 
   const payload = {
     contents: [{ role: "user", parts: [{ text: `Model Type: ${aiModel}\nIs Ultra-Thin Required: ${isOrthographic}\nIs VFX Matte Pass: ${isVfxPass}\nOriginal Custom Intent: ${currentIntentText || "None"}\nBase Prompt to optimize:\n${basePrompt}` }] }],
@@ -149,9 +153,12 @@ export async function optimizePrompt({ aiModel, basePrompt, currentIntentText, i
 
 // 한 줄 키워드 → 시네마틱 묘사로 자동 확장.
 export async function expandIntent(text, isCreationMode) {
+  // 면적 점유 키워드(잉크 번짐/물 스밈/섬유 흡수) 가 들어가면 옵티마이저가 가중치를 박아넣어 글자 사이 공간이 채워짐.
+  // 표면 sheen / 물방울 / 모서리 광택 같은 localized 효과로만 변환되도록 명시.
+  const areaGuard = `절대 금지: 잉크 번짐(ink bleed), 얼룩 스밈(stain spread), 섬유 흡수(fiber absorption), 종이 침수(paper saturation), 물에 잠긴(water-logged), 비에 젖은(rain-soaked), 액체 퍼짐(liquid spread) 같이 '면적을 점유하는' 표현은 사용 금지. 만약 사용자가 '젖은/물에 잠긴/잉크 번짐' 같은 의도를 적었어도, 모서리에 맺힌 물방울, 표면 광택(specular sheen), 국소 wet highlight 같은 contained 효과로만 묘사할 것. 글자 사이 빈 공간(negative space)을 채우는 효과는 일체 묘사 금지.`;
   const systemPrompt = isCreationMode
-    ? `You are an elite cinematic prompt engineer. Expand the user's short keyword into a detailed, dramatic visual description for typography. Focus on inner material properties and micro-details. DO NOT describe background scenery. Keep it under 3 sentences in Korean.`
-    : `You are a cinematic prompt engineer for Image-to-Image remixing. Expand the keyword into a detailed visual description. Localized effects MUST be tightly wrapped around the main subject. DO NOT alter the main object's core shape. Keep it under 3 sentences in Korean.`;
+    ? `You are an elite cinematic prompt engineer. Expand the user's short keyword into a detailed, dramatic visual description for typography. Focus on inner material properties and micro-details. DO NOT describe background scenery. Keep it under 3 sentences in Korean.\n\n${areaGuard}`
+    : `You are a cinematic prompt engineer for Image-to-Image remixing. Expand the keyword into a detailed visual description. Localized effects MUST be tightly wrapped around the main subject. DO NOT alter the main object's core shape. Keep it under 3 sentences in Korean.\n\n${areaGuard}`;
   const payload = {
     contents: [{ role: "user", parts: [{ text: `Expand this concept in Korean: "${text}"` }] }],
     systemInstruction: { parts: [{ text: systemPrompt }] },

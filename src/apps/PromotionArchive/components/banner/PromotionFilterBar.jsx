@@ -76,7 +76,11 @@ const PromotionFilterBar = ({
       {/* 오른쪽: 필터, 정렬, 그리드 제어 — PromptArc 스타일 (icon + label, compact) */}
       <div className="flex items-center gap-2">
         {!isCollectionMode && (() => {
-          const filterCount = (activeFilters.score !== 'all' ? 1 : 0) + (activeFilters.year !== 'all' ? 1 : 0) + (activeFilters.status !== 'all' ? 1 : 0);
+          const filterCount =
+            (activeFilters.score !== 'all' ? 1 : 0) +
+            (activeFilters.year !== 'all' ? 1 : 0) +
+            (activeFilters.status !== 'all' ? 1 : 0) +
+            (activeFilters.pathStatus && activeFilters.pathStatus !== 'all' ? 1 : 0);
           const sortLabel = { latest: '최신순', oldest: '오래된순', score_desc: '점수 높은순', score_asc: '점수 낮은순' }[sortOrder] || '정렬';
           return (
             <>
@@ -134,6 +138,27 @@ const PromotionFilterBar = ({
                                 activeFilters.year === String(year) ? 'bg-[#d8b17e]/20 border-[#d8b17e] text-[#d8b17e]' : 'border-zinc-700 text-zinc-400'
                               }`}
                             >{String(year).slice(2)}</button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* 경로 상태 — 누락 항목만 모아보고 일괄 보정용 */}
+                      <div>
+                        <div className="text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-wider">Path</div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { id: 'all', label: '전체' },
+                            { id: 'missing', label: '경로 없음' },
+                            { id: 'present', label: '있음' },
+                          ].map(opt => (
+                            <button
+                              key={opt.id}
+                              onClick={() => setActiveFilters(prev => ({...prev, pathStatus: opt.id}))}
+                              className={`px-2 py-1.5 text-xs rounded-lg border transition-colors ${
+                                (activeFilters.pathStatus || 'all') === opt.id
+                                  ? 'bg-[#d8b17e]/20 border-[#d8b17e] text-[#d8b17e]'
+                                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                              }`}
+                            >{opt.label}</button>
                           ))}
                         </div>
                       </div>

@@ -15,22 +15,20 @@ const App = ({ version, setVersion, versions } = {}) => {
   const apiKey = GEMINI_API_KEY;
   const rp = useSovereignPromptCurrent({ apiKey });
 
-  const t = {
-    bg: rp.theme === 'dark' ? 'bg-[#0A0A0A]' : 'bg-slate-50',
-    textColor: rp.theme === 'dark' ? 'text-zinc-100' : 'text-slate-900',
-  };
-
   return (
-    <div className={`flex flex-col h-screen ${t.bg} ${t.textColor} overflow-hidden transition-colors duration-500 relative p-4 font-sans`}>
+    // RenderMatrix 와 톤·구성 동일화:
+    //  - h-screen → h-full (Shell 내부에서 100vh 잡으면 Topbar 52px 만큼 하단 잘림)
+    //  - 외곽 패딩 p-5 / 배경 #09090B / 사이드바·결과 패널 #18181B + zinc-800 + rounded-2xl
+    <div className={`flex flex-col h-full ${rp.theme === 'dark' ? 'bg-[#09090B] text-zinc-100' : 'bg-slate-50 text-slate-900'} overflow-hidden transition-colors duration-500 relative p-5 font-sans`}>
       {rp.usageModal}
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
-        .custom-scrollbar::-webkit-scrollbar-track { margin: 10px; background: transparent; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(63, 63, 70, 0.5); border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(82, 82, 91, 0.5); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.2); border-radius: 4px; transition: background 0.2s; }
+        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.5); }
       `}</style>
 
-      <main className="flex-1 flex overflow-hidden gap-5">
+      <main className="flex-1 flex overflow-hidden gap-5 min-h-0">
         <Sidebar rp={rp} version={version} setVersion={setVersion} versions={versions} />
         <Workspace rp={rp} />
       </main>

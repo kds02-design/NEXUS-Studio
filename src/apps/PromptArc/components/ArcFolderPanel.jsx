@@ -19,7 +19,7 @@ export default function ArcFolderPanel({
           return (
             <button key={f.id} onClick={() => setCategory(fid)} title={f.name}
               className={`flex items-center h-9 w-full transition-colors ${active ? 'text-slate-900 bg-black/5 dark:text-zinc-200 dark:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-500 dark:hover:text-white dark:hover:bg-white/5'}`}>
-              <div className="w-20 flex justify-center"><Folder size={14} className={active ? 'text-[#C8A969]' : ''} /></div>
+              <div className="w-16 flex justify-center"><Folder size={14} className={active ? 'text-[#C8A969]' : ''} /></div>
             </button>
           );
         })}
@@ -46,7 +46,7 @@ export default function ArcFolderPanel({
             onClick={() => { if (!isEditing) setCategory(fid); }}
             className={`group flex items-center h-9 w-full transition-colors cursor-pointer ${active ? 'text-slate-900 bg-black/5 dark:text-zinc-200 dark:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-500 dark:hover:text-white dark:hover:bg-white/5'}`}
           >
-            <div className="w-20 flex justify-center shrink-0">
+            <div className="w-10 ml-2 flex justify-center shrink-0">
               <Folder size={14} className={active ? 'text-[#C8A969]' : ''} />
             </div>
             {isEditing ? (

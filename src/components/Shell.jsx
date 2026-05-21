@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
-import { Menu, Lock } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Menu, Lock, MoreHorizontal } from "lucide-react";
 import { APP_MAP, APP_REGISTRY } from "../config/apps";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
 import { GRADE_LABEL, GRADES } from "../lib/grades";
+import useWeeklyCredits from "../lib/useWeeklyCredits";
 
 // 등급 컬러 — ProfilePopover 와 동일. lib/grades에 없어서 인라인 정의.
 const GRADE_COLOR = {
-  [GRADES.general]: "#7A7A9A",
-  [GRADES.pro]:     "#C8A969",
-  [GRADES.expert]:  "#0eb9b3",
+  [GRADES.general]:  "#7A7A9A",
+  [GRADES.pro]:      "#C8A969",
+  [GRADES.pro_plus]: "#A29BFE",
+  [GRADES.expert]:   "#0eb9b3",
 };
 import NexusLogo from "./NexusLogo";
 // import ThemeToggle from "./ThemeToggle"; // 라이트 모드 미완성 — 임시 비활성화
@@ -32,10 +34,12 @@ import DesignEvaluatorApp from "../apps/DesignEvaluator";
 import DesignLexiconApp from "../apps/DesignLexicon";
 import PromotionArchiveApp from "../apps/PromotionArchive";
 import BrandWebReviewApp from "../apps/BrandWebReview";
+import AssetLibraryApp from "../apps/AssetLibrary";
 import BannerCodexApp from "../apps/BannerCodex";
 import BannerCreatorApp from "../apps/BannerCreator";
 import BriefStudioApp from "../apps/BriefStudio";
 import NexusAdminApp from "../apps/NexusAdmin";
+import PromptAuditApp from "../apps/PromptAudit";
 import PlaceholderApp from "../apps/PlaceholderApp";
 
 // 인덱스 스크롤 → Topbar 배경/블러 동적 계산.
@@ -59,6 +63,7 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
   const { currentApp, setCurrentApp, isLight } = useGlobal();
   const T = useTheme();
   const { user, profile, grade } = useAuth();
+  const { remaining, cap, used } = useWeeklyCredits();
   const [profileOpen, setProfileOpen] = useState(false);
   const app = currentApp ? APP_MAP[currentApp] : null;
   const isIndex = !app;
@@ -97,10 +102,13 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
         >
           <Menu size={18} />
         </button>
-        {/* 로고 + NEXUS STUDIO — 항상 노출, 클릭 시 인덱스로 이동 */}
+        {/* 로고 + NEXUS STUDIO — 항상 노출, 클릭 시 인덱스로 이동. Ctrl/Cmd+클릭 → 새 창에서 인덱스 오픈. */}
         <div
-          onClick={() => setCurrentApp(null)}
-          title="홈으로"
+          onClick={(e) => {
+            if (e.ctrlKey || e.metaKey) { window.open("/", "_blank", "noopener,noreferrer"); return; }
+            setCurrentApp(null);
+          }}
+          title="홈으로 (Ctrl/⌘+클릭 → 새 창)"
           style={{ display:"inline-flex", alignItems:"center", gap:8, cursor:"pointer", userSelect:"none" }}
         >
           <NexusLogo height={18} />
@@ -122,23 +130,56 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
         })()}
       </div>
 
-      {/* RIGHT: 등급 뱃지 + 프로필 아이콘 */}
-      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-        {user && grade && GRADE_LABEL[grade] && (() => {
+      {/* RIGHT: 등급·크레딧 — 두 영역을 하나의 pill 박스로 묶어 시각 단위화. */}
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        {user && grade && (() => {
           const gColor = GRADE_COLOR[grade] || T.accent;
+          const low = remaining === 0;
+          const warn = !low && remaining <= Math.max(1, Math.ceil(cap * 0.1));
+          // 인덱스는 박스 배경을 어두운 회색으로 강제 — 박스 내부 텍스트도 라이트 계열로 매핑해
+          // 라이트 테마에서 검은 텍스트가 사라지는 사고를 막는다.
+          const inkMuted = isIndex ? "rgba(255,255,255,0.62)" : T.textMuted;
+          const inkDim   = isIndex ? "rgba(255,255,255,0.40)" : T.textDim;
+          const inkText  = isIndex ? "rgba(255,255,255,0.92)" : T.text;
+          const dividerColor = isIndex ? "rgba(255,255,255,0.10)" : T.border;
+          const creditColor = low ? "#ef4444" : warn ? "#f59e0b" : inkMuted;
           return (
-            <div
-              title={`현재 등급: ${GRADE_LABEL[grade]}`}
-              style={{
-                display:"inline-flex", alignItems:"center", gap:5,
-                padding:"3px 9px", borderRadius:999,
-                background:`${gColor}1A`, border:`1px solid ${gColor}55`,
-                fontSize:10, fontWeight:700, color:gColor, letterSpacing:"0.08em",
-                userSelect:"none",
-              }}
-            >
-              <span style={{ width:5, height:5, borderRadius:999, background:gColor }} />
-              {GRADE_LABEL[grade].toUpperCase()}
+            <div style={{
+              display:"inline-flex", alignItems:"stretch",
+              background: isIndex ? "rgba(24,24,27,0.78)" : T.hoverBg,
+              border: `1px solid ${isIndex ? "rgba(255,255,255,0.08)" : T.border}`,
+              borderRadius: 999,
+              padding: "1px 2px",
+              userSelect:"none",
+              backdropFilter: isIndex ? "blur(8px)" : "none",
+              WebkitBackdropFilter: isIndex ? "blur(8px)" : "none",
+            }}>
+              {GRADE_LABEL[grade] && (
+                <div
+                  title={`현재 등급: ${GRADE_LABEL[grade]}`}
+                  style={{
+                    display:"inline-flex", alignItems:"center", gap:5,
+                    padding:"3px 9px",
+                    fontSize:10, fontWeight:700, color: gColor, letterSpacing:"0.1em",
+                  }}
+                >
+                  <span style={{ width:6, height:6, borderRadius:999, background:gColor, flexShrink:0 }} />
+                  {GRADE_LABEL[grade].toUpperCase()}
+                </div>
+              )}
+              <span style={{ width:1, alignSelf:"stretch", background:dividerColor, margin:"3px 0" }} />
+              <div
+                title={`이번 주 크레딧 잔여 ${remaining} / 총 ${cap}\n· 이미지 생성 = 10c\n· 영상 생성 = 30c\n· 분석/최적화 = 1c\n사용량 ${used}c`}
+                style={{
+                  display:"inline-flex", alignItems:"baseline", gap:4,
+                  padding:"3px 10px",
+                  fontSize:11, fontWeight:600, color: creditColor,
+                  fontFamily:"'JetBrains Mono', 'Noto Sans KR', monospace",
+                }}
+              >
+                <span style={{ color: low || warn ? creditColor : inkText }}>{remaining}</span>
+                <span style={{ color: inkDim, fontSize: 10 }}>/{cap}</span>
+              </div>
             </div>
           );
         })()}
@@ -198,16 +239,27 @@ function AppCard({ app, onOpen, isAdmin }) {
   const { isLight } = useGlobal();
   const [hov, setHov] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(() => readSelectedVersion(app));
+  const [versionMenuOpen, setVersionMenuOpen] = useState(false);
+  const versionMenuRef = useRef(null);
   const disabled = !!app.disabled && !isAdmin;
   const adminUnlocked = !!app.disabled && isAdmin;
   const hasVersions = Array.isArray(app.versions) && app.versions.length > 0;
-  const handleClick = () => { if (!disabled) onOpen(); };
+  // 카드 본문 클릭은 항상 selectedVersion (기본 최신) 으로 실행.
+  const handleClick = (e) => { if (!disabled) onOpen(e); };
+  // ... 메뉴에서 다른 버전 선택 → localStorage 저장 + 그 버전으로 실행.
   const pickVersion = (e, key) => {
     e.stopPropagation();
     setSelectedVersion(key);
+    setVersionMenuOpen(false);
     try { localStorage.setItem(versionStorageKey(app.id), key); } catch {}
-    if (!disabled) onOpen();
+    if (!disabled) onOpen(e);
   };
+  useEffect(() => {
+    if (!versionMenuOpen) return;
+    const onDocClick = (e) => { if (versionMenuRef.current && !versionMenuRef.current.contains(e.target)) setVersionMenuOpen(false); };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [versionMenuOpen]);
   // 라이트/다크 disabled 색상 — 라이트에선 더 옅은 회색이 자연스러움.
   const disabledBg     = isLight ? "#ECECEF"             : "#06060C";
   const disabledBorder = isLight ? "rgba(0,0,0,0.08)"    : "rgba(122,122,154,0.25)";
@@ -262,40 +314,68 @@ function AppCard({ app, onOpen, isAdmin }) {
             <span style={{ fontSize:9, letterSpacing:"0.1em", color:T.textMuted, textTransform:"uppercase", background:"transparent", border:`1px solid ${T.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>Admin</span>
           ) : hasVersions ? (() => {
             const v = app.versions.find(x => x.key === selectedVersion);
-            return <span style={{ fontSize:9, letterSpacing:"0.08em", color:T.textMuted, background:"transparent", border:`1px solid ${T.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>{v?.label || selectedVersion}</span>;
+            return (
+              <div ref={versionMenuRef} style={{ display:"inline-flex", alignItems:"center", gap:4, position:"relative" }}>
+                <span title={`현재 선택: ${v?.label || selectedVersion} — 카드 클릭 시 실행`}
+                  style={{ fontSize:9, letterSpacing:"0.08em", color: v?.color || T.textMuted, background:"transparent", border:`1px solid ${v?.color ? `${v.color}55` : T.border}`, padding:"2px 6px", borderRadius:4, fontWeight:700 }}>
+                  {v?.label || selectedVersion}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); setVersionMenuOpen(o => !o); }}
+                  title="다른 버전 선택"
+                  style={{
+                    display:"inline-flex", alignItems:"center", justifyContent:"center",
+                    width:22, height:22, padding:0, border:0, borderRadius:6,
+                    background: versionMenuOpen ? T.hoverBg : "transparent",
+                    color: T.textMuted, cursor:"pointer",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = T.hoverBg; e.currentTarget.style.color = T.text; }}
+                  onMouseLeave={(e) => { if (!versionMenuOpen) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = T.textMuted; } }}
+                >
+                  <MoreHorizontal size={14} />
+                </button>
+                {versionMenuOpen && (
+                  <div onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position:"absolute", top:"calc(100% + 6px)", right:0, zIndex:40,
+                      minWidth:180, padding:6,
+                      background: T.surface, border:`1px solid ${T.border}`, borderRadius:10,
+                      boxShadow:"0 10px 30px rgba(0,0,0,0.45)",
+                    }}>
+                    <div style={{ fontSize:9, fontWeight:700, letterSpacing:"0.14em", color:T.textDim, textTransform:"uppercase", padding:"6px 8px 4px" }}>버전 선택</div>
+                    {app.versions.map(ver => {
+                      const active = ver.key === selectedVersion;
+                      return (
+                        <button key={ver.key}
+                          onClick={(e) => pickVersion(e, ver.key)}
+                          style={{
+                            display:"flex", alignItems:"center", gap:8, width:"100%",
+                            padding:"7px 9px", borderRadius:6, border:0,
+                            background: active ? `${ver.color}1a` : "transparent",
+                            color: active ? ver.color : T.text,
+                            fontSize:11, fontWeight: active ? 700 : 500, cursor:"pointer", textAlign:"left",
+                            fontFamily:"inherit",
+                          }}
+                          onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = T.hoverBg; }}
+                          onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
+                        >
+                          <span style={{ width:6, height:6, borderRadius:999, background: ver.color, flexShrink:0 }} />
+                          <span style={{ flex:1 }}>{ver.label}</span>
+                          {active && <span style={{ fontSize:9, letterSpacing:"0.1em", color: ver.color }}>현재</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
           })() : null}
         </div>
       </div>
       {/* 보조 타이틀: 한글 label */}
       <div style={{ fontSize:11, color: disabled ? T.textDim : T.textMuted, marginBottom:4 }}>{app.label}</div>
       <div style={{ fontSize:11, color: disabled ? T.textDim : T.textMuted, lineHeight:1.5 }}>{app.desc}</div>
-      {hasVersions && (
-        <div style={{ marginTop:12, display:"flex", gap:4 }}>
-          {app.versions.map(v => {
-            const active = v.key === selectedVersion;
-            return (
-              <button
-                key={v.key}
-                onClick={(e) => pickVersion(e, v.key)}
-                title={`${v.label} 버전으로 실행`}
-                style={{
-                  flex:1,
-                  fontSize:10, fontWeight:700, letterSpacing:"0.04em",
-                  padding:"5px 6px", borderRadius:5, cursor:"pointer",
-                  background: active ? `${v.color}22` : "transparent",
-                  border: `1px solid ${active ? `${v.color}88` : T.border}`,
-                  color: active ? v.color : T.textMuted,
-                  transition: "all 0.12s",
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${v.color}aa`; e.currentTarget.style.color = v.color; }}
-                onMouseLeave={(e) => { if (!active) { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.color = T.textMuted; } }}
-              >
-                {v.label}
-              </button>
-            );
-          })}
-        </div>
-      )}
       {!hasVersions && app.canReceive.length > 0 && (
         <div style={{ marginTop:12, display:"flex", gap:4, flexWrap:"wrap" }}>
           {app.canReceive.slice(0,3).map(rid => (
@@ -339,7 +419,10 @@ function AppCardGrid({ onScroll }) {
           <div key={g.key} style={{ marginBottom:40 }}>
             <div style={labelStyle}>{g.label}</div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
-              {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} onOpen={() => navigate(app.id)} />)}
+              {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} onOpen={(e) => {
+                if (e?.ctrlKey || e?.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
+                navigate(app.id);
+              }} />)}
             </div>
           </div>
         );
@@ -364,9 +447,11 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "design-lexicon":     return <DesignLexiconApp />;
     case "promotion-archive":  return <PromotionArchiveApp />;
     case "brand-web-review":   return <BrandWebReviewApp />;
+    case "asset-library":      return <AssetLibraryApp />;
     case "banner-codex":       return <BannerCodexApp />;
     case "banner-creator":     return <BannerCreatorApp />;
     case "brief-studio":       return <BriefStudioApp />;
+    case "prompt-audit":       return <PromptAuditApp />;
     case "nexus-admin":        return <NexusAdminApp />;
     default:                   return <PlaceholderApp appId={appId} />;
   }

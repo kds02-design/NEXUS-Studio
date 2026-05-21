@@ -114,6 +114,10 @@ export function usePrompts({ user, showToast }) {
       likeCount: editingPrompt?.likeCount || 0,
       createdAt: editingPrompt?.createdAt || now,
       updatedAt: now,
+      // 공개 범위 — 신규 기본은 public. 모달 토글이 'private' 으로 세팅하면 본인만 조회 가능.
+      visibility: (withUrls.visibility === 'private' || withUrls.visibility === 'public')
+        ? withUrls.visibility
+        : (editingPrompt?.visibility || 'public'),
       // 연관 아이템 필드 — 신규는 빈 값, 기존은 보존.
       parentId: editingPrompt?.parentId ?? null,
       relatedIds: Array.isArray(editingPrompt?.relatedIds) ? editingPrompt.relatedIds : [],

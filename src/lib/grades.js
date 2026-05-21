@@ -31,18 +31,54 @@ export const STATUS_LABEL = {
 export const GRADES = {
   general: "general",
   pro: "pro",
+  pro_plus: "pro_plus", // 내부 관계자 전용. NexusAdmin에서 관리자가 직접 부여.
   expert: "expert",
 };
 
 export const GRADE_LABEL = {
   general: "General",
   pro: "Pro",
+  pro_plus: "Pro+",
   expert: "Expert",
 };
 
+// 주간 크레딧 예산. 월요일 00:00 KST 리셋 (weekKey() 참조).
+// general 50  = 이미지3 (30c) + 분석20 (20c)              · 또는 영상 1편(30c) + 분석20
+// pro     150 = 이미지10 (100) + 분석50 (50)              · 영상 5편 가능
+// pro+    300 = 이미지20 (200) + 분석100 (100)            · 영상 10편 가능
+// expert  1000= 이미지50 (500) + 분석500 (500)            · 영상 33편 가능
+export const WEEKLY_CREDITS = {
+  general: 50,
+  pro: 150,
+  pro_plus: 300,
+  expert: 1000,
+};
+
+// 액션별 크레딧 비용.
+//   image    — Imagen / Banner 등 이미지 생성 호출
+//   video    — MotionMatrix 영상 생성 (Veo 등). 이미지 대비 ~3배 비용.
+//   analysis — Gemini 기반 프롬프트 최적화, 디자인 분석, 검색 등 텍스트 API
+export const ACTION_COSTS = {
+  image: 10,
+  video: 30,
+  analysis: 1,
+};
+
+// 등급별 참고용 산출 (UI 표시 / FAQ용). 실제 차감은 크레딧 잔액만 검사.
+// video 칸은 "분석/이미지 사용 안 했을 때 최대 영상 편수".
+export const GRADE_QUOTAS = {
+  general:  { image: 3,  video: 1,  analysis: 20  },
+  pro:      { image: 10, video: 5,  analysis: 50  },
+  pro_plus: { image: 20, video: 10, analysis: 100 },
+  expert:   { image: 50, video: 33, analysis: 500 },
+};
+
+// 레거시 — 일부 컴포넌트가 아직 일일 카운트로 동작. 주간 예산의 1/7 로 근사 (정수).
+// 새 코드는 weekly credits 사용을 권장.
 export const DAILY_LIMITS = {
   general: 10,
   pro: 50,
+  pro_plus: 100,
   expert: Infinity,
 };
 
@@ -72,8 +108,21 @@ export function todayKey(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// ISO 8601 주 단위 키. 월요일 시작. 예: "2026-W21".
+// 한국시간 기준이라도 ISO 주는 Date 객체에서 그대로 산출 가능 (UTC 사용해도 주 경계가 거의 같음).
+export function weekKey(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = d.getUTCDay() || 7; // 일요일(0) → 7
+  d.setUTCDate(d.getUTCDate() + 4 - day); // ISO: 목요일이 속한 해의 주.
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
 const userRef = (uid) => doc(db, "users", uid);
 const usageRef = (uid, dayKey) => doc(db, "users", uid, "usage", dayKey);
+// 주간 크레딧 doc — users/{uid}/credits/{YYYY-Www} { used, byAction, grade, updatedAt }
+export const creditsRef = (uid, wk = weekKey()) => doc(db, "users", uid, "credits", wk);
 const inviteRef = (code) => doc(db, "inviteCodes", code);
 
 // Decide initial role/status/grade based on email.
@@ -235,9 +284,38 @@ export async function redeemInviteCode(uid, rawCode) {
   });
 }
 
+// usage 읽기 메모이제이션 — 같은 uid + 같은 날짜면 한 번만 Firestore 읽음.
+// 429(quota) 회피 + 동시 다발 호출 합치기. consumeUsage 가 성공한 직후엔 그 결과로 캐시 갱신해서
+// 즉시 후속 getTodayUsage 호출이 Firestore 를 건드리지 않음.
+let _usageCache = { uid: null, date: null, count: 0 };
+let _usageInflight = null; // 동시에 여러 호출이 와도 fetch 한 번만.
+
+export function invalidateUsageCache() {
+  _usageCache = { uid: null, date: null, count: 0 };
+}
+export function setUsageCache(uid, count, dayKey = todayKey()) {
+  _usageCache = { uid, date: dayKey, count: count || 0 };
+}
+
 export async function getTodayUsage(uid, dayKey = todayKey()) {
-  const snap = await getDoc(usageRef(uid, dayKey));
-  return snap.exists() ? (snap.data().count || 0) : 0;
+  if (!uid) return 0;
+  // 캐시 히트 — Firestore 안 읽음.
+  if (_usageCache.uid === uid && _usageCache.date === dayKey) {
+    return _usageCache.count;
+  }
+  // 진행 중 fetch 가 있으면 같은 promise 공유 (다중 호출 합치기).
+  if (_usageInflight && _usageInflight.uid === uid && _usageInflight.date === dayKey) {
+    return _usageInflight.promise;
+  }
+  const promise = (async () => {
+    const snap = await getDoc(usageRef(uid, dayKey));
+    const count = snap.exists() ? (snap.data().count || 0) : 0;
+    _usageCache = { uid, date: dayKey, count };
+    _usageInflight = null;
+    return count;
+  })();
+  _usageInflight = { uid, date: dayKey, promise };
+  return promise;
 }
 
 export function dailyLimit(grade) {
@@ -256,7 +334,7 @@ export async function consumeUsage(uid, grade) {
   const dayKey = todayKey();
   const ref = usageRef(uid, dayKey);
 
-  return runTransaction(db, async (tx) => {
+  const result = await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     const current = snap.exists() ? (snap.data().count || 0) : 0;
     if (limit !== Infinity && current >= limit) {
@@ -270,7 +348,92 @@ export async function consumeUsage(uid, grade) {
     }, { merge: true });
     return { count: next, limit };
   });
+  // 성공한 결과로 캐시 갱신 — 후속 getTodayUsage 가 Firestore 안 읽음.
+  setUsageCache(uid, result.count, dayKey);
+  return result;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Weekly credit system — 새 API. 기존 daily consumeUsage 와 병행 운영 가능.
+//   users/{uid}/credits/{YYYY-Www}   { used, byAction:{image,analysis}, grade, updatedAt }
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function creditCap(grade) {
+  return WEEKLY_CREDITS[grade] ?? WEEKLY_CREDITS.general;
+}
+
+export function actionCost(action) {
+  return ACTION_COSTS[action] ?? 1;
+}
+
+export function remainingCredits(grade, used) {
+  return Math.max(0, creditCap(grade) - (used || 0));
+}
+
+// 주간 크레딧 캐시 — Topbar 칩 같은 곳에서 빈번히 읽을 수 있어 메모이즈.
+let _creditCache = { uid: null, week: null, used: 0, byAction: {} };
+let _creditInflight = null;
+
+export function invalidateCreditCache() {
+  _creditCache = { uid: null, week: null, used: 0, byAction: {} };
+}
+export function setCreditCache(uid, used, byAction = {}, wk = weekKey()) {
+  _creditCache = { uid, week: wk, used: used || 0, byAction: byAction || {} };
+}
+
+export async function getWeekUsage(uid, wk = weekKey()) {
+  if (!uid) return { used: 0, byAction: {} };
+  if (_creditCache.uid === uid && _creditCache.week === wk) {
+    return { used: _creditCache.used, byAction: _creditCache.byAction };
+  }
+  if (_creditInflight && _creditInflight.uid === uid && _creditInflight.week === wk) {
+    return _creditInflight.promise;
+  }
+  const promise = (async () => {
+    const snap = await getDoc(creditsRef(uid, wk));
+    const data = snap.exists() ? snap.data() : {};
+    const used = data.used || 0;
+    const byAction = data.byAction || {};
+    _creditCache = { uid, week: wk, used, byAction };
+    _creditInflight = null;
+    return { used, byAction };
+  })();
+  _creditInflight = { uid, week: wk, promise };
+  return promise;
+}
+
+// 액션 1회 차감. 실패 시 throw('INSUFFICIENT_CREDITS').
+// grade 가 expert 라도 cap(1000)이 있으므로 동일하게 잔여 검사.
+export async function consumeCredits(uid, grade, action) {
+  if (!uid) throw new Error("uid required");
+  const cost = actionCost(action);
+  const cap = creditCap(grade);
+  const wk = weekKey();
+  const ref = creditsRef(uid, wk);
+
+  const result = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const current = snap.exists() ? (snap.data().used || 0) : 0;
+    const byAction = snap.exists() ? (snap.data().byAction || {}) : {};
+    if (current + cost > cap) throw new Error("INSUFFICIENT_CREDITS");
+    const nextUsed = current + cost;
+    const nextBy = { ...byAction, [action]: (byAction[action] || 0) + cost };
+    tx.set(ref, {
+      used: nextUsed,
+      byAction: nextBy,
+      grade,
+      cap,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+    return { used: nextUsed, cap, cost, action, byAction: nextBy };
+  });
+  setCreditCache(uid, result.used, result.byAction, wk);
+  return result;
+}
+
+export const CREDIT_ERROR_MESSAGES = {
+  INSUFFICIENT_CREDITS: "이번 주 크레딧이 부족합니다. 다음 주 월요일에 리셋됩니다.",
+};
 
 export const REDEEM_ERROR_MESSAGES = {
   EMPTY_CODE: "초대 코드를 입력해주세요.",

@@ -4,6 +4,11 @@ import Shell from "./components/Shell";
 import LoginScreen from "./components/LoginScreen";
 import PendingScreen from "./components/PendingScreen";
 import { THEME } from "./config/apps";
+import { initGeminiGate } from "./lib/gemini";
+
+// 앱 마운트 즉시 1회 — settings/gemini 구독 + window.fetch wrap 으로 Gemini 차단 게이트 활성.
+// 관리자가 NexusAdmin 에서 비활성화하면 모든 Gemini 호출이 즉시 차단됨.
+initGeminiGate();
 
 function LoadingScreen() {
   return (

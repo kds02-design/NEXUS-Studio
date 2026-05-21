@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useReducer, useCallback, useRef, useState } from 'react';
 import {
   X, Heart, Monitor, Smartphone, Download, Copy, Check, Plus,
-  Lock, ZoomIn, ZoomOut, Layers, Edit3,
+  Lock, ZoomIn, ZoomOut, Layers, Edit3, Scissors,
   Signal, Wifi, Battery, Link as LinkIcon, Sparkles, Frame,
-  ChevronLeft, ChevronRight, RotateCw, Star,
+  ChevronLeft, ChevronRight, RotateCw, Star, Trash2, Repeat,
 } from "lucide-react";
 import { getWebFinalScore100, hasWebEvaluation } from '../../constants/webEvalCriteria';
+import RegionPicker from '../../../AssetLibrary/components/RegionPicker';
 
 const YEAR_LIST = [2026, 2025, 2024, 2023];
 
@@ -24,6 +25,7 @@ function reducer(state, action) {
   switch (action.type) {
     case "SET_TAB": return { ...state, activeTab: action.tab };
     case "TOGGLE_FULL_VIEW": return { ...state, isFullView: !state.isFullView, isActualSize: false };
+    case "SET_FULL_VIEW": return { ...state, isFullView: !!action.value, isActualSize: false };
     case "TOGGLE_ACTUAL_SIZE": return { ...state, isActualSize: !state.isActualSize, isPanning: false };
     case "PAN_START": return { ...state, isPanning: true, panStart: action.payload };
     case "PAN_END": return { ...state, isPanning: false };
@@ -38,12 +40,26 @@ const PreviewModal = ({
   isOpen, onClose, banner, editedBanner, onEditChange,
   onSave, hasChanges, onToggleLike, collectionIds, onToggleCollection, availableGames,
   onOpenAnalysis, gameLogos = {}, isAdminMode: _isAdminMode = false,
+  jumpHighlight, onJumpHandled, // { rect:{x,y,w,h} 0-1, imageUrl? } | null
+  returnTo, // { app, label } | null — 닫기 시 돌아갈 곳 (시각 힌트용)
+  onAddMobilePages, // (files: FileList) => Promise<void> — 브랜드웹에 모바일 페이지 추가 업로드
+  onSetMainPage,    // (pageId) => void — 그리드 카드의 메인으로 지정 (재클릭 시 해제)
+  onSetSubPage,     // (pageId) => void — 그리드 카드의 서브로 지정
+  onDeletePage,     // (pageId) => void — 페이지 삭제
+  onReplacePage,    // (pageId, file: File) => void — 페이지 이미지 교체
 }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const scrollRef = useRef(null);
   // 경로 복사 후 1.5초 동안 버튼에 체크 + "복사됨" 표시.
   const [pathCopied, setPathCopied] = useState(false);
   const copyResetRef = useRef(null);
+  // 에셋 추출 모드 — true 일 때 RegionPicker 오버레이 활성화.
+  const [pickMode, setPickMode] = useState(false);
+  const [pickToast, setPickToast] = useState(null);
+  const showPickToast = (msg, type = "info") => {
+    setPickToast({ msg, type });
+    setTimeout(() => setPickToast(null), 2000);
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -55,8 +71,119 @@ const PreviewModal = ({
     if (editedBanner?.promotionUrl) dispatch({ type: "SET_LINK_VISIBLE", value: true });
   }, [editedBanner?.promotionUrl]);
 
-  const pcImage = useMemo(() => (banner?.full_image || banner?.preview || ""), [banner]);
-  const moImage = useMemo(() => (banner?.mobile_image || banner?.preview || ""), [banner]);
+  // ─── 브랜드웹 페이지 navigator — pages[] 가 있으면 device 별 페이지 인덱스로 이미지 결정 ───
+  const isBrandWeb = banner?.assetType === '브랜드웹' && Array.isArray(banner?.pages) && banner.pages.length > 0;
+  const pcPages = useMemo(() => (isBrandWeb ? banner.pages.filter(p => p.device === 'pc') : []), [isBrandWeb, banner]);
+  const moPages = useMemo(() => (isBrandWeb ? banner.pages.filter(p => p.device === 'mobile') : []), [isBrandWeb, banner]);
+  const [pcPageIdx, setPcPageIdx] = useState(0);
+  const [moPageIdx, setMoPageIdx] = useState(0);
+  // 페이지 인덱스 reset — banner 가 바뀌면(다른 카드 열기) 0 으로.
+  useEffect(() => { setPcPageIdx(0); setMoPageIdx(0); }, [banner?.id]);
+
+  // 브랜드웹 — 한 페이지씩 cross-fade 전환 (패럴렉스). wheel/key 이벤트로 다음/이전 페이지.
+  // 디바운스 락으로 한 번에 한 페이지씩만 이동.
+  const wheelLockRef = useRef(0);
+  const replacePageFileRef = useRef(null);
+  const replacePageTargetRef = useRef(null);
+  const handlePageWheel = useCallback((e) => {
+    if (!isBrandWeb) return;
+    const list = state.activeTab === 'pc' ? pcPages : moPages;
+    const idx = state.activeTab === 'pc' ? pcPageIdx : moPageIdx;
+    const setIdx = state.activeTab === 'pc' ? setPcPageIdx : setMoPageIdx;
+    if (list.length <= 1) return;
+    // isActualSize 면 페이지 안의 스크롤이 필요하니 패럴렉스 비활성.
+    if (state.isActualSize) return;
+    if (Date.now() < wheelLockRef.current) { e.preventDefault?.(); return; }
+    const dir = e.deltaY > 0 ? 1 : -1;
+    const next = Math.max(0, Math.min(list.length - 1, idx + dir));
+    if (next !== idx) {
+      e.preventDefault?.();
+      setIdx(next);
+      wheelLockRef.current = Date.now() + 550; // transition 시간 + 여유
+    }
+  }, [isBrandWeb, state.activeTab, state.isActualSize, pcPages, moPages, pcPageIdx, moPageIdx]);
+  // 키보드 ←/→ ↑/↓ 도 지원.
+  useEffect(() => {
+    if (!isOpen || !isBrandWeb) return;
+    const onKey = (e) => {
+      const list = state.activeTab === 'pc' ? pcPages : moPages;
+      const idx = state.activeTab === 'pc' ? pcPageIdx : moPageIdx;
+      const setIdx = state.activeTab === 'pc' ? setPcPageIdx : setMoPageIdx;
+      if (list.length <= 1) return;
+      const fwd = e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown';
+      const bwd = e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp';
+      if (!fwd && !bwd) return;
+      e.preventDefault();
+      setIdx(Math.max(0, Math.min(list.length - 1, idx + (fwd ? 1 : -1))));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, isBrandWeb, state.activeTab, pcPages, moPages, pcPageIdx, moPageIdx]);
+
+  const pcImage = useMemo(() => {
+    if (isBrandWeb) return pcPages[pcPageIdx]?.url || pcPages[0]?.url || banner?.preview || "";
+    return banner?.full_image || banner?.preview || "";
+  }, [isBrandWeb, pcPages, pcPageIdx, banner]);
+  const moImage = useMemo(() => {
+    if (isBrandWeb) return moPages[moPageIdx]?.url || moPages[0]?.url || banner?.preview || "";
+    return banner?.mobile_image || banner?.preview || "";
+  }, [isBrandWeb, moPages, moPageIdx, banner]);
+
+  // ─── 출처로 이동(jumpHighlight) — sourceImageUrl 기준으로 PC/Mobile 탭 결정 후 풀뷰 + 스크롤 + 펄스 ───
+  const [highlightActive, setHighlightActive] = useState(false);
+  // 1단계: jumpHighlight 받으면 풀뷰 + 탭 결정 (state 변경만).
+  useEffect(() => {
+    if (!isOpen || !jumpHighlight?.rect) return;
+    const isMobile = jumpHighlight.imageUrl && banner?.mobile_image && jumpHighlight.imageUrl === banner.mobile_image;
+    dispatch({ type: "SET_TAB", tab: isMobile ? "mobile" : "pc" });
+    dispatch({ type: "SET_FULL_VIEW", value: true });
+    console.log('[PreviewModal] jumpHighlight received', { rect: jumpHighlight.rect, tab: isMobile ? 'mobile' : 'pc' });
+  }, [isOpen, jumpHighlight?.rect?.x, jumpHighlight?.rect?.y, jumpHighlight?.imageUrl, banner?.mobile_image]);
+
+  // 2단계: 풀뷰가 켜진 후 scrollRef 가 새 모드로 마운트되면 스크롤 + 하이라이트 시작.
+  // state.isFullView / state.activeTab 변화를 기다림 → stale ref 회피.
+  useEffect(() => {
+    if (!jumpHighlight?.rect || !state.isFullView) return;
+    setHighlightActive(true);
+    let cancelled = false;
+    const doScroll = () => {
+      const sc = scrollRef.current;
+      if (!sc) { console.warn('[PreviewModal] scrollRef not mounted yet'); return; }
+      const targetY = jumpHighlight.rect.y * sc.scrollHeight;
+      const scrollTop = Math.max(0, targetY - sc.clientHeight * 0.3);
+      sc.scrollTo({ top: scrollTop, behavior: 'smooth' });
+      console.log('[PreviewModal] scrollTo', { scrollHeight: sc.scrollHeight, targetY, scrollTop });
+    };
+    // 1차: 다음 RAF — DOM 업데이트 직후.
+    const raf = requestAnimationFrame(() => {
+      if (cancelled) return;
+      doScroll();
+      // 2차: 이미지 로드 후 scrollHeight 가 정확해진 시점에 보정.
+      setTimeout(() => { if (!cancelled) doScroll(); }, 500);
+    });
+    // 4초 후 펄스 종료 + 부모에 알림.
+    const fadeTimer = setTimeout(() => {
+      setHighlightActive(false);
+      onJumpHandled?.();
+    }, 4000);
+    return () => { cancelled = true; cancelAnimationFrame(raf); clearTimeout(fadeTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.isFullView, state.activeTab, jumpHighlight?.rect?.x, jumpHighlight?.rect?.y]);
+
+  // 캡처 위치 박스 — 풀뷰의 이미지 부모에 absolute 로 렌더. rect 비율 그대로 % 단위.
+  const HighlightBox = ({ rect }) => (
+    <div
+      className="absolute pointer-events-none border-[3px] border-[#d8b17e] rounded-md z-30"
+      style={{
+        left: `${rect.x * 100}%`,
+        top: `${rect.y * 100}%`,
+        width: `${rect.w * 100}%`,
+        height: `${rect.h * 100}%`,
+        boxShadow: '0 0 0 9999px rgba(0,0,0,0.45), 0 0 24px rgba(216,177,126,0.7)',
+        animation: 'highlightPulse 1.2s ease-in-out infinite',
+      }}
+    />
+  );
   const formattedTime = useMemo(
     () => state.now.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false }),
     [state.now]
@@ -150,13 +277,24 @@ const PreviewModal = ({
       <style>{`
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
+        @keyframes highlightPulse {
+          0%,100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.7; transform: scale(1.015); }
+        }
       `}</style>
 
       <button
         onClick={(e) => { e.stopPropagation(); onClose(); }}
-        className="absolute top-6 right-6 sm:top-8 sm:right-8 p-2.5 rounded-full transition-colors z-[2010] border bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white shadow-lg"
+        title={returnTo ? `${returnTo.label}로 돌아가기` : '닫기'}
+        className={`absolute top-6 right-6 sm:top-8 sm:right-8 flex items-center gap-2 rounded-full transition-colors z-[2010] border shadow-lg ${
+          returnTo
+            ? 'pl-3 pr-3.5 py-2 bg-[#d8b17e]/15 border-[#d8b17e]/50 text-[#d8b17e] hover:bg-[#d8b17e]/25'
+            : 'p-2.5 bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+        }`}
       >
+        {returnTo && <ChevronLeft className="w-4 h-4" />}
         <X className="w-5 h-5" />
+        {returnTo && <span className="text-[11px] font-bold whitespace-nowrap">{returnTo.label}</span>}
       </button>
 
       <div
@@ -174,6 +312,17 @@ const PreviewModal = ({
                 className="flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-bold border bg-black/50 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10 backdrop-blur-md transition-all"
               >
                 <Download className="w-3.5 h-3.5" /> 이미지 저장
+              </button>
+              <button
+                onClick={() => setPickMode((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-[11px] font-bold border backdrop-blur-md transition-all ${
+                  pickMode
+                    ? 'bg-cyan-500/25 border-cyan-400/60 text-cyan-200'
+                    : 'bg-black/50 border-white/10 text-zinc-300 hover:text-white hover:bg-white/10'
+                }`}
+                title="이미지에서 타이틀/버튼/박스 영역을 드래그로 잘라 에셋 라이브러리에 저장"
+              >
+                <Scissors className="w-3.5 h-3.5" /> {pickMode ? '에셋 추출 ON' : '에셋 추출'}
               </button>
             </div>
 
@@ -238,6 +387,143 @@ const PreviewModal = ({
 
           {/* 본문 영역 */}
           <div className="flex-1 overflow-hidden relative w-full h-full">
+            {/* 브랜드웹 페이지 navigator — 이미지 영역 중앙 하단 floating. CodexDetailModal 줌 슬라이더 디자인 차용. */}
+            {isBrandWeb && (() => {
+              const list = state.activeTab === 'pc' ? pcPages : moPages;
+              const idx = state.activeTab === 'pc' ? pcPageIdx : moPageIdx;
+              const setIdx = state.activeTab === 'pc' ? setPcPageIdx : setMoPageIdx;
+              const currentPage = list[idx];
+              const isMain = currentPage && banner?.mainPageId === currentPage.id;
+              const isSub = currentPage && banner?.subPageId === currentPage.id;
+              if (list.length <= 1 && !onSetMainPage) return null;
+              return (
+                <div
+                  className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-[510] px-2.5 py-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full shadow-lg"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                >
+                  {/* 메인/서브 지정 + 교체/삭제 — 현재 페이지에 대해 */}
+                  {currentPage && onSetMainPage && (
+                    <>
+                      <button
+                        onClick={() => onSetMainPage(currentPage.id)}
+                        title={isMain ? '메인 해제' : '카드 메인 이미지로 지정'}
+                        className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors ${
+                          isMain
+                            ? 'bg-[#d8b17e] text-black'
+                            : 'text-white/70 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <Star className="w-3.5 h-3.5" fill={isMain ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        onClick={() => onSetSubPage(currentPage.id)}
+                        title={isSub ? '서브 해제' : '카드 서브 이미지로 지정'}
+                        className={`w-7 h-7 flex items-center justify-center rounded-full transition-colors ${
+                          isSub
+                            ? 'bg-white/25 text-white'
+                            : 'text-white/70 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        <Layers className="w-3.5 h-3.5" />
+                      </button>
+                      {(onReplacePage || onDeletePage) && <div className="w-px h-5 bg-white/15" />}
+                      {/* 교체 — 현재 페이지의 이미지를 다른 파일로 */}
+                      {onReplacePage && (
+                        <button
+                          onClick={() => { replacePageTargetRef.current = currentPage.id; replacePageFileRef.current?.click(); }}
+                          title="이 페이지 이미지 교체"
+                          className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <Repeat className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {/* 삭제 — 페이지가 1장 이하면 비활성 */}
+                      {onDeletePage && (
+                        <button
+                          onClick={() => onDeletePage(currentPage.id)}
+                          disabled={list.length <= 1}
+                          title={list.length <= 1 ? '마지막 페이지는 삭제할 수 없습니다' : '이 페이지 삭제'}
+                          className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-rose-400 hover:bg-rose-500/15 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {list.length > 1 && <div className="w-px h-5 bg-white/15" />}
+                    </>
+                  )}
+                  {list.length > 1 && (
+                    <>
+                      <button
+                        onClick={() => { const i = Math.max(0, idx - 1); setIdx(i) }}
+                        disabled={idx <= 0}
+                        title="이전 페이지"
+                        className="w-7 h-7 flex items-center justify-center rounded-full text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="text-[11px] font-bold text-white tabular-nums shrink-0 min-w-[36px] text-center">
+                        {idx + 1} <span className="text-white/40">/</span> {list.length}
+                      </span>
+                      {/* 줌 슬라이더와 동일한 트랙 + thumb 스타일 */}
+                      <div className="relative flex items-center w-[100px] md:w-[120px] h-11" style={{ touchAction: 'none' }}>
+                        <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[5px] bg-white/15 rounded-full pointer-events-none" />
+                        <input
+                          type="range"
+                          min="1"
+                          max={list.length}
+                          step="1"
+                          value={idx + 1}
+                          onChange={(e) => {
+                            const i = Math.max(0, Math.min(list.length - 1, parseInt(e.target.value, 10) - 1));
+                            setIdx(i);
+                            if (state.isFullView) scrollToPage(state.activeTab, i);
+                          }}
+                          style={{ touchAction: 'none' }}
+                          className="w-full h-full bg-transparent appearance-none cursor-pointer outline-none relative z-10 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-11 [&::-webkit-slider-thumb]:h-11 [&::-webkit-slider-thumb]:bg-[#d8b17e] [&::-webkit-slider-thumb]:bg-clip-content [&::-webkit-slider-thumb]:p-[10px] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:cursor-grab active:[&::-webkit-slider-thumb]:cursor-grabbing active:[&::-webkit-slider-thumb]:scale-110 [&::-moz-range-thumb]:w-11 [&::-moz-range-thumb]:h-11 [&::-moz-range-thumb]:bg-[#d8b17e] [&::-moz-range-thumb]:bg-clip-content [&::-moz-range-thumb]:p-[10px] [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:shadow-lg active:[&::-moz-range-thumb]:scale-110 transition-transform"
+                        />
+                      </div>
+                      <button
+                        onClick={() => { const i = Math.min(list.length - 1, idx + 1); setIdx(i) }}
+                        disabled={idx >= list.length - 1}
+                        title="다음 페이지"
+                        className="w-7 h-7 flex items-center justify-center rounded-full text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                      >
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
+                  {/* 페이지 교체용 hidden file input */}
+                  <input
+                    ref={replacePageFileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      const pid = replacePageTargetRef.current;
+                      if (f && pid && onReplacePage) onReplacePage(pid, f);
+                      replacePageTargetRef.current = null;
+                      e.target.value = '';
+                    }}
+                  />
+                </div>
+              );
+            })()}
+
+            {/* 에셋 추출 오버레이 — active 시에만 마운트되어 드래그 영역 선택 + 카테고리 팝오버 */}
+            <RegionPicker
+              active={pickMode}
+              imageUrl={state.activeTab === "pc" ? pcImage : moImage}
+              onCancel={() => setPickMode(false)}
+              onSaved={(asset) => { showPickToast(`에셋 저장: ${asset.category}`); }}
+              source={{
+                app: 'promotion-archive',
+                bannerId: banner?.id || null,
+                bannerTitle: banner?.title || '',
+              }}
+              showToast={showPickToast}
+            />
             {state.activeTab === "pc" ? (
               <div
                 ref={scrollRef}
@@ -253,60 +539,105 @@ const PreviewModal = ({
               >
                 <div className={`min-h-full flex flex-col items-center justify-center transition-all duration-700 ${state.isFullView ? "p-0" : "p-8"}`}>
                   {state.isFullView ? (
-                    <div className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[1920px]"} bg-white shadow-2xl transition-all duration-300`}>
-                      <img src={pcImage} alt="PC" className={`${state.isActualSize ? "w-auto max-w-none" : "w-full"} block`} draggable={false} />
-                    </div>
+                    // 풀뷰 — 브랜드웹은 패럴렉스 cross-fade(한 페이지씩), 그 외는 단일 이미지.
+                    isBrandWeb && pcPages.length > 0 ? (
+                      <div
+                        className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[1920px]"} shadow-2xl relative aspect-video bg-black overflow-hidden`}
+                        onWheel={handlePageWheel}
+                      >
+                        {/* lineagew 캠페인 페이지 패턴 — translateY 로 한 페이지씩 위로 슬라이드. */}
+                        <div
+                          className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
+                          style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}
+                        >
+                          {pcPages.map((p, i) => (
+                            <div
+                              key={p.id || i}
+                              className="absolute left-0 right-0 h-full flex items-center justify-center"
+                              style={{ top: `${i * 100}%` }}
+                            >
+                              <img src={p.url} alt={p.name || `PC ${i + 1}`} draggable={false}
+                                className="max-w-full max-h-full w-full h-full object-contain block" />
+                            </div>
+                          ))}
+                        </div>
+                        {highlightActive && jumpHighlight?.rect && state.activeTab === "pc" && <HighlightBox rect={jumpHighlight.rect} />}
+                      </div>
+                    ) : (
+                      <div className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[1920px]"} shadow-2xl relative`}>
+                        <img src={pcImage} alt="PC" className={`${state.isActualSize ? "w-auto max-w-none" : "w-full"} block`} draggable={false} />
+                        {highlightActive && jumpHighlight?.rect && state.activeTab === "pc" && <HighlightBox rect={jumpHighlight.rect} />}
+                      </div>
+                    )
                   ) : (
                     <div className="relative w-full max-w-[1280px] flex flex-col items-center animate-in zoom-in-95 duration-500">
                       {/* 글로우 */}
                       <div className="absolute -inset-x-10 -top-6 -bottom-20 bg-gradient-radial from-white/[0.04] to-transparent blur-2xl pointer-events-none" />
 
-                      {/* 브라우저 윈도우 */}
-                      <div className="relative z-10 w-full rounded-xl overflow-hidden shadow-[0_30px_80px_-20px_rgba(0,0,0,0.6),0_8px_24px_-8px_rgba(0,0,0,0.4)] border border-black/30 bg-white">
-                        {/* 타이틀바 */}
-                        <div className="bg-gradient-to-b from-[#e8eaed] to-[#dadce0] border-b border-black/10 px-3 pt-2.5 pb-1.5">
-                          <div className="flex items-center gap-3">
-                            {/* 트래픽 라이트 */}
+                      {/* 브라우저 윈도우 — Chrome 다크 모드 스타일 */}
+                      <div className="relative z-10 w-full rounded-xl overflow-hidden shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7),0_8px_24px_-8px_rgba(0,0,0,0.5)] border border-white/5 bg-[#202124]">
+                        {/* 타이틀바 — Chrome dark (#202124 / 활성탭 #35363a) */}
+                        <div className="bg-[#202124] border-b border-white/5 px-3 pt-2.5 pb-0">
+                          <div className="flex items-center gap-3 pb-2">
+                            {/* 트래픽 라이트 — 컬러는 유지(시스템 컨벤션) */}
                             <div className="flex items-center gap-1.5 shrink-0">
                               <div className="group/tl w-3 h-3 rounded-full bg-[#ff5f57] border border-[#e0443e] shadow-inner" />
                               <div className="w-3 h-3 rounded-full bg-[#febc2e] border border-[#dea123] shadow-inner" />
                               <div className="w-3 h-3 rounded-full bg-[#28c840] border border-[#1aab29] shadow-inner" />
                             </div>
-                            {/* 네비 컨트롤 */}
-                            <div className="flex items-center gap-0.5 text-zinc-500 shrink-0 ml-1">
-                              <button className="w-6 h-6 rounded-md hover:bg-black/5 flex items-center justify-center" tabIndex={-1}>
+                            {/* 네비 컨트롤 — 다크 아이콘 컬러 (#9aa0a6 Chrome icon gray) */}
+                            <div className="flex items-center gap-0.5 text-[#9aa0a6] shrink-0 ml-1">
+                              <button className="w-6 h-6 rounded-md hover:bg-white/10 flex items-center justify-center" tabIndex={-1}>
                                 <ChevronLeft size={14} />
                               </button>
-                              <button className="w-6 h-6 rounded-md hover:bg-black/5 flex items-center justify-center text-zinc-400" tabIndex={-1}>
+                              <button className="w-6 h-6 rounded-md hover:bg-white/10 flex items-center justify-center text-[#5f6368]" tabIndex={-1}>
                                 <ChevronRight size={14} />
                               </button>
-                              <button className="w-6 h-6 rounded-md hover:bg-black/5 flex items-center justify-center" tabIndex={-1}>
+                              <button className="w-6 h-6 rounded-md hover:bg-white/10 flex items-center justify-center" tabIndex={-1}>
                                 <RotateCw size={12} />
                               </button>
                             </div>
-                            {/* URL 바 */}
-                            <div className="flex-1 h-7 bg-white border border-black/10 rounded-md flex items-center px-2.5 gap-2 text-[11px] text-zinc-700 font-medium shadow-[inset_0_1px_2px_rgba(0,0,0,0.04)] min-w-0">
-                              <Lock size={11} className="text-emerald-600 shrink-0" />
+                            {/* URL 바 (omnibox) — Chrome dark #3c4043 */}
+                            <div className="flex-1 h-7 bg-[#3c4043] border border-transparent rounded-md flex items-center px-2.5 gap-2 text-[11px] text-[#e8eaed] font-medium min-w-0">
+                              <Lock size={11} className="text-[#81c995] shrink-0" />
                               <span className="truncate">plaync.com/{banner?.game}{banner?.title ? `/${encodeURIComponent(banner.title).slice(0, 28)}` : ''}</span>
-                              <Star size={11} className="text-zinc-400 shrink-0 ml-auto" />
+                              <Star size={11} className="text-[#9aa0a6] shrink-0 ml-auto" />
                             </div>
                             {/* 우측 사용자 아바타 자리 */}
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#d8b17e] to-[#a8814e] shrink-0 shadow-inner border border-white/40" />
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#d8b17e] to-[#a8814e] shrink-0 shadow-inner border border-white/10" />
                           </div>
-                          {/* 탭 영역 */}
-                          <div className="flex items-end gap-1 mt-2 -mb-1.5">
-                            <div className="bg-white rounded-t-md px-3 py-1 flex items-center gap-1.5 text-[10px] text-zinc-700 font-medium shadow-[inset_0_1px_0_rgba(0,0,0,0.04)] max-w-[200px]">
+                          {/* 탭 영역 — 활성탭 #35363a, 비활성 transparent */}
+                          <div className="flex items-end gap-1">
+                            <div className="bg-[#35363a] rounded-t-md px-3 py-1.5 flex items-center gap-1.5 text-[10px] text-[#e8eaed] font-medium max-w-[200px]">
                               <div className="w-2.5 h-2.5 rounded-full bg-[#d8b17e]/70 shrink-0" />
                               <span className="truncate">{banner?.title || 'Promotion'}</span>
                             </div>
-                            <div className="bg-black/5 rounded-t-md px-2.5 py-1 text-[10px] text-zinc-500 max-w-[140px] truncate">새 탭</div>
+                            <div className="rounded-t-md px-2.5 py-1.5 text-[10px] text-[#9aa0a6] max-w-[140px] truncate hover:bg-white/5">새 탭</div>
                           </div>
                         </div>
-                        {/* 컨텐츠 */}
-                        <div className="relative w-full aspect-[16/10] bg-white overflow-hidden">
-                          <div className="absolute inset-0 overflow-y-auto scrollbar-hide">
-                            <img src={pcImage} alt="PC" className="w-full h-auto block" draggable={false} />
-                          </div>
+                        {/* 컨텐츠 — 16:9 (PC 시안 표준). 브랜드웹은 vertical slide. bg-black 으로 letterbox 흰 라인 제거. */}
+                        <div className="relative w-full aspect-video bg-black overflow-hidden border-t border-[#35363a]" onWheel={handlePageWheel}>
+                          {isBrandWeb && pcPages.length > 0 ? (
+                            <div
+                              className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
+                              style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}
+                            >
+                              {pcPages.map((p, i) => (
+                                <div
+                                  key={p.id || i}
+                                  className="absolute left-0 right-0 h-full flex items-center justify-center"
+                                  style={{ top: `${i * 100}%` }}
+                                >
+                                  <img src={p.url} alt={p.name || `PC ${i + 1}`} draggable={false}
+                                    className="w-full h-full object-contain block" />
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="absolute inset-0 overflow-y-auto scrollbar-hide bg-white">
+                              <img src={pcImage} alt="PC" className="w-full h-auto block" draggable={false} />
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -335,10 +666,42 @@ const PreviewModal = ({
                 }`}
               >
                 <div className="min-h-full flex flex-col items-center justify-center p-0">
-                  <div className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} bg-white shadow-2xl transition-all duration-300`}>
-                    <img src={moImage} alt="Mobile" className={`${state.isActualSize ? "w-auto max-w-none" : "w-full"} block`} draggable={false} />
-                  </div>
+                  {isBrandWeb && moPages.length === 0 ? (
+                    <MobileUploadZone onAddMobilePages={onAddMobilePages} />
+                  ) : isBrandWeb && moPages.length > 0 ? (
+                    <div
+                      className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} shadow-2xl relative aspect-[9/16] bg-black overflow-hidden`}
+                      onWheel={handlePageWheel}
+                    >
+                      <div
+                        className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
+                        style={{ transform: `translateY(-${moPageIdx * 100}%)`, transitionDuration: '700ms' }}
+                      >
+                        {moPages.map((p, i) => (
+                          <div
+                            key={p.id || i}
+                            className="absolute left-0 right-0 h-full flex items-center justify-center"
+                            style={{ top: `${i * 100}%` }}
+                          >
+                            <img src={p.url} alt={p.name || `Mobile ${i + 1}`} draggable={false}
+                              className="w-full h-full object-contain block" />
+                          </div>
+                        ))}
+                      </div>
+                      {highlightActive && jumpHighlight?.rect && state.activeTab === "mobile" && <HighlightBox rect={jumpHighlight.rect} />}
+                    </div>
+                  ) : (
+                    <div className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} shadow-2xl relative`}>
+                      <img src={moImage} alt="Mobile" className={`${state.isActualSize ? "w-auto max-w-none" : "w-full"} block`} draggable={false} />
+                      {highlightActive && jumpHighlight?.rect && state.activeTab === "mobile" && <HighlightBox rect={jumpHighlight.rect} />}
+                    </div>
+                  )}
                 </div>
+              </div>
+            ) : isBrandWeb && moPages.length === 0 ? (
+              // 일반 뷰 — 모바일 페이지가 0 인 브랜드웹: 폰 베젤 대신 업로드 영역.
+              <div className="w-full h-full flex items-center justify-center p-8 animate-in fade-in duration-300">
+                <MobileUploadZone onAddMobilePages={onAddMobilePages} />
               </div>
             ) : (
               <div className="w-full h-full flex items-center justify-center p-8 animate-in fade-in duration-300">
@@ -363,9 +726,29 @@ const PreviewModal = ({
                       className="relative w-full h-full bg-white rounded-[33px] overflow-hidden isolate flex flex-col"
                       style={{ transform: 'translateZ(0)' }}
                     >
-                      {/* 컨텐츠 영역 — 스테이터스 바 아래로 스크롤 */}
-                      <div className="absolute inset-0 overflow-y-auto bg-white pt-[44px] pb-[24px] scrollbar-hide">
-                        <img src={moImage} alt="Mobile" className="w-full h-auto block" draggable={false} />
+                      {/* 컨텐츠 영역 — 브랜드웹은 vertical slide. bg-black 으로 letterbox 흰 라인 제거. */}
+                      <div className="absolute inset-0 bg-black pt-[44px] pb-[24px] scrollbar-hide overflow-hidden" onWheel={handlePageWheel}>
+                        {isBrandWeb && moPages.length > 0 ? (
+                          <div
+                            className="absolute inset-x-0 top-[44px] bottom-[24px] transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
+                            style={{ transform: `translateY(-${moPageIdx * 100}%)`, transitionDuration: '700ms' }}
+                          >
+                            {moPages.map((p, i) => (
+                              <div
+                                key={p.id || i}
+                                className="absolute left-0 right-0 h-full flex items-center justify-center"
+                                style={{ top: `${i * 100}%` }}
+                              >
+                                <img src={p.url} alt={p.name || `Mobile ${i + 1}`} draggable={false}
+                                  className="w-full h-full object-contain block" />
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="w-full h-full overflow-y-auto scrollbar-hide bg-white">
+                            <img src={moImage} alt="Mobile" className="w-full h-auto block" draggable={false} />
+                          </div>
+                        )}
                       </div>
                       {/* 스테이터스 바 (고정) */}
                       <div className="absolute top-0 left-0 right-0 h-[44px] z-40 bg-white flex justify-between items-center pt-[14px] px-7 text-black text-[11px] font-semibold pointer-events-none">
@@ -601,9 +984,66 @@ const PreviewModal = ({
             </div>
           )}
         </aside>
+
+        {/* 에셋 추출 토스트 */}
+        {pickToast && (
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-[2020] pointer-events-none animate-in fade-in slide-in-from-bottom-2">
+            <div className={`px-3 py-1.5 rounded-lg text-xs font-bold shadow-2xl border ${
+              pickToast.type === "error"
+                ? "bg-rose-500/90 border-rose-400 text-white"
+                : "bg-emerald-500/90 border-emerald-400 text-white"
+            }`}>
+              {pickToast.msg}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+// 브랜드웹 카드에 모바일 페이지가 없을 때 PreviewModal Mobile 탭에 노출되는 업로드 영역.
+// 드래그&드롭 + 파일 선택 둘 다 지원. onAddMobilePages 가 부모(index.jsx)에서 Cloudinary 업로드 + pages[] 갱신.
+function MobileUploadZone({ onAddMobilePages }) {
+  const inputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const handleFiles = async (files) => {
+    if (!files || files.length === 0) return;
+    if (!onAddMobilePages) { alert('업로드 핸들러가 없습니다.'); return; }
+    setIsUploading(true);
+    try { await onAddMobilePages(files); }
+    finally { setIsUploading(false); }
+  };
+  return (
+    <div
+      onClick={() => !isUploading && inputRef.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+      onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+      onDrop={(e) => { e.preventDefault(); setIsDragging(false); handleFiles(e.dataTransfer.files); }}
+      className={`w-[360px] max-w-full aspect-[9/16] rounded-2xl border-2 border-dashed flex flex-col items-center justify-center cursor-pointer transition-all ${
+        isDragging
+          ? 'border-[#d8b17e] bg-[#d8b17e]/10'
+          : 'border-white/20 bg-white/[0.02] hover:border-white/40 hover:bg-white/[0.04]'
+      } ${isUploading ? 'opacity-50 cursor-wait' : ''}`}
+    >
+      <Smartphone className="w-10 h-10 text-zinc-500 mb-3" />
+      <div className="text-sm font-bold text-zinc-300 mb-1">
+        {isUploading ? '업로드 중…' : '모바일 시안 추가'}
+      </div>
+      <div className="text-[11px] text-zinc-500 px-6 text-center leading-relaxed">
+        {isUploading ? '잠시만 기다려주세요' : '클릭하거나 이미지를 끌어다 놓으면\n이 브랜드웹 카드에 모바일 페이지로 추가됩니다'}
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }}
+      />
+    </div>
+  );
+}
 
 export default PreviewModal;

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/GlobalContext";
 import { GRADE_LABEL, REDEEM_ERROR_MESSAGES } from "../lib/grades";
@@ -6,6 +6,7 @@ import { GRADE_LABEL, REDEEM_ERROR_MESSAGES } from "../lib/grades";
 const gradeColor = {
   general: "#7A7A9A",
   pro: "#74B9FF",
+  pro_plus: "#A29BFE",
   expert: "#FDCB6E",
 };
 
@@ -66,15 +67,15 @@ export function LimitReachedModal({ onClose }) {
         color: T.text,
       }}>
         <div style={{ fontSize: 11, letterSpacing: "0.16em", color: T.accent, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>
-          Daily Limit
+          Weekly Credits
         </div>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>
-          {done ? "Expert 등급으로 업그레이드됐어요" : "오늘 사용 한도에 도달했어요"}
+          {done ? "Expert 등급으로 업그레이드됐어요" : "이번 주 크레딧이 부족합니다"}
         </div>
         <div style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.6, marginBottom: 18 }}>
           {done
-            ? "이제 모든 기능을 무제한으로 사용할 수 있어요."
-            : <>현재 등급은 <b style={{ color: gradeColor[grade] }}>{GRADE_LABEL[grade]}</b> ({limitText}/일)입니다. 초대 코드가 있다면 입력해 Expert로 업그레이드할 수 있어요.</>}
+            ? "이제 Expert 주간 한도(1000c)로 이용할 수 있어요."
+            : <>현재 등급은 <b style={{ color: gradeColor[grade] }}>{GRADE_LABEL[grade]}</b> 입니다. 매주 월요일에 크레딧이 리셋됩니다. 초대 코드가 있다면 입력해 Expert로 업그레이드할 수 있어요.</>}
         </div>
 
         {!done && (
@@ -153,9 +154,11 @@ export function useUsageGate() {
   const { tryConsumeUsage } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
 
-  const ensureCanGenerate = async () => {
-    const r = await tryConsumeUsage();
-    if (!r.ok && r.reason === "LIMIT_EXCEEDED") {
+  // useCallback 으로 identity 안정화 — 호출부의 useEffect deps 가 이 함수를 받아도 무한 재실행 방지.
+  // tryConsumeUsage 는 AuthContext 에서 [user?.uid, profile?.grade] deps 로 좁혀져 있어 stable.
+  const ensureCanGenerate = useCallback(async (action = "analysis") => {
+    const r = await tryConsumeUsage(action);
+    if (!r.ok && (r.reason === "INSUFFICIENT_CREDITS" || r.reason === "LIMIT_EXCEEDED")) {
       setModalOpen(true);
       return false;
     }
@@ -164,7 +167,7 @@ export function useUsageGate() {
       return false;
     }
     return true;
-  };
+  }, [tryConsumeUsage]);
 
   const modal = modalOpen ? <LimitReachedModal onClose={() => setModalOpen(false)} /> : null;
   return { ensureCanGenerate, modal };

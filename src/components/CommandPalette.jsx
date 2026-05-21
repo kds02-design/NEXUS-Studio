@@ -101,15 +101,19 @@ export default function CommandPalette({ open, onClose }) {
 
   if (!open) return null;
 
-  const activate = (item) => {
+  // Ctrl/Cmd+Enter (또는 Ctrl/Cmd+클릭) → 새 창에서 오픈. 일반 활성화는 기존 동작.
+  const activate = (item, e) => {
     if (!item || item.kind === "group_header") return;
+    const newWin = !!(e && (e.ctrlKey || e.metaKey));
     if (item.kind === "home") {
       if (item.disabled) return;
+      if (newWin) { window.open("/", "_blank", "noopener,noreferrer"); onClose?.(); return; }
       setCurrentApp(null);
       onClose?.();
       return;
     }
     if (item.disabled) return;
+    if (newWin) { window.open(`/${item.id}`, "_blank", "noopener,noreferrer"); onClose?.(); return; }
     setCurrentApp(item.id);
     onClose?.();
   };
@@ -132,7 +136,7 @@ export default function CommandPalette({ open, onClose }) {
       });
       return;
     }
-    if (e.key === "Enter") { e.preventDefault(); activate(items[selectedIndex]); return; }
+    if (e.key === "Enter") { e.preventDefault(); activate(items[selectedIndex], e); return; }
   };
 
   // 검색 결과가 비어 있는지 (홈 외 앱이 한 개도 없는 경우).
@@ -144,7 +148,7 @@ export default function CommandPalette({ open, onClose }) {
       <div
         onClick={onClose}
         style={{
-          position: "fixed", inset: 0, zIndex: 1200,
+          position: "fixed", inset: 0, zIndex: 50000,
           background: isLight ? "rgba(0, 0, 0, 0.25)" : "rgba(5, 5, 12, 0.55)",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
@@ -157,7 +161,7 @@ export default function CommandPalette({ open, onClose }) {
         style={{
           position: "fixed", top: "20%", left: "50%", transform: "translateX(-50%)",
           width: "min(620px, calc(100vw - 32px))",
-          zIndex: 1201,
+          zIndex: 50001,
           background: T.card,
           border: `1px solid ${T.border}`,
           borderRadius: 14,
@@ -220,7 +224,8 @@ export default function CommandPalette({ open, onClose }) {
                 key={item.id}
                 data-cp-idx={idx}
                 onMouseEnter={() => { if (!dim) setSelectedIndex(idx); }}
-                onClick={() => activate(item)}
+                onClick={(e) => activate(item, e)}
+                title="Ctrl/⌘+클릭 → 새 창에서 열기"
                 style={{
                   display: "flex", alignItems: "center", gap: 12,
                   height: 40, minHeight: 40, maxHeight: 40,

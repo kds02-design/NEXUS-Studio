@@ -65,14 +65,16 @@ export const compressImage = (file, maxW = 1600, maxH = 1600, q = 0.85) =>
     reader.onerror = rej;
   });
 
+export const MAX_PROMPT_IMAGES = 5;
+
 export const processMultipleFiles = async (files, currentCount = 0, callback, showToast) => {
   const results = [];
   let skipped = false;
   for (let i = 0; i < files.length; i++) {
-    if (currentCount + results.length >= 2) { skipped = true; break; }
+    if (currentCount + results.length >= MAX_PROMPT_IMAGES) { skipped = true; break; }
     if (files[i].type.startsWith('image/')) { results.push(await compressImage(files[i])); }
   }
-  if (skipped && showToast) showToast('최대 2장까지만 업로드 가능합니다.', 'error');
+  if (skipped && showToast) showToast(`최대 ${MAX_PROMPT_IMAGES}장까지만 업로드 가능합니다.`, 'error');
   if (results.length > 0) callback(results);
 };
 

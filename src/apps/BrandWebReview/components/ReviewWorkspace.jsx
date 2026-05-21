@@ -2,8 +2,8 @@
 // 레퍼런스: C:\work\00_AI연습\05_스마트프로모션검색\app\my-design-app\src\components\modals\ConfirmWorkspace.jsx
 // 단순화: 버전 히스토리/PC·모바일 토글/HTML 리포트 export 제거 → 핵심 워크플로우(영역 선택+피드백 노트)에 집중.
 // 노트 저장은 props.notes / props.onNotesChange 로 부모(BrandWebReview)가 영구화 담당.
-import { useRef, useState, useCallback } from "react";
-import { Image as ImageIcon, CheckSquare, Lock, ChevronLeft, Sparkles, Smartphone, Monitor, Layers, Plus, X } from "lucide-react";
+import { useRef, useState, useCallback, useEffect, useMemo } from "react";
+import { Image as ImageIcon, CheckSquare, Lock, ChevronLeft, Sparkles, Smartphone, Monitor, Layers, Plus, ListTree, X, History } from "lucide-react";
 
 // 페이지 상태 dot — 부모(index.jsx)의 STATUS_DOT 과 동기 유지.
 const PAGE_STATUS_COLOR = {
@@ -35,6 +35,12 @@ export default function ReviewWorkspace({
   onSelectVersion,  // (versionId) => void
   onUploadNewVersion, // (file) => Promise<void>
   device,           // "pc" | "mobile" — 썸네일 패널 헤더 표시
+  // ─── 프로젝트 전체 수정사항 리스트 + 점프 ───
+  allNotes,         // [{ id, text, resolved, date, attachment, rect, pageId, pageName, pageNumber, device, versionId, versionLabel, isLatestVersion }]
+  onJumpToNote,     // (pageId, versionId, noteId) => void
+  onToggleNoteResolved, // (pageId, versionId, noteId) => void — 임의 페이지·버전 노트 resolved 토글
+  jumpTargetNoteId, // 부모가 점프 직후 세팅 — useEffect 로 스크롤
+  onJumpHandled,    // 스크롤 완료 후 부모 state 클리어
 }) {
   const containerRef = useRef(null);
   const imageRef = useRef(null);
@@ -50,10 +56,47 @@ export default function ReviewWorkspace({
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [hoveredNoteId, setHoveredNoteId] = useState(null);
   const [isButtonUnlocked, setIsButtonUnlocked] = useState(false);
+  const [notesMode, setNotesMode] = useState("page");      // "page" | "all"
+  const [allNotesFilter, setAllNotesFilter] = useState("all"); // "all" | "open" | "done"
+  const [showPrevNotes, setShowPrevNotes] = useState(true);    // 이전 버전 노트 오버레이
+
+  // 활성 버전 직전(이전) 버전 — 1차→2차 시안 비교 오버레이용.
+  const previousVersion = useMemo(() => {
+    if (!Array.isArray(versions) || versions.length < 2 || !activeVersionId) return null;
+    const idx = versions.findIndex(v => v.id === activeVersionId);
+    if (idx <= 0) return null;
+    return versions[idx - 1];
+  }, [versions, activeVersionId]);
+  const previousNotes = previousVersion?.notes || [];
 
   const unresolvedCount = notes.filter(n => !n.resolved).length;
   const isConfirmDisabled = notes.length === 0 || unresolvedCount > 0;
   const activeHighlightId = editingNoteId || hoveredNoteId;
+
+  // 전체 리스트에서 노트 클릭 — 같은 페이지+버전이면 스크롤, 다르면 부모에 점프 요청.
+  const handleAllNoteClick = useCallback((n) => {
+    if (n.pageId === activePageId && n.versionId === activeVersionId) {
+      const target = noteRefs.current[n.id];
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHoveredNoteId(n.id);
+    } else if (onJumpToNote) {
+      onJumpToNote(n.pageId, n.versionId, n.id);
+    }
+  }, [activePageId, activeVersionId, onJumpToNote]);
+
+  // 부모가 jumpTargetNoteId 를 세팅하면 — 새 image/notes 가 렌더된 다음 그 노트로 스크롤.
+  useEffect(() => {
+    if (!jumpTargetNoteId) return;
+    const t = setTimeout(() => {
+      const target = noteRefs.current[jumpTargetNoteId];
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHoveredNoteId(jumpTargetNoteId);
+      }
+      onJumpHandled?.();
+    }, 120);
+    return () => clearTimeout(t);
+  }, [jumpTargetNoteId, image, notes, onJumpHandled]);
 
   // 첨부 파일 미리보기 — dataURL 변환.
   const handleAttach = (file) => {
@@ -172,6 +215,20 @@ export default function ReviewWorkspace({
                 <Plus className="w-3 h-3" />
                 새 버전
               </button>
+              {previousVersion && (
+                <button
+                  onClick={() => setShowPrevNotes(v => !v)}
+                  title={`이전 버전(${previousVersion.label}) 수정요청 영역을 ${showPrevNotes ? "숨기기" : "표시"} (${previousNotes.length}개)`}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-colors ${
+                    showPrevNotes
+                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                      : "bg-white/5 border-white/10 text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  <History className="w-3 h-3" />
+                  {previousVersion.label} 영역 {previousNotes.length}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -295,7 +352,7 @@ export default function ReviewWorkspace({
           onPointerUp={() => setIsDrawing(false)}
         >
           <div className="min-h-full mx-auto py-10 px-10 relative flex justify-center items-start cursor-crosshair">
-            <div className="relative shadow-2xl w-fit max-w-[1200px]">
+            <div className="relative shadow-2xl w-full max-w-[1400px]">
               <img
                 ref={imageRef}
                 src={image}
@@ -303,6 +360,29 @@ export default function ReviewWorkspace({
                 className="block w-full h-auto border border-white/5 rounded-sm select-none"
                 draggable={false}
               />
+
+              {/* 이전 버전 수정요청 영역 — 점선 오버레이. 현재 버전의 노트 아래(z-20) 에 그려 클릭 방해 안 함. */}
+              {showPrevNotes && previousVersion && previousNotes.map((pn, idx) => (
+                <div
+                  key={`prev_${pn.id}`}
+                  title={`${previousVersion.label} · ${pn.resolved ? "해결됨" : "미해결"} · ${pn.text || ""}`}
+                  className={`absolute z-20 border-2 border-dashed rounded-sm pointer-events-none ${
+                    pn.resolved
+                      ? "border-emerald-400/50 bg-emerald-400/5"
+                      : "border-amber-400/70 bg-amber-400/10"
+                  }`}
+                  style={{
+                    left: `${pn.rect.x * 100}%`, top: `${pn.rect.y * 100}%`,
+                    width: `${pn.rect.w * 100}%`, height: `${pn.rect.h * 100}%`,
+                  }}
+                >
+                  <div className={`absolute -top-2.5 -left-2.5 px-1 h-5 min-w-5 rounded-full flex items-center justify-center text-[9px] font-black shadow ${
+                    pn.resolved ? "bg-emerald-500/80 text-white" : "bg-amber-500 text-black"
+                  }`}>
+                    {previousVersion.label}·{idx + 1}
+                  </div>
+                </div>
+              ))}
 
               {/* 등록된 노트 박스 */}
               {notes.map((note, idx) => {
@@ -393,74 +473,203 @@ export default function ReviewWorkspace({
           </div>
         </div>
 
-        {/* SIDE PANEL — 노트 리스트 */}
+        {/* SIDE PANEL — 노트 리스트 (이 페이지 / 전체) */}
         <aside className="w-80 border-l border-white/5 bg-[#121214] flex flex-col shrink-0">
           <div className="p-5 border-b border-white/5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[10px] font-black uppercase text-zinc-500 tracking-widest flex items-center gap-2">
                 Design Review <Sparkles size={10} className="text-cyan-500" />
               </h3>
+              {/* 모드 토글 */}
+              {Array.isArray(allNotes) && (
+                <div className="flex bg-black/40 border border-white/10 rounded-md p-0.5">
+                  <button
+                    onClick={() => setNotesMode("page")}
+                    className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded transition-colors ${
+                      notesMode === "page" ? "bg-cyan-500/20 text-cyan-300" : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                    title="현재 페이지의 노트만"
+                  >
+                    이 페이지
+                  </button>
+                  <button
+                    onClick={() => setNotesMode("all")}
+                    className={`px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded transition-colors flex items-center gap-1 ${
+                      notesMode === "all" ? "bg-cyan-500/20 text-cyan-300" : "text-zinc-500 hover:text-zinc-300"
+                    }`}
+                    title="프로젝트 전체 수정사항"
+                  >
+                    <ListTree className="w-2.5 h-2.5" /> 전체
+                  </button>
+                </div>
+              )}
             </div>
-            <div className="grid grid-cols-2 gap-2 mb-1">
-              <div className="bg-white/5 border border-white/5 rounded-lg p-2.5">
-                <p className="text-[9px] text-zinc-500 uppercase font-black mb-0.5">TOTAL</p>
-                <p className="text-lg font-mono font-black text-white">{notes.length}</p>
+            {/* 카운트 — 모드에 따라 소스 변경 */}
+            {(() => {
+              const src = notesMode === "all" ? (allNotes || []) : notes;
+              const doneCnt = src.filter(n => n.resolved).length;
+              return (
+                <div className="grid grid-cols-2 gap-2 mb-1">
+                  <div className="bg-white/5 border border-white/5 rounded-lg p-2.5">
+                    <p className="text-[9px] text-zinc-500 uppercase font-black mb-0.5">TOTAL</p>
+                    <p className="text-lg font-mono font-black text-white">{src.length}</p>
+                  </div>
+                  <div className="bg-white/5 border border-white/5 rounded-lg p-2.5">
+                    <p className="text-[9px] text-zinc-500 uppercase font-black mb-0.5">DONE</p>
+                    <p className="text-lg font-mono font-black text-green-500">{doneCnt}</p>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* 전체 모드 필터 */}
+            {notesMode === "all" && (
+              <div className="flex items-center gap-1 mt-2">
+                {[
+                  { id: "all", label: "전체" },
+                  { id: "open", label: "미해결" },
+                  { id: "done", label: "해결" },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setAllNotesFilter(f.id)}
+                    className={`flex-1 px-2 py-1 text-[9px] font-semibold rounded transition-colors ${
+                      allNotesFilter === f.id
+                        ? "bg-white/10 text-zinc-200"
+                        : "text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
               </div>
-              <div className="bg-white/5 border border-white/5 rounded-lg p-2.5">
-                <p className="text-[9px] text-zinc-500 uppercase font-black mb-0.5">DONE</p>
-                <p className="text-lg font-mono font-black text-green-500">{notes.filter(n => n.resolved).length}</p>
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 custom-scrollbar">
-            {notes.length === 0 ? (
-              <div className="text-center py-12 text-[11px] text-zinc-600 leading-relaxed">
-                이미지 위에서 마우스로 영역을<br/>드래그하면 피드백을 추가할 수 있습니다.
-              </div>
-            ) : notes.map((note, index) => (
-              <div
-                key={note.id}
-                onMouseEnter={() => setHoveredNoteId(note.id)}
-                onMouseLeave={() => setHoveredNoteId(null)}
-                onClick={() => scrollToNote(note.id)}
-                className={`relative border p-3 rounded-lg transition-all bg-zinc-900/40 cursor-pointer group ${
-                  activeHighlightId === note.id ? 'ring-1 ring-cyan-500/50 border-transparent bg-zinc-800/80' : 'border-white/5 hover:bg-zinc-800/40'
-                }`}
-              >
-                <div className="flex justify-between mb-2 items-start">
-                  <div className="flex items-center gap-2">
-                    <div className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black ${
-                      note.resolved ? 'bg-green-500/20 text-green-500' : 'bg-red-500 text-white'
-                    }`}>{index + 1}</div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); toggleResolved(note.id); }}
-                      className={`text-[9px] px-2 py-0.5 rounded border transition-all font-black uppercase ${
-                        note.resolved ? 'bg-green-500/10 text-green-500 border-green-500/30'
-                          : 'bg-zinc-900 text-zinc-500 border-zinc-700 hover:text-zinc-200'
-                      }`}
-                    >{note.resolved ? 'Done' : 'Review'}</button>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); if (confirm('이 피드백을 삭제할까요?')) removeNote(note.id); }}
-                    className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-opacity"
-                    title="삭제"
-                  ><X size={12} /></button>
+            {notesMode === "page" ? (
+              // ─── 이 페이지(현재 활성 버전) 노트 ───
+              notes.length === 0 ? (
+                <div className="text-center py-12 text-[11px] text-zinc-600 leading-relaxed">
+                  이미지 위에서 마우스로 영역을<br/>드래그하면 피드백을 추가할 수 있습니다.
                 </div>
-                <p
-                  className={`text-[12px] leading-relaxed break-words whitespace-pre-wrap ${
-                    note.resolved ? 'text-zinc-600 line-through opacity-60' : 'text-zinc-300'
+              ) : notes.map((note, index) => (
+                <div
+                  key={note.id}
+                  onMouseEnter={() => setHoveredNoteId(note.id)}
+                  onMouseLeave={() => setHoveredNoteId(null)}
+                  onClick={() => scrollToNote(note.id)}
+                  className={`relative border p-3 rounded-lg transition-all bg-zinc-900/40 cursor-pointer group ${
+                    activeHighlightId === note.id ? 'ring-1 ring-cyan-500/50 border-transparent bg-zinc-800/80' : 'border-white/5 hover:bg-zinc-800/40'
                   }`}
-                  style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
                 >
-                  {note.text}
-                </p>
-                {note.attachment && (
-                  <img src={note.attachment} alt="" className="mt-2 w-full h-auto rounded border border-white/5" />
-                )}
-                <div className="mt-2 pt-2 border-t border-white/5 text-[9px] text-zinc-600 font-mono">{note.date}</div>
-              </div>
-            ))}
+                  <div className="flex justify-between mb-2 items-start">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded flex items-center justify-center text-[9px] font-black ${
+                        note.resolved ? 'bg-green-500/20 text-green-500' : 'bg-red-500 text-white'
+                      }`}>{index + 1}</div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleResolved(note.id); }}
+                        className={`text-[9px] px-2 py-0.5 rounded border transition-all font-black uppercase ${
+                          note.resolved ? 'bg-green-500/10 text-green-500 border-green-500/30'
+                            : 'bg-zinc-900 text-zinc-500 border-zinc-700 hover:text-zinc-200'
+                        }`}
+                      >{note.resolved ? 'Done' : 'Review'}</button>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); if (confirm('이 피드백을 삭제할까요?')) removeNote(note.id); }}
+                      className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 transition-opacity"
+                      title="삭제"
+                    ><X size={12} /></button>
+                  </div>
+                  <p
+                    className={`text-[12px] leading-relaxed break-words whitespace-pre-wrap ${
+                      note.resolved ? 'text-zinc-600 line-through opacity-60' : 'text-zinc-300'
+                    }`}
+                    style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                  >
+                    {note.text}
+                  </p>
+                  {note.attachment && (
+                    <img src={note.attachment} alt="" className="mt-2 w-full h-auto rounded border border-white/5" />
+                  )}
+                  <div className="mt-2 pt-2 border-t border-white/5 text-[9px] text-zinc-600 font-mono">{note.date}</div>
+                </div>
+              ))
+            ) : (
+              // ─── 전체 모드 — 프로젝트 모든 페이지/버전 노트 ───
+              (() => {
+                const list = (allNotes || []).filter(n =>
+                  allNotesFilter === "open" ? !n.resolved :
+                  allNotesFilter === "done" ? n.resolved : true
+                );
+                if (list.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-[11px] text-zinc-600 leading-relaxed">
+                      {allNotesFilter === "open" ? "미해결" : allNotesFilter === "done" ? "해결된" : ""} 수정사항이 없습니다.
+                    </div>
+                  );
+                }
+                return list.map((n) => {
+                  const isCurrent = n.pageId === activePageId && n.versionId === activeVersionId;
+                  const devColor = n.device === "mobile" ? "#FD79A8" : "#74B9FF";
+                  return (
+                    <div
+                      key={`${n.versionId}_${n.id}`}
+                      onClick={() => handleAllNoteClick(n)}
+                      className={`relative border p-3 rounded-lg transition-all cursor-pointer group ${
+                        isCurrent
+                          ? "bg-cyan-500/5 border-cyan-500/30 hover:bg-cyan-500/10"
+                          : "bg-zinc-900/40 border-white/5 hover:bg-zinc-800/40"
+                      }`}
+                    >
+                      {/* 페이지/버전 라벨 */}
+                      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                        <span
+                          className="px-1.5 py-0.5 rounded text-[9px] font-bold tabular-nums"
+                          style={{ background: `${devColor}22`, color: devColor }}
+                        >
+                          {n.device === "mobile" ? "M" : "PC"} · P{n.pageNumber}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold font-mono ${
+                          n.isLatestVersion ? "bg-violet-500/20 text-violet-300" : "bg-zinc-800 text-zinc-500"
+                        }`}>
+                          {n.versionLabel}
+                        </span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onToggleNoteResolved?.(n.pageId, n.versionId, n.id); }}
+                          title={n.resolved ? "다시 열기" : "수정 완료로 표시"}
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase border transition-colors ${
+                            n.resolved
+                              ? "bg-green-500/10 text-green-500 border-green-500/30 hover:bg-green-500/20"
+                              : "bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25"
+                          }`}
+                        >
+                          {n.resolved ? "Done" : "Open"}
+                        </button>
+                        {isCurrent && (
+                          <span className="ml-auto text-[8px] text-cyan-400 font-mono">현재</span>
+                        )}
+                      </div>
+                      <p
+                        className={`text-[12px] leading-relaxed break-words whitespace-pre-wrap ${
+                          n.resolved ? "text-zinc-600 line-through opacity-60" : "text-zinc-300"
+                        }`}
+                        style={{ fontFamily: "'Noto Sans KR', sans-serif" }}
+                      >
+                        {n.text}
+                      </p>
+                      {n.attachment && (
+                        <img src={n.attachment} alt="" className="mt-2 w-full h-auto rounded border border-white/5" />
+                      )}
+                      <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[9px] text-zinc-600 font-mono">
+                        <span className="truncate max-w-[180px]" title={n.pageName}>{n.pageName}</span>
+                        <span>{n.date}</span>
+                      </div>
+                    </div>
+                  );
+                });
+              })()
+            )}
           </div>
         </aside>
       </div>

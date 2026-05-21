@@ -12,7 +12,7 @@ export default function ArcHeader({
   sortOption, setSortOption,
   filterPopoverOpen, setFilterPopoverOpen,
   sortPopoverOpen, setSortPopoverOpen,
-  isAdmin, totalCount,
+  isAdmin, totalCount, totalAll,
 }) {
   const filterPopoverRef = useRef(null);
   const sortPopoverRef = useRef(null);
@@ -40,13 +40,14 @@ export default function ArcHeader({
 
   return (
     <header className="h-14 border-b border-slate-200 dark:border-white/5 bg-white/80 dark:bg-[#050505]/90 flex items-center px-6 gap-4 shrink-0">
-      <div className="flex-1 relative max-w-sm ml-auto">
+      {/* 검색 — 고정 폭(BannerCodex 패턴). flex-1 제거해서 입력/포커스 시 우측 컨트롤 reflow 차단. */}
+      <div className="relative w-[180px] md:w-[220px] lg:w-[260px] ml-auto shrink-0">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500" size={13} />
         <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="검색..."
           className="w-full bg-slate-100 dark:bg-[#121212] border border-slate-200 dark:border-white/10 rounded-lg pl-9 pr-8 py-2 text-xs text-slate-900 dark:text-white outline-none focus:border-[#C8A969]/50 placeholder:text-slate-400 dark:placeholder:text-zinc-600" />
         {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500"><X size={12} /></button>}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         <div className="flex items-center bg-black/5 dark:bg-white/5 rounded-lg p-0.5">
           <button onClick={() => setViewMode('small')} className={`p-1.5 rounded transition-colors ${viewMode === 'small' ? 'bg-white dark:bg-[#1A1A1A] text-[#C8A969]' : 'text-slate-400 dark:text-zinc-500'}`}><Grid size={13} /></button>
           <button onClick={() => setViewMode('normal')} className={`p-1.5 rounded transition-colors ${viewMode === 'normal' ? 'bg-white dark:bg-[#1A1A1A] text-[#C8A969]' : 'text-slate-400 dark:text-zinc-500'}`}><Layout size={13} /></button>
@@ -130,7 +131,11 @@ export default function ArcHeader({
             </div>
           )}
         </div>
-        <span className="text-xs font-mono text-[#C8A969] font-bold">{totalCount}</span>
+        {/* 카운트 — 항상 N/M 고정 형태 + tabular-nums + min-w 로 reflow 차단. */}
+        <span className="text-xs font-mono text-[#C8A969] font-bold ml-1 shrink-0 tabular-nums inline-block text-right" style={{ minWidth: 72 }}>
+          {totalCount ?? 0}
+          <span className="text-slate-400 dark:text-zinc-600 font-normal">/{totalAll ?? 0}</span>
+        </span>
       </div>
     </header>
   );

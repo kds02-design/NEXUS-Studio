@@ -1,4 +1,4 @@
-import { Type, Tag, Wand2, Play, Folder, Heart, ListChecks } from "lucide-react";
+import { Type, Tag, Wand2, Play, Folder, Heart, ListChecks, Lock } from "lucide-react";
 import React from "react";
 
 // 상단 필터는 aiKeywords / stepKeywords 안에서 키워드 OR 매칭으로 동작.
@@ -19,6 +19,7 @@ export const THEME_FILTERS = [
 export const ARC_CATEGORIES = [
   { id:'all', name:'전체 보기', icon: React.createElement(ListChecks, { size: 18 }) },
   { id:'즐겨찾기', name:'즐겨찾기', icon: React.createElement(Heart, { size: 18 }) },
+  { id:'my_private', name:'내 비공개', icon: React.createElement(Lock, { size: 18 }), requiresUser: true },
   { type:'folders' },
   { type:'divider' },
   { id:'타이포', name:'타이포', icon: React.createElement(Type, { size: 18 }) },

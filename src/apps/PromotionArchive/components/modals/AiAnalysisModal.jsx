@@ -52,10 +52,17 @@ const AiAnalysisModal = ({ isOpen, onClose, selectedIds, onComplete }) => {
         return;
       }
 
-      const imgSources = [
-        banner.full_image || banner.preview,
-        banner.mobile_image,
-      ].filter(Boolean);
+      // 평가 이미지 — 브랜드웹은 메인(+서브) 1~2장, 그 외는 PC+Mobile 2장.
+      const imgSources = (() => {
+        if (banner.assetType === '브랜드웹') {
+          const pages = Array.isArray(banner.pages) ? banner.pages : [];
+          const findUrl = (id) => (id ? pages.find(p => p?.id === id)?.url : null);
+          const main = findUrl(banner.mainPageId) || banner.full_image || pages.find(p => p?.device === 'pc')?.url || banner.preview;
+          const sub = findUrl(banner.subPageId) || (banner.mainPageId ? null : (banner.mobile_image || pages.find(p => p?.device === 'mobile')?.url));
+          return [main, sub && sub !== main ? sub : null].filter(Boolean);
+        }
+        return [banner.full_image || banner.preview, banner.mobile_image].filter(Boolean);
+      })();
       if (imgSources.length === 0) {
         addLog(`이미지 없음: ${banner.title || id}`);
         setErrorCount(c => c + 1);

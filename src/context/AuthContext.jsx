@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -13,12 +13,15 @@ import {
   redeemInviteCode,
   getTodayUsage,
   consumeUsage,
+  consumeCredits,
   dailyLimit,
   remainingToday,
   GRADES,
   STATUS,
   ADMIN_EMAILS,
   USAGE_ERROR_MESSAGES,
+  CREDIT_ERROR_MESSAGES,
+  invalidateUsageCache,
 } from "../lib/grades";
 
 const AuthContext = createContext(null);
@@ -69,9 +72,26 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // 가장 최근에 loadProfile 을 실행한 uid. 같은 uid 로 onAuthStateChanged 가 다시 호출돼도(토큰 refresh 등)
+  // 불필요한 Firestore 재읽기를 피하기 위한 가드.
+  const lastLoadedUidRef = useRef(null);
+
   useEffect(() => {
     if (!auth) { setLoading(false); setProfileLoaded(true); return; }
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      const prevUid = lastLoadedUidRef.current;
+      const nextUid = u?.uid || null;
+      // 같은 uid 면 setUser 도 스킵 — Firebase 가 token refresh 등으로 콜백을 다시 호출할 때
+      // 매번 새 user 객체 reference 로 setState 하면 AuthProvider 가 재렌더되어 모든 useAuth
+      // consumer 가 cascade 재렌더 → 인덱스 화면이 깜빡이는 양상으로 보임. uid 같으면 의미상
+      // 동일하므로 state 변경 자체를 안 함.
+      if (prevUid !== null && prevUid === nextUid) {
+        setLoading(false);
+        return;
+      }
+      // uid 가 실제 바뀌었음(첫 로그인 / 로그아웃 / 다른 계정) → stale usage 캐시 정리 + 전체 로드.
+      invalidateUsageCache();
+      lastLoadedUidRef.current = nextUid;
       setUser(u);
       await loadProfile(u);
       setLoading(false);
@@ -87,6 +107,8 @@ export function AuthProvider({ children }) {
     pendingInviteRef.current = code ? String(code).trim() : null;
   }, []);
 
+  // deps 를 uid/grade 같은 primitive 로 좁힘 — user/profile 객체 reference 변경(매 렌더 새 객체)에도
+  // useCallback identity 가 안정적. 호출부의 useEffect 가 무한 재실행 되는 것을 차단.
   const refreshProfile = useCallback(async () => {
     if (!user?.uid) return;
     try {
@@ -99,27 +121,28 @@ export function AuthProvider({ children }) {
     } catch (e) {
       console.warn("[Auth] refreshProfile 실패 (기존 값 유지):", e?.message || e);
     }
-  }, [user]);
+  }, [user?.uid]);
 
   const applyInviteCode = useCallback(async (code) => {
     if (!user?.uid) throw new Error("NOT_AUTHENTICATED");
     const result = await redeemInviteCode(user.uid, code);
     await refreshProfile();
     return result;
-  }, [user, refreshProfile]);
+  }, [user?.uid, refreshProfile]);
 
-  const tryConsumeUsage = useCallback(async () => {
+  // 주간 크레딧 차감. action: 'image'(10c) | 'analysis'(1c, default).
+  // 호출부는 동일하게 { ok, reason, message } 받음. LimitReachedModal 트리거 reason = "INSUFFICIENT_CREDITS".
+  const tryConsumeUsage = useCallback(async (action = "analysis") => {
     if (!user?.uid || !profile) return { ok: false, reason: "NO_PROFILE" };
     const grade = profile.grade || GRADES.general;
     try {
-      const { count, limit } = await consumeUsage(user.uid, grade);
-      setUsageToday(count);
-      return { ok: true, count, limit };
+      const r = await consumeCredits(user.uid, grade, action);
+      return { ok: true, used: r.used, cap: r.cap, cost: r.cost, action: r.action };
     } catch (e) {
       const reason = e.message || "UNKNOWN";
-      return { ok: false, reason, message: USAGE_ERROR_MESSAGES[reason] || reason };
+      return { ok: false, reason, message: CREDIT_ERROR_MESSAGES[reason] || USAGE_ERROR_MESSAGES[reason] || reason };
     }
-  }, [user, profile]);
+  }, [user?.uid, profile?.grade]);
 
   const signInEmail = useCallback((email, password) =>
     signInWithEmailAndPassword(auth, email, password), []);
@@ -144,15 +167,26 @@ export function AuthProvider({ children }) {
   // user가 있는데 profile이 아직이면 auth 자체는 로딩 중으로 본다.
   const isAuthLoading = loading || (!!user && !profileLoaded);
 
+  // Provider value 를 useMemo 로 안정화 — 매 렌더 새 객체 reference 가 모든 useAuth consumer 의
+  // cascade 재렌더를 일으키는 것을 차단.
+  const ctxValue = useMemo(() => ({
+    user, profile, grade, loading, profileLoaded, isAuthLoading,
+    isAdmin, isPending, isRejected, status,
+    usageToday, dailyLimit: limit, remainingToday: remaining,
+    signInEmail, signUpEmail, signInGoogle, signOut,
+    setPendingInviteCode, applyInviteCode,
+    refreshProfile, tryConsumeUsage,
+  }), [
+    user, profile, grade, loading, profileLoaded, isAuthLoading,
+    isAdmin, isPending, isRejected, status,
+    usageToday, limit, remaining,
+    signInEmail, signUpEmail, signInGoogle, signOut,
+    setPendingInviteCode, applyInviteCode,
+    refreshProfile, tryConsumeUsage,
+  ]);
+
   return (
-    <AuthContext.Provider value={{
-      user, profile, grade, loading, profileLoaded, isAuthLoading,
-      isAdmin, isPending, isRejected, status,
-      usageToday, dailyLimit: limit, remainingToday: remaining,
-      signInEmail, signUpEmail, signInGoogle, signOut,
-      setPendingInviteCode, applyInviteCode,
-      refreshProfile, tryConsumeUsage,
-    }}>
+    <AuthContext.Provider value={ctxValue}>
       {children}
     </AuthContext.Provider>
   );

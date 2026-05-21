@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Users, ListChecks, Ticket, Settings as SettingsIcon,
   Shield, Plus, Trash2, Edit2, X, RefreshCw, AlertTriangle,
-  FileText, Upload, Download, Save, RotateCcw,
+  FileText, Upload, Download, Save, RotateCcw, Sparkles, Power,
+  ShieldCheck, BarChart3,
 } from "lucide-react";
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
@@ -18,6 +19,9 @@ import { migrateInitialCriteria } from "../../lib/evaluationCriteria";
 import { DEFAULT_AI_PROMPT } from "../BannerCodex/constants/categories";
 import { DEFAULT_HERO_IMAGE, fetchDashboardSettings, updateDashboardHeroImage } from "../../lib/dashboardSettings";
 import { uploadBase64 } from "../../lib/storage";
+import { subscribeGeminiGate, setGeminiEnabled } from "../../lib/gemini";
+import { subscribeAllAudits } from "../PromptAudit/services/firebase";
+import { CONFLICT_TYPES } from "../PromptAudit/services/gemini";
 
 // 관리자 전용 보라색 포인트
 const ACCENT = "#6C5CE7";
@@ -36,6 +40,12 @@ const NAV_SECTIONS = [
     items: [
       { id: "criteria", name: "평가 기준",        icon: <ListChecks size={18}/> },
       { id: "prompt",   name: "AI 평가 프롬프트", icon: <FileText size={18}/> },
+    ],
+  },
+  {
+    label: "분석",
+    items: [
+      { id: "audits", name: "감사 이력", icon: <ShieldCheck size={18}/> },
     ],
   },
   {
@@ -95,6 +105,7 @@ export default function NexusAdminApp() {
           {tab === "criteria" && <CriteriaPanel/>}
           {tab === "prompt"   && <PromptPanel/>}
           {tab === "invites"  && <InvitesPanel/>}
+          {tab === "audits"   && <AuditsPanel/>}
           {tab === "settings" && <SettingsPanel/>}
         </div>
       </main>
@@ -299,6 +310,7 @@ function UserTable({ users, status, busyUid, onApprove, onReject, onDelete, onCh
                     className="bg-[#0a0a0c] border border-white/10 rounded px-2 py-1 text-[11px] text-zinc-200 outline-none focus:border-white/20 disabled:opacity-40">
                     <option value={GRADES.general}>{GRADE_LABEL.general}</option>
                     <option value={GRADES.pro}>{GRADE_LABEL.pro}</option>
+                    <option value={GRADES.pro_plus}>{GRADE_LABEL.pro_plus} (내부 관계자)</option>
                     <option value={GRADES.expert}>{GRADE_LABEL.expert}</option>
                   </select>
                 </td>
@@ -344,10 +356,14 @@ function UserTable({ users, status, busyUid, onApprove, onReject, onDelete, onCh
 
 // ─────────────── 2. 평가 기준 관리 ───────────────
 const CRITERIA_TYPE_LIST = [
-  { id: "banner",    label: "배너" },
-  { id: "promotion", label: "프로모션" },
-  { id: "brandweb",  label: "브랜드웹" },
-  { id: "prompt",    label: "프롬프트" },
+  { id: "banner",     label: "배너" },
+  { id: "promotion",  label: "프로모션" },
+  { id: "brandweb",   label: "브랜드웹" },
+  { id: "prompt",     label: "프롬프트" },
+  // ─── 타이포그래피 평가 (디자인 평가도구 v2 — 2026-05) ───
+  { id: "typo2d",     label: "2D 타이포" },
+  { id: "typoRender", label: "렌더링 타이포" },
+  { id: "typoMotion", label: "모션 타이포" },
 ];
 
 function CriteriaPanel() {
@@ -884,6 +900,7 @@ function InvitesPanel() {
                 className="w-full bg-[#0a0a0c] border border-white/10 rounded px-2 py-1.5 text-xs text-zinc-200 outline-none">
                 <option value={GRADES.general}>{GRADE_LABEL.general}</option>
                 <option value={GRADES.pro}>{GRADE_LABEL.pro}</option>
+                <option value={GRADES.pro_plus}>{GRADE_LABEL.pro_plus}</option>
                 <option value={GRADES.expert}>{GRADE_LABEL.expert}</option>
               </select>
             </div>
@@ -970,6 +987,327 @@ function SettingRow({ name, description, control, lastInGroup = false }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 감사 이력 대시보드 — 전체 사용자 audits 집계.
+//   · sourceApp × conflictType 매트릭스
+//   · 채택률 / 빈도 / 점수 분포
+//   · 빈도 높은 evidence 토큰 (룰화 후보)
+//   · JSONL 내보내기 (학습 데이터)
+// ─────────────────────────────────────────────────────────────────────────────
+const SOURCE_APP_LABEL = {
+  "prompt-arc": "Prompt Arc",
+  "typecore-sovereign": "Typecore Sovereign",
+  "typecore-breeze": "Typecore Breeze",
+  "render-metrics": "Render Matrix",
+  "render-matrix-pop": "Render Matrix: Pop",
+  "motion-metrics": "Motion Matrix",
+  "": "직접 입력",
+};
+
+function AuditsPanel() {
+  const [audits, setAudits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [filterApp, setFilterApp] = useState("all");
+
+  useEffect(() => {
+    setLoading(true); setError("");
+    let cancelled = false;
+    const unsub = subscribeAllAudits((arr) => {
+      if (cancelled) return;
+      setAudits(Array.isArray(arr) ? arr : []);
+      setLoading(false);
+    }, 500);
+    return () => { cancelled = true; unsub?.(); };
+  }, []);
+
+  // ─── 집계 ───
+  const stats = useMemo(() => {
+    const total = audits.length;
+    let totalConflicts = 0;
+    let acceptedTotal = 0;
+    let withAccept = 0;
+    let scoreSum = 0;
+    const byApp = {};            // sourceApp → count
+    const byAppType = {};        // sourceApp → { conflictType → count }
+    const evidenceFreq = {};     // evidence(소문자) → { count, types:Set, examples:[] }
+    const typeFreq = {};         // conflictType → count
+
+    for (const a of audits) {
+      const src = a.sourceApp || "";
+      byApp[src] = (byApp[src] || 0) + 1;
+      scoreSum += Number(a.score || 0);
+
+      const conflicts = Array.isArray(a.conflicts) ? a.conflicts : [];
+      totalConflicts += conflicts.length;
+      for (const c of conflicts) {
+        const t = c.type || "VAGUE_DIRECTION";
+        typeFreq[t] = (typeFreq[t] || 0) + 1;
+        if (!byAppType[src]) byAppType[src] = {};
+        byAppType[src][t] = (byAppType[src][t] || 0) + 1;
+        const ev = String(c.evidence || "").trim().toLowerCase();
+        if (ev && ev.length >= 3 && ev.length <= 80) {
+          if (!evidenceFreq[ev]) evidenceFreq[ev] = { count: 0, types: new Set(), examples: [] };
+          evidenceFreq[ev].count++;
+          evidenceFreq[ev].types.add(t);
+          if (evidenceFreq[ev].examples.length < 2) evidenceFreq[ev].examples.push(c.evidence);
+        }
+      }
+
+      const accepted = Array.isArray(a.acceptedFixes) ? a.acceptedFixes.length : 0;
+      acceptedTotal += accepted;
+      if (accepted > 0) withAccept++;
+    }
+
+    const topEvidence = Object.entries(evidenceFreq)
+      .map(([ev, v]) => ({ evidence: ev, count: v.count, types: [...v.types], example: v.examples[0] }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 20);
+
+    const appList = Object.keys(byApp).sort((a, b) => (byApp[b] - byApp[a]));
+    const typeList = Object.keys(typeFreq).sort((a, b) => (typeFreq[b] - typeFreq[a]));
+
+    return {
+      total, totalConflicts, acceptedTotal, withAccept,
+      avgScore: total ? Math.round(scoreSum / total) : 0,
+      acceptRate: total ? Math.round((withAccept / total) * 100) : 0,
+      byApp, byAppType, appList, typeList, typeFreq, topEvidence,
+    };
+  }, [audits]);
+
+  // ─── 필터 적용 (최근 이력 테이블용) ───
+  const filtered = useMemo(() => {
+    const kw = search.trim().toLowerCase();
+    return audits.filter((a) => {
+      if (filterApp !== "all" && (a.sourceApp || "") !== filterApp) return false;
+      if (kw) {
+        const blob = `${a.sourcePrompt || ""} ${a.summary || ""} ${a.displayName || ""}`.toLowerCase();
+        if (!blob.includes(kw)) return false;
+      }
+      return true;
+    });
+  }, [audits, search, filterApp]);
+
+  // ─── JSONL export ───
+  const exportJsonl = () => {
+    const data = audits.map(a => JSON.stringify({
+      id: a.id,
+      uid: a.uid,
+      sourceApp: a.sourceApp || "",
+      sourceId: a.sourceId || "",
+      sourcePrompt: a.sourcePrompt || "",
+      improvedPrompt: a.improvedPrompt || "",
+      finalPrompt: a.finalPrompt || "",
+      score: a.score || 0,
+      summary: a.summary || "",
+      conflicts: a.conflicts || [],
+      acceptedFixes: a.acceptedFixes || [],
+      globalSuggestions: a.globalSuggestions || [],
+      createdAt: a.createdAt?.seconds ? new Date(a.createdAt.seconds * 1000).toISOString() : null,
+    })).join("\n");
+    const blob = new Blob([data], { type: "application/x-ndjson" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `prompt-audits-${new Date().toISOString().slice(0, 10)}.jsonl`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* 헤더 */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-bold text-white flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5" style={{ color: ACCENT }} />
+            감사 이력 대시보드
+          </h1>
+          <p className="text-[11px] text-zinc-500 mt-1">전체 사용자 프롬프트 최적화 기록 집계 — 엔진 룰화 후보 식별</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportJsonl}
+            disabled={audits.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 text-[11px] font-semibold transition-colors disabled:opacity-40"
+            title="audits 전체를 JSONL로 다운로드 (학습 데이터)"
+          >
+            <Download className="w-3.5 h-3.5" /> JSONL 내보내기 ({audits.length})
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div className="px-3 py-2 rounded-md border border-rose-500/30 bg-rose-950/20 text-[11px] text-rose-300 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5" /> {error}
+        </div>
+      )}
+
+      {/* 통계 카드 4종 */}
+      <div className="grid grid-cols-4 gap-3">
+        <StatCard label="총 분석" value={stats.total.toLocaleString()} sub="audits" />
+        <StatCard label="평균 점수" value={`${stats.avgScore}`} sub="/ 100" valueColor={stats.avgScore >= 80 ? "#10b981" : stats.avgScore >= 60 ? "#f59e0b" : "#ef4444"} />
+        <StatCard label="총 충돌 검출" value={stats.totalConflicts.toLocaleString()} sub={`평균 ${stats.total ? (stats.totalConflicts / stats.total).toFixed(1) : 0}건/감사`} />
+        <StatCard label="대안 채택률" value={`${stats.acceptRate}%`} sub={`${stats.withAccept}/${stats.total} 세션`} valueColor={ACCENT} />
+      </div>
+
+      {/* sourceApp × conflictType 매트릭스 */}
+      {stats.total > 0 && (
+        <div className="rounded-lg border border-zinc-800 bg-[#141416] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <BarChart3 className="w-4 h-4" style={{ color: ACCENT }} />
+            <h2 className="text-[11px] font-bold uppercase tracking-widest text-zinc-300">소스앱 × 충돌 유형 매트릭스</h2>
+            <span className="text-[10px] text-zinc-500">— 어떤 엔진이 어떤 충돌을 만드는지</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-zinc-500 border-b border-zinc-800">
+                  <th className="text-left px-2 py-2 font-semibold">소스앱</th>
+                  <th className="text-right px-2 py-2 font-semibold">총감사</th>
+                  {stats.typeList.map(t => (
+                    <th key={t} className="text-right px-2 py-2 font-semibold whitespace-nowrap">
+                      <span style={{ color: CONFLICT_TYPES[t]?.color || "#A29BFE" }}>
+                        {CONFLICT_TYPES[t]?.label || t}
+                      </span>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {stats.appList.map(src => (
+                  <tr key={src} className="border-b border-zinc-900 hover:bg-white/5">
+                    <td className="px-2 py-2 text-zinc-300 font-medium">{SOURCE_APP_LABEL[src] ?? src}</td>
+                    <td className="px-2 py-2 text-right text-zinc-400">{stats.byApp[src]}</td>
+                    {stats.typeList.map(t => {
+                      const v = stats.byAppType[src]?.[t] || 0;
+                      const max = Math.max(...stats.typeList.map(tt => Math.max(...stats.appList.map(s => stats.byAppType[s]?.[tt] || 0))));
+                      const intensity = max > 0 ? v / max : 0;
+                      return (
+                        <td key={t} className="px-2 py-2 text-right tabular-nums"
+                          style={{ background: v > 0 ? `rgba(108,92,231,${0.05 + intensity * 0.25})` : "transparent", color: v === 0 ? "#3f3f46" : "#e4e4e7" }}>
+                          {v || "·"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 빈도 높은 evidence 토큰 — 룰화 후보 */}
+      {stats.topEvidence.length > 0 && (
+        <div className="rounded-lg border border-zinc-800 bg-[#141416] p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4" style={{ color: ACCENT }} />
+            <h2 className="text-[11px] font-bold uppercase tracking-widest text-zinc-300">빈도 높은 충돌 근거 (룰화 후보 TOP 20)</h2>
+          </div>
+          <ul className="space-y-1.5">
+            {stats.topEvidence.map((e, i) => (
+              <li key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-black/30 border border-zinc-800/60">
+                <span className="w-8 text-[10px] font-bold text-zinc-600 tabular-nums shrink-0">#{i + 1}</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold tabular-nums shrink-0"
+                  style={{ background: `${ACCENT}20`, color: ACCENT, minWidth: 30, textAlign: "center" }}>
+                  {e.count}
+                </span>
+                <span className="font-mono text-[11px] text-zinc-300 truncate flex-1" title={e.example}>{e.example}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  {e.types.slice(0, 3).map(t => (
+                    <span key={t} className="px-1.5 py-0.5 rounded text-[9px] font-bold whitespace-nowrap"
+                      style={{ background: `${CONFLICT_TYPES[t]?.color || "#A29BFE"}20`, color: CONFLICT_TYPES[t]?.color || "#A29BFE" }}>
+                      {CONFLICT_TYPES[t]?.label || t}
+                    </span>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 최근 이력 — 검색/필터 */}
+      <div className="rounded-lg border border-zinc-800 bg-[#141416] p-4">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4" style={{ color: ACCENT }} />
+            <h2 className="text-[11px] font-bold uppercase tracking-widest text-zinc-300">최근 이력 ({filtered.length}/{stats.total})</h2>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={filterApp} onChange={(e) => setFilterApp(e.target.value)}
+              className="bg-[#0a0a0c] border border-white/10 rounded px-2 py-1 text-[11px] text-zinc-200 outline-none">
+              <option value="all">전체 소스</option>
+              {stats.appList.map(s => (
+                <option key={s} value={s}>{SOURCE_APP_LABEL[s] ?? s} ({stats.byApp[s]})</option>
+              ))}
+            </select>
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="검색 — 프롬프트/요약/사용자"
+              className="bg-[#0a0a0c] border border-white/10 rounded px-2 py-1 text-[11px] text-zinc-200 outline-none w-56" />
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-zinc-500 border-b border-zinc-800">
+                <th className="text-left px-2 py-2 font-semibold w-32">일시</th>
+                <th className="text-left px-2 py-2 font-semibold w-28">소스</th>
+                <th className="text-right px-2 py-2 font-semibold w-12">점수</th>
+                <th className="text-right px-2 py-2 font-semibold w-12">충돌</th>
+                <th className="text-right px-2 py-2 font-semibold w-12">채택</th>
+                <th className="text-left px-2 py-2 font-semibold">요약</th>
+                <th className="text-left px-2 py-2 font-semibold w-32">사용자</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={7} className="text-center py-8 text-zinc-600">데이터 없음</td></tr>
+              ) : filtered.slice(0, 100).map(a => {
+                const score = a.score || 0;
+                const scoreColor = score >= 80 ? "#10b981" : score >= 60 ? "#f59e0b" : "#ef4444";
+                const accepted = Array.isArray(a.acceptedFixes) ? a.acceptedFixes.length : 0;
+                const conflictN = Array.isArray(a.conflicts) ? a.conflicts.length : 0;
+                return (
+                  <tr key={a.id} className="border-b border-zinc-900 hover:bg-white/5">
+                    <td className="px-2 py-2 text-zinc-500 font-mono text-[10px]">{formatTime(a.createdAt)}</td>
+                    <td className="px-2 py-2 text-zinc-400">{SOURCE_APP_LABEL[a.sourceApp || ""] ?? a.sourceApp}</td>
+                    <td className="px-2 py-2 text-right font-bold tabular-nums" style={{ color: scoreColor }}>{score}</td>
+                    <td className="px-2 py-2 text-right text-zinc-400 tabular-nums">{conflictN}</td>
+                    <td className="px-2 py-2 text-right tabular-nums" style={{ color: accepted > 0 ? "#10b981" : "#3f3f46" }}>{accepted}</td>
+                    <td className="px-2 py-2 text-zinc-300 truncate max-w-md" title={a.summary || ""}>{a.summary || <span className="italic text-zinc-600">(요약 없음)</span>}</td>
+                    <td className="px-2 py-2 text-zinc-500 truncate max-w-[8rem]" title={a.displayName || a.uid}>{a.displayName || a.uid?.slice(0, 8) || "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {filtered.length > 100 && (
+            <div className="mt-2 text-[10px] text-zinc-600 text-center">
+              상위 100건 표시 중 — 전체 {filtered.length}건은 JSONL 내보내기로 확인하세요
+            </div>
+          )}
+        </div>
+      </div>
+
+      {loading && audits.length === 0 && (
+        <div className="text-center text-zinc-500 text-[11px] py-4">데이터 불러오는 중…</div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, valueColor }) {
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-[#141416] p-4 flex flex-col gap-1">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</span>
+      <span className="text-2xl font-bold tabular-nums" style={{ color: valueColor || "#e4e4e7" }}>{value}</span>
+      {sub && <span className="text-[10px] text-zinc-500">{sub}</span>}
+    </div>
+  );
+}
+
 function SettingsPanel() {
   const settingsRef = doc(db, "systemSettings", "global");
   const [data, setData] = useState({ platformName: "NEXUS Studio", notice: "", appsEnabled: {} });
@@ -1024,6 +1362,7 @@ function SettingsPanel() {
       {error && <ErrorBanner message={error}/>}
 
       <DashboardHeroSettings />
+      <GeminiGateSettings />
 
       {/* ─── General ─────────────────────────────────────────── */}
       <section>
@@ -1112,6 +1451,86 @@ function SettingsPanel() {
 }
 
 // ─────────────── 대시보드 히어로 설정 ───────────────
+// ─── Gemini API 활성/비활성 ─────────────────────────────────────────
+// settings/gemini 문서를 lib/gemini.js 의 subscribeGeminiGate 로 구독.
+// 비활성화 시 window.fetch wrap 에 의해 모든 generativelanguage.googleapis.com
+// 호출이 reject 됨 → 비용/quota 응급 차단 용도.
+function GeminiGateSettings() {
+  const { user } = useAuth();
+  const [enabled, setEnabled] = useState(true);
+  const [meta, setMeta] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const unsub = subscribeGeminiGate((en, m) => {
+      setEnabled(en);
+      setMeta(m);
+    });
+    return () => unsub && unsub();
+  }, []);
+
+  const handleToggle = async () => {
+    if (busy) return;
+    const next = !enabled;
+    if (!next && !confirm("Gemini API 호출을 차단합니다.\n프롬프트 최적화·AI 분석·이미지 렌더링 등 모든 Gemini 기능이 즉시 중단됩니다.\n\n계속할까요?")) return;
+    setBusy(true); setError("");
+    try {
+      await setGeminiEnabled(next, user?.email || user?.displayName || "admin");
+      // subscribeGeminiGate 가 곧 새 값으로 업데이트하므로 setEnabled 호출 불필요.
+    } catch (e) {
+      setError(e.message || "토글 실패");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <SettingsSectionDivider title="Gemini API" subtitle="settings/gemini · 응급 차단용 전역 게이트" />
+      <SettingRow
+        name="Gemini API 활성화"
+        description={
+          <>
+            비활성화하면 모든 사용자의 Gemini 호출(프롬프트 최적화, AI 분석, Imagen 렌더링 등)이 즉시 차단됩니다.
+            <br/>
+            quota 폭주·비용 의심 시 응급 차단 용도. 활성화 상태에서는 평상시 동작.
+            {meta?.updatedAt && (
+              <span className="block mt-1 text-zinc-600">
+                마지막 변경: {formatTime(meta.updatedAt)}{meta.updatedBy ? ` · ${meta.updatedBy}` : ""}
+              </span>
+            )}
+          </>
+        }
+        lastInGroup
+        control={
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleToggle}
+              disabled={busy}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                enabled ? "bg-emerald-500" : "bg-zinc-700"
+              }`}
+              title={enabled ? "비활성화" : "활성화"}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${
+                enabled ? "translate-x-6" : "translate-x-1"
+              }`} />
+            </button>
+            <span className={`flex items-center gap-1.5 text-[11px] font-bold ${enabled ? "text-emerald-400" : "text-rose-400"}`}>
+              {enabled
+                ? (<><Sparkles className="w-3.5 h-3.5"/> 활성</>)
+                : (<><Power className="w-3.5 h-3.5"/> 차단됨</>)}
+            </span>
+            {busy && <RefreshCw className="w-3.5 h-3.5 text-zinc-500 animate-spin" />}
+            {error && <span className="text-[10px] text-rose-400">{error}</span>}
+          </div>
+        }
+      />
+    </section>
+  );
+}
+
 function DashboardHeroSettings() {
   const [url, setUrl] = useState("");
   const [loaded, setLoaded] = useState(false);

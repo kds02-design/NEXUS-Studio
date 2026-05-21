@@ -193,7 +193,8 @@ async function uploadBannerImagesToCloud(banner) {
 
 function App() {
     const { user, isAdmin } = useAuth();
-    const { isLight } = useGlobal();
+    const { isLight, payload, clearPayload, navigate } = useGlobal();
+    const consumedPayloadRef = useRef(null);
     const [allBanners, setAllBanners] = useState([]);
     const [isLoadingData, setIsLoadingData] = useState(true);
 
@@ -213,6 +214,10 @@ function App() {
     // 일괄 경로 정규화 — 기존 doc 의 path 에 게임/연도 폴더가 누락된 항목을 GAME_FOLDER_MAP 기반으로 보정.
     // 관리자 모드에서 한 번만 실행하면 됨. dry-run preview 후 confirm.
     const [isNormalizing, setIsNormalizing] = useState(false);
+    // 선택된 항목들 중 path 가 빈 것만 자동 채움 — handleAutoFillPaths 는 selectedItems
+    // (useState 선언 위치가 아래) 를 deps 로 가지므로 변수 선언 이후로 옮김. 여기서는 isAutoFilling 만 선언.
+    const [isAutoFilling, setIsAutoFilling] = useState(false);
+
     const handleNormalizePaths = useCallback(async () => {
         if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
         if (isNormalizing) return;
@@ -372,6 +377,7 @@ function App() {
         tag: 'all',
         game: 'all',
         ocr: 'all',
+        pathStatus: 'all', // 'all' | 'missing' | 'present' — 경로 누락 일괄 처리용 필터.
     });
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
@@ -388,7 +394,8 @@ function App() {
         return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
     }, [allBanners]);
 
-    const [isLargeGrid, setIsLargeGrid] = useState(false);
+    // 그리드 크기 — BannerCodex 와 동일한 3단계 (small/medium/large). 기본 medium.
+    const [gridSize, setGridSize] = useState('medium');
 
     const filterRef = useRef(null);
     const sortRef = useRef(null);
@@ -400,6 +407,76 @@ function App() {
     useEffect(() => {
         if (!isAdminMode) setSelectedItems(prev => (prev.length > 0 ? [] : prev));
     }, [isAdminMode]);
+
+    // 선택된 항목들 중 path 가 빈 것만 골라서 game/year 기준 표준 prefix 자동 채움.
+    // (selectedItems 선언 직후에 위치 — 그 전에 두면 useCallback deps 에서 TDZ ReferenceError 로 화면 crash)
+    const handleAutoFillPaths = useCallback(async () => {
+        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
+        if (isAutoFilling) return;
+        if (selectedItems.length === 0) { alert('선택된 항목이 없습니다.'); return; }
+
+        const targets = allBanners.filter(b =>
+            selectedItems.includes(b.id) &&
+            (!b.path || (typeof b.path === 'string' && b.path.trim() === ''))
+        );
+        if (targets.length === 0) {
+            alert('선택된 항목 모두 이미 경로가 있습니다.');
+            return;
+        }
+
+        // game/year 으로 표준 prefix 조합 — 캠페인 폴더명은 모르므로 prefix 까지만.
+        const buildPrefixOnly = (game, year) => {
+            const gameFolder = getGameFolder(game);
+            if (!gameFolder) return '';
+            const y = /^20\d{2}$/.test(String(year || '').trim()) ? String(year).trim() : '';
+            return getCanonicalPrefix() + gameFolder + '\\' + (y ? y + '\\' : '');
+        };
+
+        const updates = [];
+        const skipNoGame = [];
+        targets.forEach(b => {
+            const prefix = buildPrefixOnly(b.game, b.year);
+            if (!prefix) { skipNoGame.push({ id: b.id, game: b.game, title: b.title }); return; }
+            updates.push({ id: b.id, path: prefix });
+        });
+
+        const report = [
+            `선택된 ${selectedItems.length}건 중 경로 없는 항목: ${targets.length}건`,
+            `  • 자동 채울 대상: ${updates.length}`,
+            `  • 게임 매핑 없음(스킵): ${skipNoGame.length}${skipNoGame.length ? '\n     예: ' + skipNoGame.slice(0, 3).map(s => `${s.title || '?'} (game="${s.game || '?'}")`).join(', ') : ''}`,
+            '',
+            '※ 캠페인 폴더명은 자동 추론 불가 → game/year 까지의 prefix 만 채웁니다.',
+            '   이후 PreviewModal 에서 개별 항목별로 끝부분을 보완하세요.',
+        ].join('\n');
+        console.log('[PromotionArchive] autoFill report\n' + report);
+
+        if (updates.length === 0) {
+            alert(`자동 채울 항목이 없습니다.\n\n${report}\n\nGAME_FOLDER_MAP 에 게임이 등록돼 있는지 확인하세요.`);
+            return;
+        }
+
+        const preview = updates.slice(0, 5).map(u => {
+            const b = allBanners.find(x => x.id === u.id);
+            return `[${b?.game || '?'}/${b?.year || '?'}] ${b?.title || '?'}\n  → ${u.path}`;
+        }).join('\n\n');
+        if (!confirm(`${report}\n\n미리보기 (처음 5건):\n\n${preview}\n\n계속할까요?`)) return;
+
+        setIsAutoFilling(true);
+        try {
+            const CHUNK = 400;
+            for (let i = 0; i < updates.length; i += CHUNK) {
+                const batch = writeBatch(db);
+                updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.path }));
+                await batch.commit();
+            }
+            alert(`✅ ${updates.length}건 경로 prefix 자동 채움 완료`);
+        } catch (e) {
+            console.error('[PromotionArchive] autoFill paths failed', e);
+            alert(`❌ 자동 채움 실패: ${e.message || e.code}`);
+        } finally {
+            setIsAutoFilling(false);
+        }
+    }, [isAdmin, isAutoFilling, selectedItems, allBanners]);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -413,7 +490,7 @@ function App() {
     const [isEvalRunning, setIsEvalRunning] = useState(false);
 
     const [pendingFiles, setPendingFiles] = useState([]);
-    const [uploadSettings, setUploadSettings] = useState({ game: '아이온', year: new Date().getFullYear().toString() });
+    const [uploadSettings, setUploadSettings] = useState({ game: '아이온', year: new Date().getFullYear().toString(), visibility: 'public' });
     const [isProcessingModalOpen, setIsProcessingModalOpen] = useState(false);
     const [processingMessage, setProcessingMessage] = useState("");
     const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0, percentage: 0 });
@@ -438,8 +515,15 @@ function App() {
 
     const filteredBanners = useMemo(() => {
         let result = allBanners;
+        // visibility 가드 — private 은 본인만 볼 수 있음.
+        const currentUid = user?.uid || null;
+        result = result.filter(b => {
+            if (b.visibility !== 'private') return true;
+            return !!currentUid && b.ownerUid === currentUid;
+        });
         if (isCollectionMode) result = result.filter(b => collectionIds.includes(b.id));
         if (activeCategory === 'favorites') result = result.filter(b => b.liked === 1);
+        else if (activeCategory === 'my_private') result = result.filter(b => b.visibility === 'private' && currentUid && b.ownerUid === currentUid);
         else if (activeCategory !== 'all' && activeCategory !== 'analysis') result = result.filter(b => b.game === activeCategory);
 
         if (searchQuery && !isAiSearchMode) {
@@ -500,6 +584,13 @@ function App() {
             if (activeFilters.ocr === 'pending') result = result.filter(b => !b.isWebAnalyzed);
         }
 
+        // 경로 누락/존재 필터 — 관리자 일괄 보정용.
+        if (activeFilters.pathStatus === 'missing') {
+            result = result.filter(b => !b.path || (typeof b.path === 'string' && b.path.trim() === ''));
+        } else if (activeFilters.pathStatus === 'present') {
+            result = result.filter(b => b.path && typeof b.path === 'string' && b.path.trim() !== '');
+        }
+
         const sorted = [...result];
         sorted.sort((a, b) => {
             const dateA = new Date(a.created_at || 0);
@@ -515,7 +606,7 @@ function App() {
             }
         });
         return sorted;
-    }, [allBanners, searchQuery, activeCategory, isCollectionMode, collectionIds, isAiSearchMode, activeFilters, sortOrder]);
+    }, [allBanners, searchQuery, activeCategory, isCollectionMode, collectionIds, isAiSearchMode, activeFilters, sortOrder, user?.uid]);
 
     const handleGameClick = (game) => {
         if (window.innerWidth < 768) setIsSidebarOpen(false);
@@ -525,6 +616,8 @@ function App() {
             setCurrentView('dashboard'); setActiveCategory('analysis'); setIsCollectionMode(false);
         } else if (game === 'favorites') {
             setCurrentView('grid'); setActiveCategory('favorites'); setIsCollectionMode(false); setActiveFilters(prev => ({ ...prev, year: 'all' }));
+        } else if (game === 'my_private') {
+            setCurrentView('grid'); setActiveCategory('my_private'); setIsCollectionMode(false); setActiveFilters(prev => ({ ...prev, year: 'all' }));
         } else {
             setCurrentView('grid'); setActiveCategory(game); setIsCollectionMode(false); setActiveFilters(prev => ({ ...prev, year: 'all' }));
             setIsAllGamesModalOpen(false);
@@ -631,7 +724,7 @@ function App() {
                 const batch = writeBatch(db);
                 uploaded.forEach(b => {
                     const docRef = doc(promoColRef()); // auto ID
-                    batch.set(docRef, { ...b, ownerUid: user.uid });
+                    batch.set(docRef, { ...b, ownerUid: user.uid, visibility: uploadSettings.visibility || 'public' });
                 });
                 await batch.commit();
                 chunkBanners = [];
@@ -769,7 +862,8 @@ function App() {
                         if (!b) return;
                         const { id: _id, ...rest } = b;
                         const docRef = doc(promoColRef());
-                        batch.set(docRef, { ...rest, ownerUid: user.uid });
+                        // 복원된 데이터의 visibility 가 있으면 보존, 없으면 public 디폴트.
+                        batch.set(docRef, { ...rest, ownerUid: user.uid, visibility: rest.visibility || 'public' });
                     });
                     await batch.commit();
                     written += slice.length;
@@ -837,6 +931,71 @@ function App() {
         setIsPreviewOpen(true);
     };
 
+    // AssetLibrary 에서 "출처로 이동" → payload.params.viewBannerId 로 진입.
+    // banner 데이터가 로드된 후에만 동작. timestamp 로 dedup.
+    // sourceRect/sourceImageUrl 이 있으면 PreviewModal 에서 캡처 위치 하이라이트.
+    // returnToAssetId 가 있으면 닫기 시 다시 AssetLibrary 로 돌아감.
+    const [jumpHighlight, setJumpHighlight] = useState(null); // { rect, imageUrl } | null
+    const [returnTarget, setReturnTarget] = useState(null);   // { app, assetId } | null
+    useEffect(() => {
+        if (!payload || payload.target !== 'promotion-archive') return;
+        const id = payload.params?.viewBannerId;
+        if (!id) return;
+        if (consumedPayloadRef.current === payload.timestamp) return;
+        if (isLoadingData) return; // Firestore 응답 대기
+        if (allBanners.length === 0) {
+            // 로딩 끝났는데 데이터가 0건이면 빈 컬렉션 — 더 기다려도 안 옴.
+            console.warn('[PromotionArchive] viewBannerId payload received but allBanners is empty', { id });
+            alert('배너 데이터를 불러올 수 없어 출처를 열 수 없어요.');
+            consumedPayloadRef.current = payload.timestamp;
+            clearPayload?.();
+            return;
+        }
+        const banner = allBanners.find(b => b.id === id);
+        if (banner) {
+            handleOpenPreview(banner);
+            // 캡처 위치 정보가 있으면 모달이 받아 스크롤 + 하이라이트.
+            const r = payload.params?.sourceRect;
+            const u = payload.params?.sourceImageUrl;
+            if (r && typeof r.x === 'number') setJumpHighlight({ rect: r, imageUrl: u || null });
+            else setJumpHighlight(null);
+            // 돌아갈 경로 기억 — payload.source 가 어떤 앱이든(asset-library 등) returnToAssetId 와 묶어 보관.
+            const retId = payload.params?.returnToAssetId;
+            if (retId && payload.source) setReturnTarget({ app: payload.source, assetId: retId });
+            else setReturnTarget(null);
+            consumedPayloadRef.current = payload.timestamp;
+            clearPayload?.();
+        } else {
+            // 데이터는 있는데 그 id 가 없음 → 배너가 삭제됐거나 다른 컬렉션의 id 임.
+            console.warn('[PromotionArchive] viewBannerId not found', {
+                id,
+                totalBanners: allBanners.length,
+                sample: allBanners.slice(0, 3).map(b => b.id),
+            });
+            alert('해당 배너를 찾을 수 없어요. 출처가 삭제됐거나 다른 라이브러리의 항목일 수 있습니다.');
+            consumedPayloadRef.current = payload.timestamp;
+            clearPayload?.();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [payload?.timestamp, payload?.target, allBanners.length, isLoadingData]);
+
+    // PreviewModal 닫기 — returnTarget 이 있으면 그 앱으로 돌아가 detail 자동 오픈, 아니면 일반 닫기.
+    const closePreview = useCallback(() => {
+        setIsPreviewOpen(false);
+        setJumpHighlight(null);
+        if (returnTarget?.app && returnTarget?.assetId) {
+            navigate(returnTarget.app, {
+                source: 'promotion-archive',
+                target: returnTarget.app,
+                prompt: { text: '', tags: [], style: '' },
+                image: { url: '', metadata: {} },
+                params: { openAssetId: returnTarget.assetId },
+                timestamp: Date.now(),
+            });
+            setReturnTarget(null);
+        }
+    }, [returnTarget, navigate]);
+
     const handleUpdateHistory = async (newHistory) => {
         if (!selectedBanner) return;
         try {
@@ -859,6 +1018,152 @@ function App() {
         } catch (e) { alert(`업데이트 실패: ${e.message}`); }
     };
 
+    // 브랜드웹 카드 — 메인/서브 페이지 지정. mainPageId/subPageId 필드 갱신 + 썸네일/대표 이미지 동기화.
+    // pageId 는 pages[] 안의 id. role: 'main' | 'sub'. 같은 값을 다시 누르면 해제(null).
+    const setBrandWebRole = useCallback(async (role, pageId) => {
+        if (!selectedBanner || selectedBanner.assetType !== '브랜드웹') return;
+        const pages = Array.isArray(selectedBanner.pages) ? selectedBanner.pages : [];
+        const target = pages.find(p => p?.id === pageId);
+        if (!target) return;
+        const isUnset =
+            (role === 'main' && selectedBanner.mainPageId === pageId) ||
+            (role === 'sub' && selectedBanner.subPageId === pageId);
+        const updateData = {};
+        if (role === 'main') {
+            updateData.mainPageId = isUnset ? null : pageId;
+            // 그리드 썸네일/외부 전송용 대표 이미지 동기화.
+            if (!isUnset) {
+                updateData.full_image = target.url;
+                updateData.preview = target.url;
+            }
+        } else {
+            updateData.subPageId = isUnset ? null : pageId;
+            if (!isUnset && target.device === 'mobile') updateData.mobile_image = target.url;
+        }
+        try {
+            await updateDoc(promoDocRef(selectedBanner.id), updateData);
+            const updated = { ...selectedBanner, ...updateData };
+            setSelectedBanner(updated);
+            setEditedBanner(updated);
+        } catch (e) {
+            console.error('[PromotionArchive] set brand-web role failed', e);
+            alert(`설정 실패: ${e.message || e.code}`);
+        }
+    }, [selectedBanner]);
+    const handleSetMainPage = useCallback((pageId) => setBrandWebRole('main', pageId), [setBrandWebRole]);
+    const handleSetSubPage = useCallback((pageId) => setBrandWebRole('sub', pageId), [setBrandWebRole]);
+
+    // 브랜드웹 카드 — 페이지 한 장 삭제. mainPageId/subPageId/preview/full_image/mobile_image 정합성도 같이 정리.
+    const handleDeletePageFromBanner = useCallback(async (pageId) => {
+        if (!selectedBanner || selectedBanner.assetType !== '브랜드웹') return;
+        const pages = Array.isArray(selectedBanner.pages) ? selectedBanner.pages : [];
+        if (pages.length <= 1) { alert('마지막 페이지는 삭제할 수 없습니다.'); return; }
+        const target = pages.find(p => p?.id === pageId);
+        if (!target) return;
+        if (!confirm(`이 페이지(${target.name || ''})를 삭제할까요?`)) return;
+        const nextPages = pages.filter(p => p?.id !== pageId);
+        // 대표/메인/서브가 삭제 대상이면 fallback 재계산.
+        const firstPc = nextPages.find(p => p?.device === 'pc');
+        const firstMobile = nextPages.find(p => p?.device === 'mobile');
+        const updateData = {
+            pages: nextPages,
+            pageCount: nextPages.length,
+            mainPageId: selectedBanner.mainPageId === pageId ? null : (selectedBanner.mainPageId || null),
+            subPageId: selectedBanner.subPageId === pageId ? null : (selectedBanner.subPageId || null),
+        };
+        if (selectedBanner.full_image === target.url) updateData.full_image = firstPc?.url || nextPages[0].url;
+        if (selectedBanner.preview === target.url) updateData.preview = firstPc?.url || nextPages[0].url;
+        if (selectedBanner.mobile_image === target.url) updateData.mobile_image = firstMobile?.url || '';
+        try {
+            await updateDoc(promoDocRef(selectedBanner.id), updateData);
+            const updated = { ...selectedBanner, ...updateData };
+            setSelectedBanner(updated);
+            setEditedBanner(updated);
+        } catch (e) {
+            console.error('[PromotionArchive] delete page failed', e);
+            alert(`삭제 실패: ${e.message || e.code}`);
+        }
+    }, [selectedBanner]);
+
+    // 브랜드웹 카드 — 페이지 이미지 교체. file → Cloudinary 업로드 → 해당 페이지의 url 만 갱신.
+    // name 도 새 파일명으로 변경. device 는 유지.
+    const handleReplacePageInBanner = useCallback(async (pageId, file) => {
+        if (!selectedBanner || selectedBanner.assetType !== '브랜드웹' || !file) return;
+        const pages = Array.isArray(selectedBanner.pages) ? selectedBanner.pages : [];
+        const target = pages.find(p => p?.id === pageId);
+        if (!target) return;
+        try {
+            const dataUrl = await new Promise((resolve, reject) => {
+                const r = new FileReader();
+                r.onloadend = () => resolve(String(r.result));
+                r.onerror = reject;
+                r.readAsDataURL(file);
+            });
+            const newUrl = await uploadBase64(dataUrl);
+            const oldUrl = target.url;
+            const nextPages = pages.map(p => p?.id === pageId
+                ? { ...p, url: newUrl, name: file.name || p.name }
+                : p
+            );
+            const updateData = { pages: nextPages };
+            // 대표/메인/서브가 같은 url 을 참조했으면 새 url 로 동기화.
+            if (selectedBanner.full_image === oldUrl) updateData.full_image = newUrl;
+            if (selectedBanner.preview === oldUrl) updateData.preview = newUrl;
+            if (selectedBanner.mobile_image === oldUrl) updateData.mobile_image = newUrl;
+            await updateDoc(promoDocRef(selectedBanner.id), updateData);
+            const updated = { ...selectedBanner, ...updateData };
+            setSelectedBanner(updated);
+            setEditedBanner(updated);
+        } catch (e) {
+            console.error('[PromotionArchive] replace page failed', e);
+            alert(`교체 실패: ${e.message || e.code}`);
+        }
+    }, [selectedBanner]);
+
+    // 브랜드웹 카드에 모바일 페이지(이미지)를 별도 업로드 — Cloudinary 업로드 후 pages[] 에 추가 + mobile_image 갱신.
+    // 같은 카드의 PC 페이지는 그대로 유지. 한 번에 여러 장 업로드 가능.
+    const handleAddMobilePagesToBanner = useCallback(async (files) => {
+        if (!selectedBanner) return;
+        const arr = Array.from(files || []).filter(f => f.type?.startsWith('image/'));
+        if (arr.length === 0) return;
+        try {
+            // dataURL → Cloudinary URL
+            const uploadedUrls = await Promise.all(arr.map(async (f) => {
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onloadend = () => resolve(String(r.result));
+                    r.onerror = reject;
+                    r.readAsDataURL(f);
+                });
+                return uploadBase64(dataUrl);
+            }));
+            const existingPages = Array.isArray(selectedBanner.pages) ? selectedBanner.pages : [];
+            const baseOrder = existingPages.length;
+            const newPages = uploadedUrls.map((url, i) => ({
+                id: `m_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+                name: arr[i].name || `mobile_${baseOrder + i + 1}`,
+                device: 'mobile',
+                url,
+                order: baseOrder + i,
+                confirmedAt: null,
+                noteCount: 0,
+            }));
+            const nextPages = [...existingPages, ...newPages];
+            const updateData = {
+                pages: nextPages,
+                pageCount: nextPages.length,
+                mobile_image: selectedBanner.mobile_image || newPages[0].url,
+            };
+            await updateDoc(promoDocRef(selectedBanner.id), updateData);
+            const updated = { ...selectedBanner, ...updateData };
+            setSelectedBanner(updated);
+            setEditedBanner(updated);
+        } catch (e) {
+            console.error('[PromotionArchive] addMobilePages failed', e);
+            alert(`모바일 업로드 실패: ${e.message || e.code}`);
+        }
+    }, [selectedBanner]);
+
     const toggleLike = useCallback(async (id, currentLiked) => {
         try {
             await updateDoc(promoDocRef(id), { liked: currentLiked ? 0 : 1 });
@@ -866,8 +1171,21 @@ function App() {
     }, []);
 
     const getGridClass = () => {
-        if (isLargeGrid) return isDesktopSidebarOpen ? 'grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5';
-        return isDesktopSidebarOpen ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5' : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6';
+        // 3단계 — small(촘촘) / medium(기본) / large(크게). 사이드바 열림 여부에 따라 컬럼 한 단계씩 줄임.
+        if (gridSize === 'small') {
+            return isDesktopSidebarOpen
+                ? 'grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7'
+                : 'grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 2xl:grid-cols-8';
+        }
+        if (gridSize === 'large') {
+            return isDesktopSidebarOpen
+                ? 'grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4'
+                : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5';
+        }
+        // medium
+        return isDesktopSidebarOpen
+            ? 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5'
+            : 'grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6';
     };
 
     return (
@@ -949,7 +1267,7 @@ function App() {
                     isSortMenuOpen={isSortMenuOpen} setIsSortMenuOpen={setIsSortMenuOpen}
                     sortOrder={sortOrder} setSortOrder={setSortOrder} sortRef={sortRef}
                     // grid
-                    isLargeGrid={isLargeGrid} setIsLargeGrid={setIsLargeGrid}
+                    gridSize={gridSize} setGridSize={setGridSize}
                 />
 
                 <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 pt-4 relative scrollbar-hide">
@@ -994,13 +1312,23 @@ function App() {
                         // admin 전용 — admin 모드일 때 항상 노출
                         onNormalizePaths={isAdmin ? handleNormalizePaths : undefined}
                         isNormalizing={isNormalizing}
+                        onAutoFillPaths={isAdmin ? handleAutoFillPaths : undefined}
+                        isAutoFilling={isAutoFilling}
                     />
                 )}
 
                 {isPreviewOpen && (
                     <PreviewModal
                         isOpen={isPreviewOpen}
-                        onClose={() => setIsPreviewOpen(false)}
+                        onClose={closePreview}
+                        jumpHighlight={jumpHighlight}
+                        onJumpHandled={() => setJumpHighlight(null)}
+                        returnTo={returnTarget ? { app: returnTarget.app, label: '에셋 라이브러리' } : null}
+                        onAddMobilePages={handleAddMobilePagesToBanner}
+                        onSetMainPage={handleSetMainPage}
+                        onSetSubPage={handleSetSubPage}
+                        onDeletePage={handleDeletePageFromBanner}
+                        onReplacePage={handleReplacePageInBanner}
                         banner={selectedBanner}
                         editedBanner={editedBanner}
                         onEditChange={(field, value) => { setEditedBanner(prev => ({ ...prev, [field]: value })); setHasChanges(true); }}
@@ -1057,11 +1385,17 @@ function App() {
                             if (!target?.id) return;
                             setIsEvalRunning(true);
                             try {
-                                // PC + 모바일 이미지를 모두 base64로 변환 (둘 다 있으면 둘 다 보냄)
-                                const imgSources = [
-                                    target.full_image || target.preview,
-                                    target.mobile_image,
-                                ].filter(Boolean);
+                                // 평가에 보낼 이미지 소스 — 브랜드웹은 메인(+서브) 1~2장, 그 외는 PC+Mobile 2장.
+                                const imgSources = (() => {
+                                    if (target.assetType === '브랜드웹') {
+                                        const pages = Array.isArray(target.pages) ? target.pages : [];
+                                        const findUrl = (id) => (id ? pages.find(p => p?.id === id)?.url : null);
+                                        const main = findUrl(target.mainPageId) || target.full_image || pages.find(p => p?.device === 'pc')?.url || target.preview;
+                                        const sub = findUrl(target.subPageId) || (target.mainPageId ? null : (target.mobile_image || pages.find(p => p?.device === 'mobile')?.url));
+                                        return [main, sub && sub !== main ? sub : null].filter(Boolean);
+                                    }
+                                    return [target.full_image || target.preview, target.mobile_image].filter(Boolean);
+                                })();
                                 if (imgSources.length === 0) {
                                     alert("분석할 이미지가 없습니다.");
                                     return;

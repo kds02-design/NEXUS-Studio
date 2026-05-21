@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import {
   X, Copy, Check, Plus, Loader2, Sparkles, Image as ImageIcon,
   ChevronLeft, ChevronRight, Film, Star, Camera, RotateCcw,
+  Globe, Lock,
 } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { isVideoFile, VIDEO_MAX_BYTES, VIDEO_ACCEPT } from "../../../lib/storage";
 import { ARC_CATEGORIES } from "../constants/categories";
-import { processMultipleFiles } from "../services/cloudinary";
+import { processMultipleFiles, compressImage, MAX_PROMPT_IMAGES } from "../services/cloudinary";
 import { analyzeWithGemini } from "../services/gemini";
 import { PromptImage } from "./ArcCard";
 
@@ -41,14 +42,29 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
   const isAuthor = !ownerUid || (currentUid && currentUid === ownerUid);
   const canModerate = isAdmin || isAuthor;
   const initImages = initialData?.images?.length ? [...initialData.images] : (initialData?.image ? [initialData.image] : []);
-  const initSP = initialData?.stepPrompts?.length ? [...initialData.stepPrompts] : [initialData?.content || ''];
-  const initST = initialData?.stepTags?.length ? [...initialData.stepTags] : initImages.map(() => initialData?.tags || ['기타']);
-  const initSK = initialData?.stepKeywords?.length ? [...initialData.stepKeywords] : initImages.map(() => '');
-  const initSD = initialData?.stepDescriptions?.length ? [...initialData.stepDescriptions] : initImages.map(() => '');
-  const initSL = initialData?.stepLabels?.length ? [...initialData.stepLabels] : initImages.map(() => '');
   const initVideos = Array.isArray(initialData?.videos) ? [...initialData.videos] : [];
+  // 영상 URL이 하나라도 있으면 영상 모드로 진입한다. (썸네일이 images[] 에 함께 저장된 케이스 대응)
+  // 명시적으로 type==='image' 가 설정돼 있고 videos 가 비어 있어야만 이미지 모드로 들어간다.
+  const initType = (initialData?.type === 'video' || initVideos.length > 0) ? 'video' : 'image';
 
-  const initType = initialData?.type || (initVideos.length > 0 && initImages.length === 0 ? 'video' : 'image');
+  // step 배열은 항상 슬롯 개수에 맞춰 정규화한다.
+  // - 영상 모드: 슬롯 1개 (영상은 step 개념이 없으므로 메타 1세트만 보관)
+  // - 이미지 모드: 이미지 장수만큼 (없으면 1개로 시작해 사용자가 추가할 때 step 데이터가 안정적으로 쌓이게)
+  // 과거 영상 콘텐츠는 step 배열들이 길이 0~1로 들쭉날쭉 저장되어 있어, 수정 모드 진입 시
+  // 입력이 sparse 인덱스로 들어가 저장본이 점점 더 뒤틀리는 버그가 있었다 — 여기서 한 번에 정렬한다.
+  const slotCount = initType === 'video' ? 1 : Math.max(initImages.length, 1);
+  const padArr = (src, fill) => {
+    const a = Array.isArray(src) ? src.slice(0, slotCount) : [];
+    while (a.length < slotCount) a.push(typeof fill === 'function' ? fill() : fill);
+    return a;
+  };
+  const defaultTag = initType === 'video' ? 'Motion' : '기타';
+  const initSP = padArr(initialData?.stepPrompts, initialData?.content || '');
+  const initST = padArr(initialData?.stepTags, () => (Array.isArray(initialData?.tags) && initialData.tags.length ? [...initialData.tags] : [defaultTag]));
+  const initSK = padArr(initialData?.stepKeywords, initialData?.aiKeywords || '');
+  const initSD = padArr(initialData?.stepDescriptions, initialData?.description || '');
+  const initSL = padArr(initialData?.stepLabels, '');
+
   const [data, setData] = useState({ ...initialData, type: initType, images: initImages, videos: initVideos, stepPrompts: initSP, stepTags: initST, stepKeywords: initSK, stepDescriptions: initSD, stepLabels: initSL });
   const [mainIdx, setMainIdx] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -62,10 +78,10 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
   const videoPreviews = useMemo(() => {
     return (data.videos || []).map(v => (v instanceof File) ? URL.createObjectURL(v) : v);
   }, [data.videos]);
+  // videoPreviews 가 갱신될 때마다 이전 blob URL 을 정리. (이전: deps []였어서 누수)
   useEffect(() => {
     return () => { videoPreviews.forEach(u => { if (u?.startsWith?.('blob:')) URL.revokeObjectURL(u); }); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [videoPreviews]);
 
   const handleVideoFiles = (files) => {
     const arr = Array.from(files || []);
@@ -113,6 +129,7 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
     }
   };
   const clearCustomPoster = () => { setCustomPoster(null); showToast?.("자동 썸네일로 복원"); };
+  const isUploadedPoster = typeof customPoster === 'string' && /^https?:/i.test(customPoster);
 
   const handleTabChange = (idx) => { setMainIdx(idx); setData(p => ({ ...p, content: p.stepPrompts?.[idx] || '' })); };
 
@@ -137,6 +154,69 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
     }, showToast);
   };
 
+  // 인덱스 단위로 이미지와 5개 step 배열을 동시에 조작 — 인덱스가 어긋나면 프롬프트/태그가 다른 이미지에 붙는 사고가 남.
+  const STEP_KEYS = ['stepPrompts', 'stepLabels', 'stepTags', 'stepKeywords', 'stepDescriptions'];
+
+  const handleRemoveImage = (idx) => {
+    const total = data.images?.length || 0;
+    if (total <= 1) { showToast?.('마지막 이미지는 삭제할 수 없어요. 영상 모드로 전환하거나 새 이미지를 먼저 추가하세요.', 'error'); return; }
+    if (!confirm(`Step ${idx + 1} 이미지를 삭제할까요?\n해당 스텝의 프롬프트·태그·키워드·설명도 같이 사라집니다.`)) return;
+    setData(prev => {
+      const drop = (arr) => Array.isArray(arr) ? arr.filter((_, i) => i !== idx) : arr;
+      const next = { ...prev, images: drop(prev.images) };
+      for (const k of STEP_KEYS) next[k] = drop(prev[k]);
+      const m = Math.min(mainIdx > idx ? mainIdx - 1 : (mainIdx === idx ? Math.max(0, mainIdx - (mainIdx === total - 1 ? 1 : 0)) : mainIdx), (next.images?.length || 1) - 1);
+      next.content = next.stepPrompts?.[m] || '';
+      return next;
+    });
+    setMainIdx(prev => {
+      const newLen = total - 1;
+      if (prev > idx) return prev - 1;
+      if (prev === idx) return Math.min(prev, newLen - 1);
+      return prev;
+    });
+  };
+
+  const handleReplaceImage = async (idx, file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { showToast?.('이미지 파일만 가능해요', 'error'); return; }
+    try {
+      const dataUrl = await compressImage(file);
+      setData(prev => {
+        const next = [...(prev.images || [])];
+        next[idx] = dataUrl;
+        return { ...prev, images: next };
+      });
+      showToast?.(`Step ${idx + 1} 이미지를 교체했어요.`);
+    } catch (e) {
+      console.error('[PromptArc] replace image failed', e);
+      showToast?.('이미지 교체 실패', 'error');
+    }
+  };
+
+  const [dragImgIdx, setDragImgIdx] = useState(null);
+  const handleReorderImages = (fromIdx, toIdx) => {
+    if (fromIdx === toIdx || fromIdx == null || toIdx == null) return;
+    setData(prev => {
+      const reorder = (arr) => {
+        if (!Array.isArray(arr)) return arr;
+        const a = [...arr];
+        const [m] = a.splice(fromIdx, 1);
+        a.splice(toIdx, 0, m);
+        return a;
+      };
+      const next = { ...prev, images: reorder(prev.images) };
+      for (const k of STEP_KEYS) next[k] = reorder(prev[k]);
+      return next;
+    });
+    setMainIdx(prev => {
+      if (prev === fromIdx) return toIdx;
+      if (fromIdx < prev && prev <= toIdx) return prev - 1;
+      if (toIdx <= prev && prev < fromIdx) return prev + 1;
+      return prev;
+    });
+  };
+
   const runAiAnalyze = async () => {
     const videoEntry = data.videos?.[0];
     const hasVideo = videoEntry instanceof File || (typeof videoEntry === 'string' && videoEntry);
@@ -157,7 +237,10 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
         const sd = [...(prev.stepDescriptions || [])]; sd[mainIdx] = parsed.description || sd[mainIdx] || '';
         const st = [...(prev.stepTags || [])];
         if (isVideoMode) {
-          st[mainIdx] = ['Motion'];
+          // 사용자가 의미있는 태그를 이미 골랐다면 보존. 비어 있거나 기본값('기타')일 때만 Motion 자동 적용.
+          const cur = (Array.isArray(st[mainIdx]) ? st[mainIdx] : []).filter(Boolean);
+          const isDefaultOnly = cur.length === 0 || (cur.length === 1 && cur[0] === '기타');
+          if (isDefaultOnly) st[mainIdx] = ['Motion'];
         } else if (Array.isArray(parsed.tags) && parsed.tags.length > 0) {
           const filtered = parsed.tags.filter(t => TAG_OPTIONS.includes(t));
           st[mainIdx] = filtered.length > 0 ? filtered : ['기타'];
@@ -203,28 +286,6 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
               else showToast?.('이미지 모드 — 이미지 파일을 드롭하세요.', 'error');
             }
           }}>
-          <div className="absolute top-3 left-3 z-20 flex gap-1 p-1 rounded-lg bg-black/50 border border-white/10 backdrop-blur-sm">
-            <button onClick={() => {
-              if (data.type === 'image') return;
-              // video → image 전환. 영상 있으면 확인 후 제거 (이미지와 동시 등록 불가 정책).
-              if ((data.videos || []).length > 0 && !confirm('영상이 제거됩니다. 이미지 모드로 전환할까요?')) return;
-              setData(prev => ({ ...prev, type: 'image', videos: [] }));
-              setCustomPoster(null);
-              setMainIdx(0);
-            }}
-              className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors flex items-center gap-1.5 ${data.type === 'image' ? 'bg-[#C8A969]/20 text-[#C8A969]' : 'text-zinc-500 hover:text-zinc-300'}`}
-            ><ImageIcon size={11} /> 이미지</button>
-            <button onClick={() => {
-              if (data.type === 'video') return;
-              // image → video 전환. 이미지/스텝 데이터 있으면 확인 후 모두 제거.
-              if ((data.images || []).length > 0 && !confirm('이미지와 모든 스텝 정보가 제거됩니다. 영상 모드로 전환할까요?')) return;
-              setData(prev => ({ ...prev, type: 'video', images: [], stepPrompts: [''], stepTags: [['기타']], stepKeywords: [''], stepDescriptions: [''], stepLabels: [''] }));
-              setMainIdx(0);
-            }}
-              className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-colors flex items-center gap-1.5 ${data.type === 'video' ? 'bg-[#C8A969]/20 text-[#C8A969]' : 'text-zinc-500 hover:text-zinc-300'}`}
-            ><Film size={11} /> 영상</button>
-          </div>
-
           {canModerate && (
             <div className="absolute top-3 right-3 z-20 flex gap-1 p-1 rounded-lg bg-black/50 border border-white/10 backdrop-blur-sm">
               <button onClick={() => setData(prev => ({ ...prev, isLive: !prev.isLive }))} title="LIVE 딱지 토글"
@@ -270,8 +331,8 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
                         <img src={customPoster} alt="custom poster"
                           className="w-28 h-16 rounded border border-[#C8A969]/40 object-cover bg-black" />
                         <div className="flex-1 min-w-0">
-                          <div className="text-[11px] text-[#C8A969] font-bold">사용자 지정 프레임</div>
-                          <div className="text-[9px] text-zinc-500 mt-0.5">저장 시 Cloudinary에 업로드되어 포스터로 사용됩니다.</div>
+                          <div className="text-[11px] text-[#C8A969] font-bold">{isUploadedPoster ? '저장된 사용자 지정 프레임' : '사용자 지정 프레임 (미저장)'}</div>
+                          <div className="text-[9px] text-zinc-500 mt-0.5">{isUploadedPoster ? '저장된 포스터를 사용 중이에요. 새 프레임을 캡처하면 교체됩니다.' : '저장 시 Cloudinary에 업로드되어 포스터로 사용됩니다.'}</div>
                         </div>
                         <button onClick={clearCustomPoster}
                           className="flex items-center gap-1 px-2 py-1.5 rounded-md text-[10px] text-zinc-400 border border-white/10 hover:bg-white/5 shrink-0"
@@ -312,13 +373,39 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
               )}
               <div className="absolute bottom-4 left-4 flex gap-2 z-10">
                 {data.images.map((img, idx) => (
-                  <div key={idx} onClick={() => handleTabChange(idx)} className={`w-16 h-16 rounded-lg overflow-hidden border-2 cursor-pointer ${idx === mainIdx ? 'border-[#C8A969]' : 'border-transparent hover:border-white/30'}`}>
-                    <img src={img} className="w-full h-full object-cover" alt="" />
+                  <div key={idx}
+                    draggable
+                    onDragStart={(e) => { setDragImgIdx(idx); e.dataTransfer.effectAllowed = 'move'; }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                    onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragImgIdx !== null) handleReorderImages(dragImgIdx, idx); setDragImgIdx(null); }}
+                    onDragEnd={() => setDragImgIdx(null)}
+                    onClick={() => handleTabChange(idx)}
+                    className={`group relative w-16 h-16 rounded-lg overflow-hidden border-2 cursor-pointer transition-opacity ${idx === mainIdx ? 'border-[#C8A969]' : 'border-transparent hover:border-white/30'} ${dragImgIdx === idx ? 'opacity-40' : ''}`}
+                    title={`Step ${idx + 1} — 드래그해서 순서 변경`}
+                  >
+                    <img src={img} className="w-full h-full object-cover pointer-events-none" alt="" draggable={false} />
+                    <span className="absolute bottom-0 left-0 px-1 py-0.5 text-[8px] font-bold text-white bg-black/60 pointer-events-none">{idx + 1}</span>
+                    <label
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-0.5 left-0.5 p-1 rounded bg-black/70 text-zinc-300 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      title="이미지 교체"
+                    >
+                      <RotateCcw size={10} />
+                      <input type="file" accept="image/*" className="hidden"
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleReplaceImage(idx, f); e.target.value = ''; }} />
+                    </label>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleRemoveImage(idx); }}
+                      className="absolute top-0.5 right-0.5 p-1 rounded bg-black/70 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="이미지 삭제"
+                    ><X size={10} /></button>
                   </div>
                 ))}
-                <label className="w-16 h-16 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center cursor-pointer hover:border-white/40 text-zinc-600 hover:text-zinc-400">
-                  <Plus size={18} /><input type="file" multiple accept="image/*" className="hidden" onChange={e => handleImgFiles(e.target.files)} />
-                </label>
+                {data.images.length < MAX_PROMPT_IMAGES && (
+                  <label className="w-16 h-16 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center cursor-pointer hover:border-white/40 text-zinc-600 hover:text-zinc-400" title={`이미지 추가 (최대 ${MAX_PROMPT_IMAGES}장)`}>
+                    <Plus size={18} /><input type="file" multiple accept="image/*" className="hidden" onChange={e => handleImgFiles(e.target.files)} />
+                  </label>
+                )}
               </div>
             </>
           )}
@@ -429,12 +516,49 @@ export default function ArcEditModal({ initialData, onSave, onClose, showToast, 
                 placeholder="프롬프트를 입력하세요..." className="w-full bg-[#0A0A0A] border border-white/5 rounded-lg p-4 text-[11px] text-zinc-300 h-40 resize-none font-mono outline-none focus:border-white/20 arc-scrollbar" />
             </div>
           </div>
-          <div className="p-5 border-t border-white/5 flex justify-end gap-2">
-            <button onClick={onClose} className="px-4 py-2 text-xs border border-white/10 text-zinc-400 rounded-lg hover:bg-white/5">취소</button>
-            <button onClick={() => { if (!data.title) return showToast('제목을 입력해주세요.', 'error'); onSave({ ...data, videoPoster: customPoster || '' }); }}
-              disabled={isSaving} className="px-6 py-2 text-xs font-bold bg-[#C8A969] text-black rounded-lg hover:bg-[#A88949] disabled:opacity-50">
-              {isSaving ? '저장 중...' : '저장'}
-            </button>
+          <div className="p-5 border-t border-white/5 flex items-center justify-between gap-2">
+            {/* 공개 범위 — 본인 작성물(또는 신규)만 변경 가능. 관리자라도 owner 의 비공개 선택은 존중. */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-mono">공개</span>
+              <div className="flex bg-[#0A0A0A] border border-white/10 rounded-lg p-0.5">
+                <button
+                  type="button"
+                  disabled={!isAuthor && !!initialData}
+                  onClick={() => setData(prev => ({ ...prev, visibility: 'public' }))}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                    (data.visibility || 'public') === 'public'
+                      ? 'bg-emerald-500/20 text-emerald-300'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  title="모두에게 공유"
+                >
+                  <Globe size={11} /> 공용
+                </button>
+                <button
+                  type="button"
+                  disabled={!isAuthor && !!initialData}
+                  onClick={() => setData(prev => ({ ...prev, visibility: 'private' }))}
+                  className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold rounded transition-colors ${
+                    data.visibility === 'private'
+                      ? 'bg-amber-500/20 text-amber-300'
+                      : 'text-zinc-500 hover:text-zinc-300'
+                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  title="본인만 조회"
+                >
+                  <Lock size={11} /> 비공개
+                </button>
+              </div>
+              {data.visibility === 'private' && (
+                <span className="text-[10px] text-amber-400/80">나만 볼 수 있어요</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={onClose} className="px-4 py-2 text-xs border border-white/10 text-zinc-400 rounded-lg hover:bg-white/5">취소</button>
+              <button onClick={() => { if (!data.title) return showToast('제목을 입력해주세요.', 'error'); onSave({ ...data, videoPoster: customPoster || '' }); }}
+                disabled={isSaving} className="px-6 py-2 text-xs font-bold bg-[#C8A969] text-black rounded-lg hover:bg-[#A88949] disabled:opacity-50">
+                {isSaving ? '저장 중...' : '저장'}
+              </button>
+            </div>
           </div>
         </div>
       </div>

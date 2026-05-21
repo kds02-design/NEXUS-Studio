@@ -41,8 +41,9 @@ export default function DashboardRecentPrompts() {
           if (ap !== bp) return bp - ap;
           return toMillis(b.createdAt) - toMillis(a.createdAt);
         });
-        // 썸네일/이미지 또는 영상이 있는 것만 골라 최대 4개
-        setItems(all.filter((p) => pickThumb(p) || pickVideo(p)).slice(0, 4));
+        // 인덱스는 공개 쇼케이스 — visibility='private' (RenderMatrix 자동 등록 등) 은 제외.
+        // 썸네일/이미지 또는 영상이 있는 것만 골라 최대 4개.
+        setItems(all.filter((p) => p.visibility !== 'private' && (pickThumb(p) || pickVideo(p))).slice(0, 4));
         setLoading(false);
       }, (err) => { console.warn("[DashboardRecent] subscribe err", err); setLoading(false); });
       return () => unsub();

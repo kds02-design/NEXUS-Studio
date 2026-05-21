@@ -3,12 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <!-- 폰트 관련 link 를 <head> 최상단에 배치 (charset 직후) — favicon/viewport/title 보다 먼저.
-         preconnect 로 핸드셰이크 비용 선결제, preload 로 Teko CSS 를 highest priority 로 다운로드 trigger,
-         그 다음 통합 stylesheet 로 Teko + Noto Sans KR + JetBrains Mono 로드.
-         Teko=display=block (FOUT 방지), 한글/모노=display=swap. -->
+         preconnect 로 핸드셰이크 비용 선결제, 그 다음 통합 stylesheet 로 Teko + Noto Sans KR + JetBrains Mono 로드.
+         Teko=display=block (FOUT 방지), 한글/모노=display=swap.
+         (rel="preload" 는 stylesheet URL 과 정확히 일치해야 캐시 매칭됨 — 합쳐진 URL 과 달랐기에 제거. stylesheet 자체로 highest priority 다운로드 발생.) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Teko:wght@300;400;500;600;700&display=block">
     <link href="https://fonts.googleapis.com/css2?family=Teko:wght@300;400;500;600;700&display=block&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap&family=JetBrains+Mono&display=swap" rel="stylesheet">
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

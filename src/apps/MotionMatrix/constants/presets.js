@@ -151,10 +151,34 @@ export const EXPORT_MODE_INFO = {
 };
 
 // 평면 배열 — 기존 import (PRESETS) 호환 유지. usePresets/handleApplyPreset 도 이걸 lookup.
+// 무한 반복 루프 프리셋들: 메탈/얼음/화염 각 5개씩 추가됨 (2026-05-21).
+// 각 layer 값은 LOOP_SURFACE_FX / LOOP_EDGE_FX / LOOP_AMBIENT_FX / FLOW_STYLES / INTRO_STYLES / MOTION_DYNAMICS / INTENSITY_LEVELS / TIME_DURATION 의 id 만 사용.
 export const PRESETS = [
+  // ─── 기존 ────────────────────────────────────────────────────────────
   { id: 'premium_metal', label: 'Premium Metal',       description: '금속성 빛 흐름 + 윤곽선 트레이스. 절제된 프리미엄 모션.',                   layers: { surface: 'metallic_sweep', edge: 'rim_trace',      ambient: 'none',          intensity: 'subtle', duration: '5s', flow: 'contour_trace', intro: 'fade_in',       dynamics: 'smooth' } },
   { id: 'dark_fantasy',  label: 'Dark Fantasy Relic',  description: '용암 균열 + 외곽선 펄스 + 어두운 재. 다크 판타지 유물 분위기.',             layers: { surface: 'magma_cracks',    edge: 'edge_pulse',     ambient: 'ash_particles', intensity: 'medium', duration: '5s', flow: 'core_radiate',  intro: 'ember_ignite',  dynamics: 'organic_swell' } },
   { id: 'cyber_scan',    label: 'Cyber Data Scan',     description: '데이터 스캔 + 얇은 전류. 빠르고 불규칙한 사이버 디지털 모션.',              layers: { surface: 'data_scan',       edge: 'thin_electric',  ambient: 'none',          intensity: 'medium', duration: '3s', flow: 'linear_sweep',  intro: 'glitch_reveal', dynamics: 'erratic_bursts' } },
+
+  // ─── 메탈 무한 루프 5종 ───────────────────────────────────────────────
+  { id: 'metal_liquid_gold',     label: '황금 일렁임',        description: '황금 표면 위로 액체 같은 빛이 천천히 일렁이는 무한 루프.',                   layers: { surface: 'metallic_sweep', edge: 'rim_trace',     ambient: 'gold_dust',     intensity: 'subtle', duration: '5s', flow: 'contour_trace',  intro: 'fade_in',       dynamics: 'smooth' } },
+  { id: 'metal_steel_galvanic',  label: '강철 갈바닉',        description: '강철 모서리를 따라 푸른 갈바닉 전류가 맥동하는 루프.',                       layers: { surface: 'light_shimmer',  edge: 'thin_electric', ambient: 'energy_sparks', intensity: 'medium', duration: '5s', flow: 'contour_trace',  intro: 'light_sweep',   dynamics: 'erratic_bursts' } },
+  { id: 'metal_chrome_wave',     label: '크롬 미러 파동',     description: '크롬 미러 표면을 가로지르는 어두운 반사 파동의 무한 루프.',                  layers: { surface: 'living_texture', edge: 'rim_trace',     ambient: 'none',          intensity: 'subtle', duration: '5s', flow: 'linear_sweep',   intro: 'light_sweep',   dynamics: 'smooth' } },
+  { id: 'metal_brushed_sweep',   label: '브러시드 골드 스윕', description: '수평 브러시 결을 따라 좌→우로 빛이 스윕하는 루프.',                          layers: { surface: 'metallic_sweep', edge: 'none',          ambient: 'gold_dust',     intensity: 'subtle', duration: '5s', flow: 'linear_sweep',   intro: 'light_sweep',   dynamics: 'smooth' } },
+  { id: 'metal_ember_forge',     label: '엠버 포지 펄스',     description: '단조된 금속 내부에서 잔열이 호흡하듯 맥동하는 루프 (Dark Fantasy 와는 다른 잔잔한 톤).', layers: { surface: 'internal_glow',  edge: 'edge_pulse',    ambient: 'ash_particles', intensity: 'subtle', duration: '5s', flow: 'core_radiate',   intro: 'fade_in',       dynamics: 'organic_swell' } },
+
+  // ─── 얼음 무한 루프 5종 ───────────────────────────────────────────────
+  { id: 'ice_glacier_vapor',     label: '빙하 안개 흐름',     description: '빙하 결정 위로 끝없이 흐르는 차가운 안개 루프.',                              layers: { surface: 'living_texture',     edge: 'soft_aura',  ambient: 'haze_smoke',    intensity: 'subtle', duration: '8s', flow: 'contour_trace', intro: 'fade_in', dynamics: 'smooth' } },
+  { id: 'ice_crystal_refraction',label: '결정 굴절 사이클',   description: '크리스탈 내부에서 빛이 끝없이 굴절되는 만화경 루프.',                        layers: { surface: 'crystal_refraction', edge: 'none',       ambient: 'none',          intensity: 'medium', duration: '5s', flow: 'core_radiate',  intro: 'fade_in', dynamics: 'organic_swell' } },
+  { id: 'ice_frost_crawl',       label: '서리 기어가기',      description: '어두운 표면 모서리에서 서리가 자라고 사라지는 루프.',                        layers: { surface: 'light_shimmer',      edge: 'rim_trace',  ambient: 'none',          intensity: 'subtle', duration: '8s', flow: 'edge_creep',    intro: 'fade_in', dynamics: 'smooth' } },
+  { id: 'ice_aurora_sheen',      label: '오로라 광택',        description: '얼음 표면을 대각선으로 흐르는 오로라 색감의 무한 루프.',                      layers: { surface: 'living_texture',     edge: 'soft_aura',  ambient: 'none',          intensity: 'subtle', duration: '5s', flow: 'linear_sweep',  intro: 'fade_in', dynamics: 'smooth' } },
+  { id: 'ice_polar_twinkle',     label: '북극 반짝임',        description: '얼음 모서리의 미세한 흰 반짝임이 깜빡이는 루프.',                              layers: { surface: 'light_shimmer',      edge: 'edge_pulse', ambient: 'energy_sparks', intensity: 'medium', duration: '3s', flow: 'particle_impact', intro: 'glitch_reveal', dynamics: 'erratic_bursts' } },
+
+  // ─── 화염 무한 루프 5종 ───────────────────────────────────────────────
+  { id: 'fire_lava_vein',        label: '용암 맥동',          description: '화산암 균열 속 용암 맥이 강하게 호흡하는 무한 루프 (Dark Fantasy 보다 강렬).', layers: { surface: 'magma_cracks',    edge: 'burning_outline', ambient: 'energy_sparks', intensity: 'intense', duration: '5s', flow: 'core_radiate',    intro: 'ember_ignite', dynamics: 'organic_swell' } },
+  { id: 'fire_ember_drift',      label: '불티 흩날림',        description: '글자 모서리에서 위로 천천히 떠오르는 불티 루프.',                             layers: { surface: 'shifting_cracks', edge: 'burning_outline', ambient: 'energy_sparks', intensity: 'medium',  duration: '5s', flow: 'edge_creep',      intro: 'ember_ignite', dynamics: 'smooth' } },
+  { id: 'fire_phoenix_ring',     label: '피닉스 화염 고리',   description: '글자 외곽선을 따라 회전하는 불꽃 고리 루프.',                                 layers: { surface: 'internal_glow',   edge: 'burning_outline', ambient: 'energy_sparks', intensity: 'medium',  duration: '5s', flow: 'contour_trace',   intro: 'ember_ignite', dynamics: 'smooth' } },
+  { id: 'fire_heat_haze',        label: '열기 아지랑이',      description: '달궈진 금속 모서리에서 열기 아지랑이가 미세하게 일렁이는 루프.',              layers: { surface: 'living_texture',  edge: 'soft_aura',       ambient: 'haze_smoke',    intensity: 'subtle',  duration: '5s', flow: 'core_radiate',    intro: 'fade_in',      dynamics: 'smooth' } },
+  { id: 'fire_magma_surge',      label: '매그마 거품',        description: '글자 균열 안에서 끓어오르는 용암 거품이 솟구치는 루프.',                       layers: { surface: 'magma_cracks',    edge: 'edge_pulse',      ambient: 'energy_sparks', intensity: 'intense', duration: '8s', flow: 'particle_impact', intro: 'ember_ignite', dynamics: 'erratic_bursts' } },
 ];
 
 // RenderMatrix PRESET_GROUPS 패턴 — 그룹 탭으로 카테고리화. id 는 PRESETS 의 id 와 동일하게 매핑.
@@ -163,7 +187,34 @@ const _presetMap = Object.fromEntries(PRESETS.map(p => [p.id, p]));
 export const PRESET_GROUPS = [
   {
     id: 'metal', icon: '🟡', name: '메탈',
-    presets: [_presetMap.premium_metal],
+    presets: [
+      _presetMap.premium_metal,
+      _presetMap.metal_liquid_gold,
+      _presetMap.metal_steel_galvanic,
+      _presetMap.metal_chrome_wave,
+      _presetMap.metal_brushed_sweep,
+      _presetMap.metal_ember_forge,
+    ],
+  },
+  {
+    id: 'ice', icon: '🧊', name: '얼음',
+    presets: [
+      _presetMap.ice_glacier_vapor,
+      _presetMap.ice_crystal_refraction,
+      _presetMap.ice_frost_crawl,
+      _presetMap.ice_aurora_sheen,
+      _presetMap.ice_polar_twinkle,
+    ],
+  },
+  {
+    id: 'fire', icon: '🔥', name: '화염',
+    presets: [
+      _presetMap.fire_lava_vein,
+      _presetMap.fire_ember_drift,
+      _presetMap.fire_phoenix_ring,
+      _presetMap.fire_heat_haze,
+      _presetMap.fire_magma_surge,
+    ],
   },
   {
     id: 'fantasy', icon: '⚔️', name: '판타지',

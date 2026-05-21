@@ -11,11 +11,11 @@ export default function MatrixPresetPanel({
 }) {
   const group = PRESET_GROUPS.find(g => g.id === activePresetGroup) || PRESET_GROUPS[0];
   return (
-    <div className="bg-[#181a1f] border border-[#2b2d31] rounded-xl p-4 relative z-[50]">
+    <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 relative z-[50]">
       <div className="flex items-center justify-between mb-3">
         <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Production Presets</label>
         <button onClick={() => setIsImportOpen(!isImportOpen)}
-          className="text-[10px] text-[#a8c7fa] hover:text-[#c2d7fa] transition-colors">
+          className="text-[10px] text-[#FDCB6E] hover:text-[#FDCB6E]/90 transition-colors">
           Import
         </button>
       </div>
@@ -45,15 +45,15 @@ export default function MatrixPresetPanel({
 
       {/* Import 패널 — 기존 동작 그대로 */}
       {isImportOpen && (
-        <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-[#2b2d31] animate-fade-in-down w-full box-border">
+        <div className="flex flex-col gap-2 mt-4 pt-3 border-t border-zinc-800 animate-fade-in-down w-full box-border">
           <textarea
-            className="w-full bg-[#0f1115] border border-[#2b2d31] rounded-lg p-3 text-[11px] text-[#e3e3e3] outline-none focus:border-[#a8c7fa] resize-y custom-scrollbar min-h-[60px]"
+            className="w-full bg-black/40 border border-zinc-800 rounded-lg p-3 text-[11px] text-zinc-100 outline-none focus:border-[#FDCB6E] resize-y custom-scrollbar min-h-[60px]"
             placeholder="이전 프롬프트를 붙여넣어 설정을 복원하세요."
             value={importText}
             onChange={(e) => setImportText(e.target.value)}
           />
           <button onClick={onImport}
-            className="w-full py-2 bg-[#2b2d31] hover:bg-[#3f4145] text-[#e3e3e3] rounded-lg text-[11px] font-medium transition-colors">
+            className="w-full py-2 bg-zinc-800 hover:bg-[#3f4145] text-zinc-100 rounded-lg text-[11px] font-medium transition-colors">
             설정 복원하기
           </button>
         </div>

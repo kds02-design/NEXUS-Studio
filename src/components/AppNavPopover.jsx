@@ -5,10 +5,10 @@ import { useGlobal } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
 
 const GROUPS = [
-  { key: "hub",      label: "허브" },
-  { key: "evaluate", label: "탐색 / 평가" },
-  { key: "generate", label: "프롬프트 생성" },
-  { key: "admin",    label: "관리자" },
+  { key: "explore",    label: "허브 / 평가" },
+  { key: "generate",   label: "프롬프트 생성" },
+  { key: "production", label: "비주얼 생성" },
+  { key: "admin",      label: "관리자" },
 ];
 
 export default function AppNavPopover({ open, onClose }) {
@@ -32,15 +32,22 @@ export default function AppNavPopover({ open, onClose }) {
 
   if (!open) return null;
 
-  const goApp = (id) => { setCurrentApp(id); onClose?.(); };
-  const goIndex = () => { setCurrentApp(null); onClose?.(); };
+  // Ctrl/Cmd+클릭 → 같은 앱을 새 창에서 오픈 (popover는 닫음). 일반 클릭은 기존 동작.
+  const goApp = (e, id) => {
+    if (e?.ctrlKey || e?.metaKey) { window.open(`/${id}`, "_blank", "noopener,noreferrer"); onClose?.(); return; }
+    setCurrentApp(id); onClose?.();
+  };
+  const goIndex = (e) => {
+    if (e?.ctrlKey || e?.metaKey) { window.open("/", "_blank", "noopener,noreferrer"); onClose?.(); return; }
+    setCurrentApp(null); onClose?.();
+  };
 
   return (
     <>
       {/* 백드롭 */}
       <div
         style={{
-          position: "fixed", inset: 0, zIndex: 1500,
+          position: "fixed", inset: 0, zIndex: 50000,
           background: "rgba(0,0,0,0.5)", backdropFilter: "blur(2px)",
           animation: "fadeIn 0.15s ease-out",
         }}
@@ -52,7 +59,7 @@ export default function AppNavPopover({ open, onClose }) {
           position: "fixed", top: 0, left: 0, bottom: 0, width: 300,
           background: THEME.surface,
           borderRight: `1px solid ${THEME.border}`,
-          zIndex: 1600,
+          zIndex: 50001,
           display: "flex", flexDirection: "column",
           fontFamily: "'Noto Sans KR', sans-serif",
           boxShadow: "8px 0 28px rgba(0,0,0,0.5)",
@@ -76,6 +83,7 @@ export default function AppNavPopover({ open, onClose }) {
         {/* 인덱스로 돌아가기 */}
         <button
           onClick={goIndex}
+          title="홈으로 (Ctrl/⌘+클릭 → 새 창)"
           style={{
             display:"flex", alignItems:"center", gap:10, padding:"12px 18px",
             background: currentApp === null ? `${THEME.accent}1A` : "transparent",
@@ -92,10 +100,14 @@ export default function AppNavPopover({ open, onClose }) {
           {currentApp === null && <span style={{ fontSize:9, color:THEME.accent, letterSpacing:"0.1em" }}>NOW</span>}
         </button>
 
-        {/* 그룹별 앱 목록 */}
+        {/* 그룹별 앱 목록 — 관리자는 disabled 앱도 admin-unlocked 로 표시 */}
         <div style={{ flex:1, overflowY:"auto", padding:"4px 0" }}>
           {GROUPS.map((g) => {
-            const apps = APP_REGISTRY.filter((a) => a.group === g.key && (!a.adminOnly || isAdmin) && !a.disabled);
+            const apps = APP_REGISTRY.filter((a) =>
+              a.group === g.key
+              && (!a.adminOnly || isAdmin)
+              && (!a.disabled || isAdmin)
+            );
             if (!apps.length) return null;
             return (
               <div key={g.key} style={{ marginTop: 8 }}>
@@ -104,16 +116,19 @@ export default function AppNavPopover({ open, onClose }) {
                 </div>
                 {apps.map((a) => {
                   const active = currentApp === a.id;
+                  const adminUnlocked = !!a.disabled && isAdmin;
                   return (
                     <button key={a.id}
-                      onClick={() => goApp(a.id)}
+                      onClick={(e) => goApp(e, a.id)}
+                      title={adminUnlocked ? "관리자 권한으로 활성화됨 (Ctrl/⌘+클릭 → 새 창)" : "Ctrl/⌘+클릭 → 새 창"}
                       style={{
                         display:"flex", alignItems:"center", gap:12, width:"100%",
                         padding:"10px 18px", border:0, cursor:"pointer", textAlign:"left",
                         background: active ? `${a.color}1A` : "transparent",
                         color: active ? a.color : THEME.text,
+                        opacity: adminUnlocked && !active ? 0.7 : 1,
                         fontSize:13, fontWeight: active ? 700 : 500,
-                        fontFamily:"inherit", transition:"background 0.12s",
+                        fontFamily:"inherit", transition:"background 0.12s, opacity 0.12s",
                       }}
                       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
                       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
@@ -121,6 +136,9 @@ export default function AppNavPopover({ open, onClose }) {
                       <span style={{ fontSize:18, color:a.color, width:22, textAlign:"center", flexShrink:0 }}>{a.icon}</span>
                       <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.sub}</span>
                       {active && <span style={{ fontSize:9, color:a.color, letterSpacing:"0.1em" }}>NOW</span>}
+                      {!active && adminUnlocked && (
+                        <span style={{ fontSize:8, color:THEME.accent, letterSpacing:"0.12em", fontWeight:700, border:`1px solid ${THEME.accent}55`, padding:"2px 5px", borderRadius:4 }}>ADMIN</span>
+                      )}
                     </button>
                   );
                 })}

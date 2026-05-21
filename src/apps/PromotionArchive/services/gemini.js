@@ -238,17 +238,36 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
             // 날짜 정리 — 빈 값/추측 단어 필터
             const isInvalidDate = (val) => !val || ['null', 'none', 'unknown', '없음', '불명'].some(s => String(val).toLowerCase().includes(s));
             const dateInfo = parsed?.date_info || {};
-            const yearStr = !isInvalidDate(dateInfo.year) ? String(dateInfo.year).match(/\d{4}/)?.[0] : null;
-            const monthStr = !isInvalidDate(dateInfo.month) ? String(dateInfo.month).match(/\d{1,2}/)?.[0]?.padStart(2, '0') : null;
+            let yearStr = !isInvalidDate(dateInfo.year) ? String(dateInfo.year).match(/\d{4}/)?.[0] : null;
+            let monthStr = !isInvalidDate(dateInfo.month) ? String(dateInfo.month).match(/\d{1,2}/)?.[0]?.padStart(2, '0') : null;
             const fullDateStr = !isInvalidDate(dateInfo.full_date) ? String(dateInfo.full_date).trim() : null;
+            // year/month 가 비어있으면 full_date 에서 fallback 추출.
+            // "2026.03.05 ~ 2026.03.19" / "2026-03-05" / "2026/3" 등 다양한 구분자 허용.
+            if (!yearStr && fullDateStr) {
+                yearStr = fullDateStr.match(/(20\d{2})/)?.[1] || null;
+            }
+            if (!monthStr && fullDateStr) {
+                const m = fullDateStr.match(/20\d{2}\s*[.\-/년]\s*(\d{1,2})/);
+                if (m) monthStr = m[1].padStart(2, '0');
+            }
+            // YEAR_LIST 가 Number 라 일관성 유지. month 도 Number 로 통일 (UI select 가 1~12 Number).
+            const yearNum = yearStr ? Number(yearStr) : null;
+            const monthNum = monthStr ? Number(monthStr) : null;
+
+            // title 후처리 — AI 가 종종 따옴표나 [ ] 같은 포맷팅 문자를 붙임. 정리.
+            let titleClean = parsed?.title ? String(parsed.title).trim() : null;
+            if (titleClean) {
+                titleClean = titleClean.replace(/^["'\[「『]+|["'\]」』]+$/g, '').trim();
+                if (titleClean.length < 2) titleClean = null;
+            }
 
             return {
                 ok: true,
                 webScores: scores,
                 webAiScore: aiScore,
-                title: parsed?.title ? String(parsed.title).trim() : null,
-                year: yearStr || null,
-                month: monthStr || null,
+                title: titleClean,
+                year: Number.isFinite(yearNum) ? yearNum : null,
+                month: Number.isFinite(monthNum) ? monthNum : null,
                 fullDate: fullDateStr || null,
                 tags: Array.isArray(parsed?.tags) ? parsed.tags.map(String) : [],
                 summary: parsed?.summary ? String(parsed.summary) : '',

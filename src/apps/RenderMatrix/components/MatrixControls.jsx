@@ -66,7 +66,7 @@ export const ScoreBar = ({ label, score, colorClass }) => (
   <div className="flex flex-col gap-1 w-full">
     <div className="flex justify-between items-center text-[10px] font-bold">
       <span className="text-zinc-400">{label}</span>
-      <span className={score >= 90 ? "text-emerald-400" : score >= 70 ? "text-amber-400" : "text-rose-400"}>{score}</span>
+      <span className={score >= 90 ? "text-emerald-300/80" : score >= 70 ? "text-amber-300/80" : "text-rose-300/80"}>{score}</span>
     </div>
     <div className="h-1 w-full bg-zinc-800 rounded-full overflow-hidden">
       <div className={`h-full rounded-full transition-all duration-500 ${colorClass}`} style={{ width: `${score}%` }} />

@@ -3,9 +3,19 @@ import {
   Clock, CheckCircle2, XCircle, PauseCircle, ListChecks,
   Upload, FolderPlus, Folder, ChevronLeft, X,
   Smartphone, Monitor, Trash2, Plus, Check,
+  Info, ExternalLink, Image as Image2,
 } from "lucide-react";
 import { useGlobal } from "../../context/GlobalContext";
 import ReviewWorkspace from "./components/ReviewWorkspace";
+import { uploadBase64 } from "../../lib/storage";
+import {
+  subscribeToProjects,
+  saveProject,
+  deleteProject as deleteProjectRemote,
+  bulkSaveProjects,
+  getExistingProjectIds,
+  registerProjectAsBrandWebBanner,
+} from "./services/firebase";
 
 // 사이드바 메뉴 — 프로젝트 상태 필터.
 const REVIEW_MENUS = [
@@ -20,13 +30,30 @@ const REVIEW_MENUS = [
 const STORAGE_KEY = "brandWebReview:projects";
 
 // ─── 디바이스 자동 추정 ─────────────────────────────────────
-// 1) 파일명 힌트 → 2) 이미지 비율 (h/w > 1.2 면 mobile).
+// 1) 파일명 힌트 → 2) 이미지 비율.
+//   banner (h/w < 0.5, 와이드 가로형) > mobile (h/w > 1.4, 세로형) > pc (그 외).
 function guessDeviceFromName(name) {
   const n = String(name || "").toLowerCase();
+  if (/(^|[_\-\s])(banner|배너|bnr)([_\-\s.]|$)/.test(n)) return "banner";
   if (/(^|[_\-\s])(m|mb|mob|mobile|모바일)([_\-\s.]|$)/.test(n)) return "mobile";
   if (/(^|[_\-\s])(pc|desktop|web|데스크탑)([_\-\s.]|$)/.test(n)) return "pc";
   return null;
 }
+function deviceFromRatio(w, h) {
+  if (!(w > 0 && h > 0)) return "pc";
+  const ratio = h / w;
+  if (ratio < 0.5) return "banner";
+  if (ratio > 1.4) return "mobile";
+  return "pc";
+}
+
+// device 표시 메타 — 라벨 / 아이콘 키 / 컬러. 코드 한 곳에서 관리.
+const DEVICE_META = {
+  pc:     { label: "PC",     color: "#74B9FF" },
+  mobile: { label: "Mobile", color: "#FD79A8" },
+  banner: { label: "Banner", color: "#FDCB6E" },
+};
+const DEVICE_ORDER = ["pc", "mobile", "banner"];
 
 function loadImageDataURL(file) {
   return new Promise((resolve, reject) => {
@@ -46,12 +73,21 @@ function measureImage(url) {
   });
 }
 
-async function fileToImage(file, idx) {
-  const url = await loadImageDataURL(file);
+// 파일 → 이미지 객체. Cloudinary 업로드 성공 시 secure URL, 실패하거나 user 가 없으면 dataURL (로컬 모드).
+async function fileToImage(file, idx, { useCloud = true } = {}) {
+  const dataUrl = await loadImageDataURL(file);
   let device = guessDeviceFromName(file.name);
   if (!device) {
-    const { w, h } = await measureImage(url);
-    device = (w > 0 && h > 0 && h / w > 1.2) ? "mobile" : "pc";
+    const { w, h } = await measureImage(dataUrl);
+    device = deviceFromRatio(w, h);
+  }
+  let url = dataUrl;
+  if (useCloud) {
+    try { url = await uploadBase64(dataUrl); }
+    catch (e) {
+      console.warn("[BrandWebReview] Cloudinary upload failed, fallback to dataURL", e);
+      url = dataUrl;
+    }
   }
   const id = `img_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`;
   const v1Id = `${id}_v1`;
@@ -65,6 +101,33 @@ async function fileToImage(file, idx) {
     ],
     activeVersionId: v1Id,
   };
+}
+
+// dataURL 이면 Cloudinary 로 올려서 URL 받아오기. 이미 http(s) URL 이면 그대로.
+async function ensureHostedUrl(value) {
+  if (!value) return value;
+  if (typeof value !== "string") return value;
+  if (value.startsWith("data:")) {
+    try { return await uploadBase64(value); }
+    catch (e) {
+      console.warn("[BrandWebReview] attachment upload failed", e);
+      return value; // 실패 시 그대로 (Firestore 1MB 위험은 있지만 데이터 손실 회피)
+    }
+  }
+  return value;
+}
+
+// 노트 배열 안의 attachment 가 dataURL 이면 모두 Cloudinary URL 로 변환.
+async function hostNotesAttachments(notes) {
+  if (!Array.isArray(notes) || notes.length === 0) return notes;
+  return Promise.all(notes.map(async n => {
+    if (!n) return n;
+    if (typeof n.attachment === "string" && n.attachment.startsWith("data:")) {
+      const hosted = await ensureHostedUrl(n.attachment);
+      return { ...n, attachment: hosted };
+    }
+    return n;
+  }));
 }
 
 // 레거시 image({ url, notes, confirmed, addedAt, ... }) → 신규 모델(versions[]) 마이그레이션.
@@ -126,6 +189,18 @@ function inferProjectName(files) {
   return token && token.length >= 2 ? token : (base || "새 프로젝트");
 }
 
+// 이전·다음 projects 배열에서 ref 가 바뀐(=수정된) 프로젝트 id 만 추출.
+// 불변 업데이트 컨벤션에 기댐 — 변경된 프로젝트만 .map 으로 새 객체가 됨.
+function diffProjectIds(prev, next) {
+  const prevMap = new Map((prev || []).map(p => [p.id, p]));
+  const out = [];
+  for (const p of (next || [])) {
+    const before = prevMap.get(p.id);
+    if (before !== p) out.push(p.id); // 신규 또는 변경됨.
+  }
+  return out;
+}
+
 const STATUS_LABEL = {
   in_review: "검토중",
   approved: "컨펌 완료",
@@ -140,7 +215,8 @@ const STATUS_COLOR = {
 };
 
 export default function BrandWebReviewApp() {
-  const { payload, clearPayload } = useGlobal();
+  const { payload, clearPayload, user, navigate } = useGlobal();
+  const uid = user?.uid || null;
   const [activeMenu, setActiveMenu] = useState("all");
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -151,37 +227,95 @@ export default function BrandWebReviewApp() {
   const [isUploading, setIsUploading] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
 
-  // mount 시 localStorage 복원 + 레거시 이미지 마이그레이션.
+  // 최신 projects 를 ref 로 — Firestore 비동기 쓰기 시 stale closure 회피.
+  const projectsRef = useRef([]);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+
+  // mount 시 localStorage 캐시 즉시 표시(Firestore 응답 전 빈 화면 방지).
   useEffect(() => {
     try {
       const cached = localStorage.getItem(STORAGE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          const migrated = parsed.map(p => ({
-            ...p,
-            images: (p.images || []).map(migrateImage),
-          }));
-          setProjects(migrated);
-        }
-      }
+      if (!cached) return;
+      const parsed = JSON.parse(cached);
+      if (!Array.isArray(parsed)) return;
+      const migrated = parsed.map(p => ({
+        ...p,
+        images: (p.images || []).map(migrateImage),
+      }));
+      setProjects(migrated);
     } catch (e) {
-      console.warn("[BrandWebReview] restore failed", e);
+      console.warn("[BrandWebReview] localStorage restore failed", e);
     }
   }, []);
 
-  // 영속화 — projects 변경 시 자동 저장. 별도 effect 로 분리해서 setState 와 분리.
-  const persist = useCallback((next) => {
+  // user 로그인 시 Firestore 구독 + 로컬 → 클라우드 1회 마이그레이션.
+  useEffect(() => {
+    if (!uid) return; // 비로그인은 로컬 모드 유지.
+    let cancelled = false;
+
+    // ① 로컬에만 있고 클라우드에는 없는 프로젝트를 1회 푸시.
+    (async () => {
+      try {
+        const local = projectsRef.current || [];
+        if (local.length === 0) return;
+        const existing = await getExistingProjectIds(uid);
+        const toUpload = local.filter(p => p?.id && !existing.has(p.id));
+        if (toUpload.length === 0) return;
+        if (cancelled) return;
+        console.info(`[BrandWebReview] migrating ${toUpload.length} local project(s) → Firestore`);
+        await bulkSaveProjects(uid, toUpload);
+      } catch (e) {
+        console.warn("[BrandWebReview] migration failed", e);
+      }
+    })();
+
+    // ② onSnapshot 으로 진실의 원천 갱신.
+    const unsub = subscribeToProjects(uid, (remote) => {
+      if (cancelled) return;
+      // 서버가 비어 있고 로컬에 데이터가 있으면(마이그레이션 진행 중) 로컬 유지.
+      if (remote.length === 0 && (projectsRef.current?.length || 0) > 0) return;
+      const normalized = remote.map(p => ({
+        ...p,
+        images: (p.images || []).map(migrateImage),
+      }));
+      setProjects(normalized);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized)); } catch {}
+    }, (err) => console.warn("[BrandWebReview] subscribe error", err));
+
+    return () => { cancelled = true; unsub?.(); };
+  }, [uid]);
+
+  // 캐시(로컬) — 어떤 모드든 항상 함께 갱신.
+  const persistLocal = useCallback((next) => {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); }
-    catch (e) { console.warn("[BrandWebReview] save failed (localStorage quota?)", e); }
+    catch (e) { console.warn("[BrandWebReview] localStorage save failed (quota?)", e); }
   }, []);
-  const updateProjects = useCallback((updater) => {
+
+  // 한 프로젝트를 백그라운드로 Firestore 에 저장 (낙관적 업데이트 패턴).
+  const persistRemoteProject = useCallback((project) => {
+    if (!uid || !project) return;
+    saveProject(uid, project).catch(e => console.warn(`[BrandWebReview] saveProject(${project.id}) failed`, e));
+  }, [uid]);
+
+  // 핵심 mutator — projects state 갱신 + 로컬 캐시 + (변경된 프로젝트만) Firestore 쓰기.
+  // touchedProjectIds 를 명시하면 그 id 들만 원격 저장. 미지정 시 모든 변경 프로젝트 자동 감지.
+  const updateProjects = useCallback((updater, touchedProjectIds = null) => {
     setProjects(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      persist(next);
+      persistLocal(next);
+      if (uid) {
+        const ids = touchedProjectIds || diffProjectIds(prev, next);
+        ids.forEach(id => {
+          const p = next.find(x => x.id === id);
+          if (p) persistRemoteProject(p);
+        });
+        // 삭제된 프로젝트.
+        const removedIds = (prev || []).filter(p => !next.find(n => n.id === p.id)).map(p => p.id);
+        removedIds.forEach(id => deleteProjectRemote(uid, id).catch(e => console.warn(`[BrandWebReview] deleteProject(${id}) failed`, e)));
+      }
       return next;
     });
-  }, [persist]);
+  }, [uid, persistLocal, persistRemoteProject]);
 
   // ─── 외부 payload 수신 → 단일 이미지 프로젝트 자동 생성 ─────
   const incoming = useMemo(() => {
@@ -198,7 +332,7 @@ export default function BrandWebReviewApp() {
     }
     const title = incoming.prompt?.text || "외부 수신 항목";
     measureImage(url).then(({ w, h }) => {
-      const device = (w > 0 && h > 0 && h / w > 1.2) ? "mobile" : "pc";
+      const device = guessDeviceFromName(title) || deviceFromRatio(w, h);
       const id = `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
       const v1Id = `${id}_v1`;
       const newImage = {
@@ -227,18 +361,23 @@ export default function BrandWebReviewApp() {
   }, [incoming, updateProjects, clearPayload]);
 
   // ─── 파일 → 프로젝트 / 이미지 ─────────────────────────────
-  const createProjectFromFiles = useCallback(async (files, customName) => {
+  // 2번째 인자: string(=name) 또는 { name, owner, sharedFolderUrl, description }.
+  const createProjectFromFiles = useCallback(async (files, nameOrMeta) => {
     const list = Array.from(files || []).filter(f => f.type?.startsWith("image/"));
     if (!list.length) return;
+    const meta = typeof nameOrMeta === "string" ? { name: nameOrMeta } : (nameOrMeta || {});
     setIsUploading(true);
     try {
       const images = [];
       for (let i = 0; i < list.length; i++) {
-        images.push(await fileToImage(list[i], i));
+        images.push(await fileToImage(list[i], i, { useCloud: !!uid }));
       }
       const proj = {
         id: `proj_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-        name: (customName?.trim() || inferProjectName(list)),
+        name: (meta.name?.trim() || inferProjectName(list)),
+        owner: meta.owner?.trim() || "",
+        sharedFolderUrl: meta.sharedFolderUrl?.trim() || "",
+        description: meta.description?.trim() || "",
         createdAt: Date.now(),
         status: "in_review",
         images,
@@ -252,7 +391,7 @@ export default function BrandWebReviewApp() {
       setIsUploading(false);
       setShowNewProject(false);
     }
-  }, [updateProjects]);
+  }, [uid, updateProjects]);
 
   const addImagesToProject = useCallback(async (projectId, files) => {
     const list = Array.from(files || []).filter(f => f.type?.startsWith("image/"));
@@ -262,7 +401,7 @@ export default function BrandWebReviewApp() {
       const baseIdx = projects.find(p => p.id === projectId)?.images?.length || 0;
       const newImages = [];
       for (let i = 0; i < list.length; i++) {
-        newImages.push(await fileToImage(list[i], baseIdx + i));
+        newImages.push(await fileToImage(list[i], baseIdx + i, { useCloud: !!uid }));
       }
       updateProjects(prev => prev.map(p =>
         p.id === projectId ? { ...p, images: [...p.images, ...newImages] } : p
@@ -270,12 +409,13 @@ export default function BrandWebReviewApp() {
     } finally {
       setIsUploading(false);
     }
-  }, [projects, updateProjects]);
+  }, [projects, uid, updateProjects]);
 
   // ─── 노트 / 컨펌 / 삭제 / 상태 변경 ────────────────────────
-  // 활성 버전의 notes 만 갱신.
-  const handleNotesChange = useCallback((nextNotes) => {
+  // 활성 버전의 notes 만 갱신. 첨부 이미지(dataURL)는 Cloudinary 로 옮겨 Firestore 1MB 제한 회피.
+  const handleNotesChange = useCallback(async (nextNotes) => {
     if (!activeProjectId || !activeImageId) return;
+    const cleaned = uid ? await hostNotesAttachments(nextNotes) : nextNotes;
     updateProjects(prev => prev.map(p => {
       if (p.id !== activeProjectId) return p;
       return {
@@ -284,12 +424,12 @@ export default function BrandWebReviewApp() {
           if (im.id !== activeImageId) return im;
           return {
             ...im,
-            versions: im.versions.map(v => v.id === im.activeVersionId ? { ...v, notes: nextNotes } : v),
+            versions: im.versions.map(v => v.id === im.activeVersionId ? { ...v, notes: cleaned } : v),
           };
         }),
       };
     }));
-  }, [activeProjectId, activeImageId, updateProjects]);
+  }, [activeProjectId, activeImageId, uid, updateProjects]);
 
   // 활성 버전을 confirmed=true 로. 모든 이미지의 활성 버전이 confirmed 면 프로젝트 자동 approved.
   const handleImageConfirm = useCallback(() => {
@@ -312,10 +452,15 @@ export default function BrandWebReviewApp() {
     setActiveImageId(null);
   }, [activeProjectId, activeImageId, updateProjects]);
 
-  // 같은 이미지(페이지)에 새 버전 추가. 자동으로 새 버전이 active.
+  // 같은 이미지(페이지)에 새 버전 추가. 자동으로 새 버전이 active. user 있으면 Cloudinary.
   const addImageVersion = useCallback(async (file) => {
     if (!activeProjectId || !activeImageId || !file) return;
-    const url = await loadImageDataURL(file);
+    const dataUrl = await loadImageDataURL(file);
+    let url = dataUrl;
+    if (uid) {
+      try { url = await uploadBase64(dataUrl); }
+      catch (e) { console.warn("[BrandWebReview] version upload failed, fallback to dataURL", e); url = dataUrl; }
+    }
     updateProjects(prev => prev.map(p => {
       if (p.id !== activeProjectId) return p;
       return {
@@ -339,7 +484,7 @@ export default function BrandWebReviewApp() {
         }),
       };
     }));
-  }, [activeProjectId, activeImageId, updateProjects]);
+  }, [activeProjectId, activeImageId, uid, updateProjects]);
 
   // 버전 전환 — 같은 이미지 안에서 다른 버전을 활성화.
   const handleSelectVersion = useCallback((versionId) => {
@@ -372,6 +517,124 @@ export default function BrandWebReviewApp() {
 
   const handleSetProjectStatus = useCallback((projectId, status) => {
     updateProjects(prev => prev.map(p => p.id === projectId ? { ...p, status } : p));
+  }, [updateProjects]);
+
+  // 컨펌 완료 프로젝트를 Brand Web Library(PromotionArchive) 에 brand-web 카드로 등록.
+  // 중복은 sourceProjectId 로 체크 — 이미 있으면 안내 + 그쪽으로 이동 옵션.
+  const [isRegisteringLibrary, setIsRegisteringLibrary] = useState(false);
+  const handleRegisterToLibrary = useCallback(async (project) => {
+    if (!uid) { alert("로그인이 필요합니다."); return; }
+    if (!project) return;
+    if (project.status !== "approved") {
+      alert("컨펌 완료(approved) 상태인 프로젝트만 라이브러리에 등록할 수 있습니다.");
+      return;
+    }
+    if (isRegisteringLibrary) return;
+    if (!confirm(`'${project.name || "프로젝트"}'를 Brand Web Library 에 등록할까요?\n\n페이지 ${project.images?.length || 0}건이 한 카드로 묶여 라이브러리에서 조회됩니다.`)) return;
+    setIsRegisteringLibrary(true);
+    try {
+      const created = await registerProjectAsBrandWebBanner(uid, project);
+      if (confirm(`✅ 등록 완료 (${created.pageCount}페이지)\n\nBrand Web Library 로 이동해서 확인할까요?`)) {
+        navigate("promotion-archive", {
+          source: "brand-web-review",
+          target: "promotion-archive",
+          prompt: { text: "", tags: [], style: "" },
+          image: { url: "", metadata: {} },
+          params: { viewBannerId: created.id },
+          timestamp: Date.now(),
+        });
+      }
+    } catch (e) {
+      if (e.code === "ALREADY_REGISTERED") {
+        if (confirm(`이미 라이브러리에 등록된 프로젝트입니다.\n\n라이브러리에서 해당 항목을 열까요?`)) {
+          navigate("promotion-archive", {
+            source: "brand-web-review",
+            target: "promotion-archive",
+            prompt: { text: "", tags: [], style: "" },
+            image: { url: "", metadata: {} },
+            params: { viewBannerId: e.bannerId },
+            timestamp: Date.now(),
+          });
+        }
+      } else {
+        console.error("[BrandWebReview] register failed", e);
+        alert(`등록 실패: ${e.message || e.code}`);
+      }
+    } finally {
+      setIsRegisteringLibrary(false);
+    }
+  }, [uid, isRegisteringLibrary, navigate]);
+
+  // 프로젝트 정보 패치 (name, owner, sharedFolderUrl, description 등).
+  const handleUpdateProjectInfo = useCallback((projectId, patch) => {
+    if (!patch || typeof patch !== "object") return;
+    updateProjects(prev => prev.map(p => p.id === projectId ? { ...p, ...patch } : p));
+  }, [updateProjects]);
+
+  // device별 일괄 컨펌 — 해당 device 페이지의 활성 버전을 모두 confirmed=true.
+  // 모든 device 가 다 confirmed 되면 자동으로 project.status='approved'.
+  const handleConfirmDevice = useCallback((projectId, device) => {
+    const proj = projectsRef.current.find(p => p.id === projectId);
+    if (!proj) return;
+    const devImages = proj.images.filter(im => im.device === device);
+    if (devImages.length === 0) return;
+    const unresolved = devImages.reduce((acc, im) => {
+      const v = getActiveVersion(im);
+      return acc + (v?.notes || []).filter(n => !n.resolved).length;
+    }, 0);
+    const label = DEVICE_META[device]?.label || device;
+    const msg = unresolved > 0
+      ? `${label} 미해결 수정사항 ${unresolved}건이 남아 있습니다. 그래도 ${label} 컨펌 완료 처리할까요?`
+      : `${label} 페이지 ${devImages.length}장을 컨펌 완료 처리할까요?`;
+    if (!confirm(msg)) return;
+    updateProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      const images = p.images.map(im => {
+        if (im.device !== device) return im;
+        return {
+          ...im,
+          versions: im.versions.map(v =>
+            v.id === im.activeVersionId ? { ...v, confirmed: true } : v
+          ),
+        };
+      });
+      const allConfirmed = images.length > 0 && images.every(im => getActiveVersion(im)?.confirmed);
+      return {
+        ...p,
+        images,
+        status: allConfirmed ? "approved" : p.status,
+        ...(allConfirmed ? { approvedAt: Date.now() } : {}),
+      };
+    }));
+  }, [updateProjects]);
+
+  // 프로젝트 전체 컨펌 — 활성 버전 전부 confirmed=true + status='approved'.
+  // 미해결 노트가 있으면 한 번 더 확인.
+  const handleProjectConfirmAll = useCallback((projectId) => {
+    const proj = projectsRef.current.find(p => p.id === projectId);
+    if (!proj) return;
+    const unresolved = (proj.images || []).reduce((acc, im) => {
+      const v = getActiveVersion(im);
+      return acc + (v?.notes || []).filter(n => !n.resolved).length;
+    }, 0);
+    const msg = unresolved > 0
+      ? `미해결 수정사항 ${unresolved}건이 남아 있습니다. 그래도 프로젝트를 컨펌 완료 처리할까요?`
+      : `'${proj.name}' 프로젝트를 컨펌 완료 처리할까요?\n모든 페이지의 활성 버전이 확정됩니다.`;
+    if (!confirm(msg)) return;
+    updateProjects(prev => prev.map(p => {
+      if (p.id !== projectId) return p;
+      return {
+        ...p,
+        status: "approved",
+        approvedAt: Date.now(),
+        images: p.images.map(im => ({
+          ...im,
+          versions: im.versions.map(v =>
+            v.id === im.activeVersionId ? { ...v, confirmed: true } : v
+          ),
+        })),
+      };
+    }));
   }, [updateProjects]);
 
   // ─── 파생 ─────────────────────────────────────────────────
@@ -439,6 +702,32 @@ export default function BrandWebReviewApp() {
       };
     }));
     setJumpTargetNoteId(noteId);
+  }, [activeProjectId, updateProjects]);
+
+  // 전체 수정사항 패널에서 임의 페이지·임의 버전의 노트 resolved 토글.
+  const handleToggleNoteResolved = useCallback((pageId, versionId, noteId) => {
+    if (!activeProjectId) return;
+    updateProjects(prev => prev.map(p => {
+      if (p.id !== activeProjectId) return p;
+      return {
+        ...p,
+        images: p.images.map(im => {
+          if (im.id !== pageId) return im;
+          return {
+            ...im,
+            versions: im.versions.map(v => {
+              if (v.id !== versionId) return v;
+              return {
+                ...v,
+                notes: (v.notes || []).map(n =>
+                  n.id === noteId ? { ...n, resolved: !n.resolved } : n
+                ),
+              };
+            }),
+          };
+        }),
+      };
+    }));
   }, [activeProjectId, updateProjects]);
 
   // ─── 사이드바 ─────────────────────────────────────────────
@@ -514,6 +803,12 @@ export default function BrandWebReviewApp() {
           onSelectVersion={handleSelectVersion}
           onUploadNewVersion={addImageVersion}
           device={activeImage.device}
+          // 전체 수정사항 리스트 + 점프 + 토글.
+          allNotes={allNotes}
+          onJumpToNote={handleJumpToNote}
+          onToggleNoteResolved={handleToggleNoteResolved}
+          jumpTargetNoteId={jumpTargetNoteId}
+          onJumpHandled={() => setJumpTargetNoteId(null)}
         />
       ) : activeProject ? (
         <ProjectDetailView
@@ -524,6 +819,12 @@ export default function BrandWebReviewApp() {
           onDeleteImage={(imgId) => handleDeleteImage(activeProject.id, imgId)}
           onDeleteProject={() => handleDeleteProject(activeProject.id)}
           onSetStatus={(status) => handleSetProjectStatus(activeProject.id, status)}
+          onConfirmAll={() => handleProjectConfirmAll(activeProject.id)}
+          onConfirmDevice={(device) => handleConfirmDevice(activeProject.id, device)}
+          onUpdateInfo={(patch) => handleUpdateProjectInfo(activeProject.id, patch)}
+          onRegisterToLibrary={() => handleRegisterToLibrary(activeProject)}
+          isRegisteringLibrary={isRegisteringLibrary}
+          currentUserName={user?.displayName || user?.email || ""}
           isUploading={isUploading}
         />
       ) : (
@@ -542,6 +843,7 @@ export default function BrandWebReviewApp() {
         <NewProjectModal
           onClose={() => setShowNewProject(false)}
           onCreate={createProjectFromFiles}
+          currentUserName={user?.displayName || user?.email || ""}
           isUploading={isUploading}
         />
       )}
@@ -611,6 +913,7 @@ function ProjectCard({ project, onOpen, onDelete }) {
   const noteCount = project.images?.reduce((acc, im) => acc + (getActiveVersion(im)?.notes?.length || 0), 0) || 0;
   const pcCount = project.images?.filter(im => im.device === "pc").length || 0;
   const mobileCount = project.images?.filter(im => im.device === "mobile").length || 0;
+  const bannerCount = project.images?.filter(im => im.device === "banner").length || 0;
   const statusColor = STATUS_COLOR[project.status] || "#7A7A9A";
 
   return (
@@ -646,10 +949,26 @@ function ProjectCard({ project, onOpen, onDelete }) {
         )}
       </div>
       <div className="p-3">
-        <div className="text-sm font-semibold text-zinc-200 truncate mb-1.5">{project.name}</div>
+        <div className="text-sm font-semibold text-zinc-200 truncate mb-1" title={project.name}>{project.name}</div>
+        {(project.owner || project.sharedFolderUrl) && (
+          <div className="flex items-center gap-2 text-[10px] text-zinc-500 mb-1.5 truncate">
+            {project.owner && <span className="truncate" title={`작업자: ${project.owner}`}>👤 {project.owner}</span>}
+            {project.sharedFolderUrl && (
+              <a
+                href={project.sharedFolderUrl} target="_blank" rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title={project.sharedFolderUrl}
+                className="text-violet-400 hover:text-violet-300 flex items-center gap-0.5 shrink-0"
+              >
+                <ExternalLink className="w-2.5 h-2.5" /> 폴더
+              </a>
+            )}
+          </div>
+        )}
         <div className="flex items-center gap-2 text-[10px] text-zinc-500">
           {pcCount > 0 && (<span className="flex items-center gap-1"><Monitor className="w-3 h-3"/>{pcCount}</span>)}
           {mobileCount > 0 && (<span className="flex items-center gap-1"><Smartphone className="w-3 h-3"/>{mobileCount}</span>)}
+          {bannerCount > 0 && (<span className="flex items-center gap-1"><Image2 className="w-3 h-3"/>{bannerCount}</span>)}
           {confirmed > 0 && (<span className="flex items-center gap-1 text-[#0eb9b3]"><Check className="w-3 h-3"/>{confirmed}/{total}</span>)}
           {noteCount > 0 && (<span className="text-[#FDCB6E]">노트 {noteCount}</span>)}
         </div>
@@ -661,17 +980,46 @@ function ProjectCard({ project, onOpen, onDelete }) {
 // ═══════════════════════════════════════════════════════════
 // 프로젝트 상세 — 이미지 그리드 (PC / 모바일 섹션)
 // ═══════════════════════════════════════════════════════════
-function ProjectDetailView({ project, onBack, onSelectImage, onAddImages, onDeleteImage, onDeleteProject, onSetStatus, isUploading }) {
+function ProjectDetailView({
+  project, onBack, onSelectImage, onAddImages, onDeleteImage, onDeleteProject,
+  onSetStatus, onConfirmAll, onConfirmDevice, onUpdateInfo, currentUserName, isUploading,
+  onRegisterToLibrary, isRegisteringLibrary,
+}) {
   const addFileRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
-  const pcImages = project.images.filter(im => im.device === "pc");
-  const mobileImages = project.images.filter(im => im.device === "mobile");
+  // device 별 이미지 + 진행 상태.
+  const devicesData = useMemo(() => {
+    return DEVICE_ORDER.map(d => {
+      const images = project.images.filter(im => im.device === d);
+      const confirmed = images.filter(im => getActiveVersion(im)?.confirmed).length;
+      const unresolved = images.reduce((acc, im) => {
+        const v = getActiveVersion(im);
+        return acc + (v?.notes || []).filter(n => !n.resolved).length;
+      }, 0);
+      return {
+        id: d,
+        label: DEVICE_META[d].label,
+        color: DEVICE_META[d].color,
+        images,
+        total: images.length,
+        confirmed,
+        unresolved,
+        complete: images.length > 0 && confirmed === images.length,
+      };
+    });
+  }, [project.images]);
 
-  // PC/Mobile 탭 — 둘 다 있으면 둘 다 표시, 하나만 있으면 그쪽 default.
-  const [deviceTab, setDeviceTab] = useState(
-    pcImages.length === 0 && mobileImages.length > 0 ? "mobile" : "pc"
-  );
+  const totalImages = project.images.length;
+  const totalConfirmed = devicesData.reduce((a, d) => a + d.confirmed, 0);
+  const totalUnresolved = devicesData.reduce((a, d) => a + d.unresolved, 0);
+  const isApproved = project.status === "approved";
+  const canConfirm = totalImages > 0 && !isApproved;
+
+  // 기본 활성 탭 = 이미지가 있는 첫 device. 없으면 pc.
+  const firstAvailable = devicesData.find(d => d.total > 0)?.id || "pc";
+  const [deviceTab, setDeviceTab] = useState(firstAvailable);
 
   // 새 이미지 추가 시 — 마지막으로 들어온 이미지의 device 로 자동 탭 전환.
   const prevCountRef = useRef(project.images.length);
@@ -680,13 +1028,14 @@ function ProjectDetailView({ project, onBack, onSelectImage, onAddImages, onDele
     if (currCount > prevCountRef.current) {
       const added = project.images.slice(prevCountRef.current);
       const last = added[added.length - 1];
-      if (last?.device === "mobile") setDeviceTab("mobile");
-      else if (last?.device === "pc") setDeviceTab("pc");
+      if (last?.device && DEVICE_META[last.device]) setDeviceTab(last.device);
     }
     prevCountRef.current = currCount;
   }, [project.images]);
 
-  const visibleImages = deviceTab === "mobile" ? mobileImages : pcImages;
+  const activeDeviceData = devicesData.find(d => d.id === deviceTab) || devicesData[0];
+  const visibleImages = activeDeviceData.images;
+  const activeDeviceCanConfirm = activeDeviceData.total > 0 && !activeDeviceData.complete && !isApproved;
 
   const handleDrop = (e) => {
     e.preventDefault();
@@ -707,9 +1056,65 @@ function ProjectDetailView({ project, onBack, onSelectImage, onAddImages, onDele
             <ChevronLeft className="w-4 h-4" />
           </button>
           <h1 className="text-sm font-bold text-zinc-200 truncate">{project.name}</h1>
-          <span className="text-[11px] text-zinc-500 shrink-0">· {project.images.length}장</span>
+          <span className="text-[11px] text-zinc-500 shrink-0">· {totalImages}장</span>
+          <button
+            onClick={() => setInfoOpen(v => !v)}
+            title={infoOpen ? "프로젝트 정보 접기" : "프로젝트 정보 보기/편집"}
+            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-colors ${
+              infoOpen
+                ? "bg-violet-500/15 border-violet-500/40 text-violet-300"
+                : "bg-white/5 border-white/10 text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            <Info className="w-3 h-3" />
+            정보
+          </button>
+          {/* 진행률 칩 */}
+          {totalImages > 0 && (
+            <>
+              <span
+                title="컨펌 완료된 페이지 / 전체 페이지 (활성 버전 기준)"
+                className={`shrink-0 text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded ${
+                  totalConfirmed === totalImages
+                    ? "bg-[#0eb9b3]/15 text-[#0eb9b3] border border-[#0eb9b3]/40"
+                    : "bg-white/5 text-zinc-400 border border-white/10"
+                }`}
+              >
+                컨펌 {totalConfirmed}/{totalImages}
+              </span>
+              {totalUnresolved > 0 && (
+                <span
+                  title="아직 미해결인 수정 요청 수"
+                  className="shrink-0 text-[10px] font-bold tabular-nums px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40"
+                >
+                  미해결 {totalUnresolved}
+                </span>
+              )}
+            </>
+          )}
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Brand Web Library 등록 — approved 일 때만 활성. 다른 상태에서는 시각적으로 비활성 + tooltip 안내 */}
+          {onRegisterToLibrary && (
+            <button
+              onClick={onRegisterToLibrary}
+              disabled={project.status !== "approved" || isRegisteringLibrary}
+              title={
+                project.status !== "approved"
+                  ? "컨펌 완료 상태에서만 등록할 수 있습니다"
+                  : isRegisteringLibrary ? "등록 중…"
+                  : "Brand Web Library 에 한 카드로 등록"
+              }
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors border ${
+                project.status === "approved" && !isRegisteringLibrary
+                  ? "bg-[#d8b17e]/10 hover:bg-[#d8b17e]/20 border-[#d8b17e]/50 text-[#d8b17e]"
+                  : "bg-zinc-800 border-zinc-700 text-zinc-600 cursor-not-allowed"
+              }`}
+            >
+              <FolderPlus className="w-3.5 h-3.5" />
+              {isRegisteringLibrary ? "등록 중…" : "Library 등록"}
+            </button>
+          )}
           <select
             value={project.status}
             onChange={(e) => onSetStatus(e.target.value)}
@@ -736,31 +1141,97 @@ function ProjectDetailView({ project, onBack, onSelectImage, onAddImages, onDele
             <Plus className="w-3.5 h-3.5" />
             이미지 추가
           </button>
+          {/* 활성 device 컨펌 — 이 탭에 페이지가 있고 아직 다 컨펌 안 됐을 때만. */}
+          {activeDeviceCanConfirm && (
+            <button
+              onClick={() => onConfirmDevice?.(activeDeviceData.id)}
+              title={`${activeDeviceData.label} 페이지 ${activeDeviceData.total}장을 한 번에 컨펌 처리`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-bold transition-colors"
+              style={{
+                background: `${activeDeviceData.color}22`,
+                borderColor: `${activeDeviceData.color}66`,
+                color: activeDeviceData.color,
+              }}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {activeDeviceData.label} 컨펌
+            </button>
+          )}
+          {/* 프로젝트 전체 컨펌 — 모든 device 가 끝나면 권장 톤. */}
+          {canConfirm && (
+            <button
+              onClick={onConfirmAll}
+              title={totalUnresolved > 0
+                ? `미해결 ${totalUnresolved}건 있음 — 확인 후 진행`
+                : "모든 페이지의 활성 버전을 컨펌하고 프로젝트를 완료 처리"}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-bold transition-colors ${
+                totalUnresolved > 0
+                  ? "bg-amber-500/10 hover:bg-amber-500/20 border-amber-500/40 text-amber-300"
+                  : "bg-[#0eb9b3]/15 hover:bg-[#0eb9b3]/25 border-[#0eb9b3]/50 text-[#0eb9b3]"
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              프로젝트 컨펌
+            </button>
+          )}
+          {isApproved && (
+            <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#0eb9b3]/10 border border-[#0eb9b3]/40 text-[#0eb9b3] text-xs font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              컨펌 완료
+            </span>
+          )}
           <button onClick={onDeleteProject} className="p-1.5 rounded hover:bg-rose-500/20 text-zinc-400 hover:text-rose-400 transition-colors" title="프로젝트 삭제">
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </header>
 
-      {/* PC/Mobile 탭 — 이미지가 1장 이상일 때만 노출. */}
+      {infoOpen && (
+        <ProjectInfoPanel
+          project={project}
+          onUpdate={onUpdateInfo}
+          currentUserName={currentUserName}
+          onClose={() => setInfoOpen(false)}
+        />
+      )}
+
+      {/* PC/Mobile/Banner 탭 — 이미지가 있는 device 만 표시. */}
       {project.images.length > 0 && (
         <div className="shrink-0 px-6 pt-3 border-b border-white/5 flex items-center gap-1">
-          <DeviceTab
-            active={deviceTab === "pc"}
-            onClick={() => setDeviceTab("pc")}
-            icon={<Monitor className="w-3.5 h-3.5" />}
-            label="PC"
-            count={pcImages.length}
-            color="#74B9FF"
-          />
-          <DeviceTab
-            active={deviceTab === "mobile"}
-            onClick={() => setDeviceTab("mobile")}
-            icon={<Smartphone className="w-3.5 h-3.5" />}
-            label="Mobile"
-            count={mobileImages.length}
-            color="#FD79A8"
-          />
+          {devicesData.filter(d => d.total > 0).map(d => (
+            <DeviceTab
+              key={d.id}
+              active={deviceTab === d.id}
+              onClick={() => setDeviceTab(d.id)}
+              icon={
+                d.id === "mobile" ? <Smartphone className="w-3.5 h-3.5" /> :
+                d.id === "banner" ? <Image2 className="w-3.5 h-3.5" /> :
+                <Monitor className="w-3.5 h-3.5" />
+              }
+              label={d.label}
+              count={d.total}
+              color={d.color}
+              complete={d.complete}
+              unresolved={d.unresolved}
+            />
+          ))}
+          {/* 비어 있는 device 도 placeholder 탭으로 노출 — "Banner 1장 추가" 같은 액션 유도 */}
+          {devicesData.filter(d => d.total === 0).map(d => (
+            <DeviceTab
+              key={`empty_${d.id}`}
+              active={deviceTab === d.id}
+              onClick={() => setDeviceTab(d.id)}
+              icon={
+                d.id === "mobile" ? <Smartphone className="w-3.5 h-3.5" /> :
+                d.id === "banner" ? <Image2 className="w-3.5 h-3.5" /> :
+                <Monitor className="w-3.5 h-3.5" />
+              }
+              label={d.label}
+              count={0}
+              color={d.color}
+              muted
+            />
+          ))}
         </div>
       )}
 
@@ -775,15 +1246,19 @@ function ProjectDetailView({ project, onBack, onSelectImage, onAddImages, onDele
             >
               파일 선택
             </button>
+            <p className="text-[10px] text-zinc-600 mt-3">PC · Mobile · Banner 가 한 셋트 — 파일명/비율로 자동 분류됩니다.</p>
           </div>
         ) : visibleImages.length === 0 ? (
           <div className="max-w-2xl mx-auto rounded-xl border border-dashed border-white/10 bg-[#111118] p-12 text-center">
-            {deviceTab === "mobile" ? <Smartphone className="w-8 h-8 text-zinc-600 mx-auto mb-3" /> : <Monitor className="w-8 h-8 text-zinc-600 mx-auto mb-3" />}
+            {deviceTab === "mobile" ? <Smartphone className="w-8 h-8 text-zinc-600 mx-auto mb-3" /> :
+             deviceTab === "banner" ? <Image2 className="w-8 h-8 text-zinc-600 mx-auto mb-3" /> :
+             <Monitor className="w-8 h-8 text-zinc-600 mx-auto mb-3" />}
             <p className="text-xs text-zinc-500">
-              아직 {deviceTab === "mobile" ? "모바일" : "PC"} 이미지가 없습니다.
+              아직 {activeDeviceData.label} 이미지가 없습니다.
             </p>
             <p className="text-[10px] text-zinc-600 mt-1.5">
-              이미지를 드래그하면 파일명/비율에 따라 자동 분류됩니다.
+              "이미지 추가" 또는 드래그하면 파일명/비율로 자동 분류됩니다.<br/>
+              파일명에 <span className="font-mono text-zinc-400">banner</span> / <span className="font-mono text-zinc-400">mobile</span> / <span className="font-mono text-zinc-400">pc</span> 가 있으면 강제 지정.
             </p>
           </div>
         ) : (
@@ -820,20 +1295,132 @@ function ProjectDetailView({ project, onBack, onSelectImage, onAddImages, onDele
   );
 }
 
-function DeviceTab({ active, onClick, icon, label, count, color }) {
+function DeviceTab({ active, onClick, icon, label, count, color, complete, unresolved, muted }) {
   return (
     <button
       onClick={onClick}
       className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors border-b-2 -mb-px"
       style={{
-        color: active ? color : "#71717a",
+        color: active ? color : (muted ? "#52525b" : "#71717a"),
         borderColor: active ? color : "transparent",
+        opacity: muted && !active ? 0.6 : 1,
       }}
+      title={muted ? `${label} 이미지가 아직 없습니다` : undefined}
     >
       {icon}
       <span>{label}</span>
       <span className="text-[10px] font-normal opacity-70 tabular-nums">{count}</span>
+      {complete && <Check className="w-3 h-3" style={{ color }} />}
+      {!complete && unresolved > 0 && (
+        <span className="text-[9px] font-bold px-1 py-0 rounded-sm bg-amber-500/20 text-amber-400">!{unresolved}</span>
+      )}
     </button>
+  );
+}
+
+// ─── 프로젝트 정보 패널 — 이름·작업자·공유폴더·설명 편집 ──────────
+function ProjectInfoPanel({ project, onUpdate, currentUserName, onClose }) {
+  const [name, setName] = useState(project.name || "");
+  const [owner, setOwner] = useState(project.owner || "");
+  const [sharedFolderUrl, setSharedFolderUrl] = useState(project.sharedFolderUrl || "");
+  const [description, setDescription] = useState(project.description || "");
+  const [dirty, setDirty] = useState(false);
+
+  // 다른 프로젝트로 갈아탔을 때 폼 동기화.
+  useEffect(() => {
+    setName(project.name || "");
+    setOwner(project.owner || "");
+    setSharedFolderUrl(project.sharedFolderUrl || "");
+    setDescription(project.description || "");
+    setDirty(false);
+  }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const mark = (setter) => (e) => { setter(e.target.value); setDirty(true); };
+  const save = () => {
+    onUpdate?.({
+      name: name.trim() || project.name,
+      owner: owner.trim(),
+      sharedFolderUrl: sharedFolderUrl.trim(),
+      description: description.trim(),
+    });
+    setDirty(false);
+  };
+  const fillCurrentUser = () => { if (currentUserName) { setOwner(currentUserName); setDirty(true); } };
+
+  const createdLabel = project.createdAt
+    ? new Date(project.createdAt).toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" })
+    : "—";
+
+  return (
+    <div className="shrink-0 px-6 py-3 border-b border-white/5 bg-[#0e0e14]">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5">
+        <Field label="프로젝트 이름">
+          <input
+            value={name} onChange={mark(setName)}
+            placeholder="예: 신작 게임 브랜드 사이트"
+            className="w-full px-2 py-1.5 rounded-md bg-[#16161F] border border-white/10 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50"
+          />
+        </Field>
+        <Field
+          label="작업자"
+          aside={currentUserName && owner !== currentUserName ? (
+            <button onClick={fillCurrentUser} className="text-[9px] text-violet-400 hover:text-violet-300">내 이름</button>
+          ) : null}
+        >
+          <input
+            value={owner} onChange={mark(setOwner)}
+            placeholder="디자이너 / 담당자"
+            className="w-full px-2 py-1.5 rounded-md bg-[#16161F] border border-white/10 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50"
+          />
+        </Field>
+        <Field
+          label="공유 폴더"
+          aside={sharedFolderUrl ? (
+            <a href={sharedFolderUrl} target="_blank" rel="noreferrer" className="text-[9px] text-violet-400 hover:text-violet-300 flex items-center gap-0.5">
+              열기 <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          ) : null}
+        >
+          <input
+            value={sharedFolderUrl} onChange={mark(setSharedFolderUrl)}
+            placeholder="https://drive.google.com/... 또는 \\\\share\\..."
+            className="w-full px-2 py-1.5 rounded-md bg-[#16161F] border border-white/10 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50 font-mono"
+          />
+        </Field>
+        <Field label="설명·비고">
+          <input
+            value={description} onChange={mark(setDescription)}
+            placeholder="추가 메모 (선택)"
+            className="w-full px-2 py-1.5 rounded-md bg-[#16161F] border border-white/10 text-xs text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50"
+          />
+        </Field>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[10px] text-zinc-500">
+        <span>생성 {createdLabel}{project.approvedAt ? ` · 컨펌 ${new Date(project.approvedAt).toLocaleDateString("ko-KR")}` : ""}</span>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={save}
+            disabled={!dirty}
+            className="px-2.5 py-1 rounded text-[10px] font-bold bg-[#FD79A8]/15 hover:bg-[#FD79A8]/25 border border-[#FD79A8]/40 text-[#FD79A8] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            저장
+          </button>
+          <button onClick={onClose} className="px-2 py-1 rounded text-[10px] text-zinc-500 hover:text-zinc-300">닫기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, aside, children }) {
+  return (
+    <label className="block">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-wider">{label}</span>
+        {aside}
+      </div>
+      {children}
+    </label>
   );
 }
 
@@ -899,11 +1486,24 @@ function ImageCard({ image, pageNumber, pageTotal, onSelect, onDelete }) {
 // ═══════════════════════════════════════════════════════════
 // 새 프로젝트 모달
 // ═══════════════════════════════════════════════════════════
-function NewProjectModal({ onClose, onCreate, isUploading }) {
+function NewProjectModal({ onClose, onCreate, currentUserName, isUploading }) {
   const [name, setName] = useState("");
+  const [owner, setOwner] = useState(currentUserName || "");
+  const [sharedFolderUrl, setSharedFolderUrl] = useState("");
+  const [description, setDescription] = useState("");
   const [files, setFiles] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
+
+  // 미리보기 카운트 — Banner/Mobile/PC.
+  const counts = useMemo(() => {
+    const c = { pc: 0, mobile: 0, banner: 0 };
+    for (const f of files) {
+      const guess = guessDeviceFromName(f.name) || "pc"; // 비율 측정은 모달에서 생략, 기본 pc.
+      c[guess] = (c[guess] || 0) + 1;
+    }
+    return c;
+  }, [files]);
 
   const addFiles = (incoming) => {
     const next = Array.from(incoming || []).filter(f => f.type?.startsWith("image/"));
@@ -913,7 +1513,7 @@ function NewProjectModal({ onClose, onCreate, isUploading }) {
   const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
   const submit = () => {
     if (!files.length) { alert("이미지를 1장 이상 선택하세요."); return; }
-    onCreate(files, name);
+    onCreate(files, { name, owner, sharedFolderUrl, description });
   };
 
   return (
@@ -944,8 +1544,42 @@ function NewProjectModal({ onClose, onCreate, isUploading }) {
             />
           </div>
 
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">작업자</label>
+              <input
+                type="text"
+                value={owner}
+                onChange={(e) => setOwner(e.target.value)}
+                placeholder="디자이너 / 담당자"
+                className="w-full px-3 py-2 rounded-md bg-[#0c0c0e] border border-white/10 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">공유 폴더 URL <span className="text-zinc-600">(선택)</span></label>
+              <input
+                type="text"
+                value={sharedFolderUrl}
+                onChange={(e) => setSharedFolderUrl(e.target.value)}
+                placeholder="https://drive.google.com/... 또는 \\\\share\\..."
+                className="w-full px-3 py-2 rounded-md bg-[#0c0c0e] border border-white/10 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50 font-mono"
+              />
+            </div>
+          </div>
+
           <div>
-            <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">이미지 <span className="text-zinc-600">(여러 장 선택 가능 · PC/모바일 자동 분류)</span></label>
+            <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">설명·비고 <span className="text-zinc-600">(선택)</span></label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="예: 1차 시안 — 마케팅팀 컨펌 필요"
+              className="w-full px-3 py-2 rounded-md bg-[#0c0c0e] border border-white/10 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">이미지 <span className="text-zinc-600">(여러 장 · PC · Mobile · Banner 한 셋트)</span></label>
             <div
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -957,7 +1591,17 @@ function NewProjectModal({ onClose, onCreate, isUploading }) {
               <p className="text-xs text-zinc-400">
                 <span className="text-[#FD79A8] font-medium">클릭</span> 또는 이미지를 끌어다 놓으세요
               </p>
-              <p className="text-[10px] text-zinc-600 mt-1">파일명에 "mobile" / "m_" / "pc" 등이 있으면 자동 분류, 없으면 비율 기준</p>
+              <p className="text-[10px] text-zinc-600 mt-1">
+                파일명에 <span className="font-mono text-zinc-400">pc</span> · <span className="font-mono text-zinc-400">mobile</span> · <span className="font-mono text-zinc-400">banner</span> 가 있으면 자동 분류, 없으면 비율(세로형=mobile, 와이드 가로형=banner) 기준.
+              </p>
+              {files.length > 0 && (counts.pc + counts.mobile + counts.banner) > 0 && (
+                <div className="mt-2 flex items-center justify-center gap-3 text-[10px] text-zinc-500">
+                  {counts.pc > 0 && (<span className="flex items-center gap-1"><Monitor className="w-3 h-3 text-[#74B9FF]"/>PC {counts.pc}</span>)}
+                  {counts.mobile > 0 && (<span className="flex items-center gap-1"><Smartphone className="w-3 h-3 text-[#FD79A8]"/>Mobile {counts.mobile}</span>)}
+                  {counts.banner > 0 && (<span className="flex items-center gap-1"><Image2 className="w-3 h-3 text-[#FDCB6E]"/>Banner {counts.banner}</span>)}
+                  <span className="text-zinc-700">· 파일명 기준 미리보기</span>
+                </div>
+              )}
             </div>
             <input
               ref={fileRef}

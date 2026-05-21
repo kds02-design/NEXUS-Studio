@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { APP_MAP, pickTheme } from "../config/apps";
 import { useAuth } from "./AuthContext";
 
@@ -103,17 +103,26 @@ export function GlobalProvider({ children }) {
 
   const clearPayload = useCallback(() => setPayload(emptyPayload()), []);
 
+  // Provider value 를 useMemo 로 안정화 — Provider 가 리렌더돼도 deps 가 안 바뀌면 같은 객체 reference.
+  // 이 객체 reference 가 매번 새로 만들어지면 모든 useGlobal consumer 가 cascade 재렌더되어
+  // 인덱스 화면이 깜빡이는 양상으로 보일 수 있음.
+  const ctxValue = useMemo(() => ({
+    currentApp, setCurrentApp, navigate,
+    payload, setPayload, clearPayload,
+    notification,
+    user, isAuthLoading,
+    theme, setTheme, toggleTheme,
+    isLight: theme === "light", isDark: theme === "dark",
+  }), [
+    currentApp, setCurrentApp, navigate,
+    payload, clearPayload,
+    notification,
+    user, isAuthLoading,
+    theme, setTheme, toggleTheme,
+  ]);
+
   return (
-    <GlobalContext.Provider value={{
-      currentApp, setCurrentApp, navigate,
-      payload, setPayload, clearPayload,
-      notification,
-      // Auth bridge — apps should read these, not call firebase auth themselves.
-      user, isAuthLoading,
-      // Theme bridge — 모든 앱이 동일한 light/dark 상태를 공유.
-      theme, setTheme, toggleTheme,
-      isLight: theme === "light", isDark: theme === "dark",
-    }}>
+    <GlobalContext.Provider value={ctxValue}>
       {children}
     </GlobalContext.Provider>
   );

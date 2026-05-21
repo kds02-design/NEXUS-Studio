@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { AlertCircle, CheckCircle } from "lucide-react";
+import { doc, setDoc } from "firebase/firestore";
 import { useRenderPrompt } from "./hooks/useRenderPrompt";
 import { usePresets } from "./hooks/usePresets";
 import MatrixSidebar from "./components/MatrixSidebar";
 import MatrixResultPanel from "./components/MatrixResultPanel";
 import { TuningRoomModal } from "./components/MatrixPromptForm";
+import { renderWithImagen, IMAGEN_MODELS } from "../../lib/imagenRender";
+import { uploadBase64 } from "../../lib/storage";
+import { db, appId } from "../../lib/firebase";
+import { serializeForFirestore } from "../PromptArc/services/firebase";
+import { useAuth } from "../../context/AuthContext";
 
 // useRenderPrompt 가 노출하는 setX 함수들을 MatrixSidebar 에 그대로 전달하기 위한 키 목록.
 const SETTER_KEYS = [
@@ -36,10 +42,125 @@ const ACTION_TO_SETTER = {
 
 export default function RenderMatrixApp() {
   const rp = useRenderPrompt();
+  const { user, grade } = useAuth();
+  // pro/expert 만 Imagen 렌더링 가능.
+  const canRender = grade === 'pro' || grade === 'expert';
 
   // setters / state 묶음 — MatrixSidebar 에 prop-drill 하기 좋게 객체로 압축.
   const setters = Object.fromEntries(SETTER_KEYS.map(k => [k, rp[k]]));
   const state = Object.fromEntries(Object.entries(rp).filter(([k]) => !k.startsWith('set') && k !== 'usageModal'));
+
+  // ─── Imagen 렌더링 ───
+  const [rendering, setRendering] = useState(false);
+  const [renderedImage, setRenderedImage] = useState(null); // { dataUrl, base64, mimeType, modelId }
+  const [renderError, setRenderError] = useState(null);
+  const [savingToArc, setSavingToArc] = useState(false);
+  const [selectedModel, setSelectedModel] = useState(IMAGEN_MODELS[0].id);
+
+  // PromptArc 본 컬렉션에 'private' 으로 저장 — 내 폴더에 노출됨.
+  // 자동 호출(렌더 완료 직후) + 수동 버튼 양쪽에서 동일 경로 사용.
+  const saveRenderToPromptArc = useCallback(async (promptText, image) => {
+    if (!user?.uid || !image?.dataUrl) return;
+    setSavingToArc(true);
+    try {
+      const cloudinaryUrl = await uploadBase64(image.dataUrl);
+      const id = Math.random().toString(36).slice(2);
+      const now = Date.now();
+      const modelLabel = IMAGEN_MODELS.find(m => m.id === image.modelId)?.label || image.modelId || 'Imagen';
+      const title = `RenderMatrix · ${new Date(now).toLocaleString('ko-KR')}`;
+      const record = {
+        id,
+        title,
+        content: promptText || '',
+        images: [cloudinaryUrl],
+        thumbnail: cloudinaryUrl,
+        stepPrompts: [promptText || ''],
+        stepLabels: ['RenderMatrix'],
+        stepTags: [['RenderMatrix', 'Imagen', modelLabel]],
+        stepKeywords: [''],
+        stepDescriptions: [''],
+        tags: ['RenderMatrix', 'Imagen', modelLabel],
+        visibility: 'private',
+        ownerUid: user.uid,
+        authorName: user.displayName || user.email || '',
+        likeCount: 0,
+        relatedIds: [],
+        type: 'image',
+        createdAt: now,
+        updatedAt: now,
+      };
+      // PromptArc 직렬화: 중첩 배열(stepTags) 을 JSON 문자열 + _nestedKeys 마커로 변환.
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', id), serializeForFirestore(record));
+      rp.showToast?.('✨ PromptArc 내 폴더에 저장됐어요');
+      return id;
+    } catch (e) {
+      console.error('[RenderMatrix] save to PromptArc failed', e);
+      rp.showToast?.(`PromptArc 저장 실패: ${e.message || e.code}`);
+    } finally {
+      setSavingToArc(false);
+    }
+  }, [user, rp]);
+
+  const handleRender = useCallback(async (promptText) => {
+    if (!promptText) return;
+    if (!canRender) {
+      setRenderError('Imagen 렌더링은 Pro 등급 이상만 사용할 수 있습니다.');
+      return;
+    }
+    // 참조 이미지 필수 — 기준 시안이 있어야 image-to-image 렌더링이 가능.
+    if (!rp.referenceImage) {
+      const msg = '참조 이미지를 먼저 등록해주세요. (좌측 상단 "기본 이미지" 영역)';
+      setRenderError(msg);
+      rp.showToast?.(msg);
+      return;
+    }
+    // 주간 크레딧 10c 차감. 부족하면 LimitReachedModal 자동 노출.
+    const canGen = await rp.ensureCanGenerate?.('image');
+    if (canGen === false) {
+      setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)');
+      return;
+    }
+    setRendering(true);
+    setRenderError(null);
+    setRenderedImage(null);
+    try {
+      // 기본 이미지(referenceImage)가 dataURL 로 들어있으면 함께 전달 → image-to-image 렌더링.
+      const result = await renderWithImagen(
+        promptText,
+        selectedModel,
+        rp.referenceImage,
+      );
+      setRenderedImage(result);
+      // 렌더 완료 즉시 PromptArc 내 폴더에 자동 등록 — 사용자 클릭 없이 백그라운드 진행.
+      if (user?.uid && result?.dataUrl) {
+        saveRenderToPromptArc(promptText, result);
+      }
+    } catch (e) {
+      console.error('[RenderMatrix] imagen failed', e);
+      setRenderError(e.message || String(e));
+    } finally {
+      setRendering(false);
+    }
+  }, [canRender, selectedModel, rp.referenceImage, user, saveRenderToPromptArc]);
+
+  const handleDownloadRendered = useCallback(() => {
+    if (!renderedImage?.dataUrl) return;
+    const a = document.createElement('a');
+    a.href = renderedImage.dataUrl;
+    a.download = `rendermatrix_${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [renderedImage]);
+
+  // 수동 저장 버튼 — 렌더 직후 자동 저장이 실패했거나 사용자가 명시적으로 재등록하려는 경우.
+  const handleSaveToPromptArc = useCallback(async (promptText) => {
+    if (!user?.uid) { rp.showToast?.('로그인이 필요합니다'); return; }
+    if (!renderedImage?.dataUrl) return;
+    if (savingToArc) return;
+    await saveRenderToPromptArc(promptText, renderedImage);
+  }, [user, renderedImage, savingToArc, rp, saveRenderToPromptArc]);
+
 
   const presets = usePresets({
     setters: {
@@ -113,7 +234,7 @@ export default function RenderMatrixApp() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 font-sans overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 font-sans overflow-hidden">
       {rp.usageModal}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -170,6 +291,8 @@ export default function RenderMatrixApp() {
           vfxPassMode={rp.vfxPassMode} editVfxPassMode={rp.editVfxPassMode}
           auditIssues={rp.auditIssues}
           qualityScores={rp.qualityScores}
+          referenceImage={rp.referenceImage}
+          setReferenceImage={rp.setReferenceImage}
           activeTroubleshoots={rp.activeTroubleshoots}
           onApplyTroubleshoot={applyAction}
           aiModel={rp.aiModel} setAiModel={rp.setAiModel}
@@ -182,6 +305,20 @@ export default function RenderMatrixApp() {
           onCopy={rp.copyToClipboard}
           isCopied={rp.isCopied}
           onSendToMotion={rp.sendToMotion}
+          // Imagen 렌더링
+          onRender={handleRender}
+          rendering={rendering}
+          renderedImage={renderedImage}
+          renderError={renderError}
+          onDownloadRendered={handleDownloadRendered}
+          onSaveToPromptArc={handleSaveToPromptArc}
+          savingToArc={savingToArc}
+          isLoggedIn={!!user?.uid}
+          canRender={canRender}
+          grade={grade}
+          imagenModels={IMAGEN_MODELS}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
         />
       </main>
     </div>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   LOOP_SURFACE_FX, LOOP_EDGE_FX, LOOP_AMBIENT_FX,
   INTRO_SURFACE_FX, INTRO_EDGE_FX, INTRO_AMBIENT_FX,
@@ -6,6 +6,7 @@ import {
   INTRO_STYLES, FLOW_STYLES, MOTION_DYNAMICS, INTENSITY_LEVELS,
   TRANSITION_TARGETS,
 } from '../constants/presets';
+import { performMotionAudit } from '../services/auditMotion';
 
 // --- Pure prompt-build helpers (exported for components that need raw text) ---
 
@@ -203,6 +204,20 @@ export function useMotionPrompt() {
   );
   const currentMaxLimit = targetModel === 'kling' ? 2500 : (exportMode === 'lite_test' ? 1000 : 1200);
 
+  // Layer 조합 audit — 모순/위험 패턴 감지 + one-click fix.
+  const auditIssues = useMemo(
+    () => performMotionAudit({ layers, exportMode, animationMode, targetModel, surfaceOptions, edgeOptions, ambientOptions }),
+    [layers, exportMode, animationMode, targetModel, surfaceOptions, edgeOptions, ambientOptions],
+  );
+
+  // audit fix 의 patch 객체를 해당 setter 로 분배 적용. fix 옵션 버튼이 호출.
+  const applyAuditFix = useCallback((patch) => {
+    if (!patch) return;
+    if (patch.layers) setLayers(patch.layers);
+    if (patch.exportMode) setExportMode(patch.exportMode);
+    if (patch.animationMode) setAnimationMode(patch.animationMode);
+  }, []);
+
   return {
     animationMode, setAnimationMode,
     targetModel, setTargetModel,
@@ -217,6 +232,7 @@ export function useMotionPrompt() {
     rawPromptData, optimizedText, logs,
     activePrompt, activeNegPrompt,
     currentMaxLimit,
+    auditIssues, applyAuditFix,
     DEFAULT_LAYERS,
   };
 }

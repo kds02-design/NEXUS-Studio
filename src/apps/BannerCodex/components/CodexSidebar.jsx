@@ -86,12 +86,12 @@ const CodexSidebar = ({
       {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm" onClick={() => setIsSidebarOpen(false)} />}
       <aside onClick={handleSidebarClick}
         className={`fixed inset-y-0 left-0 z-50 flex flex-col transition-[width] duration-300 ease-in-out cursor-default
-          md:relative md:inset-auto md:my-3 md:ml-3 md:rounded-[16px] md:border md:shadow-2xl md:overflow-hidden
+          md:relative md:inset-auto md:mt-[60px] md:mb-3 md:ml-3 md:rounded-[16px] md:border md:shadow-2xl md:overflow-hidden
           ${isSidebarOpen ? 'translate-x-0 w-[190px]' : '-translate-x-full md:translate-x-0'}
           ${isDesktopSidebarOpen ? 'md:w-[190px]' : 'md:w-[52px]'}
           ${isLightMode ? 'bg-white border-r border-slate-200 md:border-slate-200 md:bg-white' : 'bg-[#111] border-r border-white/5 md:border-zinc-800/80 md:bg-[#141414]'}`}>
         {/* 모바일 사이드바 닫기 버튼만 유지 — 데스크톱 햄버거 토글 제거 (빈 공간 클릭으로 접기/펴기) */}
-        <div className={`flex items-center h-[60px] shrink-0 transition-all duration-300 ${isDesktopSidebarOpen ? 'px-4' : 'justify-center'}`}>
+        <div className={`flex items-center h-[60px] md:h-3 shrink-0 transition-all duration-300 ${isDesktopSidebarOpen ? 'px-4' : 'justify-center'}`}>
           <button onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }}
             className={`md:hidden absolute right-4 ${isLightMode ? 'text-slate-500 hover:text-slate-900' : 'text-zinc-500 hover:text-white'}`}>
             <X className="w-5 h-5" strokeWidth={1.5} />

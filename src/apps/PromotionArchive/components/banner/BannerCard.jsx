@@ -1,4 +1,4 @@
-import { Heart, Check, X } from 'lucide-react';
+import { Heart, Check, X, Lock } from 'lucide-react';
 import { getWebFinalScore100, hasWebEvaluation } from '../../constants/webEvalCriteria';
 
 const BannerCard = ({
@@ -37,15 +37,78 @@ const BannerCard = ({
         }
       `}
     >
-      <div className="relative aspect-[4/5] w-full overflow-hidden bg-zinc-900">
-        <img
-          src={banner.preview || banner.imageUrl}
-          alt={banner.title}
-          className={`w-full h-full object-cover object-top transition-transform duration-500 ${selected ? 'scale-105' : 'group-hover:scale-105'}`}
-          loading="lazy"
-        />
+      <div className="relative w-full overflow-hidden bg-zinc-900 aspect-[4/5]">
+        {(() => {
+          // 브랜드웹 — 메인 + 서브 2분할. 두 영역 모두 동일 비율(4:5 카드 / 위아래 50%/50% → 각 영역 16:10)
+          // 로 잘려서 두 이미지의 잘림 정도가 일관됨.
+          // 결정 우선순위:
+          //   메인: banner.mainPageId 가 가리키는 page > banner.full_image > 첫 PC > preview
+          //   서브: banner.subPageId 가 가리키는 page > banner.mobile_image > 첫 Mobile > 두 번째 PC
+          if (banner.assetType === '브랜드웹') {
+            const pages = Array.isArray(banner.pages) ? banner.pages : [];
+            const findPageUrl = (id) => (id ? pages.find(p => p?.id === id)?.url : null);
+            const mainSrc =
+              findPageUrl(banner.mainPageId)
+              || banner.full_image
+              || pages.find(p => p?.device === 'pc')?.url
+              || banner.preview
+              || banner.imageUrl;
+            const firstMobile = pages.find(p => p?.device === 'mobile')?.url;
+            const pcAfterMain = pages.filter(p => p?.device === 'pc' && p?.url !== mainSrc)[0]?.url;
+            const subSrc =
+              findPageUrl(banner.subPageId)
+              || banner.mobile_image
+              || firstMobile
+              || pcAfterMain
+              || null;
+            const hasSub = !!subSrc && subSrc !== mainSrc;
+            const transform = selected ? 'scale-105' : 'group-hover:scale-105';
+            return (
+              <div className="absolute inset-0 flex flex-col">
+                {/* 메인 — 위 50% (영역 비율 16:10) */}
+                <div className="relative w-full overflow-hidden border-b border-black/40" style={{ flex: hasSub ? '1 1 50%' : '1 1 100%' }}>
+                  <img src={mainSrc} alt={banner.title} loading="lazy"
+                    className={`w-full h-full object-cover object-top transition-transform duration-500 ${transform}`} />
+                </div>
+                {/* 서브 — 아래 50% (동일 16:10) */}
+                {hasSub && (
+                  <div className="relative w-full overflow-hidden" style={{ flex: '1 1 50%' }}>
+                    <img src={subSrc} alt={`${banner.title} sub`} loading="lazy"
+                      className={`w-full h-full object-cover object-top transition-transform duration-500 ${transform}`} />
+                  </div>
+                )}
+              </div>
+            );
+          }
+          // 프로모션/배너 (기존)
+          return (
+            <img
+              src={banner.preview || banner.imageUrl}
+              alt={banner.title}
+              className={`w-full h-full object-cover object-top transition-transform duration-500 ${selected ? 'scale-105' : 'group-hover:scale-105'}`}
+              loading="lazy"
+            />
+          );
+        })()}
 
         <div className={`absolute inset-0 transition-colors pointer-events-none ${selected ? 'bg-[#d8b17e]/10' : 'bg-black/0 group-hover:bg-black/40'}`} />
+
+        {/* 브랜드웹 배지 — 좌하단. 페이지 수도 함께. */}
+        {banner.assetType === '브랜드웹' && (
+          <div className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[10px] font-bold text-[#d8b17e] shadow">
+            <span>WEB</span>
+            {typeof banner.pageCount === 'number' && banner.pageCount > 1 && (
+              <span className="text-zinc-400 font-mono">· {banner.pageCount}p</span>
+            )}
+          </div>
+        )}
+
+        {/* 비공개 배지 — 우상단 위쪽 */}
+        {banner.visibility === 'private' && (
+          <div className="absolute top-3 right-3 z-30 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-bold backdrop-blur-sm shadow" title="나만 볼 수 있는 비공개 항목">
+            <Lock size={10} strokeWidth={2.5} /> 비공개
+          </div>
+        )}
 
         {/* 좌측 상단: 체크박스 — 관리자 모드일 때만 */}
         {showCheckbox && (

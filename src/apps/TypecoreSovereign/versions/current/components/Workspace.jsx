@@ -14,7 +14,7 @@ const Workspace = ({ rp }) => {
   const scores = rp.getValidationScores();
 
   return (
-    <div className="flex-1 flex flex-col bg-[#141414] backdrop-blur-xl rounded-[16px] border border-zinc-800/80 shadow-2xl relative overflow-hidden">
+    <div className="flex-1 min-w-0 flex flex-col bg-[#18181B] rounded-2xl border border-zinc-800 shadow-2xl relative overflow-hidden">
       <div className="flex-1 overflow-y-auto custom-scrollbar p-6 lg:p-10">
         <div className="max-w-[850px] w-full mx-auto pb-20">
 

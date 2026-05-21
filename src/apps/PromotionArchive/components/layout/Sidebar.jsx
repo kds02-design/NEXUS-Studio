@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  X, LayoutGrid, Heart, BarChart2, Layers, Star, ChevronRight,
+  X, LayoutGrid, Heart, BarChart2, Layers, Star, ChevronRight, Lock,
   Settings, FolderPlus, Upload, Save, FileJson, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../../../context/AuthContext';
@@ -24,7 +24,8 @@ const Sidebar = ({
   banners,
   isAdminMode, setIsAdminMode,
 }) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const currentUid = user?.uid || null;
 
   const getYearsForGame = (gameKey) => {
     if (!banners) return [];
@@ -40,6 +41,9 @@ const Sidebar = ({
 
   const favoritesCount = banners?.filter(b => b.liked === 1).length || 0;
   const totalCount = banners?.length || 0;
+  const myPrivateCount = currentUid
+    ? (banners?.filter(b => b.visibility === 'private' && b.ownerUid === currentUid).length || 0)
+    : 0;
 
   // 설정 팝오버 — aside의 overflow-hidden에 잘리지 않도록 portal로 body에 렌더링.
   const settingsBtnRef = useRef(null);
@@ -137,13 +141,13 @@ const Sidebar = ({
         onClick={handleSidebarClick}
         className={`fixed inset-y-0 left-0 z-50 flex flex-col transition-[width] duration-300 ease-in-out cursor-default
           bg-[#111] border-r border-white/5
-          md:relative md:inset-auto md:bg-[#141414] md:border md:border-zinc-800/80 md:rounded-[16px] md:my-3 md:ml-3 md:shadow-2xl md:overflow-hidden
+          md:relative md:inset-auto md:bg-[#141414] md:border md:border-zinc-800/80 md:rounded-[16px] md:mt-[60px] md:mb-3 md:ml-3 md:shadow-2xl md:overflow-hidden
           ${isSidebarOpen ? 'translate-x-0 w-[190px]' : '-translate-x-full md:translate-x-0'}
           ${isDesktopSidebarOpen ? 'md:w-[190px]' : 'md:w-16'}
         `}
       >
         {/* BannerCodex 패턴 — 햄버거 없이 빈 공간 클릭으로 토글 (모바일 닫기 X만 유지) */}
-        <div className={`flex items-center h-[60px] shrink-0 transition-all duration-300 ${isDesktopSidebarOpen ? 'px-4' : 'justify-center'}`}>
+        <div className={`flex items-center h-[60px] md:h-3 shrink-0 transition-all duration-300 ${isDesktopSidebarOpen ? 'px-4' : 'justify-center'}`}>
           <button
             onClick={(e) => { e.stopPropagation(); setIsSidebarOpen(false); }}
             className="md:hidden absolute right-4 text-zinc-500 hover:text-white"
@@ -171,6 +175,16 @@ const Sidebar = ({
                 isOpen={isDesktopSidebarOpen}
                 onClick={() => handleGameClick('favorites')}
               />
+              {currentUid && (
+                <NavRow
+                  icon={<Lock className="w-[18px] h-[18px]" strokeWidth={1.5} />}
+                  label="내 비공개"
+                  count={myPrivateCount}
+                  isActive={activeCategory === 'my_private' && !isCollectionMode}
+                  isOpen={isDesktopSidebarOpen}
+                  onClick={() => handleGameClick('my_private')}
+                />
+              )}
               <NavRow
                 icon={<BarChart2 className="w-[18px] h-[18px]" strokeWidth={1.5} />}
                 label="분석"

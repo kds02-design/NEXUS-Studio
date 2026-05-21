@@ -1,6 +1,9 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import {
+  getFirestore, initializeFirestore,
+  persistentLocalCache, persistentMultipleTabManager,
+} from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
@@ -25,7 +28,25 @@ if (missing.length > 0) {
 
 export const firebaseApp = getApps()[0] || initializeApp(firebaseConfig);
 export const auth = getAuth(firebaseApp);
-export const db = getFirestore(firebaseApp);
+
+// Firestore — 사내망/프록시/VPN 환경에서 WebChannel 폴백이 실패해
+// LISTEN_CHANNEL 을 초당 수십 회 재호출하는 burst 문제 해결을 위해 long-polling 강제.
+// + persistentLocalCache 로 IndexedDB 캐시 활성화 (다중 탭 안전).
+// initializeFirestore 는 첫 호출만 가능 → 이미 다른 모듈이 getFirestore 호출했으면 fallback.
+let _db;
+try {
+  _db = initializeFirestore(firebaseApp, {
+    experimentalAutoDetectLongPolling: true,   // WebChannel 자동 감지 → 실패 시 long-poll 폴백
+    experimentalLongPollingOptions: { timeoutSeconds: 30 }, // 각 폴 30초 유지 → 호출 빈도 ↓
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+  });
+} catch (e) {
+  // 이미 초기화됐거나 IndexedDB 불가 환경 (시크릿 모드 일부) — 기본 인스턴스 사용.
+  console.warn("[firebase] initializeFirestore 실패, 기본 getFirestore 사용:", e?.message || e);
+  _db = getFirestore(firebaseApp);
+}
+export const db = _db;
+
 export const storage = getStorage(firebaseApp);
 export const appId = firebaseConfig.projectId || "default-app-id";
 export const googleProvider = new GoogleAuthProvider();

@@ -57,8 +57,9 @@ const handleCopy = (text) => {
 
 export default function App() {
   const { user, isAdmin } = useAuth();
-  const { theme } = useGlobal();
+  const { theme, payload, clearPayload } = useGlobal();
   const isLightMode = theme === 'light';
+  const consumedPayloadRef = useRef(null);
 
   // 관리자 권한(isAdmin) 과 별도로, 설정에서 명시적으로 켠 "관리 모드" 토글.
   // 관리자라도 토글 OFF 면 일반 사용자처럼 보이고 (체크박스/편집 UI 숨김), 토글 ON 시에만 admin UI 노출.
@@ -844,12 +845,56 @@ export default function App() {
     setHasChanges(false); setIsEditingPreview(false);
     setZoomScale(1); setPanPos({ x: 0, y: 0 });
     setPreviewModalOpen(true); setIsScorePopoverOpen(false); setIsScoreAdjExpanded(false);
-    if (banner.loadedImage) setHighResImage(banner.loadedImage);
-    else if (banner.preview) setHighResImage(banner.preview);
+    // 폴백 체인 — CodexCard 와 동일하게 (preview > imageUrl > thumbnailUrl).
+    // 외부 인입(payload)에서는 banner.loadedImage 가 없으므로 이 폴백이 없으면
+    // fetchBannerImage 가 끝날 때까지 highResImage 가 null 이라 Loader2 가 무한 표시됨.
+    const fallbackSrc = banner.loadedImage || banner.preview || banner.imageUrl || banner.thumbnailUrl || null;
+    setHighResImage(fallbackSrc);
     if (banner.imageId && !banner.isTemp) {
-      try { const data = await fetchBannerImage(banner.imageId); if (data?.original) setHighResImage(data.original); } catch {}
+      try {
+        const data = await fetchBannerImage(banner.imageId);
+        if (data?.original) setHighResImage(data.original);
+      } catch (e) {
+        console.warn('[BannerCodex] fetchBannerImage failed', e);
+        // 폴백이 이미 세팅돼 있어서 스피너로 빠지지는 않음.
+      }
     }
   }, []);
+
+  // AssetLibrary 에서 "출처로 이동" → payload.params.viewBannerId 로 진입.
+  // banners 가 로드된 후 매칭 → handleOpenPreview. timestamp 로 dedup.
+  // 빈 컬렉션/없는 id 인 경우 silent fail 대신 alert + 콘솔.
+  useEffect(() => {
+    if (!payload || payload.target !== 'banner-codex') return;
+    const id = payload.params?.viewBannerId;
+    if (!id) return;
+    if (consumedPayloadRef.current === payload.timestamp) return;
+    // 아직 Firestore hydrate 전이면 대기. isLoadingData 가 false 가 된 뒤 다시 실행됨.
+    // (이전 버전은 빈 배열을 곧바로 "empty" 로 오인해 alert 후 payload 를 소비해버렸음)
+    if (isLoadingData) return;
+    if (!banners) return;
+    const banner = banners.find(b => b.id === id) || tempBanners?.find(b => b.id === id);
+    if (banner) {
+      handleOpenPreview(banner);
+      consumedPayloadRef.current = payload.timestamp;
+      clearPayload?.();
+    } else if (banners.length === 0 && (!tempBanners || tempBanners.length === 0)) {
+      console.warn('[BannerCodex] viewBannerId payload received but banners is empty', { id });
+      alert('배너 데이터를 불러올 수 없어 출처를 열 수 없어요.');
+      consumedPayloadRef.current = payload.timestamp;
+      clearPayload?.();
+    } else {
+      console.warn('[BannerCodex] viewBannerId not found', {
+        id,
+        totalBanners: banners.length,
+        sample: banners.slice(0, 3).map(b => b.id),
+      });
+      alert('해당 배너를 찾을 수 없어요. 출처가 삭제됐거나 다른 라이브러리의 항목일 수 있습니다.');
+      consumedPayloadRef.current = payload.timestamp;
+      clearPayload?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload?.timestamp, payload?.target, isLoadingData, banners?.length, tempBanners?.length]);
 
   const handleEditChange = (field, value) => {
     if (!editedBanner) return;

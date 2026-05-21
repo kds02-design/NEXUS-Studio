@@ -4,8 +4,15 @@ import {
   hasTagOf, matchesFilter, isUnanalyzed,
 } from "../constants/categories";
 
-export function useFilter({ prompts, searchTerm, category, sortOption, favoriteIds, folders, filters }) {
+export function useFilter({ prompts, searchTerm, category, sortOption, favoriteIds, folders, filters, currentUid }) {
   return useMemo(() => {
+    // 본인 소유 판단 — ownerUid 가 없는 구프롬프트는 authorId 폴백.
+    const isMine = (p) =>
+      !!currentUid && (
+        (p.ownerUid && p.ownerUid === currentUid) ||
+        (!p.ownerUid && p.authorId && p.authorId === currentUid)
+      );
+
     let folderItems = null;
     if (typeof category === 'string' && category.startsWith('folder:')) {
       const fid = category.slice(7);
@@ -15,11 +22,15 @@ export function useFilter({ prompts, searchTerm, category, sortOption, favoriteI
     const styleDef = filters.style ? STYLE_FILTERS.find(f => f.id === filters.style) : null;
     const themeDef = filters.theme ? THEME_FILTERS.find(f => f.id === filters.theme) : null;
     let result = prompts.filter(p => {
+      // visibility 가드 — 비공개는 본인에게만 노출.
+      if (p.visibility === 'private' && !isMine(p)) return false;
+
       const term = searchTerm.toLowerCase();
       const matchSearch = [p.title, p.content, p.description, p.aiKeywords, ...(p.stepPrompts || []), ...(p.stepKeywords || []), ...(p.stepDescriptions || [])].some(s => (s || '').toLowerCase().includes(term));
       const matchCategory =
         category === 'all' ? true :
         category === '즐겨찾기' ? favoriteIds.has(p.id) :
+        category === 'my_private' ? (isMine(p) && p.visibility === 'private') :
         folderItems ? folderItems.has(p.id) :
         hasTagOf(p, category);
       let matchTopFilter = true;
@@ -43,5 +54,5 @@ export function useFilter({ prompts, searchTerm, category, sortOption, favoriteI
       if (sortOption === 'oldest') return (a.createdAt || 0) - (b.createdAt || 0);
       return (b.createdAt || 0) - (a.createdAt || 0);
     });
-  }, [prompts, searchTerm, category, sortOption, favoriteIds, folders, filters]);
+  }, [prompts, searchTerm, category, sortOption, favoriteIds, folders, filters, currentUid]);
 }

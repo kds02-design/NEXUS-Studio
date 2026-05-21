@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Upload } from 'lucide-react';
+import { X, Upload, Globe, Lock } from 'lucide-react';
 
 const UploadModal = ({ 
     isOpen, 
@@ -79,16 +79,50 @@ const UploadModal = ({
                     {/* 연도 설정 영역 */}
                     <div>
                         <label className="block text-xs font-medium text-zinc-500 mb-1">연도 설정</label>
-                        <select 
-                            className="w-full bg-[#0c0c0e] border border-zinc-800 rounded-lg px-3 py-2 text-sm text-[#d8b17e] focus:outline-none focus:border-[#d8b17e]" 
-                            value={uploadSettings.year} 
+                        <select
+                            className="w-full bg-[#0c0c0e] border border-zinc-800 rounded-lg px-3 py-2 text-sm text-[#d8b17e] focus:outline-none focus:border-[#d8b17e]"
+                            value={uploadSettings.year}
                             onChange={(e) => setUploadSettings(p => ({ ...p, year: e.target.value }))}
                         >
-                            {[0, 1, 2, 3, 4].map(i => { 
-                                const y = new Date().getFullYear() - i; 
-                                return <option key={y} value={y}>{y}년</option> 
+                            {[0, 1, 2, 3, 4].map(i => {
+                                const y = new Date().getFullYear() - i;
+                                return <option key={y} value={y}>{y}년</option>
                             })}
                         </select>
+                    </div>
+
+                    {/* 공개 범위 — 비공개는 본인만 조회 가능. */}
+                    <div>
+                        <label className="block text-xs font-medium text-zinc-500 mb-1">공개 범위</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setUploadSettings(p => ({ ...p, visibility: 'public' }))}
+                                className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                                    (uploadSettings.visibility || 'public') === 'public'
+                                        ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/40'
+                                        : 'bg-[#0c0c0e] text-zinc-500 border-zinc-800 hover:text-zinc-300'
+                                }`}
+                                title="모두에게 공유"
+                            >
+                                <Globe className="w-3.5 h-3.5" /> 공용
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setUploadSettings(p => ({ ...p, visibility: 'private' }))}
+                                className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-colors ${
+                                    uploadSettings.visibility === 'private'
+                                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/40'
+                                        : 'bg-[#0c0c0e] text-zinc-500 border-zinc-800 hover:text-zinc-300'
+                                }`}
+                                title="본인만 조회"
+                            >
+                                <Lock className="w-3.5 h-3.5" /> 비공개
+                            </button>
+                        </div>
+                        {uploadSettings.visibility === 'private' && (
+                            <div className="text-[10px] text-amber-400/80 mt-1.5 ml-0.5">나만 볼 수 있어요</div>
+                        )}
                     </div>
                 </div>
 

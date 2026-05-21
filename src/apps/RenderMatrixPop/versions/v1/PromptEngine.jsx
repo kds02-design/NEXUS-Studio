@@ -13,7 +13,7 @@ const App = () => {
     const rp = usePopPromptV1();
 
     return (
-        <div className="flex flex-col h-screen bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 overflow-hidden" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+        <div className="flex flex-col h-full bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 overflow-hidden" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
             <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }

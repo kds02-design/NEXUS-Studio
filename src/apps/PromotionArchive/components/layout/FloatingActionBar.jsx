@@ -1,9 +1,9 @@
-import { Layers, Edit3, X, Sparkles, Trash2, Wrench } from 'lucide-react';
+import { Layers, Edit3, X, Sparkles, Trash2, Wrench, FolderPlus } from 'lucide-react';
 
 // 하단 중앙 floating bar.
 // - 다중 선택 시(selectedCount > 0): 메인 액션 그룹(담기/속성/선택 취소/AI/삭제) 표시.
-// - 관리자 모드 시(onNormalizePaths 전달 시): 우측에 admin 액션 그룹 추가 ("경로 정규화").
-// - 두 그룹은 selection 여부와 독립적이라 admin 작업만 따로 노출 가능.
+// - 관리자 모드 + 선택 있음: 우측에 admin 액션 그룹 추가 ("경로 정규화").
+// - selection 이 없으면 바 자체를 띄우지 않음 — 관리자라도 빈 화면에 단독으로 뜨지 않도록.
 const FloatingActionBar = ({
     selectedCount,
     onAddToCollection,
@@ -14,10 +14,12 @@ const FloatingActionBar = ({
     // admin 액션 (선택사항)
     onNormalizePaths,
     isNormalizing,
+    onAutoFillPaths,
+    isAutoFilling,
 }) => {
     const hasSelection = selectedCount > 0;
-    const hasAdminActions = !!onNormalizePaths;
-    if (!hasSelection && !hasAdminActions) return null;
+    const hasAdminActions = !!onNormalizePaths || !!onAutoFillPaths;
+    if (!hasSelection) return null; // admin 액션은 selection 과 함께만 노출
 
     return (
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-8 fade-in duration-300">
@@ -67,15 +69,28 @@ const FloatingActionBar = ({
                 {hasAdminActions && (
                     <>
                         {hasSelection && <div className="w-[1px] h-4 bg-white/10 mx-1" />}
-                        <button
-                            onClick={onNormalizePaths}
-                            disabled={isNormalizing}
-                            title="모든 path 를 \\ppc-file\{게임폴더}\{연도}\... 형식으로 일괄 정규화"
-                            className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-purple-300 hover:text-purple-200 hover:bg-purple-500/10 rounded-xl transition-all disabled:opacity-50"
-                        >
-                            <Wrench size={14} />
-                            <span>{isNormalizing ? '정규화 중…' : '경로 정규화'}</span>
-                        </button>
+                        {onAutoFillPaths && (
+                            <button
+                                onClick={onAutoFillPaths}
+                                disabled={isAutoFilling}
+                                title="선택 항목 중 경로가 빈 것에 game/year 기반 표준 prefix 자동 채움"
+                                className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 rounded-xl transition-all disabled:opacity-50"
+                            >
+                                <FolderPlus size={14} />
+                                <span>{isAutoFilling ? '채우는 중…' : '경로 채우기'}</span>
+                            </button>
+                        )}
+                        {onNormalizePaths && (
+                            <button
+                                onClick={onNormalizePaths}
+                                disabled={isNormalizing}
+                                title="모든 path 를 \\ppc-file\{게임폴더}\{연도}\... 형식으로 일괄 정규화"
+                                className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-purple-300 hover:text-purple-200 hover:bg-purple-500/10 rounded-xl transition-all disabled:opacity-50"
+                            >
+                                <Wrench size={14} />
+                                <span>{isNormalizing ? '정규화 중…' : '경로 정규화'}</span>
+                            </button>
+                        )}
                     </>
                 )}
             </div>
