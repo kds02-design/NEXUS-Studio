@@ -7,7 +7,9 @@ import {
 } from "lucide-react";
 import { useGlobal } from "../../context/GlobalContext";
 import ReviewWorkspace from "./components/ReviewWorkspace";
+import PublishModal from "./components/PublishModal";
 import { uploadBase64 } from "../../lib/storage";
+import { pickSharedFolderFromFiles, GAMES_FOR_BRANDWEB } from "../../lib/sharedFolderPath";
 import {
   subscribeToProjects,
   saveProject,
@@ -48,11 +50,14 @@ function deviceFromRatio(w, h) {
 }
 
 // device 표시 메타 — 라벨 / 아이콘 키 / 컬러. 코드 한 곳에서 관리.
+// thumbAspect 는 카드 썸네일에 적용되는 Tailwind aspect 클래스 (PC 가로형 / Mobile 세로형 / Banner 와이드).
 const DEVICE_META = {
-  pc:     { label: "PC",     color: "#74B9FF" },
-  mobile: { label: "Mobile", color: "#FD79A8" },
-  banner: { label: "Banner", color: "#FDCB6E" },
+  pc:     { label: "PC",     color: "#74B9FF", thumbAspect: "aspect-[16/10]" },
+  mobile: { label: "Mobile", color: "#FD79A8", thumbAspect: "aspect-[9/16]"  },
+  banner: { label: "Banner", color: "#FDCB6E", thumbAspect: "aspect-[16/5]"  },
 };
+// 헬퍼 — 알 수 없는 device 는 PC 폴백.
+const thumbAspectFor = (device) => DEVICE_META[device]?.thumbAspect || DEVICE_META.pc.thumbAspect;
 const DEVICE_ORDER = ["pc", "mobile", "banner"];
 
 function loadImageDataURL(file) {
@@ -227,6 +232,10 @@ export default function BrandWebReviewApp() {
   const [isUploading, setIsUploading] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
 
+  // device 별 마지막 선택 페이지 기억 — PC ↔ Mobile 전환 시 직전 페이지 복원.
+  // { [projectId]: { pc: imageId, mobile: imageId, banner: imageId } } 구조.
+  const lastImageByDeviceRef = useRef({});
+
   // 최신 projects 를 ref 로 — Firestore 비동기 쓰기 시 stale closure 회피.
   const projectsRef = useRef([]);
   useEffect(() => { projectsRef.current = projects; }, [projects]);
@@ -352,6 +361,10 @@ export default function BrandWebReviewApp() {
         images: [newImage],
         source: incoming.source || "external",
         tags: incoming.prompt?.tags || [],
+        // 외부 앱에서 폴더 경로를 함께 보내준 경우 자동 채움 (PromotionArchive·DesignEvaluator 흐름).
+        sharedFolderUrl: incoming.params?.sharedFolderUrl || incoming.image?.metadata?.sourcePath || "",
+        owner: incoming.params?.owner || "",
+        description: incoming.params?.description || "",
       };
       updateProjects(prev => [proj, ...prev]);
       setActiveProjectId(proj.id);
@@ -520,9 +533,11 @@ export default function BrandWebReviewApp() {
   }, [updateProjects]);
 
   // 컨펌 완료 프로젝트를 Brand Web Library(PromotionArchive) 에 brand-web 카드로 등록.
-  // 중복은 sourceProjectId 로 체크 — 이미 있으면 안내 + 그쪽으로 이동 옵션.
+  // confirm() 대신 PublishModal 을 열어 게임/연도 선택 + AI 추정 단계 거친 뒤 등록.
   const [isRegisteringLibrary, setIsRegisteringLibrary] = useState(false);
-  const handleRegisterToLibrary = useCallback(async (project) => {
+  const [publishModal, setPublishModal] = useState({ open: false, project: null });
+
+  const handleRegisterToLibrary = useCallback((project) => {
     if (!uid) { alert("로그인이 필요합니다."); return; }
     if (!project) return;
     if (project.status !== "approved") {
@@ -530,11 +545,18 @@ export default function BrandWebReviewApp() {
       return;
     }
     if (isRegisteringLibrary) return;
-    if (!confirm(`'${project.name || "프로젝트"}'를 Brand Web Library 에 등록할까요?\n\n페이지 ${project.images?.length || 0}건이 한 카드로 묶여 라이브러리에서 조회됩니다.`)) return;
+    setPublishModal({ open: true, project });
+  }, [uid, isRegisteringLibrary]);
+
+  // PublishModal 에서 game/year 선택 후 실제 등록 수행.
+  const handleConfirmPublish = useCallback(async ({ game, year }) => {
+    const project = publishModal.project;
+    if (!project || !uid) return;
     setIsRegisteringLibrary(true);
     try {
-      const created = await registerProjectAsBrandWebBanner(uid, project);
-      if (confirm(`✅ 등록 완료 (${created.pageCount}페이지)\n\nBrand Web Library 로 이동해서 확인할까요?`)) {
+      const created = await registerProjectAsBrandWebBanner(uid, project, { game, year });
+      setPublishModal({ open: false, project: null });
+      if (confirm(`✅ '${game}' 카테고리에 등록 완료 (${created.pageCount}페이지)\n\nBrand Web Library 로 이동해서 확인할까요?`)) {
         navigate("promotion-archive", {
           source: "brand-web-review",
           target: "promotion-archive",
@@ -546,6 +568,7 @@ export default function BrandWebReviewApp() {
       }
     } catch (e) {
       if (e.code === "ALREADY_REGISTERED") {
+        setPublishModal({ open: false, project: null });
         if (confirm(`이미 라이브러리에 등록된 프로젝트입니다.\n\n라이브러리에서 해당 항목을 열까요?`)) {
           navigate("promotion-archive", {
             source: "brand-web-review",
@@ -563,7 +586,7 @@ export default function BrandWebReviewApp() {
     } finally {
       setIsRegisteringLibrary(false);
     }
-  }, [uid, isRegisteringLibrary, navigate]);
+  }, [publishModal.project, uid, navigate]);
 
   // 프로젝트 정보 패치 (name, owner, sharedFolderUrl, description 등).
   const handleUpdateProjectInfo = useCallback((projectId, patch) => {
@@ -647,6 +670,14 @@ export default function BrandWebReviewApp() {
     [activeProject, activeImageId]
   );
   const activeVersion = useMemo(() => getActiveVersion(activeImage), [activeImage]);
+
+  // 현재 페이지가 바뀔 때마다 device 별 마지막 선택을 ref 에 기록. 토글로 복원.
+  useEffect(() => {
+    if (!activeProjectId || !activeImage?.device || !activeImage?.id) return;
+    if (!lastImageByDeviceRef.current[activeProjectId]) lastImageByDeviceRef.current[activeProjectId] = {};
+    lastImageByDeviceRef.current[activeProjectId][activeImage.device] = activeImage.id;
+  }, [activeProjectId, activeImage?.id, activeImage?.device]);
+
   const filteredProjects = useMemo(() => {
     if (activeMenu === "all") return projects;
     return projects.filter(p => p.status === activeMenu);
@@ -803,6 +834,27 @@ export default function BrandWebReviewApp() {
           onSelectVersion={handleSelectVersion}
           onUploadNewVersion={addImageVersion}
           device={activeImage.device}
+          // device 전환 — 현재 프로젝트에 존재하는 device 의 첫 페이지로 active 이동.
+          availableDevices={(() => {
+            const order = ["pc", "mobile", "banner"];
+            const present = new Set((activeProject?.images || []).map((im) => im.device).filter(Boolean));
+            return order.filter((d) => present.has(d));
+          })()}
+          onSwitchDevice={(d) => {
+            if (!activeProject) return;
+            // 현재 보고 있는 페이지를 ref 에 device 별로 저장.
+            if (activeImage?.device && activeImage?.id) {
+              if (!lastImageByDeviceRef.current[activeProject.id]) lastImageByDeviceRef.current[activeProject.id] = {};
+              lastImageByDeviceRef.current[activeProject.id][activeImage.device] = activeImage.id;
+            }
+            // 목표 device 의 마지막 선택 페이지 → 유효하면 복원, 아니면 첫 페이지.
+            const memorized = lastImageByDeviceRef.current[activeProject.id]?.[d];
+            const memorizedImg = memorized
+              ? (activeProject.images || []).find((im) => im.id === memorized && im.device === d)
+              : null;
+            const target = memorizedImg || (activeProject.images || []).find((im) => im.device === d);
+            if (target) setActiveImageId(target.id);
+          }}
           // 전체 수정사항 리스트 + 점프 + 토글.
           allNotes={allNotes}
           onJumpToNote={handleJumpToNote}
@@ -847,6 +899,26 @@ export default function BrandWebReviewApp() {
           isUploading={isUploading}
         />
       )}
+
+      {/* Brand Web Library 발행 모달 — 컨펌 완료 프로젝트의 게임/연도 선택 + AI 추정 */}
+      <PublishModal
+        isOpen={publishModal.open}
+        project={publishModal.project}
+        thumbnailUrl={(() => {
+          const p = publishModal.project;
+          if (!p) return null;
+          // 첫 PC 이미지 우선 → Mobile → 그냥 첫 페이지.
+          const findActive = (im) => im?.versions?.find(v => v.id === im.activeVersionId) || im?.versions?.[im.versions.length - 1];
+          const pcImage = (p.images || []).find(im => im.device === "pc");
+          const mobileImage = (p.images || []).find(im => im.device === "mobile");
+          const firstImage = (p.images || [])[0];
+          return findActive(pcImage)?.url || findActive(mobileImage)?.url || findActive(firstImage)?.url || null;
+        })()}
+        existingGames={["아이온", "블레이드앤소울", "리니지", "리니지M", "리니지W", "TL", "호연", "기타"]}
+        onClose={() => { if (!isRegisteringLibrary) setPublishModal({ open: false, project: null }); }}
+        onSubmit={handleConfirmPublish}
+        isSubmitting={isRegisteringLibrary}
+      />
     </div>
   );
 }
@@ -1433,6 +1505,10 @@ function ImageCard({ image, pageNumber, pageTotal, onSelect, onDelete }) {
   const versionCount = image.versions?.length || 1;
   const status = getPageStatus(image);
   const dot = STATUS_DOT[status];
+  // device 별 비율 — PC 16:10 / Mobile 9:16 / Banner 16:5.
+  const aspectClass = thumbAspectFor(image.device);
+  // Mobile/Banner 는 잘림 없이 비율 그대로 보이도록 object-contain. PC 는 기존 cover 유지.
+  const fitClass = image.device === "pc" ? "object-cover" : "object-contain";
 
   return (
     <div
@@ -1441,8 +1517,8 @@ function ImageCard({ image, pageNumber, pageTotal, onSelect, onDelete }) {
       onMouseLeave={() => setHov(false)}
       className="rounded-lg border border-white/5 bg-[#16161F] hover:border-white/15 transition-colors cursor-pointer overflow-hidden"
     >
-      <div className="relative aspect-[16/10] bg-[#0c0c0e] overflow-hidden">
-        <img src={url} alt={image.name} className="w-full h-full object-cover" />
+      <div className={`relative ${aspectClass} bg-[#0c0c0e] overflow-hidden`}>
+        <img src={url} alt={image.name} className={`w-full h-full ${fitClass}`} />
         {/* 페이지 번호 + 상태 dot — 좌측 하단 */}
         {typeof pageNumber === "number" && (
           <div className="absolute bottom-2 left-2 flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[10px] font-mono font-semibold text-zinc-200 tabular-nums">
@@ -1486,14 +1562,18 @@ function ImageCard({ image, pageNumber, pageTotal, onSelect, onDelete }) {
 // ═══════════════════════════════════════════════════════════
 // 새 프로젝트 모달
 // ═══════════════════════════════════════════════════════════
-function NewProjectModal({ onClose, onCreate, currentUserName, isUploading }) {
+function NewProjectModal({ onClose, onCreate, currentUserName, isUploading, initialFolderUrl = "" }) {
   const [name, setName] = useState("");
   const [owner, setOwner] = useState(currentUserName || "");
-  const [sharedFolderUrl, setSharedFolderUrl] = useState("");
+  const [sharedFolderUrl, setSharedFolderUrl] = useState(initialFolderUrl || "");
+  const [folderAutoFilled, setFolderAutoFilled] = useState(false);
   const [description, setDescription] = useState("");
+  const [game, setGame] = useState(GAMES_FOR_BRANDWEB[0]);
+  const [year, setYear] = useState(String(new Date().getFullYear()));
   const [files, setFiles] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
+  const folderRef = useRef(null);
 
   // 미리보기 카운트 — Banner/Mobile/PC.
   const counts = useMemo(() => {
@@ -1505,10 +1585,20 @@ function NewProjectModal({ onClose, onCreate, currentUserName, isUploading }) {
     return c;
   }, [files]);
 
+  // 파일들로부터 sharedFolderUrl 자동 추론 → 사용자가 직접 수정 안 했을 때만 채움.
+  const tryAutoFillFolder = useCallback((incoming) => {
+    const path = pickSharedFolderFromFiles(incoming, { game, year, section: 'brandweb' });
+    if (!path) return;
+    // 이미 사용자가 직접 입력했으면 유지. 자동 입력했던 케이스만 갱신.
+    setSharedFolderUrl(prev => (!prev || folderAutoFilled) ? path : prev);
+    setFolderAutoFilled(true);
+  }, [game, year, folderAutoFilled]);
+
   const addFiles = (incoming) => {
     const next = Array.from(incoming || []).filter(f => f.type?.startsWith("image/"));
     if (!next.length) return;
     setFiles(prev => [...prev, ...next]);
+    tryAutoFillFolder(next);
   };
   const removeFile = (idx) => setFiles(prev => prev.filter((_, i) => i !== idx));
   const submit = () => {
@@ -1544,7 +1634,7 @@ function NewProjectModal({ onClose, onCreate, currentUserName, isUploading }) {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">작업자</label>
               <input
@@ -1556,15 +1646,43 @@ function NewProjectModal({ onClose, onCreate, currentUserName, isUploading }) {
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">공유 폴더 URL <span className="text-zinc-600">(선택)</span></label>
+              <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">게임</label>
+              <select
+                value={game}
+                onChange={(e) => { setGame(e.target.value); setFolderAutoFilled(false); }}
+                className="w-full px-3 py-2 rounded-md bg-[#0c0c0e] border border-white/10 text-sm text-zinc-200 outline-none focus:border-[#FD79A8]/50"
+              >
+                {GAMES_FOR_BRANDWEB.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">연도</label>
               <input
                 type="text"
-                value={sharedFolderUrl}
-                onChange={(e) => setSharedFolderUrl(e.target.value)}
-                placeholder="https://drive.google.com/... 또는 \\\\share\\..."
+                value={year}
+                onChange={(e) => { setYear(e.target.value); setFolderAutoFilled(false); }}
+                placeholder="2026"
                 className="w-full px-3 py-2 rounded-md bg-[#0c0c0e] border border-white/10 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50 font-mono"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">
+              공유 폴더 경로 <span className="text-zinc-600">(폴더 업로드 시 자동 채움 · 수정 가능)</span>
+            </label>
+            <input
+              type="text"
+              value={sharedFolderUrl}
+              onChange={(e) => { setSharedFolderUrl(e.target.value); setFolderAutoFilled(false); }}
+              placeholder={`\\\\ppc-file\\1.리니지\\${year || '2026'}\\브랜드웹\\20260325_아지트_1차\\03.디자인`}
+              className="w-full px-3 py-2 rounded-md bg-[#0c0c0e] border border-white/10 text-sm text-zinc-200 placeholder-zinc-600 outline-none focus:border-[#FD79A8]/50 font-mono"
+            />
+            {folderAutoFilled && (
+              <p className="mt-1 text-[10px] text-emerald-400/80 flex items-center gap-1">
+                <Check className="w-3 h-3" /> 폴더에서 경로 자동 추출됨 — 필요하면 직접 수정하세요
+              </p>
+            )}
           </div>
 
           <div>
@@ -1579,7 +1697,17 @@ function NewProjectModal({ onClose, onCreate, currentUserName, isUploading }) {
           </div>
 
           <div>
-            <label className="block text-[11px] font-medium text-zinc-400 mb-1.5">이미지 <span className="text-zinc-600">(여러 장 · PC · Mobile · Banner 한 셋트)</span></label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[11px] font-medium text-zinc-400">이미지 <span className="text-zinc-600">(여러 장 · PC · Mobile · Banner 한 셋트)</span></label>
+              <button
+                type="button"
+                onClick={() => folderRef.current?.click()}
+                className="text-[10px] text-[#FD79A8] hover:text-[#FD79A8]/80 flex items-center gap-1"
+                title="폴더 단위로 업로드 → 공유 폴더 경로 자동 추출"
+              >
+                <Folder className="w-3 h-3" /> 폴더로 추가
+              </button>
+            </div>
             <div
               onClick={() => fileRef.current?.click()}
               onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -1608,6 +1736,16 @@ function NewProjectModal({ onClose, onCreate, currentUserName, isUploading }) {
               type="file"
               multiple
               accept="image/*"
+              className="hidden"
+              onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
+            />
+            {/* 폴더 picker — webkitdirectory 로 폴더 통째 선택. webkitRelativePath 로부터 경로 자동 추출. */}
+            <input
+              ref={folderRef}
+              type="file"
+              multiple
+              webkitdirectory=""
+              directory=""
               className="hidden"
               onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
             />

@@ -1,0 +1,126 @@
+// RenderMatrix 핵심 옵션 — INITIAL_OPTIONS 의 19개 그룹에서 핵심을 6장 카드로 압축.
+
+export const renderMatrixCards = [
+  {
+    id: 'rm_base', title: '기본 출력', importance: 'critical',
+    summary: '카메라 렌즈 · 타이포 스케일',
+    fields: [
+      { key: 'lens', label: '카메라 렌즈', type: 'choice',
+        choices: ['35mm', '50mm', '85mm', '135mm', 'macro'], default: '50mm',
+        map: { '35mm': 'wide 35mm lens', '50mm': 'standard 50mm lens',
+               '85mm': 'portrait 85mm lens', '135mm': 'long 135mm telephoto',
+               macro: 'macro lens with shallow DOF' } },
+      { key: 'scale', label: '타이포 스케일', type: 'choice',
+        choices: ['compact', 'standard', 'monumental'], default: 'standard',
+        map: { compact: 'compact intimate scale', standard: 'standard typography scale',
+               monumental: 'monumental epic scale filling the frame' } },
+    ],
+    promptFn: (v, f) =>
+      `Camera & scale: ${f[0].map[v.lens]}, ${f[1].map[v.scale]}.`,
+  },
+  {
+    id: 'rm_material', title: '재질 / 표면', importance: 'essential',
+    summary: '베이스 재질 · 표면 디테일 · 마모',
+    fields: [
+      { key: 'material', label: '재질', type: 'choice',
+        choices: ['steel', 'gold', 'obsidian', 'marble', 'wood', 'crystal'], default: 'steel',
+        map: { steel: 'tempered steel with brushed grain',
+               gold: 'molten gold with warm reflections',
+               obsidian: 'volcanic obsidian, glossy black',
+               marble: 'veined marble with cool tones',
+               wood: 'aged dark hardwood',
+               crystal: 'transparent crystal with internal refraction' } },
+      { key: 'detail', label: '표면 디테일', type: 'choice',
+        choices: ['none', 'engraved', 'embossed', 'cracked', 'rusted'], default: 'engraved',
+        map: { none: 'smooth surface', engraved: 'finely engraved patterns',
+               embossed: 'embossed raised relief', cracked: 'cracked weathered surface',
+               rusted: 'oxidized rust patina' } },
+      { key: 'wear', label: '마모 수준', type: 'choice',
+        choices: ['pristine', 'light', 'moderate', 'heavy'], default: 'light',
+        map: { pristine: 'pristine mint condition', light: 'lightly worn',
+               moderate: 'moderately battle-scarred', heavy: 'heavily damaged and corroded' } },
+    ],
+    promptFn: (v, f) =>
+      `Material: ${f[0].map[v.material]}, surface ${f[1].map[v.detail]}, wear ${f[2].map[v.wear]}.`,
+  },
+  {
+    id: 'rm_edge', title: '엣지 & 조명', importance: 'essential',
+    summary: '림라이트 · 두께 · 강도',
+    fields: [
+      { key: 'rimColor', label: '림 컬러', type: 'choice',
+        choices: ['white', 'gold', 'blue', 'red', 'cyan'], default: 'gold',
+        map: { white: 'crystalline cool white rim', gold: 'warm gold rim',
+               blue: 'electric blue rim', red: 'fiery red-orange rim',
+               cyan: 'electric cyan rim' } },
+      { key: 'rimThick', label: '두께', type: 'choice',
+        choices: ['hairline', 'medium', 'bold'], default: 'medium',
+        map: { hairline: 'hairline 1px rim', medium: 'medium 2-3px rim',
+               bold: 'bold 5px+ rim' } },
+      { key: 'rimIntensity', label: '강도', type: 'float', default: 0.5, min: 0.1, max: 1.0 },
+    ],
+    promptFn: (v, f) =>
+      `Edge lighting: ${f[0].map[v.rimColor]}, ${f[1].map[v.rimThick]}, intensity ${Number(v.rimIntensity).toFixed(2)}.`,
+  },
+  {
+    id: 'rm_relief', title: '입체 & 돌출', importance: 'editable',
+    summary: '전면 부조 · 후면 돌출',
+    fields: [
+      { key: 'frontRelief', label: '전면 부조', type: 'choice',
+        choices: ['flat', 'subtle', 'pronounced', 'extreme'], default: 'subtle',
+        map: { flat: 'flat 2D', subtle: 'subtle relief, shallow planes',
+               pronounced: 'pronounced 3D relief', extreme: 'extreme deep relief' } },
+      { key: 'projection', label: '후면 돌출', type: 'choice',
+        choices: ['none', 'shallow', 'deep', 'cinematic'], default: 'shallow',
+        map: { none: 'no extrusion', shallow: 'shallow back extrusion',
+               deep: 'deep back extrusion creating mass',
+               cinematic: 'cinematic deep projection with strong perspective' } },
+    ],
+    promptFn: (v, f) =>
+      `Relief: front ${f[0].map[v.frontRelief]}, back ${f[1].map[v.projection]}.`,
+  },
+  {
+    id: 'rm_vfx', title: 'VFX / 에너지 코어', importance: 'optional',
+    summary: '특수 효과 · 발생 위치 · 강도',
+    fields: [
+      { key: 'core', label: '에너지 코어', type: 'choice',
+        choices: ['none', 'goldenDust', 'fireEmber', 'iceFrost', 'lightning', 'magic'], default: 'none',
+        map: { none: 'no VFX', goldenDust: 'golden dust particles',
+               fireEmber: 'floating fire embers', iceFrost: 'frost crystal particles',
+               lightning: 'arcing lightning bolts', magic: 'glowing magic glyphs' } },
+      { key: 'origin', label: '발생 위치', type: 'choice',
+        choices: ['surface', 'edge', 'background', 'ambient'], default: 'surface',
+        map: { surface: 'emanating from the surface',
+               edge: 'tracing the edges', background: 'in the background plane',
+               ambient: 'in the ambient air around the subject' } },
+      { key: 'intensity', label: '강도', type: 'choice',
+        choices: ['subtle', 'moderate', 'intense', 'overwhelming'], default: 'moderate',
+        map: { subtle: 'subtle whisper', moderate: 'moderate presence',
+               intense: 'intense burst', overwhelming: 'overwhelming explosion' } },
+    ],
+    promptFn: (v, f) => {
+      if (v.core === 'none') return 'VFX: none.';
+      return `VFX: ${f[0].map[v.core]}, ${f[1].map[v.origin]}, ${f[2].map[v.intensity]}.`;
+    },
+  },
+  {
+    id: 'rm_background', title: '배경 / 엔진', importance: 'essential',
+    summary: '배경 환경 · 렌더 엔진',
+    fields: [
+      { key: 'background', label: '배경', type: 'choice',
+        choices: ['black', 'studio', 'environment', 'gradient', 'transparent'], default: 'black',
+        map: { black: 'pure black void background',
+               studio: 'neutral studio gradient',
+               environment: 'environmental scene context',
+               gradient: 'soft radial gradient',
+               transparent: 'transparent / cutout background' } },
+      { key: 'engine', label: '렌더 엔진', type: 'choice',
+        choices: ['photoreal', 'cinematic', 'stylized', 'matte'], default: 'cinematic',
+        map: { photoreal: 'photoreal physically-based rendering',
+               cinematic: 'cinematic film-grade rendering with depth',
+               stylized: 'stylized illustrative rendering',
+               matte: 'matte poster-style rendering' } },
+    ],
+    promptFn: (v, f) =>
+      `Background: ${f[0].map[v.background]}. Render engine: ${f[1].map[v.engine]}.`,
+  },
+];

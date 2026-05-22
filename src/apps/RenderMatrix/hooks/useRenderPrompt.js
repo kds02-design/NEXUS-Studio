@@ -13,6 +13,7 @@ import {
   analyzeReferenceImage, analyzePromptText,
   optimizePrompt, expandIntent, chatTuningMessage, analyzeArcImage,
 } from "../services/gemini";
+import { compressPrompt } from "../../../lib/promptCompressor";
 
 // 메인 상태 + IR/compile 오케스트레이션 훅.
 // state setter 들을 직접 노출하므로 호출부에서 stateSetters 객체로 재패키징하여 사용한다.
@@ -98,6 +99,7 @@ export function useRenderPrompt() {
 
   // ===== ui chrome =====
   const [isOptimizing, setIsOptimizing] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [toastMsg, setToastMsg] = useState(null);
   const [activeTroubleshoots, setActiveTroubleshoots] = useState([]);
@@ -308,6 +310,53 @@ export function useRenderPrompt() {
     } finally { setIsOptimizing(false); }
   };
 
+  // PromptAudit 의 conflict-resolution 로직을 inline 으로 적용 — 충돌·중복·모호 토큰을 제거해
+  // 짧고 명확한 프롬프트로 압축한다. 결과는 optimizedPrompts[aiModel] 에 저장 (기존 AI 최적화 결과를 덮어씀).
+  // Negative prompt / --no 가드는 옵티마이저와 동일하게 원본에서 복원.
+  const handleCompressPrompt = async () => {
+    const basePrompt = optimizedPrompts[aiModel] || compiledOutputs[aiModel];
+    if (!basePrompt) {
+      showToast("⚠️ 압축할 프롬프트가 없습니다.");
+      return;
+    }
+    const canGen = await ensureCanGenerate('analysis');
+    if (!canGen) {
+      showToast("⚠️ 사용 권한을 확인할 수 없습니다.");
+      return;
+    }
+    setIsCompressing(true);
+    try {
+      const result = await compressPrompt(basePrompt, 'render-metrics');
+      let finalEn = result.improvedPrompt || basePrompt;
+      // Negative / --no 가드 — 옵티마이저와 동일한 복원 로직.
+      const nanoMarker = '\n\nNegative prompt:';
+      const mjMarker = '--no ';
+      if (basePrompt.includes(nanoMarker) && !finalEn.includes('Negative prompt:')) {
+        const original = basePrompt.split(nanoMarker)[1] || '';
+        finalEn = `${finalEn.trim()}${nanoMarker}${original}`;
+        console.warn('[RenderMatrix] compressor dropped Negative prompt — restored');
+      } else if (basePrompt.includes(mjMarker) && !finalEn.includes(mjMarker)) {
+        const original = basePrompt.slice(basePrompt.indexOf(mjMarker));
+        finalEn = `${finalEn.trim()} ${original}`;
+        console.warn('[RenderMatrix] compressor dropped --no flag — restored');
+      }
+      // 압축이 실제로 줄었을 때만 적용.
+      if (finalEn.length < basePrompt.length) {
+        setOptimizedPrompts(prev => ({ ...prev, [aiModel]: finalEn }));
+        const conflictCount = result.conflicts?.length || 0;
+        const conflictTail = conflictCount > 0 ? ` · 충돌 ${conflictCount}건 정리` : '';
+        showToast(`✨ 압축 완료 — ${result.savedChars}자 감소 (${result.savedPct}%)${conflictTail}`, 4000);
+      } else {
+        showToast("프롬프트가 이미 충분히 간결합니다.", 3000);
+      }
+    } catch (e) {
+      console.error('[RenderMatrix] compress failed', e);
+      showToast(`❌ 압축 실패: ${e?.message || e}`);
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+
   const handleExpandIntent = async () => {
     const text = currentView === 'editor' ? userIntent : editIntent;
     if (!text) { showToast("⚠️ 확장할 키워드나 아이디어를 먼저 입력해주세요."); return; }
@@ -483,6 +532,7 @@ export function useRenderPrompt() {
     auditIssues, qualityScores,
     // ai actions
     isOptimizing, handleOptimizePrompt,
+    isCompressing, handleCompressPrompt,
     handleExpandIntent, isExpandingIntent,
     isChatModalOpen, setIsChatModalOpen,
     chatMessages, chatInput, setChatInput,

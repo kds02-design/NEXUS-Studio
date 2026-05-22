@@ -22,6 +22,7 @@ import { renderWithVeo, VEO_MODELS } from '../../lib/veoRender';
 import { uploadBase64, uploadVideoFile } from '../../lib/storage';
 import { db, appId } from '../../lib/firebase';
 import { serializeForFirestore } from '../PromptArc/services/firebase';
+import { compressPrompt } from '../../lib/promptCompressor';
 
 // dataURL(data:video/mp4;base64,...) → File 로 변환 (Cloudinary 영상 업로드용).
 function dataUrlToFile(dataUrl, filename = `motion_${Date.now()}.mp4`) {
@@ -91,6 +92,11 @@ function App() {
   const [renderedVideo, setRenderedVideo] = useState(null); // { dataUrl, modelId, durationSeconds, aspectRatio }
   const [renderError, setRenderError] = useState(null);
   const [savingToArc, setSavingToArc] = useState(false);
+
+  // ─── 프롬프트 압축 상태 ───
+  // compressedOutput 이 있으면 표시 프롬프트로 우선 사용. layers/모드 등 옵션이 바뀌면 자동 초기화.
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressedOutput, setCompressedOutput] = useState(null);
 
   function showToast(msg) {
     setToastMsg(msg);
@@ -478,8 +484,48 @@ function App() {
     const hasNegative = baseValidatePrompt.toLowerCase().includes('negative prompt');
     combinedOutput = hasNegative ? validatedPromptResult : `${validatedPromptResult}\n\nNegative prompt:\n${motion.activeNegPrompt}`;
   }
-  const promptLength = combinedOutput ? combinedOutput.length : 0;
+  // 옵션이 바뀌면 (=> activePrompt 가 변하면) 이전 압축 결과 무효화.
+  useEffect(() => { setCompressedOutput(null); }, [motion.activePrompt, motion.activeNegPrompt, activeTab]);
+
+  // 최종 표시용 — 압축본이 있으면 우선, 없으면 자동 합성된 combinedOutput.
+  const displayedOutput = (activeTab === 'generate' && compressedOutput) || combinedOutput;
+  const promptLength = displayedOutput ? displayedOutput.length : 0;
   const isOverLimit = promptLength > motion.currentMaxLimit;
+  const isCompressed = activeTab === 'generate' && !!compressedOutput;
+
+  // ─── 프롬프트 압축 ─── PromptAudit 로직으로 충돌·중복 제거 + 짧게 정리.
+  // Negative prompt 가드는 옵티마이저와 동일하게 원본에서 복원.
+  const handleCompressPrompt = useCallback(async () => {
+    if (activeTab !== 'generate') { showToast('생성 탭에서만 압축할 수 있어요'); return; }
+    if (!combinedOutput) { showToast('압축할 프롬프트가 없습니다'); return; }
+    setIsCompressing(true);
+    try {
+      const result = await compressPrompt(combinedOutput, 'motion-metrics');
+      let finalText = result.improvedPrompt || combinedOutput;
+      // Negative prompt 가드 — 누락되면 원본에서 복원.
+      const negMarker = '\n\nNegative prompt:';
+      if (combinedOutput.includes(negMarker) && !finalText.includes('Negative prompt:')) {
+        const original = combinedOutput.split(negMarker)[1] || '';
+        finalText = `${finalText.trim()}${negMarker}${original}`;
+        console.warn('[MotionMatrix] compressor dropped Negative prompt — restored');
+      }
+      if (finalText.length < combinedOutput.length) {
+        setCompressedOutput(finalText);
+        const conflictCount = result.conflicts?.length || 0;
+        const tail = conflictCount > 0 ? ` · 충돌 ${conflictCount}건 정리` : '';
+        showToast(`✨ 압축 완료 — ${result.savedChars}자 감소 (${result.savedPct}%)${tail}`);
+      } else {
+        showToast('프롬프트가 이미 충분히 간결합니다');
+      }
+    } catch (e) {
+      console.error('[MotionMatrix] compress failed', e);
+      showToast(`❌ 압축 실패: ${e?.message || e}`);
+    } finally {
+      setIsCompressing(false);
+    }
+  }, [combinedOutput, activeTab]);
+
+  const handleClearCompressed = useCallback(() => setCompressedOutput(null), []);
 
   const sidebarProps = {
     activeTab, setActiveTab, onReset: handleReset,
@@ -515,7 +561,9 @@ function App() {
     exportMode: motion.exportMode, setExportMode: motion.setExportMode,
     isOptimized: motion.isOptimized, setIsOptimized: motion.setIsOptimized,
     logs: motion.logs, currentMaxLimit: motion.currentMaxLimit,
-    combinedOutput, finalOutput, promptLength, isOverLimit, handleCopy,
+    combinedOutput: displayedOutput, finalOutput, promptLength, isOverLimit, handleCopy,
+    // 압축
+    isCompressing, isCompressed, onCompress: handleCompressPrompt, onClearCompressed: handleClearCompressed,
     baseValidatePrompt, setBaseValidatePrompt,
     // 기본 이미지 (참조)
     image, setImage, onImageChange: handleImageChange,

@@ -302,6 +302,8 @@ export default function RenderMatrixApp() {
           optimizedPromptsKo={rp.optimizedPromptsKo}
           isOptimizing={rp.isOptimizing}
           onOptimize={rp.handleOptimizePrompt}
+          isCompressing={rp.isCompressing}
+          onCompress={rp.handleCompressPrompt}
           onCopy={rp.copyToClipboard}
           isCopied={rp.isCopied}
           onSendToMotion={rp.sendToMotion}

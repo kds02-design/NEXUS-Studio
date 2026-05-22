@@ -28,6 +28,7 @@ import RenderMatrixApp from "../apps/RenderMatrix";
 import RenderMatrixPopApp from "../apps/RenderMatrixPop";
 import MotionMatrixApp from "../apps/MotionMatrix";
 import PromptBuilderApp from "../apps/PromptBuilder";
+import PromptBuilderV2App from "../apps/PromptBuilderV2";
 import RubiconForgeApp from "../apps/RubiconForge";
 import LogoForgeApp from "../apps/LogoForge";
 import DesignEvaluatorApp from "../apps/DesignEvaluator";
@@ -460,6 +461,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "render-matrix-pop":  return <RenderMatrixPopApp version={version} />;
     case "motion-metrics":     return <MotionMatrixApp />;
     case "prompt-builder":     return <PromptBuilderApp />;
+    case "prompt-builder-v2":  return <PromptBuilderV2App />;
     case "rubicon-forge":      return <RubiconForgeApp />;
     case "logo-forge":         return <LogoForgeApp />;
     case "design-eval":        return <DesignEvaluatorApp />;

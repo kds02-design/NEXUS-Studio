@@ -46,7 +46,7 @@ const InspectorModal = ({
                             </div>
 
                             <div className="p-5 bg-[#1A1A1A] border border-zinc-800/80 rounded-[12px] shadow-inner">
-                                <p className="text-[12px] font-mono text-zinc-400 leading-relaxed whitespace-pre-wrap">{String(result.resolutions[selectedResolutionIndex]?.resolvedPromptKo)}</p>
+                                <p className="text-[12px] font-sans text-zinc-400 leading-relaxed whitespace-pre-wrap">{String(result.resolutions[selectedResolutionIndex]?.resolvedPromptKo)}</p>
                             </div>
                         </div>
                     )}

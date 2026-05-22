@@ -93,20 +93,25 @@ const BannerCard = ({
 
         <div className={`absolute inset-0 transition-colors pointer-events-none ${selected ? 'bg-[#d8b17e]/10' : 'bg-black/0 group-hover:bg-black/40'}`} />
 
-        {/* 브랜드웹 배지 — 좌하단. 페이지 수도 함께. */}
-        {banner.assetType === '브랜드웹' && (
-          <div className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-black/70 backdrop-blur-sm text-[10px] font-bold text-[#d8b17e] shadow">
-            <span>WEB</span>
-            {typeof banner.pageCount === 'number' && banner.pageCount > 1 && (
-              <span className="text-zinc-400 font-mono">· {banner.pageCount}p</span>
+        {/* 우상단 배지 스택 — BRAND / 장수, 비공개. 둘 다 우상단이라 컬럼 정렬로 공존시킴. */}
+        {(banner.assetType === '브랜드웹' || banner.visibility === 'private') && (
+          <div className="absolute top-3 right-3 z-30 flex flex-col items-end gap-1">
+            {banner.assetType === '브랜드웹' && (
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-black/75 backdrop-blur-sm text-[10px] font-bold shadow">
+                <span className="text-rose-400 tracking-wider">BRAND</span>
+                {typeof banner.pageCount === 'number' && banner.pageCount > 0 && (
+                  <>
+                    <span className="text-zinc-700">/</span>
+                    <span className="text-zinc-200 font-mono">{banner.pageCount}장</span>
+                  </>
+                )}
+              </div>
             )}
-          </div>
-        )}
-
-        {/* 비공개 배지 — 우상단 위쪽 */}
-        {banner.visibility === 'private' && (
-          <div className="absolute top-3 right-3 z-30 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-bold backdrop-blur-sm shadow" title="나만 볼 수 있는 비공개 항목">
-            <Lock size={10} strokeWidth={2.5} /> 비공개
+            {banner.visibility === 'private' && (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-bold backdrop-blur-sm shadow" title="나만 볼 수 있는 비공개 항목">
+                <Lock size={10} strokeWidth={2.5} /> 비공개
+              </div>
+            )}
           </div>
         )}
 

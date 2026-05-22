@@ -17,7 +17,7 @@ export default function MatrixResultPanel({
   activeTroubleshoots, onApplyTroubleshoot,
   aiModel, setAiModel, currentIR,
   compiledOutputs, optimizedPrompts, optimizedPromptsKo,
-  isOptimizing, onOptimize, onCopy, isCopied, onSendToMotion,
+  isOptimizing, onOptimize, isCompressing, onCompress, onCopy, isCopied, onSendToMotion,
   // Imagen 렌더링
   onRender, rendering, renderedImage, renderError,
   onDownloadRendered, onSaveToPromptArc, savingToArc, isLoggedIn,
@@ -170,8 +170,8 @@ export default function MatrixResultPanel({
             aiModel={aiModel} setAiModel={setAiModel}
             hasOutput={hasOutput} isCopied={isCopied}
             isOptimizing={isOptimizing} currentIR={currentIR}
+            isCompressing={isCompressing} onCompress={onCompress}
             onOptimize={onOptimize} onCopy={onCopy} onSendToMotion={onSendToMotion}
-            promptText={promptText}
           />
           <div className="p-6 flex-1 overflow-y-auto custom-scrollbar min-h-0">
             <div className={`font-mono text-[13px] whitespace-pre-wrap leading-[1.7] p-5 rounded-xl border relative group transition-colors ${isVfxBox ? 'bg-orange-950/20 border-orange-500/30 text-orange-200' : 'bg-zinc-900/50 border-zinc-800/80 text-zinc-200'}`}>

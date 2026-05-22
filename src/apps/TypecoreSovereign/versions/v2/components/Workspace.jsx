@@ -83,7 +83,7 @@ const Workspace = ({ rp }) => {
                                     </div>
                                 </div>
                             </div>
-                            <div className={`relative font-mono text-[12px] bg-[#0A0A0A] text-zinc-400 whitespace-pre-wrap leading-[1.625] transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[3000px]' : 'max-h-[220px]'}`}>
+                            <div className={`relative font-sans text-[12px] bg-[#0A0A0A] text-zinc-400 whitespace-pre-wrap leading-[1.625] transition-[max-height] duration-500 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[3000px]' : 'max-h-[220px]'}`}>
                                 <div className="p-6 pb-8">
                                     {baseLangView === 'ko' ? currentPrompts.baseTechnicalKo : currentPrompts.baseTechnicalEn}
                                 </div>
@@ -142,7 +142,7 @@ const Workspace = ({ rp }) => {
                                         </button>
                                     )}
                                 </div>
-                                <div className="relative font-mono text-[12px] bg-[#0A0A0A] text-zinc-400 whitespace-pre-wrap leading-[1.625] p-6 min-h-[140px]">
+                                <div className="relative font-sans text-[12px] bg-[#0A0A0A] text-zinc-400 whitespace-pre-wrap leading-[1.625] p-6 min-h-[140px]">
                                     {currentOutputContent || <span className="text-zinc-600">아직 생성된 결과물이 없습니다. 상단의 빌드 버튼을 눌러 생성하세요.</span>}
                                 </div>
                             </div>

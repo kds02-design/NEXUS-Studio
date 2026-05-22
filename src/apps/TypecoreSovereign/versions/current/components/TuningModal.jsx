@@ -19,7 +19,7 @@ const TuningModal = ({
         <div className="flex items-center justify-between p-4 border-b border-zinc-800/60 shrink-0 bg-[#1A1A1A]">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4 text-zinc-300" />
-            <h3 className="text-white font-bold text-sm tracking-wide font-mono">{title}</h3>
+            <h3 className="text-white font-bold text-sm tracking-wide font-sans">{title}</h3>
           </div>
           <button onClick={onClose} className="text-[#a6a6a6] hover:text-white transition-colors p-1 rounded-[10px] hover:bg-zinc-800">
             <X className="w-4 h-4" />
@@ -28,9 +28,9 @@ const TuningModal = ({
         <div className="p-4 border-b border-zinc-800/50 bg-[#121212] shrink-0">
           <div className="flex items-center gap-1.5 mb-2">
             {currentLabelIcon}
-            <span className="text-[11px] font-bold text-[#a6a6a6] tracking-wider uppercase font-mono">{currentLabel}</span>
+            <span className="text-[11px] font-bold text-[#a6a6a6] tracking-wider uppercase font-sans">{currentLabel}</span>
           </div>
-          <p className="text-[13px] font-mono tracking-tight text-emerald-300 bg-emerald-500/10 leading-relaxed max-h-[150px] overflow-y-auto custom-scrollbar whitespace-pre-wrap px-3 py-2.5 border-l-[3px] border-emerald-500 rounded-[6px]">"{currentValue}"</p>
+          <p className="text-[13px] font-sans tracking-tight text-emerald-300 bg-emerald-500/10 leading-relaxed max-h-[150px] overflow-y-auto custom-scrollbar whitespace-pre-wrap px-3 py-2.5 border-l-[3px] border-emerald-500 rounded-[6px]">"{currentValue}"</p>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-5 custom-scrollbar bg-[#1A1A1A]" ref={chatScrollRef}>
           {chatHistory.map((msg, idx) => (
@@ -42,7 +42,7 @@ const TuningModal = ({
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="max-w-[85%] rounded-[10px] px-4 py-3 bg-[#121212] border border-zinc-800/80 text-zinc-400 rounded-tl-sm flex items-center gap-2 text-[13px] font-mono">
+              <div className="max-w-[85%] rounded-[10px] px-4 py-3 bg-[#121212] border border-zinc-800/80 text-zinc-400 rounded-tl-sm flex items-center gap-2 text-[13px] font-sans">
                 <Loader2 className="w-4 h-4 animate-spin" /> {loadingMessage}
               </div>
             </div>
@@ -53,7 +53,7 @@ const TuningModal = ({
             <div className="flex items-center justify-between bg-[#1C1C1C] p-2 rounded-[10px] border border-zinc-700 shadow-sm">
               <div className="flex items-center gap-3">
                 <img src={`data:image/jpeg;base64,${referenceImage}`} className="h-10 w-auto rounded-[10px] border border-zinc-700 object-cover opacity-80" alt="ref" />
-                <div className="text-[11px] text-zinc-300 font-bold font-mono">Reference Image Attached</div>
+                <div className="text-[11px] text-zinc-300 font-bold font-sans">Reference Image Attached</div>
               </div>
               <button onClick={() => setReferenceImage(null)} title="레퍼런스 제거" className="p-1 hover:bg-red-500/20 rounded-[10px] text-red-400 transition-colors"><X className="w-4 h-4" /></button>
             </div>
@@ -69,7 +69,7 @@ const TuningModal = ({
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') onSend(); }}
                 placeholder={placeholder}
-                className="w-full bg-[#1C1C1C] font-mono tracking-tighter border-2 border-zinc-800 rounded-[10px] pl-4 pr-12 py-3.5 text-[13px] text-zinc-200 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-600 shadow-sm"
+                className="w-full bg-[#1C1C1C] font-sans tracking-tighter border-2 border-zinc-800 rounded-[10px] pl-4 pr-12 py-3.5 text-[13px] text-zinc-200 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all placeholder:text-zinc-600 shadow-sm"
               />
               <button
                 onClick={onSend}
@@ -83,7 +83,7 @@ const TuningModal = ({
           </div>
           <button
             onClick={onApply}
-            className="w-full py-4 bg-[#1C1C1C] hover:bg-zinc-800 rounded-[10px] font-bold font-mono text-[13px] text-white flex items-center justify-center gap-2 transition-all shadow-sm border border-zinc-700"
+            className="w-full py-4 bg-[#1C1C1C] hover:bg-zinc-800 rounded-[10px] font-bold font-sans text-[13px] text-white flex items-center justify-center gap-2 transition-all shadow-sm border border-zinc-700"
           >
             <CheckCircle className="w-4 h-4" /> {applyLabel}
           </button>

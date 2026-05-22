@@ -432,13 +432,23 @@ export default function DesignEvaluator() {
     });
   };
   // Brand Web Review — 브랜드웹/프로모션 카테고리에서 컨펌·피드백 워크스페이스로 이동.
-  const sendToBrandWebReview = () => {
+  // imageFile.webkitRelativePath 가 있으면 (폴더 업로드) 공유 폴더 경로를 자동 추론해 전달.
+  const sendToBrandWebReview = async () => {
     if (!previewUrl) { setNotification("이미지를 먼저 업로드하세요."); setTimeout(() => setNotification(null), 2500); return; }
+    let sharedFolderUrl = "";
+    try {
+      if (imageFile?.webkitRelativePath) {
+        const { buildSharedFolderPath } = await import("../../lib/sharedFolderPath");
+        sharedFolderUrl = buildSharedFolderPath(imageFile, { section: 'brandweb' });
+      }
+    } catch (e) {
+      console.warn('[DesignEvaluator] sharedFolderPath infer failed', e?.message);
+    }
     navigate('brand-web-review', {
       source: 'design-eval', target: 'brand-web-review',
       prompt: { text: resultData?.title || '제목 없음', tags: resultData?.tags || [], style: resultData?.category || '' },
-      image: { url: previewUrl, metadata: { finalScore: getFinalScore100(resultData, manualScoreAdj) } },
-      params: { mode: 'review' },
+      image: { url: previewUrl, metadata: { finalScore: getFinalScore100(resultData, manualScoreAdj), sourcePath: sharedFolderUrl } },
+      params: { mode: 'review', sharedFolderUrl },
     });
   };
   // eslint-disable-next-line no-unused-vars

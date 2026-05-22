@@ -97,7 +97,8 @@ export async function findExistingBrandWebBanner(sourceProjectId) {
 // approved 프로젝트 → brand-web banner 1건 생성.
 // 페이지 1개당 1 entry. pages[] 에 모든 PC/Mobile 이미지(활성 버전 url) 기록.
 // 첫 PC = full_image / preview, 첫 Mobile = mobile_image. 둘 다 없으면 첫 페이지 url.
-export async function registerProjectAsBrandWebBanner(uid, project) {
+// options.game / options.year — 호출부에서 게임명·연도를 지정. 미지정 시 '기타' / 현재 연도 폴백.
+export async function registerProjectAsBrandWebBanner(uid, project, options = {}) {
   if (!db) throw new Error("Firestore 미연결");
   if (!uid) throw new Error("로그인이 필요합니다");
   if (!project?.id) throw new Error("프로젝트 정보가 없습니다");
@@ -133,11 +134,14 @@ export async function registerProjectAsBrandWebBanner(uid, project) {
   const firstMobile = mobilePages[0];
   const thumbSrc = firstPc?.url || firstMobile?.url || pages[0].url;
 
+  const game = String(options.game || "").trim() || "기타";
+  const year = String(options.year || new Date().getFullYear()).trim() || String(new Date().getFullYear());
+
   const doc_ = {
     title: project.name || "브랜드 웹",
     assetType: "브랜드웹",
-    game: "기타",
-    year: new Date().getFullYear().toString(),
+    game,
+    year,
     path: "",
     preview: thumbSrc,
     full_image: firstPc?.url || thumbSrc,

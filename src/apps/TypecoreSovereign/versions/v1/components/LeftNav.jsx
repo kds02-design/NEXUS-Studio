@@ -12,26 +12,7 @@ const LeftNav = ({ isSidebarOpen, setIsSidebarOpen, currentView, setCurrentView,
                 )}
             </div>
             <div className="p-4 shrink-0 space-y-3">
-                {isSidebarOpen && versions?.length > 0 && setVersion && (
-                    <div className="flex items-center gap-1 bg-[#0A0A0A] border border-zinc-800/60 rounded-full p-1">
-                        {versions.map((v) => {
-                            const isActive = v.key === version;
-                            return (
-                                <button
-                                    key={v.key}
-                                    onClick={() => setVersion(v.key)}
-                                    title={`${v.label} 버전으로 전환`}
-                                    className={`flex-1 px-2 py-1 rounded-full text-[10px] font-bold tracking-[0.04em] transition-all whitespace-nowrap ${
-                                        isActive ? '' : 'text-zinc-500 hover:text-zinc-300'
-                                    }`}
-                                    style={isActive ? { background: `${v.color}22`, color: v.color } : undefined}
-                                >
-                                    {v.label}
-                                </button>
-                            );
-                        })}
-                    </div>
-                )}
+                {/* 버전 셀렉터는 사용자 요청으로 숨김 (모든 버전 공통). */}
                 <div className="flex bg-[#121212] rounded-[10px] p-1 border border-zinc-800/60 shadow-inner">
                     <button onClick={() => setCurrentView('editor')} className={`flex-1 py-2 px-1 text-[11px] font-bold rounded-[10px] flex items-center justify-center gap-1.5 transition-all duration-200 whitespace-nowrap ${currentView === 'editor' ? 'bg-[#2A2A2E] text-white shadow-sm border border-zinc-600/30' : 'text-zinc-500 hover:text-zinc-300 hover:bg-[#1C1C1C] border border-transparent'}`}>
                         <PenTool className="w-3.5 h-3.5 shrink-0" /> {isSidebarOpen && <span>Creation</span>}

@@ -47,7 +47,7 @@ const EditorWorkspace = ({ rp }) => {
                                 </div>
                             </div>
                         </div>
-                        <div className={`relative font-mono text-[12px] bg-[#1C1C1C] text-[#a6a6a6] whitespace-pre-wrap leading-[1.625] transition-[max-height] duration-500 ease-in-out overflow-hidden ${rp.isPromptExpanded ? 'max-h-[3000px]' : 'max-h-[220px]'}`}>
+                        <div className={`relative font-sans text-[12px] bg-[#1C1C1C] text-[#a6a6a6] whitespace-pre-wrap leading-[1.625] transition-[max-height] duration-500 ease-in-out overflow-hidden ${rp.isPromptExpanded ? 'max-h-[3000px]' : 'max-h-[220px]'}`}>
                             <div className="p-6 pb-8">
                                 {rp.baseLangView === 'ko' ? prompts.baseTechnicalKo : prompts.baseTechnicalEn}
                             </div>

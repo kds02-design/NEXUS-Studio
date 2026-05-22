@@ -1,9 +1,16 @@
 /* eslint-disable */
 // 버전 스냅샷(아카이브): TypecoreSovereign current. 2043줄 단일 파일을 components/hooks/constants 로
 // 격리 분리한 thin 진입점. versions/current/ 외부의 TypecoreSovereign 공유 모듈은 사용하지 않음 (격리 원칙).
-import React from 'react';
+// Imagen 렌더링은 lib/imagenRender + PromptArc 저장 흐름을 RenderMatrix 와 동일하게 재사용.
+import React, { useCallback, useState } from 'react';
 import { Edit3, Settings } from 'lucide-react';
+import { doc, setDoc } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../services/gemini';
+import { renderWithImagen, IMAGEN_MODELS } from '../../../../lib/imagenRender';
+import { uploadBase64 } from '../../../../lib/storage';
+import { db, appId } from '../../../../lib/firebase';
+import { serializeForFirestore } from '../../../PromptArc/services/firebase';
+import { useAuth } from '../../../../context/AuthContext';
 
 import { useSovereignPromptCurrent } from './hooks/useSovereignPromptCurrent.js';
 import Sidebar from './components/Sidebar.jsx';
@@ -14,6 +21,92 @@ import ImportModal from './components/ImportModal.jsx';
 const App = ({ version, setVersion, versions } = {}) => {
   const apiKey = GEMINI_API_KEY;
   const rp = useSovereignPromptCurrent({ apiKey });
+  const { user, grade } = useAuth();
+  const canRender = grade === 'pro' || grade === 'expert';
+
+  // Imagen 렌더링 — RenderMatrix 와 동일 흐름.
+  const [rendering, setRendering] = useState(false);
+  const [renderedImage, setRenderedImage] = useState(null);
+  const [renderError, setRenderError] = useState(null);
+  const [savingToArc, setSavingToArc] = useState(false);
+  const [selectedImagenModel, setSelectedImagenModel] = useState(IMAGEN_MODELS[0].id);
+
+  const saveRenderToPromptArc = useCallback(async (promptText, image) => {
+    if (!user?.uid || !image?.dataUrl) return;
+    setSavingToArc(true);
+    try {
+      const cloudinaryUrl = await uploadBase64(image.dataUrl);
+      const id = Math.random().toString(36).slice(2);
+      const now = Date.now();
+      const modelLabel = IMAGEN_MODELS.find(m => m.id === image.modelId)?.label || image.modelId || 'Imagen';
+      const title = `TypecoreSovereign · ${new Date(now).toLocaleString('ko-KR')}`;
+      const record = {
+        id, title, content: promptText || '',
+        images: [cloudinaryUrl], thumbnail: cloudinaryUrl,
+        stepPrompts: [promptText || ''],
+        stepLabels: ['TypecoreSovereign'],
+        stepTags: [['TypecoreSovereign', 'Imagen', modelLabel]],
+        stepKeywords: [''], stepDescriptions: [''],
+        tags: ['TypecoreSovereign', 'Imagen', modelLabel],
+        visibility: 'private',
+        ownerUid: user.uid,
+        authorName: user.displayName || user.email || '',
+        likeCount: 0, relatedIds: [], type: 'image',
+        createdAt: now, updatedAt: now,
+      };
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', id), serializeForFirestore(record));
+      rp.showToast?.('✨ PromptArc 내 폴더에 저장됐어요');
+      return id;
+    } catch (e) {
+      console.error('[TypecoreSovereign] save to PromptArc failed', e);
+      rp.showToast?.(`PromptArc 저장 실패: ${e.message || e.code}`);
+    } finally {
+      setSavingToArc(false);
+    }
+  }, [user, rp]);
+
+  const handleRender = useCallback(async (promptText) => {
+    if (!promptText) return;
+    if (!canRender) { setRenderError('Imagen 렌더링은 Pro 등급 이상만 사용할 수 있습니다.'); return; }
+    const canGen = await rp.ensureCanGenerate?.('image');
+    if (canGen === false) { setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)'); return; }
+    setRendering(true); setRenderError(null); setRenderedImage(null);
+    try {
+      // 참조 이미지 없이 텍스트 프롬프트만으로 호출.
+      const result = await renderWithImagen(promptText, selectedImagenModel, null);
+      setRenderedImage(result);
+      if (user?.uid && result?.dataUrl) saveRenderToPromptArc(promptText, result);
+    } catch (e) {
+      console.error('[TypecoreSovereign] imagen failed', e);
+      setRenderError(e.message || String(e));
+    } finally { setRendering(false); }
+  }, [canRender, selectedImagenModel, user, saveRenderToPromptArc, rp]);
+
+  const handleDownloadRendered = useCallback(() => {
+    if (!renderedImage?.dataUrl) return;
+    const a = document.createElement('a');
+    a.href = renderedImage.dataUrl;
+    a.download = `typecore_sovereign_${Date.now()}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }, [renderedImage]);
+
+  const handleSaveToPromptArc = useCallback(async (promptText) => {
+    if (!user?.uid) { rp.showToast?.('로그인이 필요합니다'); return; }
+    if (!renderedImage?.dataUrl || savingToArc) return;
+    await saveRenderToPromptArc(promptText, renderedImage);
+  }, [user, renderedImage, savingToArc, rp, saveRenderToPromptArc]);
+
+  const imagen = {
+    imagenModels: IMAGEN_MODELS,
+    selectedModel: selectedImagenModel, setSelectedModel: setSelectedImagenModel,
+    onRender: handleRender,
+    rendering, renderedImage, renderError,
+    onDownloadRendered: handleDownloadRendered,
+    onSaveToPromptArc: handleSaveToPromptArc,
+    savingToArc,
+    isLoggedIn: !!user?.uid,
+    canRender, grade,
+  };
 
   return (
     // RenderMatrix 와 톤·구성 동일화:
@@ -30,7 +123,7 @@ const App = ({ version, setVersion, versions } = {}) => {
 
       <main className="flex-1 flex overflow-hidden gap-5 min-h-0">
         <Sidebar rp={rp} version={version} setVersion={setVersion} versions={versions} />
-        <Workspace rp={rp} />
+        <Workspace rp={rp} imagen={imagen} />
       </main>
 
       {/* Idea Tuning Room Modal */}

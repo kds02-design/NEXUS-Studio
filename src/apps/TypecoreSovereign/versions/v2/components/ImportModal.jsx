@@ -27,7 +27,7 @@ const ImportModal = ({
                         value={importInputValue}
                         onChange={e => setImportInputValue(e.target.value)}
                         placeholder="[TYPECORE V17... MASTER INSTRUCTION] 으로 시작하는 프롬프트를 붙여넣으세요."
-                        className="w-full h-[250px] bg-[#0A0A0A] text-[11px] font-mono text-zinc-300 p-4 rounded-[8px] border border-zinc-700 outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 transition-all custom-scrollbar resize-none"
+                        className="w-full h-[250px] bg-[#0A0A0A] text-[11px] font-sans text-zinc-300 p-4 rounded-[8px] border border-zinc-700 outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 transition-all custom-scrollbar resize-none"
                     />
                 </div>
                 <div className="p-5 border-t border-zinc-800/60 bg-[#1A1A1A] flex justify-end gap-3 shrink-0">

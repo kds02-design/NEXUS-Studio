@@ -625,18 +625,49 @@ function App() {
     };
 
     const handleFileUpload = (e) => {
-        if (e.target.files && e.target.files.length > 0) {
-            const files = Array.from(e.target.files);
-            const invalidFiles = files.filter(f => f.size === 0);
-            if (invalidFiles.length > 0) {
-                alert(`⚠️ 보안 문제로 일부 파일을 읽을 수 없습니다.\n해당 폴더를 '바탕화면'으로 복사한 뒤 다시 시도해주세요!`);
-                e.target.value = '';
-                return;
+        const fileList = e.target.files;
+        if (!fileList || fileList.length === 0) return;
+        // 큰 폴더의 경우 FileList → Array 변환만으로도 수 초 freeze 가능.
+        // 즉시 로딩 모달을 띄우고 다음 tick 에서 처리해서 사용자가 진행 상태를 인지하게 만든다.
+        const inputEl = e.target;
+        setProcessingMessage(`폴더 분석 중… 파일 ${fileList.length.toLocaleString()}개 확인 중`);
+        setUploadProgress({ current: 0, total: 0, percentage: 0 });
+        setIsProcessingModalOpen(true);
+        // 다음 macrotask 로 미뤄 모달이 paint 된 뒤 무거운 작업 진행.
+        setTimeout(() => {
+            try {
+                const all = Array.from(fileList);
+                // size === 0 은 OneDrive/네트워크 드라이브의 보안 차단으로 읽지 못한 파일.
+                // 통째로 막지 말고 정상 파일만 추려 업로드 진행 — 사용자에게는 건너뛴 개수만 안내.
+                const validFiles = [];
+                const invalidNames = [];
+                for (const f of all) {
+                    if (f.size === 0) invalidNames.push(f.webkitRelativePath || f.name);
+                    else validFiles.push(f);
+                }
+                if (validFiles.length === 0) {
+                    setIsProcessingModalOpen(false);
+                    alert(`⚠️ 폴더 안 모든 파일을 읽을 수 없습니다 (size 0).\n해당 폴더를 '바탕화면'으로 복사한 뒤 다시 시도해주세요.`);
+                    inputEl.value = '';
+                    return;
+                }
+                setPendingFiles(validFiles);
+                setIsProcessingModalOpen(false);
+                if (invalidNames.length > 0) {
+                    const preview = invalidNames.slice(0, 5).join('\n');
+                    const more = invalidNames.length > 5 ? `\n…외 ${invalidNames.length - 5}개` : '';
+                    // 비차단 안내 — confirm 대신 그냥 alert (사용자가 인지만 하면 됨).
+                    alert(`보안 차단으로 ${invalidNames.length}개 파일을 건너뜁니다.\n나머지 ${validFiles.length}개로 업로드를 진행합니다.\n\n[건너뛴 파일]\n${preview}${more}\n\n읽지 못한 파일은 폴더를 '바탕화면'으로 복사하면 해결됩니다.`);
+                }
+                setIsUploadModalOpen(true);
+            } catch (err) {
+                console.error('[PromotionArchive] file scan failed', err);
+                setIsProcessingModalOpen(false);
+                alert(`파일 분석 실패: ${err.message || err}`);
+            } finally {
+                inputEl.value = '';
             }
-            setPendingFiles(files);
-            setIsUploadModalOpen(true);
-            e.target.value = '';
-        }
+        }, 30);
     };
 
     // 업로드 — 5장 단위 chunk → Cloudinary 업로드 → Firestore writeBatch

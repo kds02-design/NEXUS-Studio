@@ -47,6 +47,14 @@ const Sidebar = ({
 
   // 설정 팝오버 — aside의 overflow-hidden에 잘리지 않도록 portal로 body에 렌더링.
   const settingsBtnRef = useRef(null);
+  // 사이드바가 데스크탑/모바일에서 축소(접힘)될 때 "전체 게임" 팝오버 자동 닫기.
+  // 좁아진 컬럼 안에 팝오버가 어색하게 끼이는 사고 방지.
+  useEffect(() => {
+    if ((!isDesktopSidebarOpen || !isSidebarOpen) && isAllGamesModalOpen) {
+      setIsAllGamesModalOpen(false);
+    }
+  }, [isDesktopSidebarOpen, isSidebarOpen, isAllGamesModalOpen, setIsAllGamesModalOpen]);
+
   const [popoverPos, setPopoverPos] = useState(null);
   useEffect(() => {
     if (!isSettingsOpen || !settingsBtnRef.current) { setPopoverPos(null); return; }

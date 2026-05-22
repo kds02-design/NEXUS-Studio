@@ -22,19 +22,19 @@ const CreationPanel = ({
 }) => (
   <div className="shrink-0 rounded-[12px] border border-zinc-800/80 p-5 bg-[#171717] shadow-lg space-y-6 relative overflow-hidden">
     <div>
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5 font-mono"><Lock className="w-3 h-3" /> [L1] 텍스트 보존 락</div>
+      <div className="mb-2 text-[11px] font-bold tracking-wide text-zinc-500 flex items-center gap-1.5"><Lock className="w-3 h-3" /> 텍스트</div>
       <textarea
         value={inputText}
         onChange={e => setInputText(e.target.value)}
         placeholder="텍스트 입력 (엔터로 줄바꿈)"
         rows={inputText.includes('\n') ? 2 : 1}
-        className={`w-full bg-[#0A0A0A] font-black outline-none text-white border border-zinc-800 rounded-[10px] px-4 py-3 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/10 transition-all shadow-inner resize-none custom-scrollbar font-mono ${inputText.includes('\n') || inputText.length > 10 ? 'text-[15px] leading-tight' : 'text-[20px] leading-tight'}`}
+        className={`w-full bg-[#0A0A0A] font-black outline-none text-white border border-zinc-800 rounded-[10px] px-4 py-3 focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/10 transition-all shadow-inner resize-none custom-scrollbar font-sans ${inputText.includes('\n') || inputText.length > 10 ? 'text-[15px] leading-tight' : 'text-[20px] leading-tight'}`}
       />
     </div>
 
     <div>
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-zinc-500 flex items-center justify-between font-mono">
-        <div className="flex items-center gap-1.5"><ScanLine className="w-3 h-3" /> [L3] 이미지 역설계 (레퍼런스 분석)</div>
+      <div className="mb-2 text-[11px] font-bold tracking-wide text-zinc-500 flex items-center justify-between">
+        <div className="flex items-center gap-1.5"><ScanLine className="w-3 h-3" /> 이미지 역설계</div>
       </div>
       {incomingFromArc && (
         <div className="mb-3 px-3 py-2 rounded-[8px] border border-[#6C5CE7]/40 bg-[#6C5CE7]/10 flex items-start gap-2 animate-in fade-in slide-in-from-top-2">
@@ -78,7 +78,7 @@ const CreationPanel = ({
         ) : (
           <div className="text-[11px] font-bold text-[#a6a6a6] flex flex-col items-center gap-2 py-2">
             <ImageIcon className="w-6 h-6 opacity-40 mb-1" />
-            <span className="text-zinc-400 tracking-wider font-mono">REFERENCE UPLOAD</span>
+            <span className="text-zinc-400 tracking-wider font-sans">REFERENCE UPLOAD</span>
             <span className="text-[9px] text-zinc-600 font-normal">레퍼런스 이미지 드래그 앤 드롭</span>
           </div>
         )}
@@ -86,7 +86,7 @@ const CreationPanel = ({
       </div>
 
       <div className="mt-4 flex items-center justify-between">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5 font-mono"><Zap className="w-3 h-3" /> 조형 오라 정규화</div>
+        <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-1.5 font-sans"><Zap className="w-3 h-3" /> 조형 오라 정규화</div>
         <button onClick={handleExpandIntent} disabled={isExpandingIntent || !customDesignInjections.trim()} title="자동 구체화" className={`p-1.5 rounded-[6px] transition-all flex items-center justify-center ${isExpandingIntent ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/30' : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 shadow-sm'}`}>
           {isExpandingIntent ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand className="w-3 h-3" />}
         </button>
@@ -95,7 +95,7 @@ const CreationPanel = ({
         value={customDesignInjections}
         onChange={e => setCustomDesignInjections(e.target.value)}
         placeholder="역설계 분석 시 텍스트가 자동 생성됩니다. 직접 입력도 가능합니다."
-        className={`mt-2 w-full bg-[#1C1C1C] text-[12px] p-4 rounded-[10px] border outline-none min-h-[5rem] resize-none text-zinc-300 custom-scrollbar tracking-tight placeholder:text-zinc-600 focus:ring-2 transition-all shadow-sm font-mono ${hasKoreanAura ? 'border-amber-500/50 focus:border-amber-500 focus:ring-amber-500/20' : 'border-zinc-800 focus:border-emerald-500/50 focus:ring-emerald-500/10'}`}
+        className={`mt-2 w-full bg-[#1C1C1C] text-[12px] p-4 rounded-[10px] border outline-none min-h-[5rem] resize-none text-zinc-300 custom-scrollbar tracking-tight placeholder:text-zinc-600 focus:ring-2 transition-all shadow-sm font-sans ${hasKoreanAura ? 'border-amber-500/50 focus:border-amber-500 focus:ring-amber-500/20' : 'border-zinc-800 focus:border-emerald-500/50 focus:ring-emerald-500/10'}`}
       />
       {hasKoreanAura && (
         <div className="mt-2 flex items-start gap-1.5 text-[10px] text-amber-400/90 font-bold bg-amber-500/10 p-2 rounded-[6px] border border-amber-500/20">
@@ -106,9 +106,9 @@ const CreationPanel = ({
 
       <div className="mt-4 bg-[#1C1C1C] rounded-[10px] p-4 shadow-inner border border-zinc-800/60">
         <div className="flex justify-between items-center mb-3">
-          <span className="text-[10px] font-bold text-zinc-500 font-mono tracking-tighter">{sliderDesc.leftLabel}</span>
+          <span className="text-[10px] font-bold text-zinc-500 font-sans tracking-tighter">{sliderDesc.leftLabel}</span>
           <SlidersHorizontal className="w-3.5 h-3.5 text-emerald-500/60" />
-          <span className="text-[10px] font-bold text-emerald-500 font-mono tracking-tighter">{sliderDesc.rightLabel}</span>
+          <span className="text-[10px] font-bold text-emerald-500 font-sans tracking-tighter">{sliderDesc.rightLabel}</span>
         </div>
         <input type="range" min="0" max="100" value={personaSliderValue} onChange={e => setPersonaSliderValue(e.target.value)} className="w-full h-1.5 bg-zinc-700 rounded-[10px] appearance-none cursor-pointer accent-emerald-500" />
       </div>

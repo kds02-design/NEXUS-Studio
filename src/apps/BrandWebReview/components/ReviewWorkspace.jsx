@@ -3,7 +3,7 @@
 // 단순화: 버전 히스토리/PC·모바일 토글/HTML 리포트 export 제거 → 핵심 워크플로우(영역 선택+피드백 노트)에 집중.
 // 노트 저장은 props.notes / props.onNotesChange 로 부모(BrandWebReview)가 영구화 담당.
 import { useRef, useState, useCallback, useEffect, useMemo } from "react";
-import { Image as ImageIcon, CheckSquare, Lock, ChevronLeft, Sparkles, Smartphone, Monitor, Layers, Plus, ListTree, X, History } from "lucide-react";
+import { Image as ImageIcon, CheckSquare, Lock, ChevronLeft, Sparkles, Smartphone, Monitor, Layers, Plus, ListTree, X, History, ZoomIn } from "lucide-react";
 
 // 페이지 상태 dot — 부모(index.jsx)의 STATUS_DOT 과 동기 유지.
 const PAGE_STATUS_COLOR = {
@@ -34,7 +34,10 @@ export default function ReviewWorkspace({
   activeVersionId,
   onSelectVersion,  // (versionId) => void
   onUploadNewVersion, // (file) => Promise<void>
-  device,           // "pc" | "mobile" — 썸네일 패널 헤더 표시
+  device,           // "pc" | "mobile" | "banner" — 썸네일 패널 헤더 표시 + 캔버스 max-width 결정
+  // ─── 컨펌 중 PC/Mobile/Banner 전환 ───
+  availableDevices, // string[] — 현재 프로젝트에 존재하는 device 목록. 비면 토글 안 보임.
+  onSwitchDevice,   // (device) => void — 토글 클릭 시 호출. 부모가 첫 페이지로 active 변경.
   // ─── 프로젝트 전체 수정사항 리스트 + 점프 ───
   allNotes,         // [{ id, text, resolved, date, attachment, rect, pageId, pageName, pageNumber, device, versionId, versionLabel, isLatestVersion }]
   onJumpToNote,     // (pageId, versionId, noteId) => void
@@ -58,6 +61,10 @@ export default function ReviewWorkspace({
   const [isButtonUnlocked, setIsButtonUnlocked] = useState(false);
   const [notesMode, setNotesMode] = useState("page");      // "page" | "all"
   const [allNotesFilter, setAllNotesFilter] = useState("all"); // "all" | "open" | "done"
+  // 모바일 캔버스 줌 — 1x(viewport fit) → 1.5x → 2x → 1x. device 가 바뀌면 리셋.
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => { setZoom(1); }, [device, activePageId]);
+  const cycleZoom = () => setZoom((z) => (z === 1 ? 1.5 : z === 1.5 ? 2 : 1));
   const [showPrevNotes, setShowPrevNotes] = useState(true);    // 이전 버전 노트 오버레이
 
   // 활성 버전 직전(이전) 버전 — 1차→2차 시안 비교 오버레이용.
@@ -166,70 +173,12 @@ export default function ReviewWorkspace({
               <ChevronLeft size={18} />
             </button>
           )}
-          <h2 className="text-[13px] font-bold text-white truncate">{title || '리뷰 항목'}</h2>
+          {/* 제목 — 차분한 톤. 버전 컨트롤은 우측 이미지 영역으로 분리되어 제목 길이가 바뀌어도 버전 버튼이 이동하지 않는다. */}
+          <h2 className="text-[12px] font-medium text-zinc-400 truncate min-w-0">{title || '리뷰 항목'}</h2>
           {meta?.finalScore != null && (
             <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#df6a78]/15 border border-[#df6a78]/40 text-[#df6a78] tabular-nums shrink-0">
               점수 {meta.finalScore}
             </span>
-          )}
-          {/* 버전 탭 + 새 버전 업로드 */}
-          {Array.isArray(versions) && versions.length > 0 && (
-            <div className="flex items-center gap-1 shrink-0 ml-1">
-              <Layers className="w-3 h-3 text-zinc-500 mr-0.5" />
-              <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-md bg-white/5 border border-white/10">
-                {versions.map(v => {
-                  const active = v.id === activeVersionId;
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={() => onSelectVersion?.(v.id)}
-                      title={v.confirmed ? `${v.label} (컨펌)` : v.label}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors ${
-                        active
-                          ? "bg-violet-500/30 text-violet-200 ring-1 ring-violet-400/40"
-                          : "text-zinc-400 hover:text-white hover:bg-white/5"
-                      }`}
-                    >
-                      {v.label}
-                      {v.confirmed && <span className="ml-1 text-[#0eb9b3]">✓</span>}
-                    </button>
-                  );
-                })}
-              </div>
-              <input
-                ref={versionFileRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f && onUploadNewVersion) onUploadNewVersion(f);
-                  e.target.value = "";
-                }}
-              />
-              <button
-                onClick={() => versionFileRef.current?.click()}
-                title="수정된 디자인 업로드 (새 버전)"
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 text-violet-300 text-[10px] font-bold transition-colors"
-              >
-                <Plus className="w-3 h-3" />
-                새 버전
-              </button>
-              {previousVersion && (
-                <button
-                  onClick={() => setShowPrevNotes(v => !v)}
-                  title={`이전 버전(${previousVersion.label}) 수정요청 영역을 ${showPrevNotes ? "숨기기" : "표시"} (${previousNotes.length}개)`}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-md border text-[10px] font-bold transition-colors ${
-                    showPrevNotes
-                      ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
-                      : "bg-white/5 border-white/10 text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  <History className="w-3 h-3" />
-                  {previousVersion.label} 영역 {previousNotes.length}
-                </button>
-              )}
-            </div>
           )}
         </div>
         <div className="flex items-center gap-3">
@@ -259,13 +208,48 @@ export default function ReviewWorkspace({
         {/* LEFT — PPT 썸네일 패널 (같은 device 의 페이지 목록) */}
         {Array.isArray(pages) && pages.length > 0 && (
           <aside className="w-[180px] shrink-0 border-r border-white/5 bg-[#0f0f12] flex flex-col">
-            <div className="shrink-0 px-3 py-2.5 border-b border-white/5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-              {device === "mobile"
-                ? <Smartphone className="w-3 h-3 text-[#FD79A8]" />
-                : <Monitor className="w-3 h-3 text-[#74B9FF]" />}
-              <span>{device === "mobile" ? "Mobile" : "PC"}</span>
-              <span className="ml-auto text-zinc-600 font-mono">{pages.length}</span>
-            </div>
+            {/* Device 토글 — 사이드바 상단. 여러 device 존재 시 segmented control, 1개면 라벨만. */}
+            {Array.isArray(availableDevices) && availableDevices.length > 1 ? (
+              <div className="shrink-0 p-2 border-b border-white/5">
+                <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-black/30 border border-white/5">
+                  {availableDevices.map((d) => {
+                    const active = d === device;
+                    const meta_ = {
+                      pc:     { Icon: Monitor,    label: "PC",     color: "#74B9FF" },
+                      mobile: { Icon: Smartphone, label: "Mobile", color: "#FD79A8" },
+                      banner: { Icon: Layers,     label: "Banner", color: "#FDCB6E" },
+                    }[d] || { Icon: Monitor, label: d, color: "#71717a" };
+                    const { Icon, label, color } = meta_;
+                    return (
+                      <button
+                        key={d}
+                        onClick={() => onSwitchDevice?.(d)}
+                        title={`${label} 페이지로 전환`}
+                        className={`flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-colors ${
+                          active ? "text-white" : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        }`}
+                        style={active ? { background: `${color}30`, color, boxShadow: `inset 0 0 0 1px ${color}50` } : undefined}
+                      >
+                        <Icon className="w-3 h-3" /> {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-1.5 px-1 flex items-center justify-end text-[9px] text-zinc-600 font-mono">
+                  {pages.length}p
+                </div>
+              </div>
+            ) : (
+              <div className="shrink-0 px-3 py-2.5 border-b border-white/5 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                {device === "mobile"
+                  ? <Smartphone className="w-3 h-3 text-[#FD79A8]" />
+                  : device === "banner"
+                    ? <Layers className="w-3 h-3 text-[#FDCB6E]" />
+                    : <Monitor className="w-3 h-3 text-[#74B9FF]" />}
+                <span>{device === "mobile" ? "Mobile" : device === "banner" ? "Banner" : "PC"}</span>
+                <span className="ml-auto text-zinc-600 font-mono">{pages.length}</span>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
               {pages.map(pg => {
                 const active = pg.id === activePageId;
@@ -285,9 +269,9 @@ export default function ReviewWorkspace({
                     <span className="shrink-0 w-5 text-[10px] font-mono font-semibold text-zinc-500 text-right tabular-nums">
                       {pg.pageNumber}
                     </span>
-                    <div className="relative shrink-0 w-[88px] aspect-[16/10] rounded-sm overflow-hidden bg-[#0c0c0e] border border-white/5">
+                    <div className={`relative shrink-0 ${device === "mobile" ? "w-[48px] aspect-[9/16]" : device === "banner" ? "w-[112px] aspect-[16/5]" : "w-[88px] aspect-[16/10]"} rounded-sm overflow-hidden bg-[#0c0c0e] border border-white/5`}>
                       {pg.thumbUrl ? (
-                        <img src={pg.thumbUrl} alt={pg.name} className="w-full h-full object-cover" />
+                        <img src={pg.thumbUrl} alt={pg.name} className={`w-full h-full ${device === "pc" ? "object-cover" : "object-contain"}`} />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-zinc-700">
                           <ImageIcon className="w-3 h-3" />
@@ -351,13 +335,96 @@ export default function ReviewWorkspace({
           }}
           onPointerUp={() => setIsDrawing(false)}
         >
+          {/* 우상단 sticky 컨트롤 바 — 줌(모바일 한정) + 버전 + 이전 버전 영역 토글.
+              제목과 분리되어 헤더 제목이 바뀌어도 위치가 흔들리지 않음. */}
+          <div className="sticky top-0 z-30 flex justify-end gap-2 px-6 pt-3 pointer-events-none">
+            <div className="pointer-events-auto flex items-center gap-2 flex-wrap justify-end">
+              {device === "mobile" && (
+                <button
+                  onClick={cycleZoom}
+                  title="모바일 캔버스 확대/축소 (클릭하여 1x → 1.5x → 2x 순환)"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-[#121214]/90 backdrop-blur-md border border-white/10 text-zinc-300 hover:text-white hover:border-white/20 text-[10px] font-bold transition-colors shadow-lg"
+                >
+                  <ZoomIn className="w-3 h-3" />
+                  {Math.round(zoom * 100)}%
+                </button>
+              )}
+              {Array.isArray(versions) && versions.length > 0 && (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#121214]/90 backdrop-blur-md border border-white/10 shadow-lg">
+                  <Layers className="w-3 h-3 text-zinc-500 shrink-0" />
+                  {versions.map((v) => {
+                    const active = v.id === activeVersionId;
+                    return (
+                      <button
+                        key={v.id}
+                        onClick={() => onSelectVersion?.(v.id)}
+                        title={v.confirmed ? `${v.label} (컨펌)` : v.label}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold font-mono transition-colors ${
+                          active
+                            ? "bg-violet-500/30 text-violet-200 ring-1 ring-violet-400/40"
+                            : "text-zinc-400 hover:text-white hover:bg-white/5"
+                        }`}
+                      >
+                        {v.label}
+                        {v.confirmed && <span className="ml-1 text-[#0eb9b3]">✓</span>}
+                      </button>
+                    );
+                  })}
+                  <input
+                    ref={versionFileRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f && onUploadNewVersion) onUploadNewVersion(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  <button
+                    onClick={() => versionFileRef.current?.click()}
+                    title="수정된 디자인 업로드 (새 버전)"
+                    className="flex items-center gap-1 px-2 py-0.5 rounded bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 text-violet-300 text-[10px] font-bold transition-colors"
+                  >
+                    <Plus className="w-3 h-3" /> 새 버전
+                  </button>
+                  {previousVersion && (
+                    <button
+                      onClick={() => setShowPrevNotes((v) => !v)}
+                      title={`이전 버전(${previousVersion.label}) 수정요청 영역을 ${showPrevNotes ? "숨기기" : "표시"} (${previousNotes.length}개)`}
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold transition-colors ${
+                        showPrevNotes
+                          ? "bg-amber-500/15 border-amber-500/40 text-amber-300"
+                          : "bg-white/5 border-white/10 text-zinc-500 hover:text-zinc-300"
+                      }`}
+                    >
+                      <History className="w-3 h-3" /> {previousVersion.label} {previousNotes.length}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
           <div className="min-h-full mx-auto py-10 px-10 relative flex justify-center items-start cursor-crosshair">
-            <div className="relative shadow-2xl w-full max-w-[1400px]">
+            {/* device 별 캔버스 max-width — Mobile 은 모바일 해상도(~420px), zoom 으로 확대 가능. */}
+            <div
+              className={`relative shadow-2xl w-full ${
+                device === "mobile" ? "" : device === "banner" ? "max-w-[1920px]" : "max-w-[1400px]"
+              }`}
+              style={device === "mobile" ? { maxWidth: `${440 * zoom}px` } : undefined}
+            >
               <img
                 ref={imageRef}
                 src={image}
                 alt="Review canvas"
-                className="block w-full h-auto border border-white/5 rounded-sm select-none"
+                // Mobile: viewport 높이 안에 맞도록 max-h 적용해 세로 잘림 방지. zoom 따라 max-h 도 동기 확대.
+                // 그 외 device 는 기존처럼 w-full h-auto.
+                className={
+                  device === "mobile"
+                    ? "block max-w-full w-auto mx-auto border border-white/5 rounded-sm select-none"
+                    : "block w-full h-auto border border-white/5 rounded-sm select-none"
+                }
+                style={device === "mobile" ? { maxHeight: `calc((100vh - 200px) * ${zoom})` } : undefined}
                 draggable={false}
               />
 

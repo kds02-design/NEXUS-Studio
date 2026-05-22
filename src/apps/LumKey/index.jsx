@@ -25,6 +25,13 @@ const BG_PREVIEWS = {
   dark:    { label: '다크그레이', color: '#1a1a2e' },
 };
 
+// paletteVariant='muted' 일 때 노출할 swatch — MotionMatrix 내부 임베드용.
+// 채도 높은 컬러(red/green/blue/yellow)는 제거해 포인트 컬러와 충돌을 피한다.
+const BG_KEYS_MUTED = ['checker', 'black', 'dark', 'white'];
+
+// hex(#RRGGBB) → 알파 prefix 붙인 8자리 hex. 모던 브라우저는 #RRGGBBAA 지원.
+const withAlpha = (hex, alphaHex) => `${hex}${alphaHex}`;
+
 function pickMimeType() {
   // VP9 with alpha 가 WebM 에서 투명도를 보존하는 유일한 광범위 지원 코덱.
   const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp09', 'video/webm'];
@@ -32,17 +39,19 @@ function pickMimeType() {
   return '';
 }
 
-export default function LumKey() {
+export default function LumKey({ accentColor = '#C8FF00', paletteVariant = 'full' } = {}) {
   // ── refs ──
   const videoRef     = useRef(null);
   const canvasRef    = useRef(null);
   const fileInputRef = useRef(null);
+  const bgImgInputRef = useRef(null);
   const animFrameRef = useRef(null);
   const fpsCountRef  = useRef(0);
   const fpsLastRef   = useRef(0);
   const recorderRef  = useRef(null);
   const recChunksRef = useRef([]);
   const objectUrlRef = useRef(null);
+  const bgImgUrlRef  = useRef(null);
   const runningRef   = useRef(false);
   // 컨트롤 값을 ref 로도 보관 — RAF 콜백이 항상 최신값 읽도록.
   const ctrlRef = useRef({
@@ -66,6 +75,8 @@ export default function LumKey() {
   const [tintPct,      setTintPct]      = useState(0);
   const [tintHex,      setTintHex]      = useState('#ffffff');
   const [bgKey,        setBgKey]        = useState('checker');
+  const [bgImageUrl,   setBgImageUrl]   = useState(null);
+  const [bgDim,        setBgDim]        = useState(50);  // 배경 이미지 위 검은색 딤 0~100
   const [fpsLabel,     setFpsLabel]     = useState('-- FPS');
   const [modeLabel,    setModeLabel]    = useState('대기중');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -201,7 +212,25 @@ export default function LumKey() {
       try { recorderRef.current.stop(); } catch { /* noop */ }
     }
     if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+    if (bgImgUrlRef.current) URL.revokeObjectURL(bgImgUrlRef.current);
   }, []);
+
+  // ── background image upload ──
+  const loadBgImage = useCallback((file) => {
+    if (!file || !file.type?.startsWith('image/')) return;
+    const url = URL.createObjectURL(file);
+    if (bgImgUrlRef.current) URL.revokeObjectURL(bgImgUrlRef.current);
+    bgImgUrlRef.current = url;
+    setBgImageUrl(url);
+    setBgKey('image');
+  }, []);
+  const onBgImageInput = (e) => { if (e.target.files?.[0]) loadBgImage(e.target.files[0]); };
+  const clearBgImage = () => {
+    if (bgImgUrlRef.current) URL.revokeObjectURL(bgImgUrlRef.current);
+    bgImgUrlRef.current = null;
+    setBgImageUrl(null);
+    if (bgKey === 'image') setBgKey('checker');
+  };
 
   // ── file load ──
   const loadVideo = useCallback((file) => {
@@ -353,10 +382,24 @@ export default function LumKey() {
     requestAnimationFrame(stepFrame);
   }, [stopProcessing, processFrame]);
 
-  const bg = BG_PREVIEWS[bgKey];
+  // 'image' 키일 땐 동적 BG, 아니면 BG_PREVIEWS 에서.
+  const bg = bgKey === 'image' && bgImageUrl
+    ? { label: '커스텀 이미지', img: `url("${bgImageUrl}")`, size: 'cover' }
+    : BG_PREVIEWS[bgKey] || BG_PREVIEWS.checker;
+  // 노출할 swatch 키 — paletteVariant 에 따라 일부만.
+  const visibleBgKeys = paletteVariant === 'muted'
+    ? BG_KEYS_MUTED
+    : Object.keys(BG_PREVIEWS);
+  // accent 컬러를 CSS 변수로 주입. 8-digit hex(#RRGGBBAA)로 알파 단계 표현.
+  const rootStyleVars = {
+    '--accent':              accentColor,
+    '--accent-glow':         withAlpha(accentColor, '26'), // ~15%
+    '--accent-glow-soft':    withAlpha(accentColor, '40'), // ~25%
+    '--accent-glow-strong':  withAlpha(accentColor, '66'), // ~40%
+  };
 
   return (
-    <div className="lumkey-root">
+    <div className="lumkey-root" style={rootStyleVars}>
       <style>{`
         .lumkey-root {
           --bg:      #09090B;
@@ -368,8 +411,6 @@ export default function LumKey() {
           --muted:   #A1A1AA;
           --muted2:  #71717A;
           --dim:     #52525B;
-          --accent:  #C8FF00;
-          --accent-glow: rgba(200,255,0,0.15);
           --red:     #EF4444;
           height: 100%; width: 100%;
           display: flex; flex-direction: column;
@@ -525,7 +566,7 @@ export default function LumKey() {
         .lumkey-root .rslider::-webkit-slider-thumb {
           -webkit-appearance: none; appearance: none;
           width: 12px; height: 12px; background: var(--accent); border-radius: 50%;
-          box-shadow: 0 0 8px rgba(200,255,0,.4); cursor: pointer;
+          box-shadow: 0 0 8px var(--accent-glow-strong); cursor: pointer;
         }
         .lumkey-root .rval {
           font-family: 'JetBrains Mono', monospace;
@@ -576,7 +617,7 @@ export default function LumKey() {
         .lumkey-root .btn:last-child { margin-bottom: 0; }
         .lumkey-root .btn-primary { background: var(--accent); color: #000; font-weight: 700; }
         .lumkey-root .btn-primary:hover:not(:disabled) {
-          background: #d8ff20; box-shadow: 0 0 20px rgba(200,255,0,.25);
+          filter: brightness(1.08); box-shadow: 0 0 20px var(--accent-glow-soft);
         }
         .lumkey-root .btn-primary:disabled { opacity: .3; cursor: not-allowed; }
         .lumkey-root .btn-secondary {
@@ -623,8 +664,30 @@ export default function LumKey() {
         }
         .lumkey-root .preview-bg-btn.active {
           border: 2px solid var(--accent);
-          box-shadow: 0 0 0 2px rgba(200,255,0,0.2);
+          box-shadow: 0 0 0 2px var(--accent-glow-soft);
         }
+        .lumkey-root .bg-image-row {
+          display: flex; gap: 6px; margin-bottom: 8px;
+        }
+        .lumkey-root .bg-image-btn {
+          flex: 1; height: 32px; border: 1px solid var(--border);
+          background: transparent; color: var(--muted);
+          font-size: 11px; cursor: pointer; padding: 0 10px; border-radius: 6px;
+          display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+          transition: all .15s;
+        }
+        .lumkey-root .bg-image-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .lumkey-root .bg-image-btn.has-image {
+          border-color: var(--accent); color: var(--accent);
+          background-size: cover; background-position: center;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+        }
+        .lumkey-root .bg-image-clear {
+          width: 32px; height: 32px; flex-shrink: 0;
+          border: 1px solid var(--border); background: transparent; color: var(--muted2);
+          font-size: 14px; cursor: pointer; border-radius: 6px;
+        }
+        .lumkey-root .bg-image-clear:hover { border-color: var(--red); color: var(--red); }
       `}</style>
 
       <div className="main">
@@ -662,7 +725,19 @@ export default function LumKey() {
           <div className="video-area"
             style={bg.color
               ? { backgroundColor: bg.color, backgroundImage: 'none' }
-              : { backgroundImage: bg.img, backgroundSize: bg.size, backgroundColor: 'transparent' }}
+              : (() => {
+                  // 'image' 모드: 검은색 딤 레이어를 이미지 위에 합성. 체커보드 등은 dim 미적용.
+                  const isImg = bgKey === 'image' && bgImageUrl;
+                  const dim = isImg ? bgDim / 100 : 0;
+                  const dimLayer = dim > 0 ? `linear-gradient(rgba(0,0,0,${dim}), rgba(0,0,0,${dim})), ` : '';
+                  return {
+                    backgroundImage: `${dimLayer}${bg.img}`,
+                    backgroundSize: isImg ? `cover, ${bg.size}` : bg.size,
+                    backgroundPosition: 'center',
+                    backgroundRepeat: bg.size === 'cover' ? 'no-repeat' : 'repeat',
+                    backgroundColor: 'transparent',
+                  };
+                })()}
           >
             <canvas ref={canvasRef} />
           </div>
@@ -734,28 +809,17 @@ export default function LumKey() {
                 <button className={`ch-btn g${useG ? ' active' : ''}`} onClick={() => setUseG((v) => !v)}>G</button>
                 <button className={`ch-btn b${useB ? ' active' : ''}`} onClick={() => setUseB((v) => !v)}>B</button>
               </div>
-              <div className="row">
-                <div className="rlabel">색조 보정</div>
-                <input type="range" className="rslider" min="0" max="100" value={tintPct}
-                  onChange={(e) => setTintPct(parseInt(e.target.value, 10))} />
-                <div className="rval">{tintPct}</div>
-              </div>
-              <div className="tint-row">
-                <div className="tint-swatch" style={{ background: tintHex }}>
-                  <input type="color" value={tintHex} onChange={(e) => setTintHex(e.target.value)} />
-                </div>
-                <div className="tint-hex">{tintHex}</div>
-              </div>
             </div>
 
             {/* 컨트롤 */}
             <div className="sec">
               <div className="sec-title">컨트롤</div>
-              <button className="btn btn-primary" disabled={!hasVideo || isPlayingUi} onClick={handlePlay}>▶ 재생 + 처리</button>
-              <button className="btn btn-secondary" disabled={!isPlayingUi} onClick={handlePause}>⏸ 일시정지</button>
-              <button className="btn btn-secondary" disabled={!hasVideo} onClick={handleScreenshot}>📸 프레임 저장</button>
-              <button className={`btn btn-rec${isRec ? ' recording' : ''}`} disabled={!hasVideo} onClick={handleToggleRec}>
-                {isRec ? '■ STOP · 저장' : '● REC 녹화'}
+              <button
+                className={isPlayingUi ? 'btn btn-secondary' : 'btn btn-primary'}
+                disabled={!hasVideo}
+                onClick={isPlayingUi ? handlePause : handlePlay}
+              >
+                {isPlayingUi ? '⏸ 일시정지' : '▶ 재생 + 처리'}
               </button>
               <button className="btn btn-accent-outline" disabled={!hasVideo || isExporting} onClick={handleExport}>
                 ⬇ 전체 영상 내보내기
@@ -768,36 +832,54 @@ export default function LumKey() {
                   <div className="mono" style={{ fontSize: 10, color: 'var(--accent)', textAlign: 'center' }}>{exportLabel}</div>
                 </div>
               )}
-              {codecBadge && (
-                <div className="mono" style={{ fontSize: 10, color: 'var(--accent)', padding: '8px 0', textAlign: 'center', border: '1px solid rgba(200,255,0,0.2)', marginTop: 6, borderRadius: 6 }}>
-                  ● 녹화중 · {codecBadge}
-                </div>
-              )}
-              {saveInfo && (
-                <div className="mono" style={{ fontSize: 10, color: 'var(--muted2)', padding: '8px 0', textAlign: 'center', marginTop: 6 }}>
-                  {saveInfo}
-                </div>
-              )}
             </div>
 
             {/* 배경 미리보기 */}
             <div className="sec">
               <div className="sec-title">투명도 확인 배경</div>
               <div className="preview-grid">
-                {Object.entries(BG_PREVIEWS).map(([key, info]) => (
-                  <button key={key}
-                    className={`preview-bg-btn${bgKey === key ? ' active' : ''}`}
-                    title={info.label}
-                    style={info.color
-                      ? { background: info.color }
-                      : { backgroundImage: info.img, backgroundSize: info.size }}
-                    onClick={() => setBgKey(key)}
-                  />
-                ))}
+                {visibleBgKeys.map((key) => {
+                  const info = BG_PREVIEWS[key];
+                  return (
+                    <button key={key}
+                      className={`preview-bg-btn${bgKey === key ? ' active' : ''}`}
+                      title={info.label}
+                      style={info.color
+                        ? { background: info.color }
+                        : { backgroundImage: info.img, backgroundSize: info.size }}
+                      onClick={() => setBgKey(key)}
+                    />
+                  );
+                })}
               </div>
+              {/* 커스텀 배경 이미지 — 업로드 / 활성 / 제거 */}
+              <div className="bg-image-row">
+                <button
+                  className={`bg-image-btn${bgKey === 'image' && bgImageUrl ? ' has-image' : ''}`}
+                  onClick={() => bgImgInputRef.current?.click()}
+                  title={bgImageUrl ? '배경 이미지 교체' : '배경 이미지 업로드'}
+                  style={bgImageUrl ? { backgroundImage: `url("${bgImageUrl}")` } : {}}
+                >
+                  <span style={{ background: bgImageUrl ? 'rgba(0,0,0,0.55)' : 'transparent', padding: bgImageUrl ? '2px 8px' : 0, borderRadius: 4 }}>
+                    {bgImageUrl ? '이미지 교체' : '＋ 배경 이미지'}
+                  </span>
+                </button>
+                {bgImageUrl && (
+                  <button className="bg-image-clear" onClick={clearBgImage} title="배경 이미지 제거">×</button>
+                )}
+              </div>
+              {bgKey === 'image' && bgImageUrl && (
+                <div className="row" style={{ marginTop: 8, marginBottom: 4 }}>
+                  <div className="rlabel">딤 (%)</div>
+                  <input type="range" className="rslider" min="0" max="100" value={bgDim}
+                    onChange={(e) => setBgDim(parseInt(e.target.value, 10))} />
+                  <div className="rval">{bgDim}</div>
+                </div>
+              )}
               <div style={{ fontSize: 11, color: 'var(--muted2)' }}>
                 현재: <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{bg.label}</span>
               </div>
+              <input ref={bgImgInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={onBgImageInput} />
             </div>
 
             {/* 안내 */}

@@ -576,6 +576,35 @@ const PreviewModal = ({
                         {highlightActive && jumpHighlight?.rect && state.activeTab === "pc" && <HighlightBox rect={jumpHighlight.rect} />}
                       </div>
                     )
+                  ) : isBrandWeb && pcPages.length > 0 ? (
+                    // 브랜드웹 — 프레임 없이 viewport 높이에 맞춘 slide 컨테이너.
+                    // Chrome 윈도우 + aspect-video 조합은 24인치(1080p) 에서 하단이 잘리는 사고가 있어 제거.
+                    // height: calc(100vh - 180px) → 모달 헤더/푸터/패딩 빼고 가능한 만큼 화면 사용. 페이지는 object-contain 으로 fit.
+                    <div className="relative w-full max-w-[1920px] flex flex-col items-center animate-in zoom-in-95 duration-500">
+                      <div className="absolute -inset-x-10 -top-6 -bottom-10 bg-gradient-radial from-white/[0.04] to-transparent blur-2xl pointer-events-none" />
+                      <div
+                        className="relative z-10 w-full bg-black overflow-hidden rounded-xl shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7),0_8px_24px_-8px_rgba(0,0,0,0.5)] border border-white/5"
+                        style={{ height: 'calc(100vh - 180px)' }}
+                        onWheel={handlePageWheel}
+                      >
+                        <div
+                          className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
+                          style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}
+                        >
+                          {pcPages.map((p, i) => (
+                            <div
+                              key={p.id || i}
+                              className="absolute left-0 right-0 h-full flex items-center justify-center"
+                              style={{ top: `${i * 100}%` }}
+                            >
+                              <img src={p.url} alt={p.name || `PC ${i + 1}`} draggable={false}
+                                className="w-full h-full object-contain block" />
+                            </div>
+                          ))}
+                        </div>
+                        {highlightActive && jumpHighlight?.rect && state.activeTab === "pc" && <HighlightBox rect={jumpHighlight.rect} />}
+                      </div>
+                    </div>
                   ) : (
                     <div className="relative w-full max-w-[1280px] flex flex-col items-center animate-in zoom-in-95 duration-500">
                       {/* 글로우 */}

@@ -226,20 +226,7 @@ const Engine = ({ version, setVersion, versions }) => {
         <aside className="w-[420px] shrink-0 border border-zinc-800 bg-[#18181B] rounded-2xl flex flex-col relative overflow-hidden shadow-2xl">
           <div className="flex-1 overflow-y-auto p-6 space-y-7 custom-scrollbar">
 
-            {/* 버전 셀렉터 */}
-            {versions && versions.length > 1 && (
-              <div className="flex items-center gap-2 -mt-1">
-                {versions.map(v => (
-                  <button
-                    key={v.key}
-                    onClick={() => setVersion?.(v.key)}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-bold tracking-wide transition-colors ${version === v.key ? 'bg-amber-500/15 text-amber-300 border border-amber-500/40' : 'bg-zinc-900 text-zinc-500 border border-zinc-800 hover:text-zinc-300'}`}
-                  >
-                    {v.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            {/* 버전 셀렉터는 사용자 요청으로 숨김. */}
 
             {/* 1단 — 스타일 카드 10개 + 주사위 */}
             <section>
@@ -518,7 +505,7 @@ const Engine = ({ version, setVersion, versions }) => {
                       {copied ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                       {copied ? '복사됨' : '복사'}
                     </button>
-                    <pre className="text-[11px] text-zinc-400 whitespace-pre-wrap leading-relaxed pr-16" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+                    <pre className="text-[11px] text-zinc-400 whitespace-pre-wrap leading-relaxed pr-16" style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
                       {prompt}
                     </pre>
                   </div>

@@ -1,25 +1,13 @@
-import { Stars, Copy, Check, Loader2, Video, ShieldCheck } from "lucide-react";
+import { Stars, Copy, Check, Loader2, Video, Minimize2 } from "lucide-react";
 import { AI_MODELS, VIDEO_AI_MODELS } from "../constants/presets";
-import { useGlobal } from "../../../context/GlobalContext";
 
-// 결과 패널 상단: AI 모델 선택 + 최적화/복사/Motion 전달 액션.
+// 결과 패널 상단: AI 모델 선택 + 최적화/압축/복사/Motion 전달 액션.
 export default function MatrixHeader({
   currentView, aiModel, setAiModel,
   hasOutput, isCopied, isOptimizing, currentIR,
+  isCompressing, onCompress,
   onOptimize, onCopy, onSendToMotion,
-  promptText,
 }) {
-  const { navigate } = useGlobal();
-  const sendToAudit = () => {
-    if (!promptText) return;
-    navigate?.('prompt-audit', {
-      source: 'render-metrics', target: 'prompt-audit',
-      prompt: { text: promptText, tags: [], style: '' },
-      image: { url: '', metadata: {} },
-      params: { sourceMeta: { aiModel } },
-      timestamp: Date.now(),
-    });
-  };
   const modelList = currentView === 'motion' ? VIDEO_AI_MODELS : AI_MODELS;
   return (
     <div className="flex justify-between items-center px-6 py-4 border-b border-zinc-800 bg-[#121214]">
@@ -44,10 +32,12 @@ export default function MatrixHeader({
           {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           {isCopied ? 'Copied!' : 'Copy'}
         </button>
-        <button onClick={sendToAudit} disabled={!hasOutput}
-          title="Prompt Optimizer로 보내서 충돌 검출 + 대안 받기 (1c)"
-          className="flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-colors whitespace-nowrap border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 bg-transparent disabled:opacity-40 disabled:cursor-not-allowed">
-          <ShieldCheck className="w-3.5 h-3.5" /> 최적화
+        {/* AI 압축 — PromptAudit 로직으로 충돌/중복 토큰 제거 + 짧게 정리 (현재 표시 중인 프롬프트를 인라인 갱신) */}
+        <button onClick={onCompress} disabled={isCompressing || !hasOutput}
+          title="현재 프롬프트의 충돌·중복·모호 토큰을 제거하고 짧게 정리 (Analysis 크레딧 1회)"
+          className="flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-colors whitespace-nowrap border border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/10 disabled:opacity-40 disabled:cursor-not-allowed">
+          {isCompressing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Minimize2 className="w-3.5 h-3.5" />}
+          {isCompressing ? '압축 중…' : 'AI 압축'}
         </button>
         <button onClick={onSendToMotion} disabled={!hasOutput}
           title="모션 메트릭스로 보내서 애니메이션 추천 받기"

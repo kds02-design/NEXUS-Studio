@@ -239,11 +239,11 @@ export function useSovereignPromptCurrent({ apiKey }) {
 
     if (shapeIntegrity < 50) conflicts.push({ level: '치명적 위험', rule: '형태 원형 붕괴 (Shape Drift)', action: '텍스트 보존 락 활성화 및 해체 모드 해제', fixId: 'fix_shape' });
     if (legibility < 55) conflicts.push({ level: '경고', rule: '가독성 하한선 도달 (Legibility Breach)', action: '자간 확보 및 절단 강도 완화', fixId: 'fix_legibility' });
-    if (styleConsistency < 80 && !activeGuards.includes('guard_3d')) conflicts.push({ level: '경고', rule: '입체(3D) 발생 가능성', action: '[L6] 2D 평면 강제 락 활성화', fixId: 'fix_3d' });
-    if (layoutStability < 60 && !activeGuards.includes('guard_noise')) conflicts.push({ level: '경고', rule: '실루엣 간섭 및 노이즈', action: '[L7] VFX 억제 락 활성화', fixId: 'fix_noise' });
+    if (styleConsistency < 80 && !activeGuards.includes('guard_3d')) conflicts.push({ level: '경고', rule: '입체(3D) 발생 가능성', action: '2D 평면 강제 락 활성화', fixId: 'fix_3d' });
+    if (layoutStability < 60 && !activeGuards.includes('guard_noise')) conflicts.push({ level: '경고', rule: '실루엣 간섭 및 노이즈', action: 'VFX 억제 락 활성화', fixId: 'fix_noise' });
 
     if ((layoutType === '2Lines' || layoutType === 'TitleSub' || layoutType === 'SubTitle') && !activeGuards.includes('guard_layout')) {
-      conflicts.push({ level: '경고', rule: '세로 붕괴(Squishing) 위험', action: '[L2] 세로 붕괴 락 활성화', fixId: 'fix_squish' });
+      conflicts.push({ level: '경고', rule: '세로 붕괴(Squishing) 위험', action: '세로 붕괴 락 활성화', fixId: 'fix_squish' });
     }
 
     return { shapeIntegrity, legibility, styleConsistency, layoutStability, conflicts };

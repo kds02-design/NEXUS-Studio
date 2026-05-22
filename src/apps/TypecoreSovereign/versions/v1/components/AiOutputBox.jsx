@@ -21,7 +21,7 @@ const AiOutputBox = ({ modelState, content, outdatedFlag = false, onCopy, copied
                     {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                 </button>
             </div>
-            <div className={`max-w-[800px] w-full mx-auto text-left whitespace-pre-wrap font-mono text-[13px] leading-relaxed p-6 rounded-[10px] border bg-[#1C1C1C] border-zinc-800 transition-colors duration-500 text-zinc-300 ${outdatedFlag && !isPlaceholderContent ? 'opacity-60 grayscale' : 'opacity-100'}`}>
+            <div className={`max-w-[800px] w-full mx-auto text-left whitespace-pre-wrap font-sans text-[13px] leading-relaxed p-6 rounded-[10px] border bg-[#1C1C1C] border-zinc-800 transition-colors duration-500 text-zinc-300 ${outdatedFlag && !isPlaceholderContent ? 'opacity-60 grayscale' : 'opacity-100'}`}>
                 {content}
             </div>
         </div>
