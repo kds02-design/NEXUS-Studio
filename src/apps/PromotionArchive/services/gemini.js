@@ -2,7 +2,7 @@
 // 브랜드웹 라이브러리 전용 키 → 미설정 시 공용 VITE_GEMINI_API_KEY 로 폴백.
 // 별도 quota/billing 관리가 필요할 때 .env 에 VITE_GEMINI_API_KEY_BRANDWEB 만 추가하면 됨.
 import { GEMINI_API_KEY as DEFAULT_GEMINI_KEY } from "../../../lib/gemini";
-import { WEB_EVALUATION_KEYS, DEFAULT_WEB_EVAL_PROMPT } from "../constants/webEvalCriteria";
+import { WEB_EVALUATION_KEYS, DEFAULT_WEB_EVAL_PROMPT, BRAND_WEB_EVAL_PROMPT } from "../constants/webEvalCriteria";
 
 const apiKey = (import.meta.env.VITE_GEMINI_API_KEY_BRANDWEB || "").trim() || DEFAULT_GEMINI_KEY;
 // 콘솔에서 어떤 키 소스가 활성화됐는지 확인 — 값은 노출하지 않음.
@@ -159,9 +159,11 @@ export const prepareImageForAI = async (imgSource, maxWidth = 1280, quality = 0.
 // 미지정 시 기본 apiKey (brandweb dedicated → 공용 fallback) 사용.
 export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', options = {}) => {
     const keyToUse = (options.apiKey || apiKey || '').trim();
+    // 브랜드웹은 다른 평가 관점(메인 메시지/세계관 중심) 사용.
+    const basePrompt = options.isBrandWeb ? BRAND_WEB_EVAL_PROMPT : DEFAULT_WEB_EVAL_PROMPT;
     const prompt = userComment
-        ? `${DEFAULT_WEB_EVAL_PROMPT}\n\n[사용자 피드백]\n${userComment}\n`
-        : DEFAULT_WEB_EVAL_PROMPT;
+        ? `${basePrompt}\n\n[사용자 피드백]\n${userComment}\n`
+        : basePrompt;
 
     const imageParts = (Array.isArray(imagesBase64) ? imagesBase64 : [imagesBase64])
         .filter(Boolean)

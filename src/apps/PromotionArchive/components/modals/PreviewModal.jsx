@@ -3,7 +3,7 @@ import {
   X, Heart, Monitor, Smartphone, Download, Copy, Check, Plus,
   Lock, ZoomIn, ZoomOut, Layers, Edit3, Scissors,
   Signal, Wifi, Battery, Link as LinkIcon, Sparkles, Frame,
-  ChevronLeft, ChevronRight, RotateCw, Star, Trash2, Repeat,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, RotateCw, Star, Trash2, Repeat,
 } from "lucide-react";
 import { getWebFinalScore100, hasWebEvaluation } from '../../constants/webEvalCriteria';
 import RegionPicker from '../../../AssetLibrary/components/RegionPicker';
@@ -80,6 +80,15 @@ const PreviewModal = ({
   // 페이지 인덱스 reset — banner 가 바뀌면(다른 카드 열기) 0 으로.
   useEffect(() => { setPcPageIdx(0); setMoPageIdx(0); }, [banner?.id]);
 
+  // 페이지 네비게이터 접기/펴기 — 모바일 뷰 하단과 겹치는 경우 사용자가 직접 숨길 수 있도록.
+  // localStorage 영속화 (다음 진입 시 마지막 상태 복원).
+  const [isPagerCollapsed, setIsPagerCollapsed] = useState(() => {
+    try { return localStorage.getItem("pa:pager-collapsed") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("pa:pager-collapsed", isPagerCollapsed ? "1" : "0"); } catch { /* ignore */ }
+  }, [isPagerCollapsed]);
+
   // 브랜드웹 — 한 페이지씩 cross-fade 전환 (패럴렉스). wheel/key 이벤트로 다음/이전 페이지.
   // 디바운스 락으로 한 번에 한 페이지씩만 이동.
   const wheelLockRef = useRef(0);
@@ -131,14 +140,35 @@ const PreviewModal = ({
 
   // ─── 출처로 이동(jumpHighlight) — sourceImageUrl 기준으로 PC/Mobile 탭 결정 후 풀뷰 + 스크롤 + 펄스 ───
   const [highlightActive, setHighlightActive] = useState(false);
-  // 1단계: jumpHighlight 받으면 풀뷰 + 탭 결정 (state 변경만).
+  // 1단계: jumpHighlight 받으면 풀뷰 + 탭 결정 + 브랜드웹은 해당 페이지로 이동.
   useEffect(() => {
     if (!isOpen || !jumpHighlight?.rect) return;
-    const isMobile = jumpHighlight.imageUrl && banner?.mobile_image && jumpHighlight.imageUrl === banner.mobile_image;
+    const imgUrl = jumpHighlight.imageUrl;
+    // 브랜드웹 — pages[] 안에서 url 매칭으로 PC/Mobile + page idx 결정.
+    if (isBrandWeb && imgUrl) {
+      const pcIdx = pcPages.findIndex((p) => p.url === imgUrl);
+      const moIdx = moPages.findIndex((p) => p.url === imgUrl);
+      if (pcIdx >= 0) {
+        dispatch({ type: "SET_TAB", tab: "pc" });
+        setPcPageIdx(pcIdx);
+      } else if (moIdx >= 0) {
+        dispatch({ type: "SET_TAB", tab: "mobile" });
+        setMoPageIdx(moIdx);
+      } else {
+        // url 매칭 실패 — 폴백: mobile_image 비교로만 탭 결정.
+        const isMobileFallback = banner?.mobile_image && imgUrl === banner.mobile_image;
+        dispatch({ type: "SET_TAB", tab: isMobileFallback ? "mobile" : "pc" });
+      }
+      dispatch({ type: "SET_FULL_VIEW", value: true });
+      console.log('[PreviewModal] jumpHighlight (brandweb)', { rect: jumpHighlight.rect, pcIdx, moIdx });
+      return;
+    }
+    // 일반 배너 — 기존 동작 (mobile_image 비교).
+    const isMobile = imgUrl && banner?.mobile_image && imgUrl === banner.mobile_image;
     dispatch({ type: "SET_TAB", tab: isMobile ? "mobile" : "pc" });
     dispatch({ type: "SET_FULL_VIEW", value: true });
     console.log('[PreviewModal] jumpHighlight received', { rect: jumpHighlight.rect, tab: isMobile ? 'mobile' : 'pc' });
-  }, [isOpen, jumpHighlight?.rect?.x, jumpHighlight?.rect?.y, jumpHighlight?.imageUrl, banner?.mobile_image]);
+  }, [isOpen, jumpHighlight?.rect?.x, jumpHighlight?.rect?.y, jumpHighlight?.imageUrl, banner?.mobile_image, isBrandWeb, pcPages, moPages]);
 
   // 2단계: 풀뷰가 켜진 후 scrollRef 가 새 모드로 마운트되면 스크롤 + 하이라이트 시작.
   // state.isFullView / state.activeTab 변화를 기다림 → stale ref 회피.
@@ -304,8 +334,9 @@ const PreviewModal = ({
       >
         {/* 좌측 뷰어 */}
         <div className="flex-1 relative flex flex-col h-full overflow-hidden bg-black">
-          {/* 상단 컨트롤 바 */}
-          <div className="w-full px-4 pt-4 pb-2 flex justify-between items-start z-50 relative gap-3">
+          {/* 상단 컨트롤 바 — 좌(액션) / 중앙 absolute(프레임 + 데스크톱/모바일 탭) 레이아웃.
+              justify-between 으로 우측에 붙던 탭을 absolute 중앙으로 옮겨 좌측 버튼 폭과 무관하게 정중앙 고정. */}
+          <div className="w-full px-4 pt-4 pb-2 flex items-start z-50 relative gap-3">
             <div className="flex gap-1.5">
               <button
                 onClick={handleDownload}
@@ -329,7 +360,7 @@ const PreviewModal = ({
             {/* 프레임 아이콘 토글 — ON 이면 데스크톱은 브라우저 윈도우, 모바일은 폰 베젤이 함께 적용.
                 OFF 이면 둘 다 raw 이미지(풀뷰). 활성 시 시안 액센트로 강조.
                 원본/맞춤은 풀뷰(OFF) 상태에서만 노출. */}
-            <div className="flex items-center gap-2">
+            <div className="absolute left-1/2 -translate-x-1/2 top-4 flex items-center gap-2">
               <div className="inline-flex items-center gap-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full px-1.5 py-1">
                 <button
                   onClick={() => dispatch({ type: "TOGGLE_FULL_VIEW" })}
@@ -387,7 +418,8 @@ const PreviewModal = ({
 
           {/* 본문 영역 */}
           <div className="flex-1 overflow-hidden relative w-full h-full">
-            {/* 브랜드웹 페이지 navigator — 이미지 영역 중앙 하단 floating. CodexDetailModal 줌 슬라이더 디자인 차용. */}
+            {/* 브랜드웹 페이지 navigator — 이미지 영역 중앙 하단 floating. CodexDetailModal 줌 슬라이더 디자인 차용.
+                isPagerCollapsed === true 면 작은 칩(페이지 N/M + 펼치기 화살표)만 노출 — 모바일 뷰와 겹침 회피. */}
             {isBrandWeb && (() => {
               const list = state.activeTab === 'pc' ? pcPages : moPages;
               const idx = state.activeTab === 'pc' ? pcPageIdx : moPageIdx;
@@ -396,12 +428,52 @@ const PreviewModal = ({
               const isMain = currentPage && banner?.mainPageId === currentPage.id;
               const isSub = currentPage && banner?.subPageId === currentPage.id;
               if (list.length <= 1 && !onSetMainPage) return null;
+              // 접혔을 때 — 작은 칩만 표시. 좌우 화살표/페이지 카운트 + 펼치기.
+              if (isPagerCollapsed) {
+                return (
+                  <div
+                    className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1 z-[510] px-2 py-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full shadow-lg"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                  >
+                    {list.length > 1 && (
+                      <>
+                        <button onClick={() => { const i = Math.max(0, idx - 1); setIdx(i); }} disabled={idx <= 0}
+                          title="이전 페이지"
+                          className="w-6 h-6 flex items-center justify-center rounded-full text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed">
+                          <ChevronLeft className="w-3 h-3" />
+                        </button>
+                        <span className="text-[10px] font-bold text-white tabular-nums min-w-[36px] text-center">
+                          {idx + 1} <span className="text-white/40">/</span> {list.length}
+                        </span>
+                        <button onClick={() => { const i = Math.min(list.length - 1, idx + 1); setIdx(i); }} disabled={idx >= list.length - 1}
+                          title="다음 페이지"
+                          className="w-6 h-6 flex items-center justify-center rounded-full text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed">
+                          <ChevronRight className="w-3 h-3" />
+                        </button>
+                      </>
+                    )}
+                    <button onClick={() => setIsPagerCollapsed(false)}
+                      title="페이지 컨트롤 펼치기"
+                      className="w-6 h-6 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10">
+                      <ChevronUp className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              }
               return (
                 <div
                   className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 z-[510] px-2.5 py-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-full shadow-lg"
                   onMouseDown={(e) => e.stopPropagation()}
                   onTouchStart={(e) => e.stopPropagation()}
                 >
+                  {/* 접기 — 좌측 끝에 한 번 노출. 클릭하면 작은 칩으로 축소. */}
+                  <button onClick={() => setIsPagerCollapsed(true)}
+                    title="페이지 컨트롤 접기"
+                    className="w-7 h-7 flex items-center justify-center rounded-full text-white/60 hover:text-white hover:bg-white/10 transition-colors">
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="w-px h-5 bg-white/15" />
                   {/* 메인/서브 지정 + 교체/삭제 — 현재 페이지에 대해 */}
                   {currentPage && onSetMainPage && (
                     <>
@@ -534,16 +606,15 @@ const PreviewModal = ({
                 className={`w-full h-full relative touch-none scrollbar-hide ${
                   state.isFullView
                     ? (state.isActualSize ? "overflow-auto cursor-grab active:cursor-grabbing" : "overflow-y-auto")
-                    // 프레임 모드도 overflow-y-auto — 1920 해상도 브라우저 윈도우(헤더+aspect-video)가
-                    // viewport 보다 커지면 이전엔 overflow-hidden 으로 하단이 잘렸다.
-                    : "overflow-y-auto"
+                    // 프레임 모드는 overflow-hidden — max-width 가 viewport 에 맞춰 비례 축소되므로 항상 fit.
+                    // 스크롤 가능 영역을 제거해 휠 이벤트로 전체 프레임이 위아래로 이동하는 흔들림 방지.
+                    : "overflow-hidden"
                 }`}
               >
-                {/* min-h-full + safe center: 컨텐츠 < 부모면 가운데, 컨텐츠 > 부모면 위부터 + 자연 스크롤.
-                    `safe center` 가 없으면 자식이 부모보다 클 때 위쪽이 잘려 스크롤로도 못 가는 케이스 발생. */}
+                {/* 일반 뷰: h-full 로 부모 높이에 딱 맞춰 padding 도 box-sizing border-box 로 안쪽 흡수 → 스크롤 안 생김.
+                    풀뷰: min-h-full + start 정렬 — 컨텐츠가 길면 자연 스크롤. */}
                 <div
-                  style={{ justifyContent: 'safe center' }}
-                  className={`min-h-full flex flex-col items-center transition-all duration-700 ${state.isFullView ? "p-0" : "p-8"}`}
+                  className={`flex flex-col items-center transition-all duration-700 ${state.isFullView ? "min-h-full p-0 justify-start" : "h-full p-8 justify-center"}`}
                 >
                   {state.isFullView ? (
                     // 풀뷰 — 브랜드웹은 패럴렉스 cross-fade(한 페이지씩), 그 외는 단일 이미지.
@@ -576,37 +647,14 @@ const PreviewModal = ({
                         {highlightActive && jumpHighlight?.rect && state.activeTab === "pc" && <HighlightBox rect={jumpHighlight.rect} />}
                       </div>
                     )
-                  ) : isBrandWeb && pcPages.length > 0 ? (
-                    // 브랜드웹 — 프레임 없이 viewport 높이에 맞춘 slide 컨테이너.
-                    // Chrome 윈도우 + aspect-video 조합은 24인치(1080p) 에서 하단이 잘리는 사고가 있어 제거.
-                    // height: calc(100vh - 180px) → 모달 헤더/푸터/패딩 빼고 가능한 만큼 화면 사용. 페이지는 object-contain 으로 fit.
-                    <div className="relative w-full max-w-[1920px] flex flex-col items-center animate-in zoom-in-95 duration-500">
-                      <div className="absolute -inset-x-10 -top-6 -bottom-10 bg-gradient-radial from-white/[0.04] to-transparent blur-2xl pointer-events-none" />
-                      <div
-                        className="relative z-10 w-full bg-black overflow-hidden rounded-xl shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7),0_8px_24px_-8px_rgba(0,0,0,0.5)] border border-white/5"
-                        style={{ height: 'calc(100vh - 180px)' }}
-                        onWheel={handlePageWheel}
-                      >
-                        <div
-                          className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
-                          style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}
-                        >
-                          {pcPages.map((p, i) => (
-                            <div
-                              key={p.id || i}
-                              className="absolute left-0 right-0 h-full flex items-center justify-center"
-                              style={{ top: `${i * 100}%` }}
-                            >
-                              <img src={p.url} alt={p.name || `PC ${i + 1}`} draggable={false}
-                                className="w-full h-full object-contain block" />
-                            </div>
-                          ))}
-                        </div>
-                        {highlightActive && jumpHighlight?.rect && state.activeTab === "pc" && <HighlightBox rect={jumpHighlight.rect} />}
-                      </div>
-                    </div>
                   ) : (
-                    <div className="relative w-full max-w-[1280px] flex flex-col items-center animate-in zoom-in-95 duration-500">
+                    // PC 일반 뷰 — Chrome 브라우저 프레임. 브랜드웹/일반 모두 같은 프레임.
+                    // max-width 를 min(1280, calc((100vh - 260px) * 16/9)) 로 산정 — viewport 작아지면 전체가 비례 축소.
+                    // chrome 헤더(~88px) + content aspect-video 가 viewport 안에 항상 들어옴.
+                    <div
+                      className="relative w-full flex flex-col items-center animate-in zoom-in-95 duration-500"
+                      style={{ maxWidth: 'min(1280px, calc((100vh - 260px) * 16 / 9))' }}
+                    >
                       {/* 글로우 */}
                       <div className="absolute -inset-x-10 -top-6 -bottom-20 bg-gradient-radial from-white/[0.04] to-transparent blur-2xl pointer-events-none" />
 
@@ -705,8 +753,11 @@ const PreviewModal = ({
                   {isBrandWeb && moPages.length === 0 ? (
                     <MobileUploadZone onAddMobilePages={onAddMobilePages} />
                   ) : isBrandWeb && moPages.length > 0 ? (
+                    // 브랜드웹 모바일 풀뷰 — 고정 aspect-[9/16] 제거, viewport 높이 기반 산정.
+                    // 24인치 1080p 에서 max-w-480 * 16/9 = 854px > 가용 높이 ~830px 이어서 하단이 잘리던 사고 해소.
                     <div
-                      className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} shadow-2xl relative aspect-[9/16] bg-black overflow-hidden`}
+                      className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} shadow-2xl relative bg-black overflow-hidden rounded-xl`}
+                      style={{ height: 'calc(100vh - 180px)' }}
                       onWheel={handlePageWheel}
                     >
                       <div
@@ -736,11 +787,14 @@ const PreviewModal = ({
               </div>
             ) : isBrandWeb && moPages.length === 0 ? (
               // 일반 뷰 — 모바일 페이지가 0 인 브랜드웹: 폰 베젤 대신 업로드 영역.
-              <div style={{ alignItems: 'safe center', justifyContent: 'safe center' }} className="w-full h-full flex p-8 overflow-y-auto scrollbar-hide animate-in fade-in duration-300">
+              <div className="w-full h-full flex items-center justify-center p-8 overflow-y-auto scrollbar-hide animate-in fade-in duration-300">
                 <MobileUploadZone onAddMobilePages={onAddMobilePages} />
               </div>
             ) : (
-              <div style={{ alignItems: 'safe center', justifyContent: 'safe center' }} className="w-full h-full flex p-8 overflow-y-auto scrollbar-hide animate-in fade-in duration-300">
+              // 모바일 일반 뷰 — 브랜드웹/프로모션 공통 iPhone 베젤 프레임.
+              // items-center/justify-center 로 고정 정렬 — 스크롤 시 위치가 흔들리던 문제 해소.
+              // 베젤(360×740) 이 viewport 보다 크면 overflow-y-auto 가 폴백.
+              <div className="w-full h-full flex items-center justify-center p-8 overflow-y-auto scrollbar-hide animate-in fade-in duration-300">
                 {/* 디바이스 외부 베젤 (티타늄) */}
                 <div
                   className="relative rounded-[44px] p-[3px] overflow-hidden shadow-[0_30px_60px_-12px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.04)]"

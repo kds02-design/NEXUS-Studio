@@ -1443,7 +1443,9 @@ function App() {
                                     return;
                                 }
 
-                                const result = await analyzeWebDesign(validImages, target.webUserComment || '');
+                                const result = await analyzeWebDesign(validImages, target.webUserComment || '', {
+                                    isBrandWeb: target.assetType === '브랜드웹',
+                                });
                                 if (!result.ok) {
                                     alert(`AI 분석 실패: ${result.error}`);
                                     return;

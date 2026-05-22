@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { X, Settings, ChevronUp, ChevronDown, Edit3, Sparkles, Loader2, Wand2 } from 'lucide-react';
 import {
   WEB_EVALUATION_KEYS,
-  getWebScoreLabel,
+  getWebScoreLabelFor,
   getWebFinalScore100,
   hasWebEvaluation,
+  isBrandWebBanner,
 } from '../../constants/webEvalCriteria';
 
 const WebDesignEvalModal = ({
@@ -42,10 +43,17 @@ const WebDesignEvalModal = ({
           <div>
             <h3 className="text-lg font-bold text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-[#d8b17e]" />
-              Web Design Analysis
+              {isBrandWebBanner(banner) ? 'Brand Site Analysis' : 'Web Design Analysis'}
+              {isBrandWebBanner(banner) && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-widest bg-rose-400/15 border border-rose-400/40 text-rose-300">
+                  BRAND
+                </span>
+              )}
             </h3>
             <p className="text-[12px] text-zinc-500 mt-1">
-              {hasEval ? 'AI가 분석한 10대 지표 결과입니다.' : '아직 분석되지 않은 페이지입니다. 분석을 시작해 보세요.'}
+              {hasEval
+                ? `AI가 분석한 10대 지표 결과 (${isBrandWebBanner(banner) ? '브랜드 사이트 기준' : '프로모션 페이지 기준'}).`
+                : `아직 분석되지 않은 ${isBrandWebBanner(banner) ? '브랜드 사이트' : '페이지'}입니다. 분석을 시작해 보세요.`}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -105,7 +113,7 @@ const WebDesignEvalModal = ({
                     return (
                       <div key={key} className="bg-zinc-900/40 border border-dashed border-zinc-700/40 rounded-lg px-4 py-2.5 opacity-60 flex items-center gap-4">
                         <div className="w-[110px] shrink-0 flex items-center justify-between">
-                          <span className="text-[11px] text-zinc-400 font-medium">{getWebScoreLabel(key)}</span>
+                          <span className="text-[11px] text-zinc-400 font-medium">{getWebScoreLabelFor(banner, key)}</span>
                           <span className="text-lg font-mono font-bold leading-none text-zinc-600">—</span>
                         </div>
                         <div className="w-px h-5 bg-white/10 shrink-0" />
@@ -124,7 +132,7 @@ const WebDesignEvalModal = ({
                   return (
                     <div key={key} className={`${boxClass} border rounded-lg px-4 py-2.5 flex items-center gap-4 transition-colors`}>
                       <div className="w-[110px] shrink-0 flex items-center justify-between">
-                        <span className="text-[11px] text-zinc-300 font-medium">{getWebScoreLabel(key)}</span>
+                        <span className="text-[11px] text-zinc-300 font-medium">{getWebScoreLabelFor(banner, key)}</span>
                         <span className="text-lg font-mono font-bold leading-none text-[#d8b17e]">{scoreVal}</span>
                       </div>
                       <div className="w-px h-5 bg-white/10 shrink-0" />

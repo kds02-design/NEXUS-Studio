@@ -82,7 +82,10 @@ const AiAnalysisModal = ({ isOpen, onClose, selectedIds, onComplete }) => {
         return;
       }
 
-      const result = await analyzeWebDesign(validImages, banner.webUserComment || "", { apiKey: SHARED_GEMINI_KEY });
+      const result = await analyzeWebDesign(validImages, banner.webUserComment || "", {
+        apiKey: SHARED_GEMINI_KEY,
+        isBrandWeb: banner.assetType === '브랜드웹',
+      });
       if (!result.ok) {
         addLog(`AI 실패: ${banner.title || id} — ${result.error}`);
         setErrorCount(c => c + 1);

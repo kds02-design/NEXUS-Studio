@@ -1,3 +1,4 @@
+// 프로모션(이벤트) 페이지 평가 라벨 — 이벤트·CTA·혜택 전달력에 초점.
 export const WEB_SCORE_LABELS = {
   info_structure: '정보 구조',
   visual_hierarchy: '비주얼 위계',
@@ -11,6 +12,32 @@ export const WEB_SCORE_LABELS = {
   impact: '차별화·임팩트',
 };
 
+// 브랜드 사이트 평가 라벨 — 게임 IP·세계관·메인 메시지 전달력에 초점.
+// 같은 키(저장 호환)를 유지하되 라벨/뉘앙스만 브랜드웹 맥락으로 재정의.
+export const BRAND_WEB_SCORE_LABELS = {
+  info_structure: '내러티브 구조',
+  visual_hierarchy: '비주얼 위계',
+  typography: '타이포그래피',
+  color_system: '컬러 시스템',
+  layout_spacing: '레이아웃·여백',
+  cta_interaction: '내비게이션·UX',
+  brand_consistency: '브랜드 일관성',
+  event_clarity: '메인 메시지 전달력',
+  content_readability: '콘텐츠 가독성',
+  impact: '차별화·임팩트',
+};
+
+// 브랜드웹 여부 판정 — assetType === '브랜드웹'.
+export const isBrandWebBanner = (banner) => banner?.assetType === '브랜드웹';
+
+// 평가 라벨 셀렉터 — banner 컨텍스트에 맞는 라벨 셋 반환.
+export const getWebLabelsFor = (banner) => (isBrandWebBanner(banner) ? BRAND_WEB_SCORE_LABELS : WEB_SCORE_LABELS);
+export const getWebScoreLabelFor = (banner, key) => {
+  const labels = getWebLabelsFor(banner);
+  return labels[String(key).toLowerCase()] || key;
+};
+
+// 하위호환 — banner 컨텍스트 없이 호출되는 곳을 위해 promotion 라벨로 폴백.
 export const getWebScoreLabel = (key) => WEB_SCORE_LABELS[String(key).toLowerCase()] || key;
 
 export const WEB_EVALUATION_KEYS = [
@@ -29,6 +56,46 @@ export const hasWebEvaluation = (banner) => {
   if (!banner?.webScores) return false;
   return WEB_EVALUATION_KEYS.some(k => banner.webScores[k]?.score != null);
 };
+
+// ───────────────────────────────────────────────────────────
+// 브랜드 사이트 전용 평가 프롬프트.
+// 같은 10개 키를 유지하되 평가 관점을 게임 브랜드 사이트 맥락으로 전환:
+// - event_clarity 는 "이벤트 혜택" 이 아니라 "브랜드 메인 메시지/USP 전달력"
+// - cta_interaction 은 "프로모션 CTA" 가 아니라 "내비게이션·UX·게임 진입 동선"
+// - 그 외 항목도 브랜드 IP/세계관/내러티브 관점으로 재해석.
+// ───────────────────────────────────────────────────────────
+export const BRAND_WEB_EVAL_PROMPT = `당신은 게임 브랜드 공식 사이트 디자인을 심사하는 최고 권위의 AI 평가단입니다.
+첨부된 브랜드 사이트 페이지 이미지를 10가지 세부 항목으로 정밀 평가하세요.
+브랜드 사이트는 **이벤트/혜택 페이지가 아니라** 게임 IP·세계관·메인 메시지를 전달하는 페이지입니다.
+
+[임무 1: 메타데이터 추출]
+- title: 이 브랜드 사이트의 **공식 사이트 명 또는 메인 카피**.
+  - 게임 IP명 + 사이트 컨셉(예: "리니지M 캐릭터 사이트"), 메인 슬로건, 캠페인 카피 등.
+  - 네비게이션 메뉴/카테고리 헤더/푸터/저작권 텍스트는 제외.
+  - 찾을 수 없으면 빈 문자열.
+- date_info: 사이트에 명시된 **출시일·업데이트 일자** 등이 있으면 추출 (이벤트 기간 아님).
+  - year/month/full_date — 없으면 모두 빈 문자열. 추측 금지.
+- tags: 분위기/스타일/브랜드 키워드 위주로 반드시 '한글'로만 3~5개.
+- summary: 사이트의 메인 메시지·인상에 대한 한 줄 요약.
+
+[임무 2: 10대 평가 항목 (100점 만점)]
+**⚠️ 반드시 아래 10개 키 전부에 대해 score 와 reason 을 작성. 키 이름은 그대로 사용.**
+
+1. info_structure (내러티브 구조): 브랜드 스토리의 흐름, 섹션 전개, 정보 깊이가 의도대로 설계됐는가
+2. visual_hierarchy (비주얼 위계): 핵심 비주얼(키 아트/캐릭터/타이틀)에 시선이 집중되도록 배치됐는가
+3. typography (타이포그래피): 게임 IP 의 분위기에 맞는 폰트·자간·줄간격을 사용했는가
+4. color_system (컬러 시스템): 브랜드/IP 컬러 팔레트의 일관성과 분위기 전달
+5. layout_spacing (레이아웃·여백): 그리드 구조, 여백 운용이 프리미엄·브랜드 톤에 부합하는가
+6. cta_interaction (내비게이션·UX): 게임 진입/다운로드/사전예약 등 사용자가 가야 할 다음 단계가 직관적인가
+7. brand_consistency (브랜드 일관성): 게임 IP·세계관·로어와 시각 디자인이 일치하는가
+8. event_clarity (메인 메시지 전달력): 사이트가 전하려는 **핵심 메시지·USP**가 사용자에게 즉시 전달되는가 (이벤트 혜택이 아님)
+9. content_readability (콘텐츠 가독성): 본문/설명/캐릭터 소개 텍스트의 가독성과 정보 전달력
+10. impact (차별화·임팩트): 다른 게임 브랜드 사이트와 비교했을 때 인상에 남는 차별성·완성도·여운
+
+* 60~95점 사이 폭넓은 점수 대역을 사용해 변별력 확보.
+* reason 은 군더더기 없이 핵심만 한 줄로.
+
+반드시 지정된 JSON 스키마에 맞추어 답변하세요.`;
 
 export const DEFAULT_WEB_EVAL_PROMPT = `당신은 브랜드 웹사이트 디자인을 심사하는 최고 권위의 AI 평가단입니다.
 첨부된 프로모션 웹페이지 이미지를 10가지 세부 항목으로 나누어 정밀 평가하세요.

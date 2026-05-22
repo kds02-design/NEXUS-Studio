@@ -281,6 +281,9 @@ function AppCard({ app, onOpen, isAdmin }) {
         transition: "all 0.2s",
         transform: (!disabled && hov) ? "translateY(-2px)" : "none",
         position: "relative",
+        // 버전 팝오버 열린 카드는 형제 카드들 위로. transform 으로 stacking context 가
+        // 이미 형성되어 있어서 zIndex 만 올리면 grid 안에서 최상위로 떠 가려짐 방지.
+        zIndex: versionMenuOpen ? 50 : "auto",
         userSelect: disabled ? "none" : undefined,
       }}>
       {/* 상단 행: [아이콘 + 타이틀] ............ [뱃지] */}
