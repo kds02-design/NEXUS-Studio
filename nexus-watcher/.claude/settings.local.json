@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(node -e \"const p=require\\('./processed.json'\\); const e=Object.entries\\(p\\).filter\\(\\([k,v]\\)=>v.app==='promotion-archive'\\); console.log\\('total promotion-archive:', e.length\\); console.log\\('sample paths:'\\); e.slice\\(0,30\\).forEach\\(\\([k,v]\\)=>console.log\\(' ',k\\)\\);\")",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Read(//c/work/00_claude/**)",
+      "Bash(npx vite *)"
     ]
   }
 }

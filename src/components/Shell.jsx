@@ -37,6 +37,9 @@ import BrandWebReviewApp from "../apps/BrandWebReview";
 import AssetLibraryApp from "../apps/AssetLibrary";
 import BannerCodexApp from "../apps/BannerCodex";
 import BannerCreatorApp from "../apps/BannerCreator";
+import MaskForgeApp from "../apps/MaskForge";
+import VectorForgeApp from "../apps/VectorForge";
+import LumKeyApp from "../apps/LumKey";
 import BriefStudioApp from "../apps/BriefStudio";
 import NexusAdminApp from "../apps/NexusAdmin";
 import PromptAuditApp from "../apps/PromptAudit";
@@ -388,10 +391,26 @@ function AppCard({ app, onOpen, isAdmin }) {
   );
 }
 
-function AppCardGrid({ onScroll }) {
+function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
   const { navigate, isLight } = useGlobal();
   const { isAdmin } = useAuth();
   const T = useTheme();
+  const scrollRef = useRef(null);
+
+  // 인덱스로 복귀 시 마지막 스크롤 위치 복원. 컨텐츠 비동기 로드 대비해 RAF 두 번 보정.
+  useEffect(() => {
+    if (!scrollRef.current || initialScrollTop <= 0) return;
+    scrollRef.current.scrollTop = initialScrollTop;
+    let raf1 = requestAnimationFrame(() => {
+      if (scrollRef.current) scrollRef.current.scrollTop = initialScrollTop;
+      raf1 = requestAnimationFrame(() => {
+        if (scrollRef.current) scrollRef.current.scrollTop = initialScrollTop;
+      });
+    });
+    return () => cancelAnimationFrame(raf1);
+    // initialScrollTop 은 mount 시점 값만 쓴다 — 의도적 deps 빈 배열
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const groups = [
     { key:"explore",    label:"허브 / 평가" },
     { key:"generate",   label:"프롬프트 생성" },
@@ -402,7 +421,7 @@ function AppCardGrid({ onScroll }) {
   // 라이트에서는 배경이 흰색이라 흰색 alpha 보더가 안 보임 → 검정 alpha 로 전환
   const sectionBarColor = isLight ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.03)";
   return (
-    <div style={{ width:"100%", height:"100%", overflowY:"auto" }} onScroll={onScroll}>
+    <div ref={scrollRef} style={{ width:"100%", height:"100%", overflowY:"auto" }} onScroll={onScroll}>
       <DashboardHero />
       <IndexSearchBar />
       <DashboardRecentPrompts />
@@ -450,6 +469,9 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "asset-library":      return <AssetLibraryApp />;
     case "banner-codex":       return <BannerCodexApp />;
     case "banner-creator":     return <BannerCreatorApp />;
+    case "mask-forge":         return <MaskForgeApp />;
+    case "vector-forge":       return <VectorForgeApp />;
+    case "lumkey":             return <LumKeyApp />;
     case "brief-studio":       return <BriefStudioApp />;
     case "prompt-audit":       return <PromptAuditApp />;
     case "nexus-admin":        return <NexusAdminApp />;
@@ -492,11 +514,14 @@ export default function Shell() {
   const [selectedVersion, setSelectedVersionRaw] = useState(() => readSelectedVersion(app));
   const [scrollY, setScrollY] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // 인덱스 스크롤 위치 — 앱 진입 시점에 보관, 복귀 시 AppCardGrid 가 컨테이너 scrollTop 복원에 사용.
+  const indexScrollYRef = useRef(0);
 
-  // 앱 전환 시 선택된 버전을 해당 앱 기준으로 다시 계산 + 스크롤 리셋.
+  // 앱 전환 시 선택된 버전을 해당 앱 기준으로 다시 계산.
+  // scrollY 상태: 앱 진입 시 0, 인덱스 복귀 시 보관된 위치로 복원 (Topbar 투명도 즉시 일치).
   useEffect(() => {
     setSelectedVersionRaw(readSelectedVersion(app));
-    setScrollY(0);
+    setScrollY(currentApp ? 0 : indexScrollYRef.current);
   }, [currentApp]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setSelectedVersion = (key) => {
@@ -505,9 +530,11 @@ export default function Shell() {
     try { localStorage.setItem(versionStorageKey(app.id), key); } catch {}
   };
 
-  // 인덱스 페이지의 스크롤 위치 — Topbar 투명/블러 그라데이션 계산에 사용.
+  // 인덱스 페이지의 스크롤 위치 — Topbar 투명/블러 그라데이션 + 앱 진입 후 복귀 시 위치 복원에 사용.
   const handleIndexScroll = (e) => {
-    setScrollY(e.currentTarget.scrollTop);
+    const y = e.currentTarget.scrollTop;
+    indexScrollYRef.current = y;
+    setScrollY(y);
   };
 
   // Topbar(52) + VersionSubHeader(36) 모두 position:fixed 라 flex flow 에서 빠짐.
@@ -549,7 +576,7 @@ export default function Shell() {
         <VersionSubHeader versions={app.versions} selectedVersion={selectedVersion} onSelect={setSelectedVersion} />
       )}
       <div style={{ flex:1, overflow:"hidden", paddingTop: innerPaddingTop + subHeaderHeight, minHeight:0 }}>
-        {currentApp ? <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} /> : <AppCardGrid onScroll={handleIndexScroll}/>}
+        {currentApp ? <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} /> : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={indexScrollYRef.current}/>}
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       <Notification/>

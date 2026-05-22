@@ -534,10 +534,17 @@ const PreviewModal = ({
                 className={`w-full h-full relative touch-none scrollbar-hide ${
                   state.isFullView
                     ? (state.isActualSize ? "overflow-auto cursor-grab active:cursor-grabbing" : "overflow-y-auto")
-                    : "overflow-hidden"
+                    // 프레임 모드도 overflow-y-auto — 1920 해상도 브라우저 윈도우(헤더+aspect-video)가
+                    // viewport 보다 커지면 이전엔 overflow-hidden 으로 하단이 잘렸다.
+                    : "overflow-y-auto"
                 }`}
               >
-                <div className={`min-h-full flex flex-col items-center justify-center transition-all duration-700 ${state.isFullView ? "p-0" : "p-8"}`}>
+                {/* min-h-full + safe center: 컨텐츠 < 부모면 가운데, 컨텐츠 > 부모면 위부터 + 자연 스크롤.
+                    `safe center` 가 없으면 자식이 부모보다 클 때 위쪽이 잘려 스크롤로도 못 가는 케이스 발생. */}
+                <div
+                  style={{ justifyContent: 'safe center' }}
+                  className={`min-h-full flex flex-col items-center transition-all duration-700 ${state.isFullView ? "p-0" : "p-8"}`}
+                >
                   {state.isFullView ? (
                     // 풀뷰 — 브랜드웹은 패럴렉스 cross-fade(한 페이지씩), 그 외는 단일 이미지.
                     isBrandWeb && pcPages.length > 0 ? (
@@ -700,11 +707,11 @@ const PreviewModal = ({
               </div>
             ) : isBrandWeb && moPages.length === 0 ? (
               // 일반 뷰 — 모바일 페이지가 0 인 브랜드웹: 폰 베젤 대신 업로드 영역.
-              <div className="w-full h-full flex items-center justify-center p-8 animate-in fade-in duration-300">
+              <div style={{ alignItems: 'safe center', justifyContent: 'safe center' }} className="w-full h-full flex p-8 overflow-y-auto scrollbar-hide animate-in fade-in duration-300">
                 <MobileUploadZone onAddMobilePages={onAddMobilePages} />
               </div>
             ) : (
-              <div className="w-full h-full flex items-center justify-center p-8 animate-in fade-in duration-300">
+              <div style={{ alignItems: 'safe center', justifyContent: 'safe center' }} className="w-full h-full flex p-8 overflow-y-auto scrollbar-hide animate-in fade-in duration-300">
                 {/* 디바이스 외부 베젤 (티타늄) */}
                 <div
                   className="relative rounded-[44px] p-[3px] overflow-hidden shadow-[0_30px_60px_-12px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.04)]"
