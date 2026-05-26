@@ -27,7 +27,7 @@ export const staticOptions = {
   ],
   layoutPresets: [ { id: "WideTitle", name: "와이드 타이틀형", en: "Wide Title Layout" }, { id: "CenterLogo", name: "중앙 로고형", en: "Center Logo Layout" }, { id: "CinematicPan", name: "시네마틱 파노라마형", en: "Cinematic Panorama Layout" }, { id: "TitleSubPre", name: "메인(상) + 서브(하)", en: "Main Title + Subtitle Layout" }, { id: "SubTitlePre", name: "서브(상) + 메인(하)", en: "Subtitle + Main Title Layout" } ],
   base: [ { id: "BlackWhite", name: "블랙 / 화이트", en: "JET BLACK Background, RADIANT WHITE Subject" }, { id: "WhiteBlack", name: "화이트 / 블랙", en: "STARK WHITE Background, SOLID BLACK Subject" } ],
-  ratios: [ { id: "16:9", name: "16:9 와이드", en: "16:9" }, { id: "1:1", name: "1:1 스퀘어", en: "1:1" }, { id: "9:16", name: "9:16 세로형", en: "9:16" }, { id: "2.76:1", name: "2.76:1 시네마틱", en: "2.76:1" } ],
+  ratios: [ { id: "16:9", name: "16:9 와이드", en: "16:9" }, { id: "1:1", name: "1:1 스퀘어", en: "1:1" }, { id: "9:16", name: "9:16 세로형", en: "9:16" }, { id: "2.76:1", name: "2.76:1 시네마틱", en: "2.76:1" }, { id: "2.39:1", name: "2.39:1 시네마스코프", en: "2.39:1" } ],
   occupancies: [
     { id: "40%", name: "40% 억제", en: "(bold typography centered with expansive negative space:1.4), (text occupying 40-50% of canvas width:1.3), vast negative space margins" },
     { id: "50%", name: "50% 표준", en: "(generous negative space margins:1.3), perfectly centered balanced layout" },
@@ -39,7 +39,8 @@ export const staticOptions = {
   proportions: [
     { id: "P_Std", name: "기본형 (정방형)", en: "(balanced letterform skeleton with natural horizontal proportions:1.4)" },
     { id: "P_Condensed", name: "압축형 (세로장평)", en: "condensed tall aspect ratio, narrow vertical stems" },
-    { id: "P_Extended", name: "확장형 (가로장평)", en: "(extended wide panoramic letterforms:1.5), heavily stretched horizontally" }
+    { id: "P_Extended", name: "확장형 (가로장평)", en: "(extended wide panoramic letterforms:1.5), heavily stretched horizontally" },
+    { id: "P_FlatWide", name: "납작 와이드형", en: "(compress vertical stroke proportions:1.4), (horizontally extended character frame:1.4), (wide aspect ratio letterforms:1.5), (flat low-profile characters:1.3)" }
   ],
   MMOSilhouetteFramings: [ { id: "Auto", name: "자동", en: "Automatic silhouette framing" }, { id: "Horizontal", name: "수평형", en: "Strict horizontal alignment framing" }, { id: "Compressed", name: "압축형", en: "Tightly compressed inner structure framing" }, { id: "Expanded", name: "확장형", en: "Outwardly expanded wing-like framing" }, { id: "Emblem", name: "엠블럼형", en: "Cohesive unified emblem framing" } ],
   MMOSurroundingElements: [ { id: "Clean", name: "없음", en: "NO surrounding VFX, perfectly clean canvas" }, { id: "FloatingRunes", name: "부유하는 룬", en: "Floating geometric runes around text" }, { id: "Shattered", name: "파괴된 파편", en: "Shattered stone and metal debris floating" }, { id: "RadialSpikes", name: "마법 방사선", en: "Sharp radial energy spikes" } ],

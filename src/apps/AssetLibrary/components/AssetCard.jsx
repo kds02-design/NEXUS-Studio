@@ -1,11 +1,19 @@
 // 에셋 카드 — 16:9 비율 컨테이너, 안에 contain 으로 원본 비율 유지 + 블러 배경.
 import { useState } from "react";
-import { Heart, Trash2, ExternalLink, Image as ImageIcon } from "lucide-react";
-import { getCategoryMeta } from "../constants/categories";
+import { Heart, Trash2, Image as ImageIcon, Clock } from "lucide-react";
+import {
+  getCategoryMeta,
+  CATEGORY_BADGE_TONE,
+  TEMP_BADGE_TONE,
+  isTempAsset,
+} from "../constants/categories";
 
 export default function AssetCard({ asset, onLikeToggle, onDelete, onClick }) {
   const [hov, setHov] = useState(false);
   const meta = getCategoryMeta(asset.category);
+  const temp = isTempAsset(asset);
+  // hover 액센트는 카테고리 컬러 유지 — 무채색 일관성보다 카드 식별성 우선.
+  const hoverAccent = meta.color;
   return (
     <div
       onClick={() => onClick?.(asset)}
@@ -14,8 +22,8 @@ export default function AssetCard({ asset, onLikeToggle, onDelete, onClick }) {
       className="group relative rounded-xl border border-white/5 bg-[#111] overflow-hidden cursor-pointer transition-all"
       style={{
         aspectRatio: "16 / 10",
-        boxShadow: hov ? `0 8px 24px ${meta.color}22` : "none",
-        borderColor: hov ? `${meta.color}55` : undefined,
+        boxShadow: hov ? `0 8px 24px ${hoverAccent}22` : "none",
+        borderColor: hov ? `${hoverAccent}55` : undefined,
       }}
     >
       {/* 블러 배경 */}
@@ -49,31 +57,35 @@ export default function AssetCard({ asset, onLikeToggle, onDelete, onClick }) {
         </div>
       )}
 
-      {/* 카테고리 뱃지 */}
-      <span
-        className="absolute top-2 left-2 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider z-20"
-        style={{
-          background: `${meta.color}25`,
-          color: meta.color,
-          border: `1px solid ${meta.color}55`,
-          backdropFilter: "blur(6px)",
-        }}
-      >
-        {meta.name}
-      </span>
-
-      {/* 크기 정보 */}
-      <span className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded text-[9px] font-mono text-white/80 bg-black/60 backdrop-blur-sm z-20">
-        {asset.width || "?"}×{asset.height || "?"}
-      </span>
-
-      {/* 출처 */}
-      {asset.source?.bannerTitle && (
-        <span className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[9px] text-white/70 bg-black/60 backdrop-blur-sm z-20 truncate max-w-[60%] flex items-center gap-1">
-          <ExternalLink size={9} />
-          {asset.source.bannerTitle}
+      {/* 좌상단 딱지 — 카테고리(무채색) + 임시(강조). 가공 완료 시 임시 사라짐. */}
+      <div className="absolute top-2 left-2 z-20 flex items-center gap-1">
+        <span
+          className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider"
+          style={{
+            background: CATEGORY_BADGE_TONE.bg,
+            color: CATEGORY_BADGE_TONE.text,
+            border: `1px solid ${CATEGORY_BADGE_TONE.border}`,
+            backdropFilter: "blur(6px)",
+          }}
+        >
+          {meta.name}
         </span>
-      )}
+        {temp && (
+          <span
+            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wider"
+            style={{
+              background: TEMP_BADGE_TONE.bg,
+              color: TEMP_BADGE_TONE.text,
+              border: `1px solid ${TEMP_BADGE_TONE.border}`,
+              backdropFilter: "blur(6px)",
+            }}
+            title="가공 전 임시 캡처 — 원본 PNG 업로드 시 사라집니다"
+          >
+            <Clock size={9} />
+            임시
+          </span>
+        )}
+      </div>
 
       {/* hover 액션 */}
       <div className="absolute top-2 right-2 z-30 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

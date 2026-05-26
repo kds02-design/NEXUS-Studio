@@ -203,12 +203,14 @@ const DEFAULT_DATA = {
       { id: "16:9", name: "16:9 와이드", en: "16:9" },
       { id: "1:1", name: "1:1 스퀘어", en: "1:1" },
       { id: "9:16", name: "9:16 세로형", en: "9:16" },
-      { id: "2.76:1", name: "2.76:1 시네마틱", en: "2.76:1" }
+      { id: "2.76:1", name: "2.76:1 시네마틱", en: "2.76:1" },
+      { id: "2.39:1", name: "2.39:1 시네마스코프", en: "2.39:1" }
     ],
     proportions: [
       { id: "P_Std", name: "기본형 (정방형)", en: "(balanced letterform skeleton with natural horizontal proportions:1.4)" },
       { id: "P_Condensed", name: "압축형 (세로장평)", en: "condensed tall aspect ratio, narrow vertical stems" },
-      { id: "P_Extended", name: "확장형 (가로장평)", en: "(extended wide panoramic letterforms:1.5), heavily stretched horizontally" }
+      { id: "P_Extended", name: "확장형 (가로장평)", en: "(extended wide panoramic letterforms:1.5), heavily stretched horizontally" },
+      { id: "P_FlatWide", name: "납작 와이드형", en: "(compress vertical stroke proportions:1.4), (horizontally extended character frame:1.4), (wide aspect ratio letterforms:1.5), (flat low-profile characters:1.3)" }
     ],
     MMOSilhouetteFramings: [
       { id: "Auto", name: "자동", en: "Automatic silhouette framing" },
@@ -325,7 +327,7 @@ const DEFAULT_DATA = {
   },
   personas: [
     { id: "core_fortress", name: "🎮 게임 아트 디렉터", weightTags: "(massive architectural pillar stems:1.5), (hammered geometric surface pattern:1.3), (impenetrable thick monolithic structure:1.4), heavy bottom-heavy industrial mass", forbidden: "NO extreme thin lines, NO fragile broken elements, NO fluid organic curves, NO playful rounded shapes, NO calligraphic flourishes, NO neon glow" },
-    { id: "core_blade", name: "⚔️ 다크 판타지", weightTags: "(extreme thick-thin stroke contrast:1.5), (razor-sharp blade incisive terminals:1.5), (aggressive space-slashing diagonal cuts:1.4), weaponized lethal geometry", forbidden: "NO soft rounded corners, NO heavy uniform blocky mass, NO decorative floral ornaments, NO classical serifs, NO calligraphic curves, NO playful shapes" },
+    { id: "core_blade", name: "⚔️ 다크 판타지", weightTags: "(extreme thick-thin stroke contrast:1.5), (thin hairline strokes against bold stems:1.4), (calligraphic stroke weight variation:1.3), (razor-sharp blade incisive terminals:1.5), (aggressive space-slashing diagonal cuts:1.4), weaponized lethal geometry", forbidden: "NO soft rounded corners, NO heavy uniform blocky mass, NO uniform stem thickness, NO decorative floral ornaments, NO classical serifs, NO calligraphic curves, NO playful shapes" },
     { id: "core_relic", name: "🏛️ 히스토리", weightTags: "(irregular ancient eroded silhouette:1.5), (time-weathered broken symmetry:1.4), (intricate hairline 2D cracks:1.3), patina and oxidation", forbidden: "NO perfectly pristine modern vectors, NO sci-fi futuristic clean lines, NO flawless symmetry, NO neon glow, NO smooth glossy surfaces, NO playful rounded shapes" },
     { id: "core_glyph", name: "🔡 타이포그래퍼", weightTags: "(highly fused symbolic emblem structure:1.5), (closed internal negative space counters:1.4), heraldic monogram seal, refined optical balance", forbidden: "NO widely separated letters, NO loose airy spacing, NO simple handwriting, NO motion streaks, NO scattered debris, NO weathered damage" },
     { id: "core_kinetic", name: "⚡ 모션", weightTags: "(aggressive forward directional momentum:1.5), (fluid asymmetric trailing rhythm:1.4), (aerodynamic swept-back structure:1.3), implied velocity streaks", forbidden: "NO static perfectly vertical alignment, NO stiff blocky stability, NO heavy uniform weight, NO calligraphic ornaments, NO classical serifs" }
@@ -340,6 +342,17 @@ const DEFAULT_DATA = {
 
 // 현재 작업 중인 데이터 (사용자가 en 편집 시 여기 반영됨)
 let DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
+
+// 페르소나별 다운스트림 옵션 모디파이어 — 원본 hook 의 PERSONA_MODIFIERS 와 동일.
+//   페르소나 변경 시 정체성 키 2-3개 옵션이 자동으로 함께 바뀌어 결과 변별력 확보.
+//   core_blade: Stem_Heavy 로 (Stem_Ultra 의 "block stems" 과 thick-thin contrast 충돌 회피).
+const PERSONA_MODIFIERS = {
+  core_fortress: { stemWeight: 'Stem_Ultra',  strokeTexture: 'Tex_Clean',   deformationDamage: 'Damage_None' },
+  core_blade:    { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Blade', strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
+  core_relic:    { deformationDamage: 'Damage_Erosion', strokeTexture: 'Tex_Subtle', letterConnection: 'Conn_Indep' },
+  core_glyph:    { letterConnection: 'Conn_Full', logoDegree: 'Logo_Emblem', kerning: 'Kern_Tight' },
+  core_kinetic:  { kineticVelocity: 'Vel_Swift', slantAngle: 'Slant_Forward', strokeExtension: 'Ext_Razor' },
+};
 
 // UI 상태 (사용자가 어떤 옵션을 선택했는지)
 const STATE = {
@@ -441,30 +454,52 @@ function buildPrompt() {
   else if (STATE.aspectRatio === "16:9") aspectRatioEn = "(16:9 widescreen canvas format:1.4), horizontal wide framing, ";
   else if (STATE.aspectRatio === "9:16") aspectRatioEn = "(9:16 vertical portrait canvas format:1.5), tall vertical framing, ";
   else if (STATE.aspectRatio === "2.76:1") aspectRatioEn = "(ultra-wide 2.76:1 cinematic panorama canvas:1.5), extreme horizontal framing, ";
+  else if (STATE.aspectRatio === "2.39:1") aspectRatioEn = "(ultra-wide 2.39:1 cinemascope panorama canvas:1.5), extreme horizontal framing, ";
 
   const explicitTwoLineInstruction = `The text "${STATE.inputText.replace(/\n/g, ' ')}"`;
 
-  // bg
+  // bg — 가중치 1.6/1.5 명시 + 반대색 배경 negative 조건부 (9차 정리).
   const isWhiteBg = STATE.baseStyle === "WhiteBlack";
-  const bgDescEn = isWhiteBg ? "STARK WHITE Background, SOLID BLACK Subject" : "JET BLACK Background, RADIANT WHITE Subject";
   const solidBgPrompt = isWhiteBg
-    ? "pure solid #FFFFFF bright white void background, solid #000000 matte black text"
-    : "pure solid #000000 matte black void background, solid #FFFFFF bright white text";
+    ? "(pure solid #FFFFFF bright white void background:1.6), (solid #000000 matte black flat silhouette text:1.5)"
+    : "(pure solid #000000 matte black void background:1.6), (solid #FFFFFF bright white flat silhouette text:1.5)";
+  const bgInvertNeg = isWhiteBg ? "(black background:1.6), (dark void:1.5)" : "(white background:1.6), (bright background:1.5)";
 
-  // surface (damage + texture 합성)
-  const surfaceEn = (STATE.deformationDamage !== 'Damage_None' && STATE.strokeTexture === 'Tex_Clean')
+  // 옵션 en 자동 가중치 wrap — 이미 weight 가진 토큰은 그대로, 무가중치는 (text:1.2) 로 감쌈.
+  const W = (en) => {
+    if (!en) return "";
+    if (/\([^)]+:\s*[\d.]+\s*\)/.test(en)) return en;
+    return `(${en}:1.2)`;
+  };
+
+  // Smart Guard Filtering 플래그
+  const hasSlicing = STATE.slicingIntensity !== 'Slic_None';
+  const hasTexture = STATE.strokeTexture !== 'Tex_Clean';
+  const hasDamage  = STATE.deformationDamage !== 'Damage_None';
+  const hasSlant   = STATE.slantAngle !== 'Slant_0';
+  const hasWordSpace = /\s/.test((STATE.inputText || '').trim());
+
+  // surface (damage + texture 합성) — damage 활성이면 pristine texture 묵음.
+  const surfaceEn = (hasDamage && !hasTexture)
     ? destructionEn
     : `${destructionEn}, ${textureEn}`;
 
-  // hole/momentum
-  const isSlicingActive = STATE.slicingIntensity !== 'Slic_None';
-  const holeGuard = isSlicingActive ? "" : "(perfectly intact silhouette:1.4), absolutely NO holes through text. ";
+  // hole guard — slicing 또는 damage 활성 시 "intact silhouette" 모순 → 묵음.
+  const holeGuard = (hasSlicing || hasDamage) ? "" : "(perfectly intact silhouette:1.4), absolutely NO holes through text. ";
   const momentumTag = STATE.momentumActive ? ", (kinetic combat momentum:1.3)" : "";
 
-  // optimizedBase
-  const optimizedBase = `masterpiece, best quality, ultra highres, insanely detailed, 8k resolution, isolated standalone typography graphic, highly legible, AAA game title aesthetic, sharp geometric corners, precise structural lines, strong material contrast`;
+  // 본문/Negative 의 flat-fill 토큰 — texture/damage 활성 시 모두 묵음.
+  const flatFillBlock = (!hasTexture && !hasDamage)
+    ? "(absolutely flat fill:1.6), (no surface modulation:1.5), "
+    : "";
+  const surfaceNegativeTokens = (!hasTexture && !hasDamage)
+    ? "(surface modulation:1.5), (surface noise:1.5), "
+    : "";
 
-  // 가드 positive/negative
+  // optimizedBase — 5 토큰으로 축소 (8차 정리).
+  const optimizedBase = `masterpiece, ultra highres, 8k resolution, isolated standalone typography graphic, AAA game title aesthetic`;
+
+  // 가드 positive/negative 분리 + 사용자 옵션과 충돌하는 positive 필터.
   const activeGuardObjs = DATA.guards.filter(g => STATE.activeGuards.includes(g.id));
   let guardPos = [];
   let guardNeg = [];
@@ -473,22 +508,46 @@ function buildPrompt() {
     guardPos.push(...pos);
     guardNeg.push(...neg);
   });
+  const guardConflictPatterns = [];
+  if (hasSlicing || hasDamage) guardConflictPatterns.push(/flawless\s+silhouette\s+boundary/i);
+  if (hasTexture || hasDamage) guardConflictPatterns.push(/perfectly\s+smooth/i, /pristine\s+vector\s+surface/i);
+  if (hasSlant)                guardConflictPatterns.push(/strictly\s+normal\s+horizontal\s+text\s+proportions/i);
+  guardPos = guardPos.filter(t => !guardConflictPatterns.some(p => p.test(t)));
 
-  // forbidden weighted
-  const forbiddenWeighted = (persona.forbidden || '')
+  // forbidden weighted — 사용자 옵션과 모순되는 토큰은 제외.
+  const forbiddenList = (persona.forbidden || '')
     .split(',')
     .map(s => s.trim().replace(/^NO\s+/i, '').trim())
-    .filter(Boolean)
-    .map(s => `(${s}:1.5)`)
-    .join(', ');
+    .filter(Boolean);
+  const filteredForbidden = forbiddenList.filter(s => {
+    if ((hasSlicing || hasDamage) && /broken\s+elements|fragile/i.test(s)) return false;
+    if (hasDamage && /weathered\s+damage/i.test(s)) return false;
+    if (hasTexture && /smooth\s+glossy\s+surface|smooth\s+surfaces/i.test(s)) return false;
+    return true;
+  });
+  const forbiddenWeighted = filteredForbidden.map(s => `(${s}:1.5)`).join(', ');
+
+  // Fix #3 — 슬라이싱 + Clean 주변장식 충돌 해소.
+  let mmoSurroundEnFinal = mmoSurroundEn;
+  if (hasSlicing && STATE.mmoSurroundingElement === 'Clean') {
+    mmoSurroundEnFinal = "isolated text on plain background, no external decorative debris";
+  }
+
+  // Fix C — 어절 공백 처리.
+  const wordSpaceBlock = hasWordSpace
+    ? "(treat word space as tight kerning equal to inter-character spacing:1.4), (unified single-block visual mass:1.3), "
+    : "";
+  const wordSpaceNegative = hasWordSpace
+    ? "(natural word gap:1.5), (loose word separation:1.4), "
+    : "";
 
   // preservation weight (단순화 — Validation 없이 1.5 고정)
   const preservationWeight = "1.5";
 
-  // 본문
-  const body = `An epic cinematic 2D flat typography graphic, ${auraBlock}${modeBlock}${integrityTag}macro photography, hyper-detailed single focal point, (flat focal plane:1.4), (strictly zero perspective distortion:1.5). ${aspectRatioEn}${explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, (custom hand-crafted lettering:1.4), (unique letterform design:1.3), logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${persona.weightTags}, ${weightEn}, ${widthEn}, ${proportionEn}, ${kerningEn}, ${letterConnEn}, ${internalSpaceEn}. Terminals: ${terminalEn}, ${sharpnessEn}, ${cornerEn}, ${extensionEn}. Logo character: ${logoDegreeEn}, framed as ${mmoSilhouetteEn}. The structure is modified by ${kineticEn}, ${slantEn}, and (${slicingEn}:1.4)${momentumTag}. The surface is transformed by ${surfaceEn}. ${optimizedBase}, ${solidBgPrompt}. Surrounding: ${mmoSurroundEn}. ${holeGuard}(absolutely flat fill:1.6), (no surface modulation:1.5), (pure 2D flat silhouette:${preservationWeight}), (95% shape preservation:1.3), ${layoutEn}, ${occupancyEn}, ${getSliderText(STATE.sliderVal)}, ${guardPos.join(', ')}.`;
+  // 본문 — 옵션 en W() wrap + wordSpaceBlock 주입 + 슬라이싱+Clean 충돌 회피된 surroundEn 사용.
+  const body = `An epic cinematic 2D flat typography graphic, ${auraBlock}${modeBlock}${integrityTag}macro photography, hyper-detailed single focal point. ${aspectRatioEn}${explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, ${wordSpaceBlock}logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${persona.weightTags}, ${W(weightEn)}, ${W(widthEn)}, ${W(proportionEn)}, ${W(kerningEn)}, ${W(letterConnEn)}, ${W(internalSpaceEn)}. Terminals: ${W(terminalEn)}, ${W(sharpnessEn)}, ${W(cornerEn)}, ${W(extensionEn)}. Logo character: ${W(logoDegreeEn)}, framed as ${W(mmoSilhouetteEn)}. The structure is modified by ${W(kineticEn)}, ${W(slantEn)}, and (${slicingEn}:1.4)${momentumTag}. The surface is transformed by ${W(surfaceEn)}. ${optimizedBase}, ${solidBgPrompt}. Surrounding: ${W(mmoSurroundEnFinal)}. ${holeGuard}${flatFillBlock}(pure 2D flat silhouette:${preservationWeight}), ${W(layoutEn)}, ${W(occupancyEn)}, ${getSliderText(STATE.sliderVal)}, ${guardPos.join(', ')}.`;
 
-  const negative = `(3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (surface modulation:1.5), (surface noise:1.5), (generic font:1.6), (standard typeface:1.5), ${forbiddenWeighted}${guardNeg.length > 0 ? ', ' + guardNeg.join(', ') : ''}`;
+  const negative = `(3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (neon glow:1.7), (light bloom:1.7), (radial halo:1.7), (atmospheric haze:1.5), (luminous edge glow:1.6), ${bgInvertNeg}, ${surfaceNegativeTokens}${wordSpaceNegative}(generic font:1.6), (standard typeface:1.5), ${forbiddenWeighted}${guardNeg.length > 0 ? ', ' + guardNeg.join(', ') : ''}`;
 
   return { body, negative };
 }
@@ -687,6 +746,17 @@ fieldIds.forEach(id => {
   if (!el) return;
   el.addEventListener('input', (e) => {
     STATE[id] = e.target.value;
+    // 페르소나 변경 시 다운스트림 옵션 자동 cascade (production 동작과 동일).
+    if (id === 'coreArchetype') {
+      const mods = PERSONA_MODIFIERS[e.target.value];
+      if (mods) {
+        Object.entries(mods).forEach(([k, v]) => {
+          STATE[k] = v;
+          const tgt = document.getElementById(k);
+          if (tgt) tgt.value = v;
+        });
+      }
+    }
     renderPrompt();
   });
 });

@@ -43,3 +43,23 @@ function loadImage(url) {
     img.src = url;
   });
 }
+
+// 파일을 dataURL 로 변환.
+export function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("파일 읽기 실패"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// dataURL 로부터 자연 크기(width/height) 측정.
+export function probeImageSize(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+    img.onerror = () => reject(new Error("이미지 크기 측정 실패"));
+    img.src = dataUrl;
+  });
+}

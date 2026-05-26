@@ -2,20 +2,34 @@
 // 다른 앱에서 영역 선택으로 잘라낸 이미지(타이틀/버튼/박스/아이템/아이콘)를 모아둠.
 // PromptArc 와 동일한 사이드바 + 카드 그리드 구조.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Download, Search, X, ExternalLink, Grip, LayoutGrid, Maximize2 } from "lucide-react";
+import { Search, X, Grip, LayoutGrid, Maximize2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobal } from "../../context/GlobalContext";
+import { useUsageGate } from "../../components/UsageGate";
 import { subscribeAssets, deleteAsset, toggleAssetLike } from "./services/firebase";
-import { ASSET_CATEGORY_LIST, getCategoryMeta } from "./constants/categories";
+import {
+  ASSET_CATEGORY_LIST, getCategoryMeta, isTempAsset,
+} from "./constants/categories";
 import AssetSidebar from "./components/AssetSidebar";
 import AssetCard from "./components/AssetCard";
+import AssetDetailModal from "./components/AssetDetailModal";
+
+// 현재 카테고리(또는 가상 필터) → 헤더 타이틀.
+function headerTitleFor(category) {
+  if (category === "all") return "전체 에셋";
+  if (category === "favorites") return "즐겨찾기";
+  if (category === "temp") return "임시 (가공 전)";
+  if (category === "uploaded") return "업로드 완료";
+  return getCategoryMeta(category).name;
+}
 
 export default function AssetLibraryApp() {
   const { user } = useAuth();
   const { navigate, payload, clearPayload } = useGlobal();
+  const { ensureCanGenerate, modal: usageModal } = useUsageGate();
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState("all"); // all / favorites / title / button / ...
+  const [category, setCategory] = useState("all"); // all / favorites / temp / uploaded / title / button / ...
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [toast, setToast] = useState(null);
@@ -56,6 +70,15 @@ export default function AssetLibraryApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload?.timestamp, payload?.target, assets.length]);
 
+  // detail 모달이 열려 있는 동안 구독 데이터가 갱신되면 detail 도 최신 doc 으로 따라가게 함.
+  // (원본 업로드 후 isTemp/imageUrl 등 변화가 모달에 즉시 반영되도록.)
+  useEffect(() => {
+    if (!detail?.id) return;
+    const latest = assets.find((a) => a.id === detail.id);
+    if (latest && latest !== detail) setDetail(latest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assets]);
+
   const handleSidebarClick = useCallback((e) => {
     if (e.target === e.currentTarget || e.target.tagName === "NAV") {
       setIsSidebarCollapsed((v) => !v);
@@ -66,6 +89,8 @@ export default function AssetLibraryApp() {
   const filtered = useMemo(() => {
     let list = assets;
     if (category === "favorites") list = list.filter((a) => a.liked);
+    else if (category === "temp") list = list.filter((a) => isTempAsset(a));
+    else if (category === "uploaded") list = list.filter((a) => !isTempAsset(a));
     else if (category !== "all") list = list.filter((a) => a.category === category);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -95,6 +120,33 @@ export default function AssetLibraryApp() {
     catch (e) { showToast(`좋아요 실패: ${e.message}`, "error"); }
   };
 
+  const handleJumpToSource = (a) => {
+    if (!a.source?.app || !a.source?.bannerId) {
+      console.warn('[AssetLibrary] jumpToSource: missing source info', a);
+      showToast(
+        !a.source ? '이 에셋에는 출처 정보가 없어요 (옛 데이터)'
+        : !a.source.app ? '출처 앱 정보가 없어요'
+        : '출처 배너 ID가 없어요',
+        'error'
+      );
+      return;
+    }
+    navigate(a.source.app, {
+      source: "asset-library",
+      target: a.source.app,
+      prompt: { text: "", tags: [], style: "" },
+      image: { url: "", metadata: {} },
+      params: {
+        viewBannerId: a.source.bannerId,
+        sourceRect: a.source.rect || null,
+        sourceImageUrl: a.source.sourceImageUrl || null,
+        returnToAssetId: a.id,
+      },
+      timestamp: Date.now(),
+    });
+    setDetail(null);
+  };
+
   return (
     <div className="flex bg-[#0a0a0c] text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
       <AssetSidebar
@@ -108,7 +160,7 @@ export default function AssetLibraryApp() {
         {/* Header */}
         <header className="h-14 px-4 md:px-6 flex items-center gap-3 border-b border-white/5 shrink-0">
           <h2 className="text-sm md:text-base font-bold text-white truncate flex items-baseline gap-2">
-            <span>{category === "all" ? "전체 에셋" : category === "favorites" ? "즐겨찾기" : getCategoryMeta(category).name}</span>
+            <span>{headerTitleFor(category)}</span>
             {/* 카운트 — 폭 고정 (tabular-nums + min-w). */}
             <span className="text-xs text-zinc-500 font-mono tabular-nums inline-block text-left shrink-0" style={{ minWidth: 32 }}>{filtered.length}</span>
           </h2>
@@ -162,22 +214,17 @@ export default function AssetLibraryApp() {
             </div>
           ) : (
             <>
-              {/* 카테고리별 요약 (전체 보기에서만) */}
+              {/* 카테고리별 요약 (전체 보기에서만) — 무채색 톤. */}
               {category === "all" && !searchQuery && (
                 <div className="mb-5 flex flex-wrap gap-2">
                   {ASSET_CATEGORY_LIST.map((c) => (
                     <button
                       key={c.id}
                       onClick={() => setCategory(c.id)}
-                      className="px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors hover:scale-105"
-                      style={{
-                        background: `${c.color}12`,
-                        color: c.color,
-                        borderColor: `${c.color}44`,
-                      }}
+                      className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white transition-colors"
                     >
                       {c.name}
-                      <span className="ml-1.5 text-[9px] opacity-70">{countByCat[c.id] || 0}</span>
+                      <span className="ml-1.5 text-[9px] text-zinc-500">{countByCat[c.id] || 0}</span>
                     </button>
                   ))}
                 </div>
@@ -199,49 +246,23 @@ export default function AssetLibraryApp() {
         </div>
       </main>
 
-      {/* 상세 모달 — 가벼운 lightbox */}
+      {/* 상세 모달 — BannerCodex CodexDetailModal 레이아웃 */}
       {detail && (
-        <DetailLightbox
+        <AssetDetailModal
           asset={detail}
           onClose={() => setDetail(null)}
           onLike={handleLike}
           onDelete={(a) => { handleDelete(a); setDetail(null); }}
-          onJumpToSource={(a) => {
-            // 옛 asset 호환 — source.app/bannerId 가 누락된 경우 silent fail 대신 안내.
-            if (!a.source?.app || !a.source?.bannerId) {
-              console.warn('[AssetLibrary] jumpToSource: missing source info', a);
-              showToast(
-                !a.source ? '이 에셋에는 출처 정보가 없어요 (옛 데이터)'
-                : !a.source.app ? '출처 앱 정보가 없어요'
-                : '출처 배너 ID가 없어요',
-                'error'
-              );
-              return;
-            }
-            navigate(a.source.app, {
-              source: "asset-library",
-              target: a.source.app,
-              prompt: { text: "", tags: [], style: "" },
-              image: { url: "", metadata: {} },
-              params: {
-                viewBannerId: a.source.bannerId,
-                // 출처로 이동 시 캡처 위치 하이라이트용 — rect 는 0-1 비율.
-                sourceRect: a.source.rect || null,
-                sourceImageUrl: a.source.sourceImageUrl || null,
-                // 미리보기 닫을 때 다시 AssetLibrary 로 돌아오기 위한 표식.
-                returnToAssetId: a.id,
-              },
-              timestamp: Date.now(),
-            });
-            setDetail(null);
-          }}
+          onJumpToSource={handleJumpToSource}
           user={user}
+          showToast={showToast}
+          ensureCanGenerate={ensureCanGenerate}
         />
       )}
 
       {/* Toast */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-[200] animate-in slide-in-from-bottom-4">
+        <div className="fixed bottom-6 right-6 z-[3000] animate-in slide-in-from-bottom-4">
           <div
             className={`px-4 py-2.5 rounded-lg text-sm font-medium shadow-2xl border ${
               toast.type === "error"
@@ -253,6 +274,9 @@ export default function AssetLibraryApp() {
           </div>
         </div>
       )}
+
+      {/* 크레딧 부족 모달 (Gemini 분석용) */}
+      {usageModal}
     </div>
   );
 }
@@ -265,84 +289,6 @@ function EmptyState() {
       <div className="text-xs text-zinc-600 max-w-md leading-relaxed">
         Brand Web Library 또는 Banner Codex 의 상세보기에서 <b className="text-zinc-400">"에셋 추출"</b> 버튼을 누르고
         타이틀/버튼/박스 등 원하는 영역을 드래그해서 저장하세요.
-      </div>
-    </div>
-  );
-}
-
-function DetailLightbox({ asset, onClose, onLike: _onLike, onDelete, onJumpToSource, user }) {
-  const meta = getCategoryMeta(asset.category);
-  const handleDownload = async () => {
-    try {
-      const res = await fetch(asset.imageUrl);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${asset.category}_${asset.id}.jpg`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (_e) { alert("다운로드 실패"); }
-  };
-  const canJump = !!(asset.source?.app && asset.source?.bannerId);
-  const sourceAppLabel = asset.source?.app === "banner-codex" ? "배너 코덱스"
-    : asset.source?.app === "promotion-archive" ? "Brand Web Library"
-    : asset.source?.app || "";
-  return (
-    <div
-      className="fixed top-[52px] left-0 right-0 bottom-0 z-[2000] bg-black/85 backdrop-blur-sm flex items-center justify-center p-8"
-      onClick={onClose}
-    >
-      <div
-        className="max-w-[90vw] max-h-[80vh] bg-[#111] rounded-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className="px-2 py-0.5 rounded text-[10px] font-bold tracking-wider shrink-0"
-              style={{ background: `${meta.color}25`, color: meta.color, border: `1px solid ${meta.color}55` }}
-            >
-              {meta.name}
-            </span>
-            <span className="text-xs text-zinc-500 font-mono shrink-0">{asset.width}×{asset.height}</span>
-            {asset.source?.bannerTitle && (
-              <span className="text-xs text-zinc-500 truncate">
-                <span className="text-zinc-600">출처:</span> [{sourceAppLabel}] {asset.source.bannerTitle}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {canJump && (
-              <button
-                onClick={() => onJumpToSource(asset)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-cyan-300 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 hover:text-cyan-200 transition-colors"
-                title={`${sourceAppLabel} 에서 원본 배너 열기`}
-              >
-                <ExternalLink size={12} /> 출처로 이동
-              </button>
-            )}
-            <button onClick={handleDownload} className="flex items-center gap-1 px-2.5 py-1.5 rounded text-xs text-zinc-300 hover:text-white hover:bg-white/5">
-              <Download size={12} /> 다운로드
-            </button>
-            {(user?.uid === asset.ownerUid) && (
-              <button onClick={() => onDelete(asset)} className="px-2.5 py-1.5 rounded text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10">
-                삭제
-              </button>
-            )}
-            <button onClick={onClose} className="p-1.5 rounded text-zinc-500 hover:text-white">
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 flex items-center justify-center bg-[#050505] p-6 min-h-0">
-          <img
-            src={asset.imageUrl}
-            alt={asset.title || asset.category}
-            className="max-w-full max-h-[70vh] object-contain"
-            onDragStart={(e) => e.preventDefault()}
-          />
-        </div>
       </div>
     </div>
   );

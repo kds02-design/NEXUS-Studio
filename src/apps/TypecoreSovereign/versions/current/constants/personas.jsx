@@ -39,8 +39,8 @@ export const coreArchetypes = [
     tone: "[전투적이고 날카로운] 검이 허공을 가르듯 서늘하고 공격적인 문체로 오직 '글자 획의 긴장감과 강철의 물성'만을 묘사할 것.",
     keywords: "dark fantasy action title, forged steel blade serif, weaponized typography, slash cuts, battle scar, gothic metal, aggressive razor terminals, boss encounter logo",
     language: "extreme thick-thin stroke contrast like a forged katana blade, razor-sharp incisive terminals slicing the negative space, aggressive diagonal cuts severing the letterforms, dark fantasy action poster aesthetic, lethal geometric tension, chromatic accent on cut edges",
-    weightTags: "(extreme thick-thin stroke contrast:1.5), (razor-sharp blade incisive terminals:1.5), (aggressive space-slashing diagonal cuts:1.4), weaponized lethal geometry",
-    forbidden: "NO soft rounded corners, NO heavy uniform blocky mass, NO decorative floral ornaments, NO classical serifs, NO calligraphic curves, NO playful shapes",
+    weightTags: "(extreme thick-thin stroke contrast:1.5), (thin hairline strokes against bold stems:1.4), (calligraphic stroke weight variation:1.3), (razor-sharp blade incisive terminals:1.5), (aggressive space-slashing diagonal cuts:1.4), weaponized lethal geometry",
+    forbidden: "NO soft rounded corners, NO heavy uniform blocky mass, NO uniform stem thickness, NO decorative floral ornaments, NO classical serifs, NO calligraphic curves, NO playful shapes",
   },
   {
     id: 'core_relic',

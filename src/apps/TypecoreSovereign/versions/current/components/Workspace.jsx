@@ -273,7 +273,7 @@ const Workspace = ({ rp, imagen }) => {
                             )}
                           </>}
                           controls={<>
-                            <DropdownControl label="페르소나" data={coreArchetypes.map(p => ({ id: p.id, name: p.shortTitle, en: p.subtitle }))} value={rp.coreArchetype} onChange={rp.setCoreArchetype} />
+                            <DropdownControl label="페르소나" data={coreArchetypes.map(p => ({ id: p.id, name: p.shortTitle, en: p.subtitle }))} value={rp.coreArchetype} onChange={rp.handleCoreArchetypeChange || rp.setCoreArchetype} />
                             <DropdownControl label="타입 프리셋" data={staticOptions.MMOStyles} value={rp.scriptType} onChange={rp.handleScriptPresetChange || rp.setScriptType} />
                           </>}
                         />
