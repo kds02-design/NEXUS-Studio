@@ -2,6 +2,21 @@
 // 버전 스냅샷: TypecoreSovereign current. 격리된 정적 옵션 사본.
 
 export const staticOptions = {
+  // MMO 스타일 프리셋 — v2 Sidebar 의 "타입 프리셋" 드롭다운용. 격리 원칙에 따라 v2 데이터를 copy.
+  MMOStyles: [
+    { id: "Gen_Original",   name: "오리지널",        en: "Monolithic stone-steel structure" },
+    { id: "Gen_Fantasy",    name: "하이 판타지",     en: "Elegant high-fantasy aesthetic" },
+    { id: "Lineage_M",      name: "리니지 M",        en: "Chiseled faceted Gothic structure" },
+    { id: "Lineage_2M",     name: "리니지 2M",       en: "Jewelry-precision thorn serifs" },
+    { id: "Lineage_W",      name: "리니지 W",        en: "Cruel realism with wedge terminals" },
+    { id: "Aion_Original",  name: "아이온",          en: "Vertical tower-pillar with speed terminals" },
+    { id: "Aion_2",         name: "아이온 2",        en: "Atreia-style script with fluid curves" },
+    { id: "BNS",            name: "블레이드 & 소울", en: "Oriental martial arts calligraphy" },
+    { id: "Throne_Liberty", name: "쓰론 앤 리버티",  en: "Sophisticated medieval serif" },
+    { id: "MMO_Saviors",    name: "구원자들",        en: "Clean script with sharp vertical stems" },
+    { id: "MMO_Antharas",   name: "안타라스",        en: "Demonic cursive script" },
+    { id: "MMO_Aden",       name: "아덴 대침공",     en: "Imposing monolithic structure" },
+  ],
   // Purpose-Driven Presets (V18)
   purposes: [
     { id: "Purpose_GameLogo", name: "게임 메인 로고형", en: "AAA Game Title Logo", layout: "Center", ratio: "16:9", occ: "50%", core: "core_fortress", frame: "Emblem" },
@@ -14,7 +29,7 @@ export const staticOptions = {
   base: [ { id: "BlackWhite", name: "블랙 / 화이트", en: "JET BLACK Background, RADIANT WHITE Subject" }, { id: "WhiteBlack", name: "화이트 / 블랙", en: "STARK WHITE Background, SOLID BLACK Subject" } ],
   ratios: [ { id: "16:9", name: "16:9 와이드", en: "16:9" }, { id: "1:1", name: "1:1 스퀘어", en: "1:1" }, { id: "9:16", name: "9:16 세로형", en: "9:16" }, { id: "2.76:1", name: "2.76:1 시네마틱", en: "2.76:1" } ],
   occupancies: [
-    { id: "40%", name: "40% 억제", en: "(massive empty void surrounding the text:1.6), (small typography strictly confined to center:1.5), vast negative space margins" },
+    { id: "40%", name: "40% 억제", en: "(bold typography centered with expansive negative space:1.4), (text occupying 40-50% of canvas width:1.3), vast negative space margins" },
     { id: "50%", name: "50% 표준", en: "(generous negative space margins:1.3), perfectly centered balanced layout" },
     { id: "65%", name: "65% 확장", en: "moderate margins, screen filling text layout" },
     { id: "80%", name: "80% 최대", en: "(extreme tight margins:1.4), (massive text pushing canvas edges:1.4)" }
@@ -22,7 +37,7 @@ export const staticOptions = {
   layouts: [ { id: "1Line", name: "1줄 수평 강제", en: "single horizontal row typography" }, { id: "2Lines", name: "2줄 상하 정렬", en: "Two-tier vertical stacked composition." }, { id: "TitleSub", name: "메인(상) + 서브(하)", en: "Hierarchical composition. Main title on top." }, { id: "SubTitle", name: "서브(상) + 메인(하)", en: "Hierarchical composition. Subtitle on top." }, { id: "Center", name: "중앙 집중형", en: "Centralized balanced composition." } ],
   subTitleSizes: [ { id: "Sub_Small", name: "소형 (30%)", en: "Subtitle is strictly 30% scale." }, { id: "Sub_Medium", name: "중형 (50%)", en: "Subtitle is strictly 50% scale." }, { id: "Sub_Large", name: "대형 (70%)", en: "Subtitle is strictly 70% scale." }, { id: "Sub_Equal", name: "동일 크기", en: "Both rows have equal font scale." } ],
   proportions: [
-    { id: "P_Std", name: "기본형 (정방형)", en: "(perfectly square letterform skeleton:1.5), (natural horizontal text proportions:1.4)" },
+    { id: "P_Std", name: "기본형 (정방형)", en: "(balanced letterform skeleton with natural horizontal proportions:1.4)" },
     { id: "P_Condensed", name: "압축형 (세로장평)", en: "condensed tall aspect ratio, narrow vertical stems" },
     { id: "P_Extended", name: "확장형 (가로장평)", en: "(extended wide panoramic letterforms:1.5), heavily stretched horizontally" }
   ],
@@ -33,15 +48,15 @@ export const staticOptions = {
   internalSpaces: [ { id: "Space_Loose", name: "여유", en: "Spacious internal negative space counters" }, { id: "Space_Std", name: "표준", en: "Standard internal space" }, { id: "Space_Dense", name: "조밀", en: "Dense complex internal structures" }, { id: "Space_Closed", name: "폐쇄적", en: "Closed solid internal mass, completely filled counters" } ],
   logoDegrees: [ { id: "Logo_Low", name: "텍스트 중심", en: "Text-focused typography" }, { id: "Logo_Std", name: "표준 로고타입", en: "Standard logotype" }, { id: "Logo_High", name: "강한 로고화", en: "Highly stylized logotype" }, { id: "Logo_Emblem", name: "완전 엠블럼형", en: "Unified emblem structure" } ],
   kerningOptions: [ { id: "Kern_Loose", name: "여유 (+여백)", en: "wide loose spacing" }, { id: "Kern_Std", name: "표준", en: "standard balanced kerning" }, { id: "Kern_Tight", name: "타이트 (-여백)", en: "tight kerning" }, { id: "Kern_Overlap", name: "초밀착 (오버랩)", en: "high density overlapping letters" } ],
-  terminalStyles: [ { id: "Term_Clean", name: "단면형 (Clean)", en: "clean flat terminals" }, { id: "Term_Chisel", name: "조각형 (Chisel)", en: "sharp chisel-cut terminals" }, { id: "Term_Blade", name: "칼날형 (Blade)", en: "razor blade tips" }, { id: "Term_Slab", name: "석판형 (Slab)", en: "heavy slab serifs" }, { id: "Term_Flare", name: "플레어", en: "elegant flared terminals" }, { id: "Term_Round", name: "라운드", en: "smooth rounded terminals" }, { id: "Term_Serif", name: "세리프", en: "classic serif" }, { id: "Term_Thorn", name: "가시 삐침", en: "sharp thorn terminals" }, { id: "Term_Claw", name: "악마 발톱", en: "demonic claw terminals" }, { id: "Term_BrushFray", name: "필선형 (Brush)", en: "frayed brush terminals" } ],
+  terminalStyles: [ { id: "Term_Clean", name: "단면형 (Clean)", en: "clean flat terminals" }, { id: "Term_Chisel", name: "조각형 (Chisel)", en: "(sharp chisel-cut terminals:1.3), acute terminal angles" }, { id: "Term_Blade", name: "칼날형 (Blade)", en: "(razor-sharp blade tip terminals:1.4), blade-sharp stroke endings, acute terminal angles" }, { id: "Term_Slab", name: "석판형 (Slab)", en: "heavy slab serifs" }, { id: "Term_Flare", name: "플레어", en: "elegant flared terminals" }, { id: "Term_Round", name: "라운드", en: "smooth rounded terminals" }, { id: "Term_Serif", name: "세리프", en: "classic serif" }, { id: "Term_Thorn", name: "가시 삐침", en: "(sharp thorn terminals:1.3), acute thorn angles" }, { id: "Term_Claw", name: "악마 발톱", en: "demonic claw terminals" }, { id: "Term_BrushFray", name: "필선형 (Brush)", en: "frayed brush terminals" } ],
   strokeTextures: [ { id: "Tex_Clean", name: "완전 매끄러움", en: "perfectly smooth pristine vector surface" }, { id: "Tex_Frayed", name: "필선 갈라짐", en: "frayed ink texture" }, { id: "Tex_Scorched", name: "탄화된 필선", en: "scorched etched texture" }, { id: "Tex_Subtle", name: "미세 침식", en: "subtle weathered micro-erosion" }, { id: "Tex_DryBrush", name: "건조한 붓결", en: "dry brush strokes" } ],
-  strokeSharpness: [ { id: "Sharp_Soft", name: "부드러움", en: "softened edges" }, { id: "Sharp_Std", name: "표준", en: "crisp clean edges" }, { id: "Sharp_Crisp", name: "날카로움", en: "sharp clean lines" }, { id: "Sharp_Razor", name: "극예리", en: "micro-chiseled razor-sharp edges" } ],
+  strokeSharpness: [ { id: "Sharp_Soft", name: "부드러움", en: "softened edges" }, { id: "Sharp_Std", name: "표준", en: "crisp clean edges" }, { id: "Sharp_Crisp", name: "날카로움", en: "(sharp clean lines:1.3)" }, { id: "Sharp_Razor", name: "극예리", en: "(micro-chiseled razor-sharp edges:1.4)" } ],
   strokeExtensions: [ { id: "Ext_None", name: "연장 없음", en: "contained terminals" }, { id: "Ext_Elegant", name: "유려한 연장", en: "elegant tapered extensions" }, { id: "Ext_Razor", name: "날카로운 끝단", en: "razor-sharp stroke tails" }, { id: "Ext_Infinite", name: "무한 확장", en: "hyper-extended stroke ends" } ],
   kineticVelocities: [ { id: "Vel_Static", name: "정중동 (Static)", en: "perfectly still, static form" }, { id: "Vel_Swift", name: "질주 (Swift)", en: "dynamic forward momentum" }, { id: "Vel_Slashing", name: "격베기 (Slashing)", en: "aggressive slashing momentum" } ],
   slantAngles: [ { id: "Slant_0", name: "0도 (수직)", en: "perfect verticality" }, { id: "Slant_Forward", name: "15도 (기울기)", en: "15-degree dynamic slant" }, { id: "Slant_Extreme", name: "25도 (급격함)", en: "Aggressive 25-degree slant" } ],
   slicingIntensities: [ { id: "Slic_None", name: "절단 없음", en: "intact strokes" }, { id: "Slic_Partial", name: "부분 절단", en: "micro-incisions and structural cuts" }, { id: "Slic_Diagonal", name: "사선 절단", en: "diagonal slicing" }, { id: "Slic_Deep", name: "깊은 절단", en: "deep structural severance" }, { id: "Slic_Total", name: "전체 절단", en: "massive severance" } ],
   cornerStyles: [ { id: "Corner_Right", name: "직각", en: "sharp 90-degree right-angle corners" }, { id: "Corner_Round", name: "둥근형", en: "smooth rounded corners" }, { id: "Corner_Wedge", name: "쐐기형", en: "wedge-shaped corners" }, { id: "Corner_Blade", name: "칼날형", en: "blade-like pointed corners" } ],
-  deformationDamages: [ { id: "Damage_None", name: "상태 깨끗함", en: "pristine solid form, zero damage" }, { id: "Damage_Erosion", name: "미세 침식", en: "subtle weathered erosion" }, { id: "Damage_Cracking", name: "균열과 실금", en: "intricate 2D cracks" } ],
+  deformationDamages: [ { id: "Damage_None", name: "상태 깨끗함", en: "pristine solid form, zero damage" }, { id: "Damage_Erosion", name: "미세 침식", en: "(subtle surface grain texture:1.2)" }, { id: "Damage_Cracking", name: "균열과 실금", en: "(intricate 2D crack pattern:1.3)" } ],
   widths: [ { id: "Narrow", name: "좁게", en: "condensed slim width" }, { id: "Normal", name: "표준", en: "standard balanced width" }, { id: "Wide", name: "넓게", en: "wide expansive width" }, { id: "UltraWide", name: "초광폭", en: "ultra wide panoramic width" } ],
   editStrokeMods: [ { id: "E_Stroke_None", name: "기본 유지", en: "Keep original stroke intact" }, { id: "E_Stroke_Angled", name: "꺾임/예리함 강조", en: "Sharpen joints and emphasize jagged edges" }, { id: "E_Stroke_Extended", name: "연장 라인 추가", en: "Pull and extend key stroke terminals" }, { id: "E_Stroke_Thickened", name: "두께 대비 극대화", en: "Exaggerate thick/thin stroke contrast" } ],
   editElementMods: [ { id: "E_Elem_None", name: "기본 유지", en: "Maintain original structure" }, { id: "E_Elem_Object", name: "오브제화/무기화", en: "Morph focal letters into weapons/objects" }, { id: "E_Elem_Rhythm", name: "유기적 리듬감", en: "Inject rhythmic flow and bounce" }, { id: "E_Elem_Disconnect", name: "의도적 단절", en: "Introduce micro-gaps for fragmentation" } ],

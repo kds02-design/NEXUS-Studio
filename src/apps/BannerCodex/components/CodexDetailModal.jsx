@@ -38,15 +38,15 @@ const CodexDetailModal = ({
   };
 
   return (
-    <div className="fixed top-[52px] left-0 right-0 bottom-0 z-[2000] flex items-center justify-center p-6 sm:p-10 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"
+    <div className="fixed top-[52px] left-0 right-0 bottom-0 z-[2000] flex items-center justify-center p-3 sm:p-5 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={() => wantsConfirmClose(() => { onClose(); setIsEditingPreview(false); })}>
       <button onClick={(e) => { e.stopPropagation(); wantsConfirmClose(() => { onClose(); setIsEditingPreview(false); }); }}
-        className={`absolute top-6 right-6 sm:top-8 sm:right-8 p-2.5 rounded-full transition-colors z-[600] border ${isLightMode ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-900 shadow-sm' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white shadow-lg'}`}>
+        className={`absolute top-3 right-3 sm:top-5 sm:right-5 p-2.5 rounded-full transition-colors z-[600] border ${isLightMode ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-900 shadow-sm' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white shadow-lg'}`}>
         <X className="w-5 h-5" />
       </button>
-      <div className={`w-full max-w-[1520px] flex rounded-[24px] overflow-hidden shadow-2xl relative ${isLightMode ? 'bg-white border border-slate-200' : 'bg-[#0c0c0e] border border-white/10'}`}
-        style={{ height: '85vh', maxHeight: '750px' }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center bg-black"
+      <div className={`w-full max-w-[1340px] flex rounded-[20px] overflow-hidden shadow-2xl relative ${isLightMode ? 'bg-white border border-slate-200' : 'bg-[#0c0c0e] border border-white/10'}`}
+        style={{ height: 'min(calc(100vh - 76px), 700px)' }} onClick={(e) => e.stopPropagation()}>
+        <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center bg-black py-16"
           onWheel={dragHandlers.onWheel} onMouseDown={dragHandlers.onMouseDown} onMouseMove={dragHandlers.onMouseMove}
           onMouseUp={dragHandlers.onMouseUp} onMouseLeave={dragHandlers.onMouseLeave}>
           <div className="absolute top-6 left-6 z-[510] flex gap-1.5">
@@ -111,10 +111,10 @@ const CodexDetailModal = ({
           )}
         </div>
 
-        <div className={`w-[340px] shrink-0 flex flex-col h-full shadow-2xl z-[510] relative ${isLightMode ? 'bg-white border-l border-slate-200' : 'bg-[#111111] border-l border-white/5'}`}>
-          <div className="flex-1 overflow-y-auto custom-scrollbar p-8 pt-12 pb-24">
-            <div className="flex items-center gap-4 mb-8">
-              <div className={`w-14 h-14 rounded-full flex items-center justify-center shrink-0 overflow-hidden border ${isLightMode ? 'bg-slate-50 border-slate-200 text-[#0eb9b3]' : 'bg-black border-zinc-800 text-white'}`}>
+        <div className={`w-[260px] shrink-0 flex flex-col h-full shadow-2xl z-[510] relative ${isLightMode ? 'bg-white border-l border-slate-200' : 'bg-[#111111] border-l border-white/5'}`}>
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-4 pt-5 pb-16">
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 overflow-hidden border ${isLightMode ? 'bg-slate-50 border-slate-200 text-[#0eb9b3]' : 'bg-black border-zinc-800 text-white'}`}>
                 {gameLogos[editedBanner?.game] ? <img src={gameLogos[editedBanner?.game]} alt={editedBanner?.game} className="w-full h-full object-cover" />
                   : <span className="text-xl font-bold">{editedBanner?.game ? editedBanner.game.substring(0, 1) : '기'}</span>}
               </div>
@@ -144,38 +144,38 @@ const CodexDetailModal = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 mb-8 border-b border-white/5 pb-8">
+            <div className="flex items-center gap-1.5 mb-4 border-b border-white/5 pb-4">
               {(isAdminMode || editedBanner?.isTemp) && (
                 <button onClick={() => handleDeleteSingleBanner(editedBanner?.id)}
-                  className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`} title="삭제">
+                  className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`} title="삭제">
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
               {(isAdminMode || editedBanner?.isTemp) && (
                 <button onClick={() => setIsEditingPreview(!isEditingPreview)}
-                  className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${isEditingPreview ? 'bg-[#0eb9b3] text-white border-[#0eb9b3]' : isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`} title="속성 직접 편집">
+                  className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${isEditingPreview ? 'bg-[#0eb9b3] text-white border-[#0eb9b3]' : isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`} title="속성 직접 편집">
                   <Edit3 className="w-4 h-4" />
                 </button>
               )}
               <button onClick={(e) => toggleLike(editedBanner?.id, e)}
-                className={`flex items-center gap-1.5 h-10 px-4 rounded-full border text-[13px] font-bold transition-colors ${editedBanner?.liked ? 'border-red-500/50 text-red-400 bg-red-500/10' : isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}>
+                className={`flex items-center gap-1.5 h-9 px-3.5 rounded-full border text-[12px] font-bold transition-colors ${editedBanner?.liked ? 'border-red-500/50 text-red-400 bg-red-500/10' : isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`}>
                 <Heart className={`w-4 h-4 ${editedBanner?.liked ? 'fill-current text-red-400' : ''}`} /> <span>{editedBanner?.liked ? '1' : '0'}</span>
               </button>
               <button onClick={() => handleToggleCart(editedBanner?.id)}
-                className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${cartIds.includes(editedBanner?.id) ? 'border-[#0eb9b3]/50 text-[#0eb9b3] bg-[#0eb9b3]/10' : isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`} title="담기">
+                className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${cartIds.includes(editedBanner?.id) ? 'border-[#0eb9b3]/50 text-[#0eb9b3] bg-[#0eb9b3]/10' : isLightMode ? 'border-slate-200 text-slate-500 hover:bg-slate-50' : 'border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white'}`} title="담기">
                 <Layers className={`w-4 h-4 ${cartIds.includes(editedBanner?.id) ? 'fill-current' : ''}`} />
               </button>
               <div className="flex-1"></div>
               {isAdminMode && (
                 <button onClick={(e) => toggleFeature(editedBanner?.id, e)}
-                  className={`w-10 h-10 rounded-full border flex items-center justify-center transition-colors ${editedBanner?.featured ? 'border-yellow-500/50 text-yellow-400 bg-yellow-500/10' : isLightMode ? 'border-slate-200 text-slate-400 hover:bg-slate-50' : 'border-zinc-800 text-zinc-500 hover:bg-zinc-800 hover:text-white'}`} title="추천 배너 지정">
+                  className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${editedBanner?.featured ? 'border-yellow-500/50 text-yellow-400 bg-yellow-500/10' : isLightMode ? 'border-slate-200 text-slate-400 hover:bg-slate-50' : 'border-zinc-800 text-zinc-500 hover:bg-zinc-800 hover:text-white'}`} title="추천 배너 지정">
                   <Star className={`w-4 h-4 ${editedBanner?.featured ? 'fill-current text-yellow-400' : ''}`} />
                 </button>
               )}
             </div>
 
-            <div className="mb-8">
-              <div className={`text-[10px] font-bold mb-3 uppercase tracking-wider ${isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>태그</div>
+            <div className="mb-4">
+              <div className={`text-[10px] font-bold mb-2 uppercase tracking-wider ${isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>태그</div>
               {isEditingPreview ? (
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-2">
@@ -204,8 +204,8 @@ const CodexDetailModal = ({
               )}
             </div>
 
-            <div className="mb-8">
-              <div className={`text-[10px] font-bold mb-3 uppercase tracking-wider ${isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>{'>_ DIRECTORY PATH'}</div>
+            <div className="mb-4">
+              <div className={`text-[10px] font-bold mb-2 uppercase tracking-wider ${isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>{'>_ DIRECTORY PATH'}</div>
               {isEditingPreview ? (
                 <textarea value={editedBanner?.path || ''} onChange={(e) => handleEditChange('path', e.target.value)}
                   className={`w-full text-xs font-mono p-3 border rounded-xl resize-none min-h-[80px] focus:outline-none focus:border-[#0eb9b3] transition-colors custom-scrollbar ${isLightMode ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-zinc-900 border-zinc-700 text-zinc-300'}`} placeholder="디렉토리 경로 (ex: \\ppc-file\...)" />
@@ -219,14 +219,14 @@ const CodexDetailModal = ({
               )}
             </div>
 
-            <div className="relative mt-4">
+            <div className="relative mt-2">
               <button onClick={() => setIsScorePopoverOpen(true)}
-                className={`w-full py-3 px-5 rounded-2xl border flex items-center justify-between transition-all group ${isLightMode ? 'bg-transparent border-slate-200 hover:border-[#0eb9b3] hover:bg-[#0eb9b3]/5' : 'bg-transparent border-white/10 hover:border-[#0eb9b3] hover:bg-[#0eb9b3]/5'}`}>
+                className={`w-full py-2 px-3.5 rounded-xl border flex items-center justify-between transition-all group ${isLightMode ? 'bg-transparent border-slate-200 hover:border-[#0eb9b3] hover:bg-[#0eb9b3]/5' : 'bg-transparent border-white/10 hover:border-[#0eb9b3] hover:bg-[#0eb9b3]/5'}`}>
                 <div className="flex items-center gap-2">
-                  <Bot className={`w-4 h-4 ${isLightMode ? 'text-slate-400 group-hover:text-[#0eb9b3]' : 'text-zinc-500 group-hover:text-[#0eb9b3]'}`} />
-                  <span className={`text-xs font-bold ${isLightMode ? 'text-slate-700' : 'text-zinc-300'}`}>AI 10대 지표 평가</span>
+                  <Bot className={`w-3.5 h-3.5 ${isLightMode ? 'text-slate-400 group-hover:text-[#0eb9b3]' : 'text-zinc-500 group-hover:text-[#0eb9b3]'}`} />
+                  <span className={`text-[11px] font-bold ${isLightMode ? 'text-slate-700' : 'text-zinc-300'}`}>AI 10대 지표 평가</span>
                 </div>
-                <div className="text-3xl font-black text-[#0eb9b3] font-mono tracking-tighter">{getFinalScore100(editedBanner)}</div>
+                <div className="text-2xl font-black text-[#0eb9b3] font-mono tracking-tighter">{getFinalScore100(editedBanner)}</div>
               </button>
               {(isAdminMode || editedBanner?.isTemp) && (
                 <div className="flex justify-end mt-2">
@@ -239,7 +239,7 @@ const CodexDetailModal = ({
             </div>
           </div>
 
-          <div className={`absolute right-6 z-[600] transition-all duration-300 ease-in-out ${hasChanges || isEditingPreview ? 'bottom-[92px]' : 'bottom-6'}`}>
+          <div className={`absolute right-3 z-[600] transition-all duration-300 ease-in-out ${hasChanges || isEditingPreview ? 'bottom-[80px]' : 'bottom-3'}`}>
             <button onClick={() => setIsActionMenuOpen(!isActionMenuOpen)}
               className={`p-3 rounded-2xl transition-colors shadow-lg border ${isActionMenuOpen ? (isLightMode ? 'bg-slate-200 border-slate-300' : 'bg-zinc-800 border-zinc-700') : (isLightMode ? 'bg-white/80 backdrop-blur border-transparent hover:border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-[#1c1c1e]/80 backdrop-blur border-transparent hover:border-white/10 text-zinc-400 hover:bg-white/10 hover:text-zinc-200')}`}>
               <MoreHorizontal className="w-5 h-5" />
@@ -263,9 +263,9 @@ const CodexDetailModal = ({
           </div>
 
           {(hasChanges || isEditingPreview) && (
-            <div className={`absolute bottom-0 left-0 right-0 p-4 border-t flex gap-2 shrink-0 ${isLightMode ? 'bg-white/90 backdrop-blur border-slate-200' : 'bg-[#111111]/90 backdrop-blur border-white/5'}`}>
-              <button onClick={handleCancelEdit} className={`flex-1 py-3 rounded-xl text-xs font-bold transition-colors border ${isLightMode ? 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800'}`}>취소</button>
-              <button onClick={handleSaveEdit} className="flex-[2] py-3 rounded-xl text-xs font-bold bg-[#0b948f] hover:bg-[#0eb9b3] text-white transition-colors shadow-lg shadow-[#0eb9b3]/20 flex items-center justify-center gap-2"><Save className="w-4 h-4" /> 저장</button>
+            <div className={`absolute bottom-0 left-0 right-0 p-3 border-t flex gap-2 shrink-0 ${isLightMode ? 'bg-white/90 backdrop-blur border-slate-200' : 'bg-[#111111]/90 backdrop-blur border-white/5'}`}>
+              <button onClick={handleCancelEdit} className={`flex-1 py-2.5 rounded-lg text-xs font-bold transition-colors border ${isLightMode ? 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100' : 'bg-zinc-900 text-zinc-300 border-zinc-800 hover:bg-zinc-800'}`}>취소</button>
+              <button onClick={handleSaveEdit} className="flex-[2] py-2.5 rounded-lg text-xs font-bold bg-[#0b948f] hover:bg-[#0eb9b3] text-white transition-colors shadow-lg shadow-[#0eb9b3]/20 flex items-center justify-center gap-2"><Save className="w-4 h-4" /> 저장</button>
             </div>
           )}
         </div>

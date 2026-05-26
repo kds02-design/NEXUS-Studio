@@ -63,13 +63,7 @@ export const subscribeToBookmarks = (uid, onData, onError) => {
   return onSnapshot(bookmarksCol(uid), snap => onData(snap.docs.map(d => d.id)), onError);
 };
 
-export const subscribeToGameLogos = (onData, onError) => {
-  if (!db) return () => {};
-  return onSnapshot(settingsDoc('gameLogos'),
-    snap => onData(snap.exists() ? snap.data() : {}),
-    onError
-  );
-};
+// 게임 로고 구독·CRUD는 `src/lib/gameLogos.js` 로 이전됨. NexusAdmin 에서 단일 관리.
 
 export const subscribeToPrompt = (onData, onError) => {
   if (!db) return () => {};
@@ -127,21 +121,6 @@ export const fetchBannerImage = async (imageId) => {
 export const savePromptToCloud = async (text) => {
   if (!db) return;
   await setDoc(settingsDoc('aiPrompt'), { text }, { merge: true });
-};
-
-export const saveGameLogo = async (gameName, base64) => {
-  if (!db) return;
-  await setDoc(settingsDoc('gameLogos'), { [gameName]: base64 }, { merge: true });
-};
-
-export const removeGameLogo = async (gameName) => {
-  if (!db) return;
-  const snap = await getDoc(settingsDoc('gameLogos'));
-  if (snap.exists()) {
-    const data = snap.data();
-    delete data[gameName];
-    await setDoc(settingsDoc('gameLogos'), data);
-  }
 };
 
 export const addBookmark = async (uid, id) => {

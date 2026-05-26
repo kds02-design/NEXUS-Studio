@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, LayoutGrid, Heart, Layers, Zap, Star, Settings, ShieldCheck,
-  Save, FileJson, Image as ImageIcon, FolderPlus, Upload,
+  Save, FileJson, FolderPlus, Upload,
   CheckSquare, Trash2
 } from 'lucide-react';
 import CodexFolderSelector from './CodexFolderSelector';
@@ -54,7 +54,7 @@ const CodexSidebar = ({
   isSettingsOpen, setIsSettingsOpen, settingsRef,
   adminModeEnabled, toggleAdminMode,
   handleSaveLibrary, handleLoadLibrary, isSaving,
-  setIsLogoManagerOpen, handleFolderUpload, isUploading,
+  handleFolderUpload, isUploading,
   lastFolderName, handlePickFolder, handleReopenLastFolder, handleForgetLastFolder,
   isProcessingFiles, handleFileUpload, skipDuplicates, setSkipDuplicates,
   handleOpenDuplicateManager, handleSidebarClick,
@@ -201,10 +201,6 @@ const CodexSidebar = ({
                         <input type="file" accept=".json" className="hidden" onChange={handleLoadLibrary} />
                       </label>
                       <div className={`h-px w-full my-1 ${isLightMode ? 'bg-slate-100' : 'bg-white/5'}`}></div>
-                      <button onClick={(e) => { e.stopPropagation(); setIsLogoManagerOpen(true); setIsSettingsOpen(false); }}
-                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}>
-                        <ImageIcon className="w-4 h-4 shrink-0" /> <span>로고 관리</span>
-                      </button>
                       <label className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}>
                         <FolderPlus className="w-4 h-4 shrink-0" /> <span>폴더 추가</span>
                         <input type="file" webkitdirectory="true" directory="" multiple className="hidden" onChange={handleFolderUpload} disabled={isUploading} />

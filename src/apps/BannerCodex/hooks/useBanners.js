@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  subscribeToBanners, subscribeToBookmarks, subscribeToGameLogos, subscribeToPrompt,
+  subscribeToBanners, subscribeToBookmarks, subscribeToPrompt,
   addBannerToCloud, updateBannerInCloud, deleteBannerFromCloud,
   addBookmark, removeBookmark, batchAddBookmarks, batchRemoveBookmarks,
   delay, WRITE_DELAY_MS, db
 } from '../services/firebase';
+import { subscribeToGameLogos } from '../../../lib/gameLogos';
 
 export const useBanners = (user, sortOrder) => {
   const [banners, setBanners] = useState([]);

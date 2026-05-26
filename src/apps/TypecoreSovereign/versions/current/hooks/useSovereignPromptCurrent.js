@@ -41,6 +41,41 @@ export function useSovereignPromptCurrent({ apiKey }) {
   const [coreArchetype, setCoreArchetype] = useState('core_fortress');
   const [coreDropdownOpen, setCoreDropdownOpen] = useState(false);
 
+  // v2 sidebar 호환 — "타입 프리셋" (MMO 스타일).
+  // 프리셋 선택 시 stemWeight/terminalStyle/sharpness/kinetic/damage/proportion 등 다운스트림 옵션을 자동 세팅한다.
+  // 매핑은 v2 의 handleScriptPresetChange 를 current 가 보유한 옵션 ID 에 맞춰 재구성.
+  //   (없는 값: Tex_Hologram → Tex_Clean, Vel_Warp → Vel_Swift, P_Slim → P_Condensed 로 대체)
+  const [scriptType, setScriptType] = useState('Gen_Original');
+  const SCRIPT_PRESETS = {
+    Gen_Original:   { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Serif',  strokeTexture: 'Tex_Scorched', deformationDamage: 'Damage_Erosion' },
+    Gen_Fantasy:    { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',  strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Static' },
+    Lineage_M:      { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Chisel', strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
+    Lineage_2M:     { stemWeight: 'Stem_Light', terminalStyle: 'Term_Thorn',  strokeSharpness: 'Sharp_Razor', charProportion: 'P_Condensed' },
+    Lineage_W:      { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Blade',  deformationDamage: 'Damage_Erosion', slicingIntensity: 'Slic_Partial' },
+    Aion_Original:  { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Round',  kineticVelocity: 'Vel_Swift',   charProportion: 'P_Condensed' },
+    Aion_2:         { stemWeight: 'Stem_Light', terminalStyle: 'Term_Blade',  kineticVelocity: 'Vel_Swift',   charProportion: 'P_Condensed', strokeTexture: 'Tex_Clean' },
+    BNS:            { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Blade',  strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Swift',  slantAngle: 'Slant_Forward' },
+    Throne_Liberty: { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',  strokeSharpness: 'Sharp_Crisp', charProportion: 'P_Std',       kineticVelocity: 'Vel_Static' },
+    MMO_Saviors:    { stemWeight: 'Stem_Light', terminalStyle: 'Term_Blade',  strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Static', charProportion: 'P_Condensed' },
+    MMO_Antharas:   { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Thorn',  strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
+    MMO_Aden:       { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Chisel', strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Static', charWidth: 'Wide' },
+  };
+  const handleScriptPresetChange = (id) => {
+    setScriptType(id);
+    const preset = SCRIPT_PRESETS[id];
+    if (!preset) return;
+    if (preset.stemWeight)        setStemWeight(preset.stemWeight);
+    if (preset.terminalStyle)     setTerminalStyle(preset.terminalStyle);
+    if (preset.strokeTexture)     setStrokeTexture(preset.strokeTexture);
+    if (preset.strokeSharpness)   setStrokeSharpness(preset.strokeSharpness);
+    if (preset.kineticVelocity)   setKineticVelocity(preset.kineticVelocity);
+    if (preset.deformationDamage) setDeformationDamage(preset.deformationDamage);
+    if (preset.slicingIntensity)  setSlicingIntensity(preset.slicingIntensity);
+    if (preset.charProportion)    setCharProportion(preset.charProportion);
+    if (preset.charWidth)         setCharWidth(preset.charWidth);
+    if (preset.slantAngle)        setSlantAngle(preset.slantAngle);
+  };
+
   const [isAdvancedOptionsEnabled, setIsAdvancedOptionsEnabled] = useState(false);
   const [isEnhanceModeEnabled, setIsEnhanceModeEnabled] = useState(true);
   const [enhanceMode, setEnhanceMode] = useState("refine");
@@ -82,6 +117,11 @@ export function useSovereignPromptCurrent({ apiKey }) {
   });
 
   const [customDesignInjections, setCustomDesignInjections] = useState("");
+  // Aura 영문 번역본 — 최종 프롬프트(userAuraEn)에 사용. 사용자는 텍스트박스에서 한국어로 입력/편집하고,
+  // 백그라운드에서 1.5s 디바운스로 영문 번역 후 여기에 캐시. 한국어 문자가 없으면 번역 생략(이미 영어).
+  const [customDesignInjectionsEn, setCustomDesignInjectionsEn] = useState("");
+  const [isTranslatingAura, setIsTranslatingAura] = useState(false);
+  const lastTranslatedKoRef = useRef("");
 
   // Prompt Output States
   const [dramaticPrompt, setDramaticPrompt] = useState("");
@@ -184,6 +224,83 @@ export function useSovereignPromptCurrent({ apiKey }) {
 
   useEffect(() => { if (tuningChatRef.current) tuningChatRef.current.scrollTop = tuningChatRef.current.scrollHeight; }, [tuningChatHistory, isTuningLoading]);
   useEffect(() => { if (editTuningChatRef.current) editTuningChatRef.current.scrollTop = editTuningChatRef.current.scrollHeight; }, [editTuningChatHistory, isEditTuningLoading]);
+
+  // Aura 한국어 → 영문 자동 번역 (디바운스 1.5s).
+  // 사용자의 한국어 입력/AI 확장 결과를 백그라운드에서 영문 구조적 프롬프트로 변환해 캐시.
+  // 한국어 문자가 없으면 (이미 영어이거나 빈 문자열) 번역 생략하고 그대로 사용.
+  useEffect(() => {
+    const text = (customDesignInjections || "").trim();
+    if (!text) {
+      setCustomDesignInjectionsEn("");
+      lastTranslatedKoRef.current = "";
+      return;
+    }
+    if (text === lastTranslatedKoRef.current) return; // 이미 같은 텍스트 번역됨.
+    const hasKorean = /[ㄱ-힝]/.test(text);
+    if (!hasKorean) {
+      // 사용자가 직접 영문을 넣은 경우 — 그대로 사용.
+      setCustomDesignInjectionsEn(text);
+      lastTranslatedKoRef.current = text;
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setIsTranslatingAura(true);
+      try {
+        const systemPrompt = `Translate the user's Korean typography/design description into precise English structural prompt directives.
+Output ONLY English, comma-separated structural keywords/phrases. No quotes, no preamble.
+Maintain technical typographic terminology (stroke, terminal, kerning, weight, contrast, etc.).
+Focus on geometry, edges, contrast, mass — convert vague emotional terms into concrete shape/edge language.`;
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: { temperature: 0.3 },
+          }),
+        });
+        const data = await response.json();
+        const en = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        if (en) {
+          setCustomDesignInjectionsEn(en);
+          lastTranslatedKoRef.current = text;
+        }
+      } catch (e) {
+        console.warn('[TypecoreSovereign] Aura 자동 번역 실패', e);
+      } finally {
+        setIsTranslatingAura(false);
+      }
+    }, 1500);
+    return () => clearTimeout(handle);
+  }, [customDesignInjections, apiKey]);
+
+  // Aura → Feature 자동 동기화.
+  //   AI 가 확장한 Aura 텍스트(또는 사용자가 입력한 긴 묘사)에 "tight kerning", "interlocking
+  //   character" 등 커닝/결합 키워드가 명시되면 관련 사이드바 옵션(kerning, letterConnection)을
+  //   자동으로 같은 의도에 맞춰 갱신해서, Feature 블록의 출력이 Aura 와 의미 충돌하지 않게 한다.
+  //   특정 멀티-워드 phrase 만 매칭 — 단일 단어("tight" 하나)로는 트리거되지 않음.
+  useEffect(() => {
+    const text = customDesignInjections || "";
+    if (!text) return;
+    // 커닝
+    if (/\btight\s+(compressed\s+)?kerning\b|\bcompressed\s+kerning\b|\binterlocking\s+character|\bimmense\s+pressure\b/i.test(text)) {
+      setKerning('Kern_Tight');
+    } else if (/\bwide\s+loose\s+spacing\b|\bspacious\s+kerning\b|\bopen\s+letterspacing\b/i.test(text)) {
+      setKerning('Kern_Loose');
+    } else if (/\boverlap(?:ping)?\s+letters\b|\bextreme\s+(high\s+)?density\s+overlap/i.test(text)) {
+      setKerning('Kern_Overlap');
+    }
+    // 결합
+    if (/\bfully\s+(fused|merged)\b|\binterlocking\s+character\s+density\b/i.test(text)) {
+      setLetterConnection('Conn_Full');
+    } else if (/\btightly\s+packed\s+character/i.test(text)) {
+      setLetterConnection('Conn_Tight');
+    } else if (/\bpartial(?:ly)?\s+merged\b|\bpartial\s+letter/i.test(text)) {
+      setLetterConnection('Conn_Partial');
+    } else if (/\bcleanly\s+separated\s+character|\bindependent\s+letter/i.test(text)) {
+      setLetterConnection('Conn_Indep');
+    }
+  }, [customDesignInjections]);
 
   const toggleGuard = (id) => setActiveGuards(prev => prev.includes(id) ? prev.filter(guardId => guardId !== id) : [...prev, id]);
 
@@ -352,7 +469,7 @@ Core Archetypes available: 'core_fortress', 'core_blade', 'core_relic', 'core_gl
 Return strictly in JSON format:
 {
   "summary": { "title": "분석된 스타일 요약 (한국어)", "reason": "해당 세팅을 추천하는 이유 (한국어)" },
-  "aura": "Detailed English description of the structural lines, shapes, and rhythm to match the image. NO vague emotional words. Focus on geometry and tension.",
+  "aura": "이미지의 구조적 라인·형태·리듬을 묘사하는 한국어 구체 설명. 모호한 감정 단어 금지. 기하학·텐션·획 형태에 집중. 전문 영문 용어(예: razor-sharp, chiseled) 혼용 가능.",
   "setArchetype": "core_...",
   "setWeight": { "id": "...", "name": "...", "en": "..." },
   "setTerminal": { "id": "...", "name": "...", "en": "..." },
@@ -450,9 +567,10 @@ Return strictly in JSON format:
     const userMsg = tuningInputValue.trim() || "이미지 스타일을 분석해줘.";
     setTuningInputValue(""); setTuningChatHistory(prev => [...prev, { role: 'user', content: userMsg }]); setIsTuningLoading(true);
     const persona = coreArchetypes.find(p => p.id === coreArchetype) || coreArchetypes[0];
+    // newAura 는 사용자에게 노출되는 Aura 텍스트박스 값 — 한국어로 출력. 영문 변환은 자동 useEffect 가 처리.
     const systemPrompt = `You are a Typography Art Director and a friendly assistant. [YOUR PERSONA]: ${persona.role}\n[CURRENT SUB-TRAIT FOCUS]: ${getSliderText(personaSliderValue)}\n[Current Aura]: "${currentTunedAura}"\n[User Request]: "${userMsg}"\nTask: Update the [Current Aura] to reflect the [User Request] and visual analysis. Make it professional. APPLY YOUR PERSONA'S VIBE AND KEYWORDS: ${persona.keywords}. Reflect the [CURRENT SUB-TRAIT FOCUS].
 CRITICAL CONSTRAINT: Maintain strictly 2D flat silhouette graphic structure. DO NOT invent options related to 3D, colors, or realistic materials. ONLY focus on 2D morphology (shape, cuts, stems).
-Write a short, friendly reply in Korean explaining what you changed and analyzed. Tone: ${persona.tone}.\nReturn JSON strictly in this format: { "newAura": "The updated aura string IN ENGLISH", "replyMessage": "Your friendly reply in Korean", "updateOptions": { "setWeight": { "id": "...", "name": "...", "en": "..." }, ... } }`;
+Write a short, friendly reply in Korean explaining what you changed and analyzed. Tone: ${persona.tone}.\nReturn JSON strictly in this format: { "newAura": "업데이트된 아우라 묘사 (Korean, 전문 영문 용어 혼용 가능)", "replyMessage": "Your friendly reply in Korean", "updateOptions": { "setWeight": { "id": "...", "name": "...", "en": "..." }, ... } }`;
     const parts = [{ text: "Process the tuning request. Analyze the reference image if provided." }];
     if (tuningReferenceImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: tuningReferenceImage } });
     try {
@@ -667,11 +785,12 @@ Write a friendly response in Korean explaining the update. Tone: ${persona.tone}
   const handleExpandIntent = async () => {
     if (!customDesignInjections.trim() || isExpandingIntent) return; setIsExpandingIntent(true);
     const persona = coreArchetypes.find(p => p.id === coreArchetype) || coreArchetypes[0];
-    const systemPrompt = `[YOUR PERSONA]: ${persona.role}
-Task: AURA NORMALIZATION ENGINE.
-Convert the user's emotional/abstract keyword into strict structural, morphological, and parameter-based directives IN ENGLISH ONLY.
-DO NOT use vague emotional words in the output. Translate feelings into edges, contrast, kerning, and terminal shapes.
-Format: ONLY English, 2-3 sentences of highly optimized structural prompt descriptions (comma separated if needed).`;
+    // 사용자 UX: Aura 텍스트박스는 한국어 유지. 최종 프롬프트의 영문 변환은 별도 useEffect 가 자동 처리.
+    const systemPrompt = `[페르소나]: ${persona.role}
+Task: 아우라 정규화 엔진 (Korean output).
+사용자의 감성적/추상적 키워드를 엄격한 구조적·형태적·매개변수 기반 지시문으로 풀어쓰세요.
+모호한 감정 단어 대신 획·대비·자간·말단 형태·기하학·표면 질감 어휘로 변환하세요.
+Format: 한국어로 2-3 문장의 고도로 최적화된 구조적 묘사. 쉼표 구분 가능. 영어 단어 혼용 가능 (예: "razor-sharp" 같은 전문 용어).`;
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: customDesignInjections }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
       const data = await response.json(); if (data.candidates?.[0]?.content?.parts?.[0]?.text) setCustomDesignInjections(data.candidates[0].content.parts[0].text.trim());
@@ -709,6 +828,8 @@ Format: ONLY English, strict structural commands.`;
     const letterConnEn = getOptionEn([...staticOptions.letterConnections, ...(dynamicOptions.letterConnections || [])], letterConnection);
     const internalSpaceEn = getOptionEn([...staticOptions.internalSpaces, ...(dynamicOptions.internalSpaces || [])], internalSpace);
     const mmoSilhouetteEn = getOptionEn([...staticOptions.MMOSilhouetteFramings, ...(dynamicOptions.MMOSilhouetteFramings || [])], mmoSilhouetteFraming);
+    const mmoSurroundingElementEn = getOptionEn([...staticOptions.MMOSurroundingElements, ...(dynamicOptions.MMOSurroundingElements || [])], mmoSurroundingElement);
+    const logoDegreeEn = getOptionEn([...staticOptions.logoDegrees, ...(dynamicOptions.logoDegrees || [])], logoDegree);
 
     let modIntensityEn = "0%"; let readabilityFloorEn = "90%"; let modAllowedEn = "None"; let modForbiddenEn = "Any structural mutation";
     if (isEnhanceModeEnabled) {
@@ -733,22 +854,45 @@ Format: ONLY English, strict structural commands.`;
     else if (aspectRatio === "2.76:1") aspectRatioEn = "(ultra-wide 2.76:1 cinematic panorama canvas:1.5), extreme horizontal framing, ";
 
     const activeCoreData = coreArchetypes.find(p => p.id === coreArchetype) || coreArchetypes[0];
-    const userAuraEn = customDesignInjections || "Standard deployment";
+    // userAuraEn 우선순위: 영문 번역 캐시 → 원문(영어 입력 fallback) → 기본 문구.
+    // 한국어 입력 직후 1.5s 디바운스 전에는 customDesignInjectionsEn 이 비어 있어 원문을
+    // 임시로 사용하지만, 번역이 완료되면 즉시 영문이 prompt 에 반영됨.
+    const userAuraEn = customDesignInjectionsEn || customDesignInjections || "Standard deployment";
 
     const isWhiteBg = baseStyle === "WhiteBlack";
     const bgDescEn = isWhiteBg ? "STARK WHITE Background, SOLID BLACK Subject" : "JET BLACK Background, RADIANT WHITE Subject";
     const solidBgPrompt = isWhiteBg ? "pure solid #FFFFFF bright white void background, solid #000000 matte black text" : "pure solid #000000 matte black void background, solid #FFFFFF bright white text";
 
     const isSlicingActive = slicingIntensity !== "Slic_None";
-    const intactGuard = isSlicingActive ? "" : "perfectly intact silhouette, ";
-    const optimizedBase = `masterpiece, best quality, ultra highres, insanely detailed, 8k resolution, isolated standalone typography graphic, clear cutout text shape, flawless silhouette boundary, ${intactGuard}highly legible, AAA game title aesthetic, sharp geometric corners, precise structural lines, strong material contrast`;
+    // optimizedBase 에서 가드/홀가드와 중복되는 토큰 제거:
+    //   - "clear cutout text shape" → guard_noise.fixEn 가 가중치로 보유
+    //   - "flawless silhouette boundary" → guard_noise.fixEn 가 가중치로 보유
+    //   - "perfectly intact silhouette" → nanoBanana 의 holeGuard 가 가중치로 보유
+    const optimizedBase = `masterpiece, best quality, ultra highres, insanely detailed, 8k resolution, isolated standalone typography graphic, highly legible, AAA game title aesthetic, sharp geometric corners, precise structural lines, strong material contrast`;
 
+    // 가드 fixEn 을 positive(가중치) / negative("NO X" → "(X:1.5)") 로 분리.
+    // positive 는 본문 tail 에, negative 는 Negative prompt 로 — 효과 증대 + 의미 충돌 차단.
+    const splitGuardEn = (fixEn) => {
+      const tokens = (fixEn || '').split(',').map(s => s.trim()).filter(Boolean);
+      const pos = tokens.filter(t => !/^NO\s+/i.test(t));
+      const neg = tokens
+        .filter(t => /^NO\s+/i.test(t))
+        .map(t => `(${t.replace(/^NO\s+/i, '').trim()}:1.5)`);
+      return { pos, neg };
+    };
     let troubleshootingBlockEn = "";
-    let activeGuardsEn = [];
+    let activeGuardsEn = [];          // 호환용 — 전체 fixEn 배열 (baseTechnical L8 등에서 사용).
+    let activeGuardsPositive = [];    // 본문에 들어갈 positive 가중치 토큰들.
+    let activeGuardsNegative = [];    // Negative prompt 에 들어갈 변환된 가중치 토큰들.
     if (activeGuards.length > 0) {
       const activeTs = safetyGuards.filter(opt => activeGuards.includes(opt.id));
       troubleshootingBlockEn = `\n\n[L8: NEGATIVE ENFORCEMENT & GUARDS]\n` + activeTs.map(opt => `- ${opt.fixEn}`).join("\n");
       activeGuardsEn = activeTs.map(opt => opt.fixEn);
+      activeTs.forEach(opt => {
+        const { pos, neg } = splitGuardEn(opt.fixEn);
+        activeGuardsPositive.push(...pos);
+        activeGuardsNegative.push(...neg);
+      });
     }
 
     let cgTextInstruction = `Render EXACTLY the text "${inputText}"`;
@@ -771,8 +915,59 @@ Format: ONLY English, strict structural commands.`;
       }
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // 충돌 회피 derived 필드.
+    //   surfaceEn: damage 가 활성이면 pristine texture(Tex_Clean)는 묵음 — "subtle erosion"
+    //              과 "pristine smooth surface" 가 같은 프롬프트에 공존하는 모순 차단.
+    //   forbiddenWeighted: persona.forbidden 의 "NO X, NO Y" 자연어를 SD 가중치
+    //              형식 "(X:1.5), (Y:1.5)" 로 변환 — Negative prompt 내에서 더 강한 영향.
+    // ─────────────────────────────────────────────────────────────────
+    const surfaceEn = (deformationDamage !== 'Damage_None' && strokeTexture === 'Tex_Clean')
+      ? destructionEn
+      : `${destructionEn}, ${textureEn}`;
+    const forbiddenWeighted = (activeCoreData.forbidden || '')
+      .split(',')
+      .map(s => s.trim().replace(/^NO\s+/i, '').trim())
+      .filter(Boolean)
+      .map(s => `(${s}:1.5)`)
+      .join(', ');
+
+    // ─────────────────────────────────────────────────────────────────
+    // 정교화 derived 필드 — 프롬프트 구조에 직접 영향.
+    //   Fix 1: auraBlock         — userAura 를 SD 가중치로 앞으로 승격 ((aura:1.35)).
+    //   Fix 2: preservationWeight / integrityTag — Validation 점수에 따라 동적.
+    //                              legibility < 70 이면 형태 보존 가중치를 1.5 → 1.7 로 올림.
+    //                              shapeIntegrity < 60 이면 별도 lock 토큰 삽입.
+    //   Fix 3: modeSpecificBlock — enhanceMode 별로 다른 구조 명령어 블록을 프롬프트 앞단에 주입.
+    //                              기존엔 modAllowed/Forbidden 텍스트 메타로만 반영돼서 deconstruct
+    //                              모드여도 출력 자체는 refine 과 거의 동일했음.
+    // ─────────────────────────────────────────────────────────────────
+    const scores = getValidationScores();
+    const preservationWeight = scores.legibility < 70 ? "1.7" : "1.5";
+    const integrityTag = scores.shapeIntegrity < 60
+      ? "(maximum shape integrity lock:1.8), "
+      : "";
+    const auraBlock = userAuraEn !== "Standard deployment"
+      ? `(${userAuraEn}:1.35), `
+      : "";
+    let modeSpecificBlock = "";
+    if (isEnhanceModeEnabled) {
+      if (enhanceMode === 'refine') {
+        modeSpecificBlock = "(pristine geometric precision:1.3), (optical balance:1.2), subtle serif refinement, minor cut sharpening, ";
+      } else if (enhanceMode === 'variation') {
+        modeSpecificBlock = "(stroke proportion variation:1.3), (counterform reinterpretation:1.2), partial letterform merging, dynamic weight contrast, ";
+      } else if (enhanceMode === 'deconstruct') {
+        modeSpecificBlock = "(aggressive stroke disassembly:1.5), (asymmetric fragmentation:1.4), (severe structural tension:1.3), emblemization tendency, intentional legibility sacrifice, ";
+      }
+    }
+
     return {
-      inputText, layoutEn, mmoSilhouetteEn, occupancyEn, aspectRatio, activeCoreData, weightEn, widthEn, proportionEn, kerningEn, letterConnEn, internalSpaceEn, terminalEn, sharpnessEn, cornerEn, extensionEn, userAuraEn, personaSliderValue, modIntensityEn, readabilityFloorEn, modAllowedEn, modForbiddenEn, momentumActive, kineticEn, slantEn, slicingEn, combatVectorEn, combatImpactZoneEn, combatDeformationEn, bgDescEn, destructionEn, troubleshootingBlockEn, cgTextInstruction, explicitTwoLineInstruction, optimizedBase, solidBgPrompt, isSlicingActive, activeGuardsEn, aspectRatioEn
+      inputText, layoutEn, mmoSilhouetteEn, mmoSurroundingElementEn, logoDegreeEn, textureEn, occupancyEn, aspectRatio, activeCoreData, weightEn, widthEn, proportionEn, kerningEn, letterConnEn, internalSpaceEn, terminalEn, sharpnessEn, cornerEn, extensionEn, userAuraEn, personaSliderValue, modIntensityEn, readabilityFloorEn, modAllowedEn, modForbiddenEn, momentumActive, kineticEn, slantEn, slicingEn, combatVectorEn, combatImpactZoneEn, combatDeformationEn, bgDescEn, destructionEn, troubleshootingBlockEn, cgTextInstruction, explicitTwoLineInstruction, optimizedBase, solidBgPrompt, isSlicingActive, activeGuardsEn, aspectRatioEn,
+      // derived (정교화)
+      preservationWeight, integrityTag, auraBlock, modeSpecificBlock, scores,
+      // derived (충돌 회피)
+      surfaceEn, forbiddenWeighted,
+      activeGuardsPositive, activeGuardsNegative,
     };
   };
 
@@ -799,6 +994,8 @@ Format: ONLY English, strict structural commands.`;
 - Stroke Body: ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn} proportion.
 - Joints & Flow: ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}.
 - Terminals & Edges: ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}.
+- Logo Character: ${ir.logoDegreeEn}.
+- Surface Texture: ${ir.textureEn}.
 - Design Aura (Normalized Intent): ${ir.userAuraEn}
 - Sub-Trait Focus: ${getSliderText(ir.personaSliderValue)}
 
@@ -820,6 +1017,7 @@ Format: ONLY English, strict structural commands.`;
 - 2D Vector Rule: STRICTLY flat 2D vector silhouette graphic. ZERO depth. NO lighting. NO shading.
 - Background Rule: Isolated on solid background. NO scenery. NO environmental elements.
 - Material Rule: NO colors, ZERO chroma. Strict monochrome (${ir.bgDescEn}).
+- Surrounding Decoration: ${ir.mmoSurroundingElementEn}.
 - Damage/Erosion: ${ir.destructionEn}
 
 [NEGATIVE PROMPT (STRICT PROHIBITIONS)]
@@ -829,20 +1027,38 @@ Format: ONLY English, strict structural commands.`;
 - NO illegible distortion falling below the Legibility Floor.
 - NO unrequested layout drifting or vertical squishing.${ir.troubleshootingBlockEn}`.trim();
 
+    // ChatGPT — 자연어. 사이드바 옵션 전체 커버 + 모디파이어/가드/momentum/surrounding 추가.
+    const cgModeBlock = isEnhanceModeEnabled ? ` Modifier mode is ${enhanceMode.toUpperCase()} (allow: ${ir.modAllowedEn} / forbid: ${ir.modForbiddenEn}).` : "";
+    const cgMomentumBlock = ir.momentumActive ? " Combat dynamics ENABLED — apply kinetic momentum and impact tension across stems." : "";
+    const cgGuardsBlock = ir.activeGuardsEn.length > 0 ? ` Active safety guards: ${ir.activeGuardsEn.join('; ')}.` : "";
     const chatGPTOutput = `Generate a masterpiece, ultra highres, insanely detailed 2D flat typography graphic for EXACTLY the text "${ir.inputText}".
 
 Aesthetic & Style: AAA game title aesthetic, pure 2D custom typography silhouette, logo-grade flat graphic (not a generic font, not a plain vector icon). ${ir.userAuraEn}.
-Morphology ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Implement ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}. Terminals should be ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}.
-Surface & Dynamics: Apply ${ir.destructionEn}. The text should show ${ir.kineticEn}, ${ir.slantEn}, and ${ir.slicingEn}.
+Morphology ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Implement ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}. Terminals should be ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}. Logo character: ${ir.logoDegreeEn}, silhouette framing: ${ir.mmoSilhouetteEn}.
+Surface & Dynamics: Apply ${ir.destructionEn} with ${ir.textureEn}. The text should show ${ir.kineticEn}, ${ir.slantEn}, and ${ir.slicingEn}.${cgMomentumBlock}
 Layout constraints: ${ir.layoutEn} Occupancy must be ${ir.occupancyEn}. Canvas size should be ${ir.aspectRatio}.
-Environment: MUST be isolated on a ${ir.solidBgPrompt}.
+Environment: MUST be isolated on a ${ir.solidBgPrompt}. Surrounding decoration: ${ir.mmoSurroundingElementEn}.${cgModeBlock}${cgGuardsBlock}
 CRITICAL NEGATIVE PROMPT: Absolutely NO 3D extrusion, NO shading, NO lighting, NO background scenery, NO gradients, NO realistic textures. Flawless silhouette boundary with sharp geometric corners and perfectly intact layout.`;
 
-    const midjourneyOutput = `An epic cinematic 2D flat typography graphic, ${ir.userAuraEn}, typography logotype for exactly the text "${ir.inputText.replace(/\n/g, ' ')}", ${ir.optimizedBase}, pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon, [${ir.activeCoreData.shortTitle}], ${ir.activeCoreData.language}, ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}, ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}, ${ir.destructionEn}, ${ir.kineticEn}, ${ir.slantEn}, ${ir.slicingEn}, ${ir.mmoSilhouetteEn}, ${ir.solidBgPrompt}, isolated on solid background, wide panoramic span, ${ir.layoutEn}, ${occupancy.replace('%', ' percent')} occupancy, --ar ${ir.aspectRatio.replace(':', ':')} --no 3d, depth, shading, lighting, realistic, shadow, volumetric, bevel, emboss, texture, background elements, scenery, gradient, color, generic font, plain vector, plain svg`;
+    // Midjourney — comma list. SD-style 가중치는 사용 안 함. mode/momentum/guards/surrounding/logo 추가.
+    const mjModeBlock = isEnhanceModeEnabled ? `, ${enhanceMode} mode typography` : "";
+    const mjMomentumBlock = ir.momentumActive ? ", kinetic combat momentum" : "";
+    const mjGuardsBlock = ir.activeGuardsEn.length > 0 ? `, ${ir.activeGuardsEn.join(', ')}` : "";
+    const midjourneyOutput = `An epic cinematic 2D flat typography graphic, ${ir.userAuraEn}${mjModeBlock}, typography logotype for exactly the text "${ir.inputText.replace(/\n/g, ' ')}", ${ir.optimizedBase}, pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon, [${ir.activeCoreData.shortTitle}], ${ir.activeCoreData.language}, ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}, ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}, ${ir.destructionEn}, ${ir.textureEn}, ${ir.kineticEn}${mjMomentumBlock}, ${ir.slantEn}, ${ir.slicingEn}, ${ir.mmoSilhouetteEn}, ${ir.logoDegreeEn}, ${ir.mmoSurroundingElementEn}, ${ir.solidBgPrompt}, isolated on solid background, wide panoramic span, ${ir.layoutEn}, ${occupancy.replace('%', ' percent')} occupancy${mjGuardsBlock}, --ar ${ir.aspectRatio.replace(':', ':')} --no 3d, depth, shading, lighting, realistic, shadow, volumetric, bevel, emboss, texture, background elements, scenery, gradient, color, generic font, plain vector, plain svg`;
 
-    const holeGuard = ir.isSlicingActive ? "" : "perfectly intact silhouette, absolutely NO holes through text. ";
-    const nanoBananaOutput = `An epic cinematic 2D flat typography graphic, macro photography, hyper-detailed single focal point, large typography, flat focal plane, strictly zero perspective distortion. ${ir.aspectRatioEn}${ir.explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${ir.weightEn}, ${ir.kerningEn}, ${ir.terminalEn}. The structure is modified by ${ir.kineticEn}, ${ir.slantEn}, and (${ir.slicingEn}:1.4). The surface is transformed by ${ir.destructionEn}, ${ir.optimizedBase}, ${ir.solidBgPrompt}. Highly legible, 95% shape preservation, AAA game title aesthetic. Flawless silhouette boundary, ${holeGuard}(pure 2D flat silhouette:1.5), ${ir.layoutEn}, ${ir.occupancyEn}, ${getSliderText(ir.personaSliderValue)}, ${ir.userAuraEn}, ${ir.activeGuardsEn.join(', ')}.
-Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), ${ir.activeCoreData.forbidden}`;
+    const holeGuard = ir.isSlicingActive ? "" : "(perfectly intact silhouette:1.4), absolutely NO holes through text. ";
+    const momentumTag = ir.momentumActive ? ", (kinetic combat momentum:1.3)" : "";
+    // 6차 정리 — 3D 베벨 잔존 / 일반 폰트화 / 표면 광택 문제 보강:
+    //   1. (custom hand-crafted lettering:1.4), (unique letterform design:1.3) — 모델이 입력
+    //      텍스트를 그냥 두꺼운 고딕체로 렌더링하는 기본 경향을 막기 위해 본문에 명시.
+    //   2. (absolutely flat fill:1.6), (no surface modulation:1.5) — 표면 음영/그라데이션 억제.
+    //   3. Negative: (bevel:1.8 → 2.0) + (emboss:2.0), (specular highlight:1.8),
+    //      (glossy surface:1.8), (surface modulation:1.5), (surface noise:1.5),
+    //      (generic font:1.6), (standard typeface:1.5) 추가.
+    //   ※ ControlNet (Canny/Lineart) 으로 실루엣 사전 고정이 가장 확실한 해법이지만, 그건
+    //     렌더링 백엔드 측 작업. 여기선 프롬프트만으로 최대한 억제.
+    const nanoBananaOutput = `An epic cinematic 2D flat typography graphic, ${ir.auraBlock}${ir.modeSpecificBlock}${ir.integrityTag}macro photography, hyper-detailed single focal point, (flat focal plane:1.4), (strictly zero perspective distortion:1.5). ${ir.aspectRatioEn}${ir.explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, (custom hand-crafted lettering:1.4), (unique letterform design:1.3), logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${ir.weightEn}, ${ir.widthEn}, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}. Terminals: ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}. Logo character: ${ir.logoDegreeEn}, framed as ${ir.mmoSilhouetteEn}. The structure is modified by ${ir.kineticEn}, ${ir.slantEn}, and (${ir.slicingEn}:1.4)${momentumTag}. The surface is transformed by ${ir.surfaceEn}. ${ir.optimizedBase}, ${ir.solidBgPrompt}. Surrounding: ${ir.mmoSurroundingElementEn}. ${holeGuard}(absolutely flat fill:1.6), (no surface modulation:1.5), (pure 2D flat silhouette:${ir.preservationWeight}), (95% shape preservation:1.3), ${ir.layoutEn}, ${ir.occupancyEn}, ${getSliderText(ir.personaSliderValue)}, ${ir.activeGuardsPositive.join(', ')}.
+Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (surface modulation:1.5), (surface noise:1.5), (generic font:1.6), (standard typeface:1.5), ${ir.forbiddenWeighted}${ir.activeGuardsNegative.length > 0 ? ', ' + ir.activeGuardsNegative.join(', ') : ''}`;
 
     return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput, nanoBananaOutput };
   };
@@ -869,20 +1085,28 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspecti
 
 [L4: MICRO-REFINEMENT MODIFIERS]
 - Framing/Alignment: ${ir.mmoSilhouetteEn}
+- Logo Character: ${ir.logoDegreeEn}
 - Scope: Edge refinement, surface detail, micro incision ONLY.
 - Stroke Mod: ${getOptionEn(staticOptions.editStrokeMods, editStrokeMod)}
 - Element Mod: ${getOptionEn(staticOptions.editElementMods, editElementMod)}
 - Surface Mod: ${getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod)}
+- Surface Texture: ${ir.textureEn}
 - Auto-Refine: ${autoRefineInstructionEn}
+- AI Recommendation: ${applyAiRecInEdit ? "ENABLED — apply persona-based auto-suggestions" : "DISABLED"}
 
 [L5: KINETIC & DAMAGE]
 - Kinetic Force: ${ir.kineticEn}
+- Slant: ${ir.slantEn}
+- Slicing: ${ir.slicingEn}
+- Corner Style: ${ir.cornerEn}
+- Combat Momentum: ${ir.momentumActive ? "ENABLED" : "DISABLED"}
 - Damage: ${ir.destructionEn}
 
 [L6: STYLE GUARDRAILS - CRITICAL 2D ENFORCEMENT]
 - 2D Vector Rule: STRICTLY flat 2D vector silhouette graphic. ZERO depth. NO lighting. NO shading.
 - Background Rule: Isolated on solid background. NO scenery. NO environmental elements.
 - Material Rule: NO colors. Strict monochrome (${ir.bgDescEn}).
+- Surrounding Decoration: ${ir.mmoSurroundingElementEn}.
 
 [NEGATIVE PROMPT (STRICT PROHIBITIONS)]
 - NO structure changes. NO layout drift.
@@ -890,19 +1114,37 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspecti
 - NO background scenery.
 - ${ir.activeCoreData.forbidden}${ir.troubleshootingBlockEn}`.trim();
 
+    // Edit 모드의 추가 옵션 블록 — Element Mod, AI 자동, Auto-refine, 가드/모디파이어/주변 등.
+    const editElementEn = getOptionEn(staticOptions.editElementMods, editElementMod);
+    const editStrokeEn = getOptionEn(staticOptions.editStrokeMods, editStrokeMod);
+    const editSurfaceEn = getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod);
+    const editModeBlock = isEnhanceModeEnabled ? ` Modifier mode is ${enhanceMode.toUpperCase()}.` : "";
+    const editMomentumBlock = ir.momentumActive ? " Combat momentum ENABLED — apply kinetic impact tension." : "";
+    const editGuardsBlock = ir.activeGuardsEn.length > 0 ? ` Guards: ${ir.activeGuardsEn.join('; ')}.` : "";
+    const editAiRecBlock = applyAiRecInEdit ? " AI persona-based auto-recommendation ENABLED." : "";
+
     const chatGPTOutput = `Act as an expert Typography Engine (V17 Edit Mode). Redraw the provided reference image into a masterpiece, ultra highres, insanely detailed 2D flat typography graphic. STRICTLY MAINTAIN basic shape (95-98% silhouette preservation lock). Maximum deformation ${ir.modIntensityEn}.
 
 Aesthetic & Style: AAA game title aesthetic, pure 2D custom typography silhouette, logo-grade flat graphic (not generic font, not plain vector icon). ${instruction} ${getSliderText(ir.personaSliderValue)}.
-Micro-Refinements ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Apply Stroke(${getOptionEn(staticOptions.editStrokeMods, editStrokeMod)}) and Surface(${getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod)}).
-Dynamics: ${ir.kineticEn}, ${ir.destructionEn}.
-Environment: ${ir.solidBgPrompt}. Readability floor ${ir.readabilityFloorEn}.
+Micro-Refinements ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Apply Stroke(${editStrokeEn}), Element(${editElementEn}), Surface(${editSurfaceEn}). Logo character: ${ir.logoDegreeEn}, silhouette framing: ${ir.mmoSilhouetteEn}. Surface texture: ${ir.textureEn}.
+Dynamics: ${ir.kineticEn}, ${ir.slantEn}, ${ir.slicingEn}, corners ${ir.cornerEn}, damage ${ir.destructionEn}.${editMomentumBlock}
+Environment: ${ir.solidBgPrompt}. Surrounding decoration: ${ir.mmoSurroundingElementEn}. Readability floor ${ir.readabilityFloorEn}. Auto-refine: ${autoRefineInstructionEn}.${editAiRecBlock}${editModeBlock}${editGuardsBlock}
 CRITICAL NEGATIVE PROMPT: Absolutely NO 3D extrusion, NO shading, NO lighting, NO background scenery, NO gradients. Flawless silhouette boundary.`;
 
-    const midjourneyOutput = `[UPLOAD BASE IMAGE AS REFERENCE] An epic cinematic 2D flat typography graphic, image-to-image edit, exact structural foundation, ${ir.userAuraEn}, ${ir.optimizedBase}, pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon, [${ir.activeCoreData.shortTitle}], ${ir.activeCoreData.language}, ${ir.solidBgPrompt}, isolated on solid background, ${getOptionEn(staticOptions.editStrokeMods, editStrokeMod)}, ${getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod)}, ${ir.kineticEn}, wide panoramic span, --ar 16:9 --iw 1.5 --style raw --no 3d, depth, shading, lighting, realistic, shadow, volumetric, bevel, emboss, texture, background elements, scenery, gradient, color, generic font, plain vector, plain svg`;
+    const editMjModeBlock = isEnhanceModeEnabled ? `, ${enhanceMode} mode` : "";
+    const editMjMomentumBlock = ir.momentumActive ? ", kinetic combat momentum" : "";
+    const editMjGuardsBlock = ir.activeGuardsEn.length > 0 ? `, ${ir.activeGuardsEn.join(', ')}` : "";
+    const midjourneyOutput = `[UPLOAD BASE IMAGE AS REFERENCE] An epic cinematic 2D flat typography graphic, image-to-image edit, exact structural foundation, ${ir.userAuraEn}${editMjModeBlock}, ${ir.optimizedBase}, pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon, [${ir.activeCoreData.shortTitle}], ${ir.activeCoreData.language}, ${ir.solidBgPrompt}, isolated on solid background, ${editStrokeEn}, ${editElementEn}, ${editSurfaceEn}, ${ir.textureEn}, ${ir.kineticEn}${editMjMomentumBlock}, ${ir.slantEn}, ${ir.slicingEn}, ${ir.cornerEn}, ${ir.destructionEn}, ${ir.logoDegreeEn}, ${ir.mmoSilhouetteEn}, ${ir.mmoSurroundingElementEn}, wide panoramic span${editMjGuardsBlock}, --ar 16:9 --iw 1.5 --style raw --no 3d, depth, shading, lighting, realistic, shadow, volumetric, bevel, emboss, texture, background elements, scenery, gradient, color, generic font, plain vector, plain svg`;
 
     const holeGuard = ir.isSlicingActive ? "" : "perfectly intact silhouette, absolutely NO holes through text. ";
-    const nanoBananaOutput = `[UPLOAD BASE IMAGE AS REFERENCE] An epic cinematic 2D flat typography graphic, macro photography, hyper-detailed single focal point, flat focal plane, strictly zero perspective distortion. Image-to-image edit, strictly maintain basic shape, (95-98% silhouette preservation lock:1.5). ${ir.aspectRatioEn}The text is crafted as a pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${getOptionEn(staticOptions.editStrokeMods, editStrokeMod)}, ${getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod)}. The structure is modified by ${ir.kineticEn}, ${ir.slantEn}, and (${ir.slicingEn}:1.4). The surface is transformed by ${ir.destructionEn}, ${ir.optimizedBase}, ${ir.solidBgPrompt}. Highly legible, AAA game title aesthetic. Flawless silhouette boundary. ${holeGuard}(pure 2D flat silhouette:1.5), ${getSliderText(ir.personaSliderValue)}, ${instruction}, ${ir.activeGuardsEn.join(', ')}.
-Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), ${ir.activeCoreData.forbidden}`;
+    const momentumTag = ir.momentumActive ? ", (kinetic combat momentum:1.3)" : "";
+    // Edit 전용 auraBlock — editInstruction 을 가중치로 승격. 기본 fallback 문구면 생략.
+    const editAuraBlock = editInstruction
+      ? `(${instruction}:1.35), `
+      : "";
+    // Edit 모드 nanoBanana 도 동일한 베벨/광택/일반폰트 억제 강화 적용 (6차 정리).
+    const nanoBananaOutput = `[UPLOAD BASE IMAGE AS REFERENCE] An epic cinematic 2D flat typography graphic, ${editAuraBlock}${ir.modeSpecificBlock}${ir.integrityTag}macro photography, hyper-detailed single focal point, (flat focal plane:1.4), (strictly zero perspective distortion:1.5). Image-to-image edit, strictly maintain basic shape, (95-98% silhouette preservation lock:${ir.preservationWeight}). ${ir.aspectRatioEn}The text is crafted as a pure 2D custom typography silhouette, (custom hand-crafted lettering:1.4), (unique letterform design:1.3), logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${editStrokeEn}, ${editElementEn}, ${editSurfaceEn}. Logo character: ${ir.logoDegreeEn}, framed as ${ir.mmoSilhouetteEn}. The structure is modified by ${ir.kineticEn}, ${ir.slantEn}, ${ir.cornerEn}, and (${ir.slicingEn}:1.4)${momentumTag}. The surface is transformed by ${ir.surfaceEn}. ${ir.optimizedBase}, ${ir.solidBgPrompt}. Surrounding: ${ir.mmoSurroundingElementEn}. ${holeGuard}(absolutely flat fill:1.6), (no surface modulation:1.5), (pure 2D flat silhouette:${ir.preservationWeight}), ${getSliderText(ir.personaSliderValue)}, ${ir.activeGuardsPositive.join(', ')}.
+Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (surface modulation:1.5), (surface noise:1.5), (generic font:1.6), (standard typeface:1.5), ${ir.forbiddenWeighted}${ir.activeGuardsNegative.length > 0 ? ', ' + ir.activeGuardsNegative.join(', ') : ''}`;
 
     return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput, nanoBananaOutput };
   };
@@ -974,6 +1216,7 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspecti
     activePurpose, setActivePurpose,
     coreArchetype, setCoreArchetype,
     coreDropdownOpen, setCoreDropdownOpen,
+    scriptType, setScriptType, handleScriptPresetChange,
     isAdvancedOptionsEnabled, setIsAdvancedOptionsEnabled,
     isEnhanceModeEnabled, setIsEnhanceModeEnabled,
     enhanceMode, setEnhanceMode,
@@ -1005,6 +1248,7 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:1.8), (perspecti
     mmoSurroundingElement, setMmoSurroundingElement,
     dynamicOptions, setDynamicOptions,
     customDesignInjections, setCustomDesignInjections,
+    customDesignInjectionsEn, isTranslatingAura,   // UI 인디케이터/디버깅용 (사이드바에 "EN 번역됨" 등 표시 가능).
     activeGuards, setActiveGuards, toggleGuard,
     // 결과 & 컴파일
     dramaticPrompt, mjOptimizedPrompt, cgEnhancedPrompt,

@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Typecore Sovereign · Prompt Tuning Workbench</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #0a0a0c; color: #e4e4e7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans KR", sans-serif; font-size: 13px; line-height: 1.5; }
+  header { padding: 16px 24px; border-bottom: 1px solid #1f1f23; background: #111114; position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 16px; font-weight: 700; color: #fafafa; flex: 1; min-width: 200px; }
+  header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  header button { padding: 6px 12px; border: 1px solid #3f3f46; background: #18181b; color: #e4e4e7; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; }
+  header button:hover { background: #27272a; border-color: #52525b; }
+  header button.primary { background: #6366f1; border-color: #6366f1; color: white; }
+  header button.primary:hover { background: #5558e3; }
+  .toast { position: fixed; top: 70px; right: 20px; padding: 10px 16px; background: #10b981; color: white; border-radius: 6px; z-index: 100; font-size: 12px; font-weight: 600; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+  main { display: grid; grid-template-columns: minmax(360px, 1fr) minmax(400px, 1.5fr); gap: 1px; background: #1f1f23; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  .panel { background: #0c0c0f; padding: 16px; overflow-y: auto; max-height: calc(100vh - 65px); }
+  .panel h2 { margin: 0 0 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #71717a; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #71717a; margin-bottom: 4px; }
+  .field select, .field input, .field textarea { width: 100%; padding: 6px 8px; background: #18181b; border: 1px solid #27272a; border-radius: 4px; color: #e4e4e7; font-family: inherit; font-size: 12px; }
+  .field select:focus, .field input:focus, .field textarea:focus { outline: none; border-color: #6366f1; }
+  .field textarea { resize: vertical; min-height: 60px; font-family: "JetBrains Mono", monospace; }
+  .field-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .guards { display: flex; flex-wrap: wrap; gap: 6px; }
+  .guards label { display: flex; align-items: center; gap: 4px; padding: 4px 8px; background: #18181b; border: 1px solid #27272a; border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .guards label.on { background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.4); color: #6ee7b7; }
+  .guards input { display: none; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #18181b; border: 1px solid #27272a; border-radius: 4px; cursor: pointer; }
+  .toggle-row.on { background: rgba(99, 102, 241, 0.1); border-color: rgba(99, 102, 241, 0.4); }
+  pre.prompt { background: #050507; border: 1px solid #1f1f23; border-radius: 6px; padding: 12px; font-family: "JetBrains Mono", "Consolas", monospace; font-size: 11px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: #d4d4d8; max-height: 60vh; overflow-y: auto; }
+  pre.prompt .pos { color: #93c5fd; }
+  pre.prompt .neg { color: #fca5a5; }
+  .ed-section { background: #050507; border: 1px solid #1f1f23; border-radius: 6px; margin-bottom: 8px; }
+  .ed-section summary { padding: 8px 12px; cursor: pointer; font-size: 11px; font-weight: 700; color: #a1a1aa; text-transform: uppercase; letter-spacing: 0.08em; user-select: none; }
+  .ed-section[open] summary { border-bottom: 1px solid #1f1f23; color: #fafafa; }
+  .ed-rows { padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .ed-row { display: grid; grid-template-columns: 130px 1fr; gap: 8px; align-items: start; font-size: 11px; }
+  .ed-row .ko { padding-top: 5px; color: #d4d4d8; font-weight: 500; }
+  .ed-row .ko .id { display: block; font-size: 9px; color: #52525b; font-family: monospace; }
+  .ed-row textarea { width: 100%; padding: 5px 7px; background: #18181b; border: 1px solid #27272a; border-radius: 3px; color: #e4e4e7; font-family: "JetBrains Mono", monospace; font-size: 11px; line-height: 1.4; resize: vertical; min-height: 28px; }
+  .ed-row textarea:focus { outline: none; border-color: #6366f1; background: #1c1c20; }
+  .ed-row textarea.changed { border-color: #fbbf24; background: rgba(251, 191, 36, 0.05); }
+  .footnote { font-size: 11px; color: #71717a; padding: 16px; line-height: 1.7; border-top: 1px solid #1f1f23; background: #0a0a0c; }
+  .footnote code { background: #18181b; padding: 1px 5px; border-radius: 3px; font-size: 10px; color: #d4d4d8; }
+  .badge { display: inline-block; padding: 1px 6px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border-radius: 3px; font-size: 9px; font-weight: 700; margin-left: 4px; }
+  .change-count { font-size: 10px; color: #fbbf24; padding: 2px 8px; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Typecore Sovereign · Prompt Tuning Workbench</h1>
+  <span id="changeCount" class="change-count" style="display:none">0 변경됨</span>
+  <div class="actions">
+    <button id="btnCopyPrompt" class="primary">📋 프롬프트 복사</button>
+    <button id="btnCopyOptions">📤 옵션 JSON 복사</button>
+    <button id="btnImport">📥 JSON 가져오기</button>
+    <button id="btnReset">↺ 초기화</button>
+  </div>
+</header>
+
+<div id="toast" class="toast"></div>
+
+<main>
+  <section class="panel">
+    <h2>현재 설정 (테스트할 옵션 조합)</h2>
+
+    <div class="field">
+      <label>텍스트</label>
+      <input id="inputText" type="text" value="데스나이트">
+    </div>
+
+    <div class="field">
+      <label>Aura (영문 — 한국어면 사용자가 직접 영문으로 변환)</label>
+      <textarea id="customAura" placeholder="empty = Standard deployment"></textarea>
+    </div>
+
+    <div class="field">
+      <label>Mass ↔ Sharpness Slider <span id="sliderVal" style="color:#a5b4fc;">50</span></label>
+      <input id="sliderVal_input" type="range" min="0" max="100" value="50">
+    </div>
+
+    <div class="field">
+      <label>Director Persona</label>
+      <select id="coreArchetype"></select>
+    </div>
+
+    <div class="field-group">
+      <div class="field"><label>Aspect Ratio</label><select id="aspectRatio"></select></div>
+      <div class="field"><label>Layout</label><select id="layoutType"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Occupancy</label><select id="occupancy"></select></div>
+      <div class="field"><label>Silhouette Framing</label><select id="mmoSilhouetteFraming"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Stem Weight</label><select id="stemWeight"></select></div>
+      <div class="field"><label>Width</label><select id="charWidth"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Proportion</label><select id="charProportion"></select></div>
+      <div class="field"><label>Kerning</label><select id="kerning"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Letter Connection</label><select id="letterConnection"></select></div>
+      <div class="field"><label>Internal Space</label><select id="internalSpace"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Logo Degree</label><select id="logoDegree"></select></div>
+      <div class="field"><label>Terminal Style</label><select id="terminalStyle"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Sharpness</label><select id="strokeSharpness"></select></div>
+      <div class="field"><label>Corner Style</label><select id="cornerStyle"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Stroke Extension</label><select id="strokeExtension"></select></div>
+      <div class="field"><label>Texture</label><select id="strokeTexture"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Kinetic Velocity</label><select id="kineticVelocity"></select></div>
+      <div class="field"><label>Slant Angle</label><select id="slantAngle"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Slicing Intensity</label><select id="slicingIntensity"></select></div>
+      <div class="field"><label>Deformation Damage</label><select id="deformationDamage"></select></div>
+    </div>
+    <div class="field-group">
+      <div class="field"><label>Base Style (bg)</label><select id="baseStyle"></select></div>
+      <div class="field"><label>Surrounding</label><select id="mmoSurroundingElement"></select></div>
+    </div>
+
+    <div class="field">
+      <label>Enhance Mode</label>
+      <div class="field-group" style="grid-template-columns: auto 1fr; align-items:center;">
+        <div class="toggle-row" id="enhanceToggle"><input id="enhanceEnabled" type="checkbox" checked><span>활성</span></div>
+        <select id="enhanceMode">
+          <option value="refine">refine</option>
+          <option value="variation">variation</option>
+          <option value="deconstruct">deconstruct</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Combat Momentum</label>
+      <div class="toggle-row" id="momentumToggle"><input id="momentumActive" type="checkbox"><span>활성</span></div>
+    </div>
+
+    <div class="field">
+      <label>Active Guards</label>
+      <div id="guardsBox" class="guards"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>nanoBananaOutput (SD/Imagen 용 최종 프롬프트)</h2>
+    <pre id="promptOut" class="prompt"></pre>
+  </section>
+</main>
+
+<section class="footnote" style="padding: 0;">
+  <div style="padding: 16px 24px; border-top: 1px solid #1f1f23;">
+    <h2 style="margin: 0 0 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #71717a;">
+      옵션 en 값 직접 편집 (Gemini 에 보낼 데이터)
+    </h2>
+    <p style="font-size: 11px; color: #71717a; margin: 0 0 12px;">
+      각 옵션의 영문 description 을 직접 수정하면 프롬프트가 실시간으로 갱신됩니다.
+      변경된 값은 <code>📤 옵션 JSON 복사</code> 로 export → Gemini 에 붙여넣고 개선 제안 받기 →
+      Gemini 가 준 JSON 을 <code>📥 JSON 가져오기</code> 로 import → 마음에 들면 그 JSON 을
+      <code>src/apps/TypecoreSovereign/versions/current/constants/options.js</code> 와
+      <code>personas.jsx</code> 에 수동 반영.
+    </p>
+    <div id="editorBox"></div>
+  </div>
+</section>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────
+// 데이터 — current 의 staticOptions / coreArchetypes / safetyGuards 스냅샷.
+// ─────────────────────────────────────────────────────────────────────
+const DEFAULT_DATA = {
+  options: {
+    occupancies: [
+      { id: "40%", name: "40% 억제", en: "(bold typography centered with expansive negative space:1.4), (text occupying 40-50% of canvas width:1.3), vast negative space margins" },
+      { id: "50%", name: "50% 표준", en: "(generous negative space margins:1.3), perfectly centered balanced layout" },
+      { id: "65%", name: "65% 확장", en: "moderate margins, screen filling text layout" },
+      { id: "80%", name: "80% 최대", en: "(extreme tight margins:1.4), (massive text pushing canvas edges:1.4)" }
+    ],
+    layouts: [
+      { id: "1Line", name: "1줄 수평 강제", en: "single horizontal row typography" },
+      { id: "2Lines", name: "2줄 상하 정렬", en: "Two-tier vertical stacked composition." },
+      { id: "TitleSub", name: "메인(상) + 서브(하)", en: "Hierarchical composition. Main title on top." },
+      { id: "SubTitle", name: "서브(상) + 메인(하)", en: "Hierarchical composition. Subtitle on top." },
+      { id: "Center", name: "중앙 집중형", en: "Centralized balanced composition." }
+    ],
+    ratios: [
+      { id: "16:9", name: "16:9 와이드", en: "16:9" },
+      { id: "1:1", name: "1:1 스퀘어", en: "1:1" },
+      { id: "9:16", name: "9:16 세로형", en: "9:16" },
+      { id: "2.76:1", name: "2.76:1 시네마틱", en: "2.76:1" }
+    ],
+    proportions: [
+      { id: "P_Std", name: "기본형 (정방형)", en: "(balanced letterform skeleton with natural horizontal proportions:1.4)" },
+      { id: "P_Condensed", name: "압축형 (세로장평)", en: "condensed tall aspect ratio, narrow vertical stems" },
+      { id: "P_Extended", name: "확장형 (가로장평)", en: "(extended wide panoramic letterforms:1.5), heavily stretched horizontally" }
+    ],
+    MMOSilhouetteFramings: [
+      { id: "Auto", name: "자동", en: "Automatic silhouette framing" },
+      { id: "Horizontal", name: "수평형", en: "Strict horizontal alignment framing" },
+      { id: "Compressed", name: "압축형", en: "Tightly compressed inner structure framing" },
+      { id: "Expanded", name: "확장형", en: "Outwardly expanded wing-like framing" },
+      { id: "Emblem", name: "엠블럼형", en: "Cohesive unified emblem framing" }
+    ],
+    MMOSurroundingElements: [
+      { id: "Clean", name: "없음", en: "NO surrounding VFX, perfectly clean canvas" },
+      { id: "FloatingRunes", name: "부유하는 룬", en: "Floating geometric runes around text" },
+      { id: "Shattered", name: "파괴된 파편", en: "Shattered stone and metal debris floating" },
+      { id: "RadialSpikes", name: "마법 방사선", en: "Sharp radial energy spikes" }
+    ],
+    stemWeights: [
+      { id: "Stem_Light", name: "가벼움", en: "light razor thin stems" },
+      { id: "Stem_Std", name: "표준", en: "medium balanced stems" },
+      { id: "Stem_Heavy", name: "묵직함", en: "heavy thick stems" },
+      { id: "Stem_Ultra", name: "초중량", en: "massive ultra heavy block stems" }
+    ],
+    widths: [
+      { id: "Narrow", name: "좁게", en: "condensed slim width" },
+      { id: "Normal", name: "표준", en: "standard balanced width" },
+      { id: "Wide", name: "넓게", en: "wide expansive width" },
+      { id: "UltraWide", name: "초광폭", en: "ultra wide panoramic width" }
+    ],
+    kerningOptions: [
+      { id: "Kern_Loose", name: "여유", en: "wide loose spacing" },
+      { id: "Kern_Std", name: "표준", en: "standard balanced kerning" },
+      { id: "Kern_Tight", name: "타이트", en: "tight kerning" },
+      { id: "Kern_Overlap", name: "초밀착", en: "high density overlapping letters" }
+    ],
+    letterConnections: [
+      { id: "Conn_Indep", name: "독립형", en: "Cleanly separated individual characters" },
+      { id: "Conn_Tight", name: "밀착형", en: "Tightly packed characters" },
+      { id: "Conn_Partial", name: "부분 결합", en: "Partially merged letter structures" },
+      { id: "Conn_Full", name: "완전 결합", en: "Fully fused typographic emblem" }
+    ],
+    internalSpaces: [
+      { id: "Space_Loose", name: "여유", en: "Spacious internal negative space counters" },
+      { id: "Space_Std", name: "표준", en: "Standard internal space" },
+      { id: "Space_Dense", name: "조밀", en: "Dense complex internal structures" },
+      { id: "Space_Closed", name: "폐쇄적", en: "Closed solid internal mass, completely filled counters" }
+    ],
+    logoDegrees: [
+      { id: "Logo_Low", name: "텍스트 중심", en: "Text-focused typography" },
+      { id: "Logo_Std", name: "표준 로고타입", en: "Standard logotype" },
+      { id: "Logo_High", name: "강한 로고화", en: "Highly stylized logotype" },
+      { id: "Logo_Emblem", name: "완전 엠블럼형", en: "Unified emblem structure" }
+    ],
+    terminalStyles: [
+      { id: "Term_Clean", name: "단면형", en: "clean flat terminals" },
+      { id: "Term_Chisel", name: "조각형", en: "(sharp chisel-cut terminals:1.3), acute terminal angles" },
+      { id: "Term_Blade", name: "칼날형", en: "(razor-sharp blade tip terminals:1.4), blade-sharp stroke endings, acute terminal angles" },
+      { id: "Term_Slab", name: "석판형", en: "heavy slab serifs" },
+      { id: "Term_Flare", name: "플레어", en: "elegant flared terminals" },
+      { id: "Term_Round", name: "라운드", en: "smooth rounded terminals" },
+      { id: "Term_Serif", name: "세리프", en: "classic serif" },
+      { id: "Term_Thorn", name: "가시 삐침", en: "(sharp thorn terminals:1.3), acute thorn angles" },
+      { id: "Term_Claw", name: "악마 발톱", en: "demonic claw terminals" },
+      { id: "Term_BrushFray", name: "필선형", en: "frayed brush terminals" }
+    ],
+    strokeSharpness: [
+      { id: "Sharp_Soft", name: "부드러움", en: "softened edges" },
+      { id: "Sharp_Std", name: "표준", en: "crisp clean edges" },
+      { id: "Sharp_Crisp", name: "날카로움", en: "(sharp clean lines:1.3)" },
+      { id: "Sharp_Razor", name: "극예리", en: "(micro-chiseled razor-sharp edges:1.4)" }
+    ],
+    cornerStyles: [
+      { id: "Corner_Right", name: "직각", en: "sharp 90-degree right-angle corners" },
+      { id: "Corner_Round", name: "둥근형", en: "smooth rounded corners" },
+      { id: "Corner_Wedge", name: "쐐기형", en: "wedge-shaped corners" },
+      { id: "Corner_Blade", name: "칼날형", en: "blade-like pointed corners" }
+    ],
+    strokeExtensions: [
+      { id: "Ext_None", name: "연장 없음", en: "contained terminals" },
+      { id: "Ext_Elegant", name: "유려한 연장", en: "elegant tapered extensions" },
+      { id: "Ext_Razor", name: "날카로운 끝단", en: "razor-sharp stroke tails" },
+      { id: "Ext_Infinite", name: "무한 확장", en: "hyper-extended stroke ends" }
+    ],
+    strokeTextures: [
+      { id: "Tex_Clean", name: "완전 매끄러움", en: "perfectly smooth pristine vector surface" },
+      { id: "Tex_Frayed", name: "필선 갈라짐", en: "frayed ink texture" },
+      { id: "Tex_Scorched", name: "탄화된 필선", en: "scorched etched texture" },
+      { id: "Tex_Subtle", name: "미세 침식", en: "subtle weathered micro-erosion" },
+      { id: "Tex_DryBrush", name: "건조한 붓결", en: "dry brush strokes" }
+    ],
+    kineticVelocities: [
+      { id: "Vel_Static", name: "정중동", en: "perfectly still, static form" },
+      { id: "Vel_Swift", name: "질주", en: "dynamic forward momentum" },
+      { id: "Vel_Slashing", name: "격베기", en: "aggressive slashing momentum" }
+    ],
+    slantAngles: [
+      { id: "Slant_0", name: "0도", en: "perfect verticality" },
+      { id: "Slant_Forward", name: "15도", en: "15-degree dynamic slant" },
+      { id: "Slant_Extreme", name: "25도", en: "Aggressive 25-degree slant" }
+    ],
+    slicingIntensities: [
+      { id: "Slic_None", name: "절단 없음", en: "intact strokes" },
+      { id: "Slic_Partial", name: "부분 절단", en: "micro-incisions and structural cuts" },
+      { id: "Slic_Diagonal", name: "사선 절단", en: "diagonal slicing" },
+      { id: "Slic_Deep", name: "깊은 절단", en: "deep structural severance" },
+      { id: "Slic_Total", name: "전체 절단", en: "massive severance" }
+    ],
+    deformationDamages: [
+      { id: "Damage_None", name: "상태 깨끗함", en: "pristine solid form, zero damage" },
+      { id: "Damage_Erosion", name: "미세 침식", en: "(subtle surface grain texture:1.2)" },
+      { id: "Damage_Cracking", name: "균열과 실금", en: "(intricate 2D crack pattern:1.3)" }
+    ],
+    base: [
+      { id: "BlackWhite", name: "블랙 / 화이트", en: "JET BLACK Background, RADIANT WHITE Subject" },
+      { id: "WhiteBlack", name: "화이트 / 블랙", en: "STARK WHITE Background, SOLID BLACK Subject" }
+    ]
+  },
+  personas: [
+    { id: "core_fortress", name: "🎮 게임 아트 디렉터", weightTags: "(massive architectural pillar stems:1.5), (hammered geometric surface pattern:1.3), (impenetrable thick monolithic structure:1.4), heavy bottom-heavy industrial mass", forbidden: "NO extreme thin lines, NO fragile broken elements, NO fluid organic curves, NO playful rounded shapes, NO calligraphic flourishes, NO neon glow" },
+    { id: "core_blade", name: "⚔️ 다크 판타지", weightTags: "(extreme thick-thin stroke contrast:1.5), (razor-sharp blade incisive terminals:1.5), (aggressive space-slashing diagonal cuts:1.4), weaponized lethal geometry", forbidden: "NO soft rounded corners, NO heavy uniform blocky mass, NO decorative floral ornaments, NO classical serifs, NO calligraphic curves, NO playful shapes" },
+    { id: "core_relic", name: "🏛️ 히스토리", weightTags: "(irregular ancient eroded silhouette:1.5), (time-weathered broken symmetry:1.4), (intricate hairline 2D cracks:1.3), patina and oxidation", forbidden: "NO perfectly pristine modern vectors, NO sci-fi futuristic clean lines, NO flawless symmetry, NO neon glow, NO smooth glossy surfaces, NO playful rounded shapes" },
+    { id: "core_glyph", name: "🔡 타이포그래퍼", weightTags: "(highly fused symbolic emblem structure:1.5), (closed internal negative space counters:1.4), heraldic monogram seal, refined optical balance", forbidden: "NO widely separated letters, NO loose airy spacing, NO simple handwriting, NO motion streaks, NO scattered debris, NO weathered damage" },
+    { id: "core_kinetic", name: "⚡ 모션", weightTags: "(aggressive forward directional momentum:1.5), (fluid asymmetric trailing rhythm:1.4), (aerodynamic swept-back structure:1.3), implied velocity streaks", forbidden: "NO static perfectly vertical alignment, NO stiff blocky stability, NO heavy uniform weight, NO calligraphic ornaments, NO classical serifs" }
+  ],
+  guards: [
+    { id: "guard_mutation", label: "텍스트 보존", fixEn: "(perfectly intact text legibility:1.4), (100% correct spelling:1.5), absolutely NO missing letters" },
+    { id: "guard_3d", label: "2D 평면", fixEn: "(zero depth flat 2D geometry:1.5), NO rear extrusion, NO volumetric form" },
+    { id: "guard_layout", label: "세로 붕괴", fixEn: "(strictly normal horizontal text proportions:1.5), (perfect text baseline:1.4), NO vertical stretching, NO tall letters" },
+    { id: "guard_noise", label: "VFX 억제", fixEn: "(clear cutout text shape:1.4), (flawless silhouette boundary:1.5), NO floating noise" }
+  ]
+};
+
+// 현재 작업 중인 데이터 (사용자가 en 편집 시 여기 반영됨)
+let DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
+
+// UI 상태 (사용자가 어떤 옵션을 선택했는지)
+const STATE = {
+  inputText: "데스나이트",
+  customAura: "",
+  sliderVal: 50,
+  coreArchetype: "core_fortress",
+  aspectRatio: "16:9",
+  layoutType: "Center",
+  occupancy: "50%",
+  mmoSilhouetteFraming: "Emblem",
+  stemWeight: "Stem_Heavy",
+  charWidth: "Normal",
+  charProportion: "P_Std",
+  kerning: "Kern_Std",
+  letterConnection: "Conn_Indep",
+  internalSpace: "Space_Std",
+  logoDegree: "Logo_Std",
+  terminalStyle: "Term_Chisel",
+  strokeSharpness: "Sharp_Std",
+  cornerStyle: "Corner_Right",
+  strokeExtension: "Ext_None",
+  strokeTexture: "Tex_Clean",
+  kineticVelocity: "Vel_Static",
+  slantAngle: "Slant_0",
+  slicingIntensity: "Slic_None",
+  deformationDamage: "Damage_None",
+  baseStyle: "BlackWhite",
+  mmoSurroundingElement: "Clean",
+  enhanceEnabled: true,
+  enhanceMode: "refine",
+  momentumActive: false,
+  activeGuards: ["guard_mutation", "guard_3d", "guard_layout", "guard_noise"]
+};
+
+// ─────────────────────────────────────────────────────────────────────
+// 유틸
+// ─────────────────────────────────────────────────────────────────────
+function getEn(list, id) { return (list.find(o => o.id === id) || {}).en || ""; }
+function getOption(list, id) { return list.find(o => o.id === id); }
+function getPersona(id) { return DATA.personas.find(p => p.id === id) || DATA.personas[0]; }
+function getSliderText(v) {
+  if (v < 35) return "(extreme heavy mass and solid monumentality:1.3)";
+  if (v > 65) return "(extreme razor-sharp incisive edges:1.3)";
+  return "balanced equilibrium between mass and sharpness";
+}
+function splitGuardEn(fixEn) {
+  const tokens = (fixEn || '').split(',').map(s => s.trim()).filter(Boolean);
+  const pos = tokens.filter(t => !/^NO\s+/i.test(t));
+  const neg = tokens.filter(t => /^NO\s+/i.test(t)).map(t => `(${t.replace(/^NO\s+/i, '').trim()}:1.5)`);
+  return { pos, neg };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// nanoBananaOutput 빌더 (current 의 buildPromptIR + buildPrompts 단순화 버전)
+// ─────────────────────────────────────────────────────────────────────
+function buildPrompt() {
+  const O = DATA.options;
+  const persona = getPersona(STATE.coreArchetype);
+  const userAuraEn = STATE.customAura.trim() || "Standard deployment";
+
+  // aura/mode/integrity 블록
+  const auraBlock = userAuraEn !== "Standard deployment" ? `(${userAuraEn}:1.35), ` : "";
+  let modeBlock = "";
+  if (STATE.enhanceEnabled) {
+    if (STATE.enhanceMode === 'refine')      modeBlock = "(pristine geometric precision:1.3), (optical balance:1.2), subtle serif refinement, minor cut sharpening, ";
+    else if (STATE.enhanceMode === 'variation')  modeBlock = "(stroke proportion variation:1.3), (counterform reinterpretation:1.2), partial letterform merging, dynamic weight contrast, ";
+    else if (STATE.enhanceMode === 'deconstruct') modeBlock = "(aggressive stroke disassembly:1.5), (asymmetric fragmentation:1.4), (severe structural tension:1.3), emblemization tendency, intentional legibility sacrifice, ";
+  }
+  // integrityTag 는 Validation 점수 필요 — 워크벤치에선 단순화
+  const integrityTag = "";
+
+  // option en
+  const weightEn = getEn(O.stemWeights, STATE.stemWeight);
+  const widthEn = getEn(O.widths, STATE.charWidth);
+  const proportionEn = getEn(O.proportions, STATE.charProportion);
+  const kerningEn = getEn(O.kerningOptions, STATE.kerning);
+  const letterConnEn = getEn(O.letterConnections, STATE.letterConnection);
+  const internalSpaceEn = getEn(O.internalSpaces, STATE.internalSpace);
+  const terminalEn = getEn(O.terminalStyles, STATE.terminalStyle);
+  const sharpnessEn = getEn(O.strokeSharpness, STATE.strokeSharpness);
+  const cornerEn = getEn(O.cornerStyles, STATE.cornerStyle);
+  const extensionEn = getEn(O.strokeExtensions, STATE.strokeExtension);
+  const logoDegreeEn = getEn(O.logoDegrees, STATE.logoDegree);
+  const mmoSilhouetteEn = getEn(O.MMOSilhouetteFramings, STATE.mmoSilhouetteFraming);
+  const kineticEn = getEn(O.kineticVelocities, STATE.kineticVelocity);
+  const slantEn = getEn(O.slantAngles, STATE.slantAngle);
+  const slicingEn = getEn(O.slicingIntensities, STATE.slicingIntensity);
+  const destructionEn = getEn(O.deformationDamages, STATE.deformationDamage);
+  const textureEn = getEn(O.strokeTextures, STATE.strokeTexture);
+  const occupancyEn = getEn(O.occupancies, STATE.occupancy);
+  const layoutEn = getEn(O.layouts, STATE.layoutType);
+  const mmoSurroundEn = getEn(O.MMOSurroundingElements, STATE.mmoSurroundingElement);
+  const baseEn = getEn(O.base, STATE.baseStyle);
+
+  // aspectRatioEn
+  let aspectRatioEn = "";
+  if (STATE.aspectRatio === "1:1") aspectRatioEn = "(perfectly 1:1 square canvas resolution:1.5), symmetric square frame, ";
+  else if (STATE.aspectRatio === "16:9") aspectRatioEn = "(16:9 widescreen canvas format:1.4), horizontal wide framing, ";
+  else if (STATE.aspectRatio === "9:16") aspectRatioEn = "(9:16 vertical portrait canvas format:1.5), tall vertical framing, ";
+  else if (STATE.aspectRatio === "2.76:1") aspectRatioEn = "(ultra-wide 2.76:1 cinematic panorama canvas:1.5), extreme horizontal framing, ";
+
+  const explicitTwoLineInstruction = `The text "${STATE.inputText.replace(/\n/g, ' ')}"`;
+
+  // bg
+  const isWhiteBg = STATE.baseStyle === "WhiteBlack";
+  const bgDescEn = isWhiteBg ? "STARK WHITE Background, SOLID BLACK Subject" : "JET BLACK Background, RADIANT WHITE Subject";
+  const solidBgPrompt = isWhiteBg
+    ? "pure solid #FFFFFF bright white void background, solid #000000 matte black text"
+    : "pure solid #000000 matte black void background, solid #FFFFFF bright white text";
+
+  // surface (damage + texture 합성)
+  const surfaceEn = (STATE.deformationDamage !== 'Damage_None' && STATE.strokeTexture === 'Tex_Clean')
+    ? destructionEn
+    : `${destructionEn}, ${textureEn}`;
+
+  // hole/momentum
+  const isSlicingActive = STATE.slicingIntensity !== 'Slic_None';
+  const holeGuard = isSlicingActive ? "" : "(perfectly intact silhouette:1.4), absolutely NO holes through text. ";
+  const momentumTag = STATE.momentumActive ? ", (kinetic combat momentum:1.3)" : "";
+
+  // optimizedBase
+  const optimizedBase = `masterpiece, best quality, ultra highres, insanely detailed, 8k resolution, isolated standalone typography graphic, highly legible, AAA game title aesthetic, sharp geometric corners, precise structural lines, strong material contrast`;
+
+  // 가드 positive/negative
+  const activeGuardObjs = DATA.guards.filter(g => STATE.activeGuards.includes(g.id));
+  let guardPos = [];
+  let guardNeg = [];
+  activeGuardObjs.forEach(g => {
+    const { pos, neg } = splitGuardEn(g.fixEn);
+    guardPos.push(...pos);
+    guardNeg.push(...neg);
+  });
+
+  // forbidden weighted
+  const forbiddenWeighted = (persona.forbidden || '')
+    .split(',')
+    .map(s => s.trim().replace(/^NO\s+/i, '').trim())
+    .filter(Boolean)
+    .map(s => `(${s}:1.5)`)
+    .join(', ');
+
+  // preservation weight (단순화 — Validation 없이 1.5 고정)
+  const preservationWeight = "1.5";
+
+  // 본문
+  const body = `An epic cinematic 2D flat typography graphic, ${auraBlock}${modeBlock}${integrityTag}macro photography, hyper-detailed single focal point, (flat focal plane:1.4), (strictly zero perspective distortion:1.5). ${aspectRatioEn}${explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, (custom hand-crafted lettering:1.4), (unique letterform design:1.3), logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${persona.weightTags}, ${weightEn}, ${widthEn}, ${proportionEn}, ${kerningEn}, ${letterConnEn}, ${internalSpaceEn}. Terminals: ${terminalEn}, ${sharpnessEn}, ${cornerEn}, ${extensionEn}. Logo character: ${logoDegreeEn}, framed as ${mmoSilhouetteEn}. The structure is modified by ${kineticEn}, ${slantEn}, and (${slicingEn}:1.4)${momentumTag}. The surface is transformed by ${surfaceEn}. ${optimizedBase}, ${solidBgPrompt}. Surrounding: ${mmoSurroundEn}. ${holeGuard}(absolutely flat fill:1.6), (no surface modulation:1.5), (pure 2D flat silhouette:${preservationWeight}), (95% shape preservation:1.3), ${layoutEn}, ${occupancyEn}, ${getSliderText(STATE.sliderVal)}, ${guardPos.join(', ')}.`;
+
+  const negative = `(3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (surface modulation:1.5), (surface noise:1.5), (generic font:1.6), (standard typeface:1.5), ${forbiddenWeighted}${guardNeg.length > 0 ? ', ' + guardNeg.join(', ') : ''}`;
+
+  return { body, negative };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// UI 렌더
+// ─────────────────────────────────────────────────────────────────────
+function fillSelect(id, list, valueKey) {
+  const sel = document.getElementById(id);
+  sel.innerHTML = list.map(o => `<option value="${o.id}">${o.name || o.id}</option>`).join('');
+  if (STATE[valueKey] !== undefined) sel.value = STATE[valueKey];
+}
+
+function renderSelects() {
+  fillSelect('coreArchetype', DATA.personas, 'coreArchetype');
+  fillSelect('aspectRatio', DATA.options.ratios, 'aspectRatio');
+  fillSelect('layoutType', DATA.options.layouts, 'layoutType');
+  fillSelect('occupancy', DATA.options.occupancies, 'occupancy');
+  fillSelect('mmoSilhouetteFraming', DATA.options.MMOSilhouetteFramings, 'mmoSilhouetteFraming');
+  fillSelect('stemWeight', DATA.options.stemWeights, 'stemWeight');
+  fillSelect('charWidth', DATA.options.widths, 'charWidth');
+  fillSelect('charProportion', DATA.options.proportions, 'charProportion');
+  fillSelect('kerning', DATA.options.kerningOptions, 'kerning');
+  fillSelect('letterConnection', DATA.options.letterConnections, 'letterConnection');
+  fillSelect('internalSpace', DATA.options.internalSpaces, 'internalSpace');
+  fillSelect('logoDegree', DATA.options.logoDegrees, 'logoDegree');
+  fillSelect('terminalStyle', DATA.options.terminalStyles, 'terminalStyle');
+  fillSelect('strokeSharpness', DATA.options.strokeSharpness, 'strokeSharpness');
+  fillSelect('cornerStyle', DATA.options.cornerStyles, 'cornerStyle');
+  fillSelect('strokeExtension', DATA.options.strokeExtensions, 'strokeExtension');
+  fillSelect('strokeTexture', DATA.options.strokeTextures, 'strokeTexture');
+  fillSelect('kineticVelocity', DATA.options.kineticVelocities, 'kineticVelocity');
+  fillSelect('slantAngle', DATA.options.slantAngles, 'slantAngle');
+  fillSelect('slicingIntensity', DATA.options.slicingIntensities, 'slicingIntensity');
+  fillSelect('deformationDamage', DATA.options.deformationDamages, 'deformationDamage');
+  fillSelect('baseStyle', DATA.options.base, 'baseStyle');
+  fillSelect('mmoSurroundingElement', DATA.options.MMOSurroundingElements, 'mmoSurroundingElement');
+}
+
+function renderGuards() {
+  const box = document.getElementById('guardsBox');
+  box.innerHTML = DATA.guards.map(g => {
+    const on = STATE.activeGuards.includes(g.id);
+    return `<label class="${on ? 'on' : ''}"><input type="checkbox" data-guard="${g.id}" ${on ? 'checked' : ''}>${g.label}</label>`;
+  }).join('');
+  box.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('change', (e) => {
+      const id = e.target.dataset.guard;
+      if (e.target.checked) STATE.activeGuards.push(id);
+      else STATE.activeGuards = STATE.activeGuards.filter(g => g !== id);
+      renderGuards();
+      renderPrompt();
+    });
+  });
+}
+
+function renderPrompt() {
+  const { body, negative } = buildPrompt();
+  const pre = document.getElementById('promptOut');
+  pre.innerHTML = `<span class="pos">${escapeHtml(body)}</span>\n\n<span class="neg">Negative prompt: ${escapeHtml(negative)}</span>`;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// 옵션 en 편집기
+function renderEditor() {
+  const box = document.getElementById('editorBox');
+  box.innerHTML = '';
+
+  // 옵션 카테고리
+  Object.keys(DATA.options).forEach(key => {
+    const list = DATA.options[key];
+    if (!Array.isArray(list) || list.length === 0) return;
+    if (list[0].layout) return; // purposes 같은 다른 구조는 스킵
+
+    const details = document.createElement('details');
+    details.className = 'ed-section';
+    const summary = document.createElement('summary');
+    summary.textContent = `${key} (${list.length})`;
+    details.appendChild(summary);
+
+    const rows = document.createElement('div');
+    rows.className = 'ed-rows';
+    list.forEach((opt, idx) => {
+      const row = document.createElement('div');
+      row.className = 'ed-row';
+      row.innerHTML = `<div class="ko">${opt.name || ''}<span class="id">${opt.id}</span></div><textarea data-cat="${key}" data-idx="${idx}" rows="2">${escapeHtml(opt.en || '')}</textarea>`;
+      rows.appendChild(row);
+    });
+    details.appendChild(rows);
+    box.appendChild(details);
+  });
+
+  // personas
+  const pDetails = document.createElement('details');
+  pDetails.className = 'ed-section';
+  pDetails.innerHTML = `<summary>personas — weightTags & forbidden (${DATA.personas.length})</summary>`;
+  const pRows = document.createElement('div');
+  pRows.className = 'ed-rows';
+  DATA.personas.forEach((p, idx) => {
+    pRows.insertAdjacentHTML('beforeend', `
+      <div class="ed-row"><div class="ko">${p.name}<span class="id">${p.id}.weightTags</span></div><textarea data-persona="${idx}" data-field="weightTags" rows="2">${escapeHtml(p.weightTags || '')}</textarea></div>
+      <div class="ed-row"><div class="ko"></div><span class="id" style="font-size:9px; color:#52525b; padding-left:5px;">${p.id}.forbidden</span></div>
+      <div class="ed-row"><div class="ko"></div><textarea data-persona="${idx}" data-field="forbidden" rows="2">${escapeHtml(p.forbidden || '')}</textarea></div>
+    `);
+  });
+  pDetails.appendChild(pRows);
+  box.appendChild(pDetails);
+
+  // guards
+  const gDetails = document.createElement('details');
+  gDetails.className = 'ed-section';
+  gDetails.innerHTML = `<summary>safetyGuards — fixEn (${DATA.guards.length})</summary>`;
+  const gRows = document.createElement('div');
+  gRows.className = 'ed-rows';
+  DATA.guards.forEach((g, idx) => {
+    const row = document.createElement('div');
+    row.className = 'ed-row';
+    row.innerHTML = `<div class="ko">${g.label}<span class="id">${g.id}</span></div><textarea data-guardidx="${idx}" rows="2">${escapeHtml(g.fixEn || '')}</textarea>`;
+    gRows.appendChild(row);
+  });
+  gDetails.appendChild(gRows);
+  box.appendChild(gDetails);
+
+  // 변경 핸들러
+  box.querySelectorAll('textarea').forEach(ta => {
+    ta.addEventListener('input', (e) => {
+      const t = e.target;
+      const cat = t.dataset.cat;
+      const idx = parseInt(t.dataset.idx);
+      const personaIdx = parseInt(t.dataset.persona);
+      const field = t.dataset.field;
+      const guardIdx = parseInt(t.dataset.guardidx);
+      if (cat !== undefined && !isNaN(idx)) {
+        const original = DEFAULT_DATA.options[cat][idx]?.en || '';
+        DATA.options[cat][idx].en = t.value;
+        if (t.value !== original) t.classList.add('changed');
+        else t.classList.remove('changed');
+      } else if (!isNaN(personaIdx) && field) {
+        const original = DEFAULT_DATA.personas[personaIdx]?.[field] || '';
+        DATA.personas[personaIdx][field] = t.value;
+        if (t.value !== original) t.classList.add('changed');
+        else t.classList.remove('changed');
+      } else if (!isNaN(guardIdx)) {
+        const original = DEFAULT_DATA.guards[guardIdx]?.fixEn || '';
+        DATA.guards[guardIdx].fixEn = t.value;
+        if (t.value !== original) t.classList.add('changed');
+        else t.classList.remove('changed');
+      }
+      renderPrompt();
+      updateChangeCount();
+    });
+  });
+
+  // 첫 두 섹션은 기본 펼침 (terminalStyles, strokeSharpness 가 빈번하게 편집됨)
+  const targetSummaries = ['terminalStyles', 'strokeSharpness', 'safetyGuards'];
+  box.querySelectorAll('details').forEach(d => {
+    if (targetSummaries.some(t => d.querySelector('summary').textContent.startsWith(t))) d.open = true;
+  });
+}
+
+function updateChangeCount() {
+  let count = 0;
+  Object.keys(DATA.options).forEach(key => {
+    const orig = DEFAULT_DATA.options[key];
+    if (!Array.isArray(orig)) return;
+    DATA.options[key].forEach((opt, i) => {
+      if ((orig[i] || {}).en !== opt.en) count++;
+    });
+  });
+  DATA.personas.forEach((p, i) => {
+    const o = DEFAULT_DATA.personas[i];
+    if (!o) return;
+    if (p.weightTags !== o.weightTags) count++;
+    if (p.forbidden !== o.forbidden) count++;
+  });
+  DATA.guards.forEach((g, i) => {
+    const o = DEFAULT_DATA.guards[i];
+    if (!o) return;
+    if (g.fixEn !== o.fixEn) count++;
+  });
+  const span = document.getElementById('changeCount');
+  if (count > 0) { span.textContent = `${count} 변경됨`; span.style.display = ''; }
+  else span.style.display = 'none';
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// 이벤트 바인딩
+// ─────────────────────────────────────────────────────────────────────
+const fieldIds = ['inputText','customAura','coreArchetype','aspectRatio','layoutType','occupancy','mmoSilhouetteFraming','stemWeight','charWidth','charProportion','kerning','letterConnection','internalSpace','logoDegree','terminalStyle','strokeSharpness','cornerStyle','strokeExtension','strokeTexture','kineticVelocity','slantAngle','slicingIntensity','deformationDamage','baseStyle','mmoSurroundingElement','enhanceMode'];
+
+fieldIds.forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.addEventListener('input', (e) => {
+    STATE[id] = e.target.value;
+    renderPrompt();
+  });
+});
+
+document.getElementById('sliderVal_input').addEventListener('input', (e) => {
+  STATE.sliderVal = parseInt(e.target.value);
+  document.getElementById('sliderVal').textContent = e.target.value;
+  renderPrompt();
+});
+
+document.getElementById('enhanceEnabled').addEventListener('change', (e) => {
+  STATE.enhanceEnabled = e.target.checked;
+  document.getElementById('enhanceToggle').classList.toggle('on', e.target.checked);
+  renderPrompt();
+});
+document.getElementById('momentumActive').addEventListener('change', (e) => {
+  STATE.momentumActive = e.target.checked;
+  document.getElementById('momentumToggle').classList.toggle('on', e.target.checked);
+  renderPrompt();
+});
+
+// Toast
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+// 버튼
+document.getElementById('btnCopyPrompt').addEventListener('click', () => {
+  const { body, negative } = buildPrompt();
+  const text = `${body}\n\nNegative prompt: ${negative}`;
+  navigator.clipboard.writeText(text).then(() => toast('프롬프트 복사 완료'));
+});
+
+document.getElementById('btnCopyOptions').addEventListener('click', () => {
+  const json = JSON.stringify(DATA, null, 2);
+  navigator.clipboard.writeText(json).then(() => toast('옵션 JSON 복사 완료'));
+});
+
+document.getElementById('btnImport').addEventListener('click', async () => {
+  const text = prompt('붙여넣을 JSON:');
+  if (!text) return;
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.options) DATA.options = parsed.options;
+    if (parsed.personas) DATA.personas = parsed.personas;
+    if (parsed.guards) DATA.guards = parsed.guards;
+    renderEditor(); renderSelects(); renderPrompt(); updateChangeCount();
+    toast('JSON 가져오기 완료');
+  } catch (e) {
+    toast('JSON 파싱 실패: ' + e.message);
+  }
+});
+
+document.getElementById('btnReset').addEventListener('click', () => {
+  if (!confirm('모든 편집 값을 기본값으로 되돌립니다. 진행할까요?')) return;
+  DATA = JSON.parse(JSON.stringify(DEFAULT_DATA));
+  renderEditor(); renderSelects(); renderPrompt(); updateChangeCount();
+  toast('초기화 완료');
+});
+
+// 초기 렌더
+document.getElementById('inputText').value = STATE.inputText;
+document.getElementById('customAura').value = STATE.customAura;
+document.getElementById('enhanceToggle').classList.add('on');
+renderSelects();
+renderGuards();
+renderEditor();
+renderPrompt();
+</script>
+
+</body>
+</html>

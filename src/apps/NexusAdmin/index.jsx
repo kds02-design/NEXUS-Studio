@@ -3,7 +3,7 @@ import {
   Users, ListChecks, Ticket, Settings as SettingsIcon,
   Shield, Plus, Trash2, Edit2, X, RefreshCw, AlertTriangle,
   FileText, Upload, Download, Save, RotateCcw, Sparkles, Power,
-  ShieldCheck, BarChart3,
+  ShieldCheck, BarChart3, Image as ImageIcon,
 } from "lucide-react";
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
@@ -22,6 +22,7 @@ import { uploadBase64 } from "../../lib/storage";
 import { subscribeGeminiGate, setGeminiEnabled } from "../../lib/gemini";
 import { subscribeAllAudits } from "../PromptAudit/services/firebase";
 import { CONFLICT_TYPES } from "../PromptAudit/services/gemini";
+import { subscribeToGameLogos, saveGameLogo, removeGameLogo, compressLogoFile } from "../../lib/gameLogos";
 
 // 관리자 전용 보라색 포인트
 const ACCENT = "#6C5CE7";
@@ -38,8 +39,9 @@ const NAV_SECTIONS = [
   {
     label: "콘텐츠",
     items: [
-      { id: "criteria", name: "평가 기준",        icon: <ListChecks size={18}/> },
-      { id: "prompt",   name: "AI 평가 프롬프트", icon: <FileText size={18}/> },
+      { id: "criteria",  name: "평가 기준",        icon: <ListChecks size={18}/> },
+      { id: "prompt",    name: "AI 평가 프롬프트", icon: <FileText size={18}/> },
+      { id: "gameLogos", name: "게임 로고",        icon: <ImageIcon size={18}/> },
     ],
   },
   {
@@ -101,12 +103,13 @@ export default function NexusAdminApp() {
       />
       <main className="flex-1 my-3 mr-3 ml-3 rounded-[16px] border border-zinc-800/80 bg-[#0c0c0e] shadow-2xl overflow-hidden flex flex-col min-w-0">
         <div className="flex-1 overflow-y-auto p-6">
-          {tab === "users"    && <UsersPanel/>}
-          {tab === "criteria" && <CriteriaPanel/>}
-          {tab === "prompt"   && <PromptPanel/>}
-          {tab === "invites"  && <InvitesPanel/>}
-          {tab === "audits"   && <AuditsPanel/>}
-          {tab === "settings" && <SettingsPanel/>}
+          {tab === "users"     && <UsersPanel/>}
+          {tab === "criteria"  && <CriteriaPanel/>}
+          {tab === "prompt"    && <PromptPanel/>}
+          {tab === "gameLogos" && <GameLogosPanel/>}
+          {tab === "invites"   && <InvitesPanel/>}
+          {tab === "audits"    && <AuditsPanel/>}
+          {tab === "settings"  && <SettingsPanel/>}
         </div>
       </main>
     </div>
@@ -1304,6 +1307,187 @@ function StatCard({ label, value, sub, valueColor }) {
       <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{label}</span>
       <span className="text-2xl font-bold tabular-nums" style={{ color: valueColor || "#e4e4e7" }}>{value}</span>
       {sub && <span className="text-[10px] text-zinc-500">{sub}</span>}
+    </div>
+  );
+}
+
+// ─────────────── 게임 로고 관리 ───────────────
+// BannerCodex 사이드바·PromotionArchive 헤더 등에서 공통 사용되는 게임별 로고를
+// 한 곳에서 관리. 게임 이름은 banners + promotion-banners 두 컬렉션에서 자동 수집되며,
+// 어느 쪽에도 아직 등록되지 않은 신규 게임은 텍스트 입력으로 추가 가능.
+function GameLogosPanel() {
+  const [logos, setLogos] = useState({});
+  const [discoveredGames, setDiscoveredGames] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [newGameName, setNewGameName] = useState("");
+  const [pendingGameName, setPendingGameName] = useState(null); // 업로드 중 상태 표시용
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const unsub = subscribeToGameLogos(
+      (data) => { setLogos(data || {}); setIsLoading(false); },
+      (e) => { setError(e?.message || "로고 로드 실패"); setIsLoading(false); },
+    );
+    return unsub;
+  }, []);
+
+  // 두 컬렉션에서 game 필드를 한 번 긁어와 distinct 목록 생성. 큰 컬렉션이라 realtime 까지는 불필요.
+  useEffect(() => {
+    (async () => {
+      try {
+        const games = new Set();
+        const [bannersSnap, promoSnap] = await Promise.all([
+          getDocs(collection(db, "artifacts", appId, "public", "data", "banners")),
+          getDocs(collection(db, "artifacts", appId, "public", "data", "promotion-banners")),
+        ]);
+        bannersSnap.forEach(d => { const g = d.data()?.game; if (g) games.add(g); });
+        promoSnap.forEach(d => { const g = d.data()?.game; if (g) games.add(g); });
+        setDiscoveredGames(Array.from(games).sort());
+      } catch (e) {
+        console.warn("[GameLogosPanel] discover games failed", e);
+      }
+    })();
+  }, []);
+
+  const allGames = useMemo(() => {
+    const set = new Set([...discoveredGames, ...Object.keys(logos || {})]);
+    return Array.from(set).sort();
+  }, [discoveredGames, logos]);
+
+  const flash = (msg) => { setNotice(msg); setTimeout(() => setNotice(""), 2500); };
+
+  const handleUpload = async (gameName, file) => {
+    if (!gameName || !file) return;
+    setPendingGameName(gameName);
+    try {
+      const compressed = await compressLogoFile(file, 150, 0.9);
+      if (!compressed) throw new Error("이미지 압축 실패");
+      await saveGameLogo(gameName, compressed);
+      flash(`${gameName} 로고가 업데이트되었습니다.`);
+    } catch (e) {
+      setError(e?.message || "로고 업로드 실패");
+    } finally {
+      setPendingGameName(null);
+    }
+  };
+
+  const handleRemove = async (gameName) => {
+    if (!gameName) return;
+    if (!confirm(`${gameName} 로고를 삭제하시겠습니까?`)) return;
+    try {
+      await removeGameLogo(gameName);
+      flash(`${gameName} 로고가 삭제되었습니다.`);
+    } catch (e) {
+      setError(e?.message || "로고 삭제 실패");
+    }
+  };
+
+  const handleAddGame = () => {
+    const name = newGameName.trim();
+    if (!name) return;
+    if (allGames.includes(name)) { flash(`'${name}' 은 이미 목록에 있습니다.`); return; }
+    setDiscoveredGames(prev => Array.from(new Set([...prev, name])).sort());
+    setNewGameName("");
+    flash(`'${name}' 추가됨. 로고를 업로드하세요.`);
+  };
+
+  return (
+    <div className="max-w-4xl space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-zinc-200 flex items-center gap-2">
+            <ImageIcon className="w-5 h-5" style={{ color: ACCENT }}/> 게임 로고 관리
+          </h2>
+          <p className="text-xs text-zinc-500 mt-1">
+            BannerCodex 사이드바 · Brand Web Library 헤더 등에서 공통 사용됩니다.
+            게임 목록은 등록된 배너에서 자동 추출되며, 신규 게임은 아래 입력란으로 추가하세요.
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-red-500/30 bg-red-500/10 text-xs text-red-300">
+          <AlertTriangle className="w-4 h-4 shrink-0"/> {error}
+        </div>
+      )}
+      {notice && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-xs text-emerald-300">
+          {notice}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={newGameName}
+          onChange={(e) => setNewGameName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAddGame(); }}
+          placeholder="새 게임 이름 (예: 리니지W)"
+          className="flex-1 max-w-xs px-3 py-2 rounded-lg border border-zinc-700 bg-[#141416] text-zinc-200 text-sm focus:outline-none focus:border-[#6C5CE7]"
+        />
+        <button
+          onClick={handleAddGame}
+          className="px-3 py-2 rounded-lg border border-zinc-700 bg-[#141416] text-zinc-300 text-xs font-bold hover:bg-white/5 flex items-center gap-1"
+        >
+          <Plus className="w-3.5 h-3.5"/> 게임 추가
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="text-zinc-500 text-sm">로딩 중...</div>
+      ) : allGames.length === 0 ? (
+        <div className="text-zinc-500 text-sm py-8 text-center border border-dashed border-zinc-800 rounded-lg">
+          등록된 게임이 없습니다. 위 입력란으로 추가하세요.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {allGames.map((game) => {
+            const hasLogo = !!logos[game];
+            const isPending = pendingGameName === game;
+            return (
+              <div key={game} className="flex items-center justify-between p-3 rounded-xl border border-zinc-800 bg-[#141416]">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border border-zinc-700 bg-zinc-900 shrink-0">
+                    {hasLogo
+                      ? <img src={logos[game]} alt={game} className="w-full h-full object-cover"/>
+                      : <span className="text-sm font-bold text-zinc-500">{game.substring(0, 1)}</span>}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-zinc-200 truncate">{game}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 mt-0.5">
+                      {hasLogo ? "로고 등록됨" : "로고 없음"}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <label
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors border border-zinc-700 bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white ${isPending ? "opacity-50 pointer-events-none" : ""}`}
+                    title="로고 업로드"
+                  >
+                    {isPending ? <RefreshCw className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4"/>}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(game, f); e.target.value = ""; }}
+                    />
+                  </label>
+                  {hasLogo && (
+                    <button
+                      onClick={() => handleRemove(game)}
+                      className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors border border-red-500/20 text-red-500 hover:bg-red-500/10"
+                      title="로고 삭제"
+                    >
+                      <Trash2 className="w-4 h-4"/>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

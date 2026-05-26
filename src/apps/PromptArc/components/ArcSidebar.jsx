@@ -88,7 +88,7 @@ export default function ArcSidebar({
       <div className={`shrink-0 ${isSidebarCollapsed ? 'flex justify-center py-2' : 'px-3 py-2'}`}>
         <button onClick={(e) => { e.stopPropagation(); onNewPrompt?.(); }}
           title="새 프롬프트 등록"
-          className={`flex items-center justify-center gap-1.5 rounded-full font-bold transition-colors bg-[#6C5CE7]/15 text-[#6C5CE7] hover:bg-[#6C5CE7] hover:text-white border border-[#6C5CE7]/30 ${isSidebarCollapsed ? 'w-9 h-9' : 'w-full h-9 px-3 text-xs'}`}
+          className={`flex items-center justify-center gap-1.5 rounded-full font-bold transition-colors bg-[#6C5CE7]/15 text-[#6C5CE7] hover:bg-[#6C5CE7] hover:text-white ${isSidebarCollapsed ? 'w-9 h-9' : 'w-full h-9 px-3 text-xs border border-[#6C5CE7]/30'}`}
         >
           <Plus size={isSidebarCollapsed ? 16 : 14} className="shrink-0" />
           {!isSidebarCollapsed && <span className="truncate">새 프롬프트</span>}

@@ -11,7 +11,7 @@ import {
 } from '../../lib/folderPicker';
 
 import { getFolderName } from './constants/categories';
-import { auth, db, fetchBannerImage, saveGameLogo, removeGameLogo, delay, WRITE_DELAY_MS } from './services/firebase';
+import { auth, db, fetchBannerImage, delay, WRITE_DELAY_MS } from './services/firebase';
 import { blobUrlToBase64, compressImage } from './services/cloudinary';
 import { callGeminiAPI } from './services/gemini';
 import { useBanners } from './hooks/useBanners';
@@ -24,7 +24,7 @@ import CodexGrid from './components/CodexGrid';
 import CodexCard from './components/CodexCard';
 import CodexDetailModal from './components/CodexDetailModal';
 import {
-  UploadModal, BatchEditModal, ConfirmModal, LogoManagerModal,
+  UploadModal, BatchEditModal, ConfirmModal,
   DuplicateModal, OCRProgressModal, UploadProgressModal, ProcessingFilesModal,
   NotificationToast, BatchProcessingPill, GlobalDragOverlay, SelectionToolbar
 } from './components/CodexEditModal';
@@ -132,7 +132,6 @@ export default function App() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
-  const [isLogoManagerOpen, setIsLogoManagerOpen] = useState(false);
   const [isDuplicateModalOpen, setIsDuplicateModalOpen] = useState(false);
   const [duplicateGroups, setDuplicateGroups] = useState([]);
   const [duplicateIdsToDelete, setDuplicateIdsToDelete] = useState([]);
@@ -231,7 +230,6 @@ export default function App() {
         else setPreviewModalOpen(false);
       } else if (isAllGamesModalOpen) setIsAllGamesModalOpen(false);
       else if (isDuplicateModalOpen) setIsDuplicateModalOpen(false);
-      else if (isLogoManagerOpen) setIsLogoManagerOpen(false);
       else if (isUploadModalOpen) setIsUploadModalOpen(false);
       else if (isBatchEditModalOpen) setIsBatchEditModalOpen(false);
       else if (ocrProgress.isOpen && ocrProgress.status === 'confirm') setOcrProgress(prev => ({ ...prev, isOpen: false }));
@@ -242,7 +240,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [previewModalOpen, isUploadModalOpen, isBatchEditModalOpen, isSettingsOpen, isFilterMenuOpen, isSidebarOpen, hasChanges, isEditingPreview, selectedIds, isDuplicateModalOpen, ocrProgress.isOpen, ocrProgress.status, isAllGamesModalOpen, isLogoManagerOpen, setOcrProgress]);
+  }, [previewModalOpen, isUploadModalOpen, isBatchEditModalOpen, isSettingsOpen, isFilterMenuOpen, isSidebarOpen, hasChanges, isEditingPreview, selectedIds, isDuplicateModalOpen, ocrProgress.isOpen, ocrProgress.status, isAllGamesModalOpen, setOcrProgress]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -491,21 +489,6 @@ export default function App() {
     } catch { showNotification("오류가 발생했습니다."); }
   };
 
-  // Logo / prompt
-  const handleUpdateLogo = async (gameName, file) => {
-    if (!file) return;
-    try {
-      const url = URL.createObjectURL(file);
-      const base64 = await blobUrlToBase64(url);
-      const compressed = await compressImage(base64, 150, 0.9);
-      await saveGameLogo(gameName, compressed);
-      showNotification(`${gameName} 로고가 설정되었습니다.`);
-    } catch (e) { showNotification("로고 업로드에 실패했습니다."); }
-  };
-  const handleRemoveLogo = async (gameName) => {
-    try { await removeGameLogo(gameName); showNotification(`${gameName} 로고가 삭제되었습니다.`); }
-    catch { showNotification("로고 삭제에 실패했습니다."); }
-  };
   // AI search
   const handleSearch = async () => {
     if (!searchQuery.trim()) { setAiSearchIds(null); return; }
@@ -974,7 +957,7 @@ export default function App() {
         isSettingsOpen={isSettingsOpen} setIsSettingsOpen={setIsSettingsOpen} settingsRef={settingsRef}
         adminModeEnabled={adminModeEnabled} toggleAdminMode={toggleAdminMode}
         handleSaveLibrary={handleSaveLibrary} handleLoadLibrary={handleLoadLibrary} isSaving={isSaving}
-        setIsLogoManagerOpen={setIsLogoManagerOpen} handleFolderUpload={handleFolderUpload} isUploading={isUploading}
+        handleFolderUpload={handleFolderUpload} isUploading={isUploading}
         lastFolderName={lastFolderName} handlePickFolder={handlePickFolder}
         handleReopenLastFolder={handleReopenLastFolder} handleForgetLastFolder={handleForgetLastFolder}
         isProcessingFiles={isProcessingFiles} handleFileUpload={handleFileUpload}
@@ -982,9 +965,6 @@ export default function App() {
         handleOpenDuplicateManager={handleOpenDuplicateManager} handleSidebarClick={handleSidebarClick}
       />
 
-      <LogoManagerModal isOpen={isLogoManagerOpen} onClose={() => setIsLogoManagerOpen(false)}
-        isLightMode={isLightMode} availableGames={availableGames} gameLogos={gameLogos}
-        handleUpdateLogo={handleUpdateLogo} handleRemoveLogo={handleRemoveLogo} />
       <UploadModal isOpen={isUploadModalOpen} onClose={() => { setIsUploadModalOpen(false); setPendingFiles([]); }}
         pendingFiles={pendingFiles} filteredPendingFiles={filteredPendingFiles}
         uploadSettings={uploadSettings} setUploadSettings={setUploadSettings}

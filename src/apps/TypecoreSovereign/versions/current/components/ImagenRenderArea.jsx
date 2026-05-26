@@ -1,8 +1,9 @@
 /* eslint-disable */
-// Imagen 렌더 영역 — 모델 선택 + 렌더 버튼 + 결과 + Download + Save to PromptArc.
-// 참조 이미지 입력은 제거 — 사용자 요청에 따라 prompt 만으로 렌더링.
+// Imagen 렌더 영역 — 모델 선택 + 렌더 버튼 + 결과 + Download + Save / Send.
+// 자동 저장 흐름: PromptEngine 의 handleRender 가 결과 직후 saveRenderToPromptArc 호출 →
+// savedToArcId 가 채워지면 여기 버튼이 "저장됨" 인디케이터로 전환.
 import React from 'react';
-import { AlertCircle, Image as ImageIcon, Loader2, Download, Save } from 'lucide-react';
+import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers } from 'lucide-react';
 
 const ImagenRenderArea = ({
   promptText,
@@ -16,6 +17,9 @@ const ImagenRenderArea = ({
   onDownloadRendered,
   onSaveToPromptArc,
   savingToArc,
+  savedToArcId,              // 자동/수동 저장 완료 시 PromptArc doc id.
+  onSendToRenderMatrix,      // Render Matrix 의 base image 로 송신.
+  sendingToRenderMatrix,
   isLoggedIn,
   canRender,
   grade,
@@ -93,18 +97,41 @@ const ImagenRenderArea = ({
               >
                 <Download className="w-3.5 h-3.5" /> 다운로드
               </button>
-              <button
-                onClick={() => onSaveToPromptArc?.(promptText)}
-                disabled={savingToArc || !isLoggedIn}
-                title={!isLoggedIn ? '로그인이 필요합니다' : undefined}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {savingToArc ? (
-                  <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 저장 중…</>
-                ) : (
-                  <><Save className="w-3.5 h-3.5" /> PromptArc에 저장</>
-                )}
-              </button>
+              {/* PromptArc 자동 저장 결과 — id 가 있으면 저장됨 인디케이터, 없으면 수동 저장 버튼.
+                  자동 저장 실패 시 사용자가 재시도할 수 있게 미저장 시에만 버튼 노출. */}
+              {savedToArcId ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-[11px] font-semibold" title={`PromptArc doc id: ${savedToArcId}`}>
+                  <Check className="w-3.5 h-3.5" /> PromptArc 저장됨
+                </div>
+              ) : (
+                <button
+                  onClick={() => onSaveToPromptArc?.(promptText)}
+                  disabled={savingToArc || !isLoggedIn}
+                  title={!isLoggedIn ? '로그인이 필요합니다' : undefined}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {savingToArc ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 저장 중…</>
+                  ) : (
+                    <><Save className="w-3.5 h-3.5" /> PromptArc에 저장</>
+                  )}
+                </button>
+              )}
+              {/* Render Matrix 로 송신 — base image 슬롯에 자동 임포트되어 후속 머티리얼/렌더 효과 적용 가능. */}
+              {onSendToRenderMatrix && (
+                <button
+                  onClick={onSendToRenderMatrix}
+                  disabled={sendingToRenderMatrix}
+                  title="렌더된 이미지를 Render Matrix 의 base image 로 자동 전송"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-cyan-500/30 bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/15 hover:border-cyan-500/50 text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {sendingToRenderMatrix ? (
+                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 전송 중…</>
+                  ) : (
+                    <><Layers className="w-3.5 h-3.5" /> Render Matrix 로 보내기</>
+                  )}
+                </button>
+              )}
               {renderedImage.modelId && (
                 <span className="ml-auto text-[10px] text-zinc-500">
                   {imagenModels.find((m) => m.id === renderedImage.modelId)?.label || renderedImage.modelId}

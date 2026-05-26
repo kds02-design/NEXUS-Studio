@@ -4,6 +4,7 @@ import {
 } from 'firebase/firestore';
 import { db, appId } from '../../lib/firebase';
 import { uploadBase64 } from '../../lib/storage';
+import { subscribeToGameLogos } from '../../lib/gameLogos';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
 import { processAndCropImage } from './utils/imageProcessor';
@@ -284,14 +285,10 @@ function App() {
         }
     }, [isAdmin, isNormalizing]);
 
-    // 게임 로고 — BannerCodex 와 동일한 Firestore 컬렉션 공유 (artifacts/{appId}/public/data/settings/gameLogos).
-    // PreviewModal 헤더에서 게임 로고 표시용. 관리자가 BannerCodex 설정에서 등록하면 여기에도 자동 반영.
+    // 게임 로고 — NexusAdmin → "게임 로고" 패널에서 단일 관리. 공유 lib 으로 구독만 함.
+    // (저장 위치: artifacts/{appId}/public/data/settings/gameLogos)
     const [gameLogos, setGameLogos] = useState({});
-    useEffect(() => {
-        if (!db) return;
-        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'gameLogos');
-        return onSnapshot(ref, snap => setGameLogos(snap.exists() ? snap.data() : {}));
-    }, []);
+    useEffect(() => subscribeToGameLogos(setGameLogos, (e) => console.error('[PromotionArchive] logos', e)), []);
 
     // Firestore 실시간 구독 — Dexie의 useLiveQuery 대체
     useEffect(() => {

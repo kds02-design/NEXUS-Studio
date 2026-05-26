@@ -145,12 +145,22 @@ export default function RegionPicker({ imageUrl, active, onCancel, onSaved, sour
   const isValidSel = sel && !drawing && sel.w > 5 && sel.h > 5;
 
   // createPortal — 부모 modal 의 stacking context / overflow:hidden 영향 받지 않도록
-  // document.body 에 직접 마운트. 또한 부모 modal 의 click 핸들러로 이벤트 버블링되지 않음.
+  // document.body 에 직접 마운트.
+  // 주의: Portal 의 이벤트는 React 트리 따라 부모로 bubble 된다. CodexDetailModal 의 이미지
+  // 컨테이너는 onMouseDown/Move/Up 으로 pan 을 처리하므로, 여기서 모든 마우스·휠 이벤트를
+  // stopPropagation 하지 않으면 RegionPicker 안의 드래그가 배경 이미지의 panPos 까지 움직여
+  // 닫은 뒤 이미지가 중앙에서 벗어난다.
+  const stop = (e) => e.stopPropagation();
   return createPortal(
     <div
       className="fixed inset-0 z-[2500] bg-black/95 flex flex-col select-none animate-in fade-in duration-200"
       style={{ touchAction: "none" }}
-      onClick={(e) => e.stopPropagation()}
+      onClick={stop}
+      onMouseDown={stop}
+      onMouseMove={stop}
+      onMouseUp={stop}
+      onMouseLeave={stop}
+      onWheel={stop}
     >
       {/* 상단 안내 + 닫기 */}
       <div className="region-toolbar shrink-0 flex items-center justify-between px-4 py-3 border-b border-white/10 bg-black/60 backdrop-blur-sm">

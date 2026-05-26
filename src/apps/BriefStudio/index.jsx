@@ -14,6 +14,7 @@ import {
   ArrowRight, Type, Box, Video, AlertCircle, Users, Check, ChevronRight,
   Palette, Layers,
 } from "lucide-react";
+import { extractDocxText, extractPptxText, isDocx, isPptx } from "./officeExtract";
 
 // ─── 정적 데이터 ─────────────────────────────────────────
 const GENRES = [
@@ -40,7 +41,7 @@ const PRODUCTION_TYPE_META = {
   brandweb:   { label: "브랜드웹", color: "#0eb9b3" },
 };
 
-const SUPPORTED_DOC_EXT = /\.(pdf|txt|md|json)$/i;
+const SUPPORTED_DOC_EXT = /\.(pdf|txt|md|json|docx|pptx)$/i;
 const MAX_IMAGES = 10;
 const POINT = "#A29BFE";
 
@@ -132,7 +133,7 @@ export default function BriefStudio() {
   const acceptDocs = (arr) => {
     if (!arr?.length) return;
     const ok = arr.filter(f => SUPPORTED_DOC_EXT.test(f.name));
-    if (ok.length < arr.length) setError("지원 형식: PDF / TXT / MD / JSON. docx 는 PDF 로 변환해주세요.");
+    if (ok.length < arr.length) setError("지원 형식: PDF / DOCX / PPTX / TXT / MD / JSON.");
     else setError("");
     setDocFiles(prev => [...prev, ...ok]);
   };
@@ -172,6 +173,24 @@ export default function BriefStudio() {
           const b64 = await fileToBase64(f);
           parts.push({ inlineData: { mimeType: "application/pdf", data: b64 } });
           docSummaries.push(`${f.name} (${(f.size/1024).toFixed(1)}KB, PDF)`);
+        } else if (isDocx(f)) {
+          try {
+            const text = await extractDocxText(f);
+            parts.push({ text: `[문서: ${f.name} (DOCX)]\n${text.slice(0, 30000)}` });
+            docSummaries.push(`${f.name} (${text.length}자, DOCX)`);
+          } catch (e) {
+            console.warn("[BriefStudio] DOCX 추출 실패", e);
+            setError(`${f.name} 의 텍스트를 읽지 못했습니다. PDF 로 변환해주세요.`);
+          }
+        } else if (isPptx(f)) {
+          try {
+            const text = await extractPptxText(f);
+            parts.push({ text: `[프레젠테이션: ${f.name} (PPTX)]\n${text.slice(0, 30000)}` });
+            docSummaries.push(`${f.name} (${text.length}자, PPTX)`);
+          } catch (e) {
+            console.warn("[BriefStudio] PPTX 추출 실패", e);
+            setError(`${f.name} 의 텍스트를 읽지 못했습니다. PDF 로 변환해주세요.`);
+          }
         } else {
           const text = await fileToText(f);
           parts.push({ text: `[문서: ${f.name}]\n${text.slice(0, 30000)}` });
@@ -309,7 +328,7 @@ export default function BriefStudio() {
         <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
           {/* 문서 업로드 */}
           <div>
-            <Label>요청서 문서 <span className="text-zinc-600 font-normal">(PDF / TXT / MD / JSON)</span></Label>
+            <Label>요청서 문서 <span className="text-zinc-600 font-normal">(PDF / DOCX / PPTX / TXT / MD / JSON)</span></Label>
             <label
               onDragOver={(e) => { e.preventDefault(); setIsDraggingDoc(true); }}
               onDragLeave={(e) => { e.preventDefault(); setIsDraggingDoc(false); }}
@@ -320,7 +339,7 @@ export default function BriefStudio() {
             >
               <Upload size={20} className="mx-auto mb-2 text-zinc-500" />
               <div className="text-[11px] text-zinc-400">클릭하거나 드래그하여 업로드</div>
-              <input ref={docInputRef} type="file" accept=".pdf,.txt,.md,.json" multiple className="hidden" onChange={onDocPick} />
+              <input ref={docInputRef} type="file" accept=".pdf,.txt,.md,.json,.docx,.pptx" multiple className="hidden" onChange={onDocPick} />
             </label>
             {docFiles.length > 0 && (
               <div className="mt-2 space-y-1.5">

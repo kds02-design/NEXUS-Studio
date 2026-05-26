@@ -111,28 +111,30 @@ function IncomingBanner({ incomingFromRender, isArcAnalyzing, onClose }) {
 }
 
 function GenerateTab(p) {
+  // 아코디언 — engine 만 펼친 상태로 시작. 다른 섹션 열면 이전 섹션 자동 닫힘.
+  const [openSection, setOpenSection] = useState('engine');
+  const toggleSection = (key) => (next) => {
+    setOpenSection((cur) => (next ? key : (cur === key ? null : cur)));
+  };
   return (
     <SectionGroupAccent value="#FDCB6E">
     <div className="flex flex-col gap-7">
 
       {/* ─── 01 ENGINE — 출력 모델 + 진행 방식 ─── */}
-      <SectionGroup index={1} label="Engine" dotColor="#FDCB6E" storageKey="motion-engine">
-        <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3 relative z-[70]">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-[#FDCB6E] flex items-center gap-2">
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-            Target AI Model
-          </h3>
+      <SectionGroup index={1} label="Engine" dotColor="#FDCB6E" open={openSection === 'engine'} onToggle={toggleSection('engine')}>
+        <div className="flex flex-col gap-2 relative z-[70]">
+          <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider">Target AI Model</p>
           <DropdownControl label="" value={p.targetModel} options={TARGET_MODELS} onChange={p.setTargetModel} highlight={true} />
         </div>
 
-        <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3 relative z-[60]">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Animation Mode</h3>
+        <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-white/5 relative z-[60]">
+          <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider">Animation Mode</p>
           <div className="flex bg-black/40 rounded-lg p-1 border border-zinc-800">
             <button onClick={() => p.setAnimationMode('loop')} className={`flex-1 px-2 py-2 text-[11px] font-bold rounded transition-colors ${p.animationMode === 'loop' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:text-zinc-100'}`}>🔄 무한 반복 (Loop)</button>
             <button onClick={() => p.setAnimationMode('intro')} className={`flex-1 px-2 py-2 text-[11px] font-bold rounded transition-colors ${p.animationMode === 'intro' ? 'bg-[#FDCB6E]/20 text-[#FDCB6E]' : 'text-zinc-400 hover:text-zinc-100'}`}>✨ 등장 모션 (Intro)</button>
           </div>
           {p.animationMode === 'intro' && (
-            <div className="pt-3 mt-1 border-t border-zinc-800 animate-fade-in-down flex flex-col gap-3">
+            <div className="pt-2 animate-fade-in-down flex flex-col gap-3">
               <DropdownControl label="Intro Style (등장 연출)" value={p.layers.intro} options={INTRO_STYLES} onChange={(val) => { p.setLayers({ ...p.layers, intro: val }); p.setActivePreset(''); }} highlight={true} />
               {p.targetModel === 'kling' && (
                 <div className="bg-rose-500/10 border border-rose-500/40 p-2.5 rounded-lg flex flex-col gap-2 mt-1">
@@ -178,7 +180,7 @@ function GenerateTab(p) {
       </SectionGroup>
 
       {/* ─── 02 AI DIRECTOR — 레퍼런스 이미지 + 연출 요구사항 ─── */}
-      <SectionGroup index={2} label="AI Director" dotColor="#A29BFE" storageKey="motion-director">
+      <SectionGroup index={2} label="AI Director" dotColor="#A29BFE" open={openSection === 'director'} onToggle={toggleSection('director')}>
         <MatrixPromptForm
           image={p.image} setImage={p.setImage}
           isImageDragging={p.isImageDragging} setIsImageDragging={p.setIsImageDragging}
@@ -191,7 +193,7 @@ function GenerateTab(p) {
 
       {/* ─── 03 PRESETS — 빠른 템플릿 (Loop 모드 한정) ─── */}
       {p.animationMode === 'loop' && (
-        <SectionGroup index={3} label="Presets" dotColor="#55EFC4" storageKey="motion-presets">
+        <SectionGroup index={3} label="Presets" dotColor="#55EFC4" open={openSection === 'presets'} onToggle={toggleSection('presets')}>
           <MatrixPresetPanel
             activePresetGroup={p.activePresetGroup} setActivePresetGroup={p.setActivePresetGroup}
             activePresetId={p.activePresetId} isPresetModified={p.isPresetModified}
@@ -203,38 +205,35 @@ function GenerateTab(p) {
       )}
 
       {/* ─── 04 MATRIX — 세부 모션/시각 옵션 ─── */}
-      <SectionGroup index={p.animationMode === 'loop' ? 4 : 3} label="Matrix" dotColor="#00CEC9" storageKey="motion-matrix" className="mb-10">
-        <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-5 flex flex-col gap-5 relative z-[30]">
-          <div className="flex flex-col gap-3">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Flow & Rhythm</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {p.animationMode === 'intro'
-                ? <DropdownControl label="Intro Style" value={p.layers.intro} options={INTRO_STYLES} onChange={(val) => { p.setLayers({ ...p.layers, intro: val }); p.setActivePreset(''); }} />
-                : <DropdownControl label="Flow Style" value={p.layers.flow} options={FLOW_STYLES} onChange={(val) => { p.setLayers({ ...p.layers, flow: val }); p.setActivePreset(''); }} />}
-              <DropdownControl label="Dynamics" value={p.layers.dynamics} options={MOTION_DYNAMICS} onChange={(val) => { p.setLayers({ ...p.layers, dynamics: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.dynamics} />
-            </div>
+      <SectionGroup index={p.animationMode === 'loop' ? 4 : 3} label="Matrix" dotColor="#00CEC9" open={openSection === 'matrix'} onToggle={toggleSection('matrix')} className="mb-10">
+        <div className="flex flex-col gap-2 relative z-[30]">
+          <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider">Flow & Rhythm</p>
+          <div className="grid grid-cols-2 gap-3">
+            {p.animationMode === 'intro'
+              ? <DropdownControl label="Intro Style" value={p.layers.intro} options={INTRO_STYLES} onChange={(val) => { p.setLayers({ ...p.layers, intro: val }); p.setActivePreset(''); }} />
+              : <DropdownControl label="Flow Style" value={p.layers.flow} options={FLOW_STYLES} onChange={(val) => { p.setLayers({ ...p.layers, flow: val }); p.setActivePreset(''); }} />}
+            <DropdownControl label="Dynamics" value={p.layers.dynamics} options={MOTION_DYNAMICS} onChange={(val) => { p.setLayers({ ...p.layers, dynamics: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.dynamics} />
           </div>
-          <div className="h-px bg-zinc-800 w-full"></div>
-          <div className="flex flex-col gap-3">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Visual Matrix Layers</h3>
-            <div className="space-y-3">
-              <DropdownControl label="Surface" value={p.layers.surface} options={p.surfaceOptions} onChange={(val) => { p.setLayers({ ...p.layers, surface: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.surface} />
-              <DropdownControl label="Edge" value={p.layers.edge} options={p.edgeOptions} onChange={(val) => { p.setLayers({ ...p.layers, edge: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.edge} />
-              <DropdownControl label="Ambient" value={p.layers.ambient} options={p.ambientOptions} onChange={(val) => { p.setLayers({ ...p.layers, ambient: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.ambient} />
-              <div className="grid grid-cols-2 gap-3 pt-3 mt-1 border-t border-zinc-800">
-                <DropdownControl label="Duration" value={p.layers.duration} options={TIME_DURATION} onChange={(val) => { p.setLayers({ ...p.layers, duration: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.duration} />
-                <DropdownControl label="Intensity" value={p.layers.intensity} options={INTENSITY_LEVELS} onChange={(val) => { p.setLayers({ ...p.layers, intensity: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.intensity} />
-              </div>
-              {p.exportMode === 'vfx_pass' && (
-                <div className="pt-3 mt-1 border-t border-zinc-800 animate-fade-in-down flex flex-col gap-3">
-                  <DropdownControl label="VFX Render Target" value={p.vfxTarget} options={VFX_TARGETS} onChange={p.setVfxTarget} highlight={true} />
-                  <div className="bg-rose-500/10 border border-rose-500/40 p-2.5 rounded-lg flex flex-col gap-1.5 mt-1">
-                    <span className="text-[10px] font-bold text-rose-400">🚨 완벽한 추출 팁</span>
-                    <span className="text-[9.5px] text-zinc-100 leading-relaxed">텍스처 있는 원본 대신 흑백 실루엣 이미지(Matte)를 업로드하세요.</span>
-                  </div>
-                </div>
-              )}
+        </div>
+        <div className="flex flex-col gap-2 pt-3 mt-1 border-t border-white/5">
+          <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider">Visual Matrix Layers</p>
+          <div className="space-y-3">
+            <DropdownControl label="Surface" value={p.layers.surface} options={p.surfaceOptions} onChange={(val) => { p.setLayers({ ...p.layers, surface: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.surface} />
+            <DropdownControl label="Edge" value={p.layers.edge} options={p.edgeOptions} onChange={(val) => { p.setLayers({ ...p.layers, edge: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.edge} />
+            <DropdownControl label="Ambient" value={p.layers.ambient} options={p.ambientOptions} onChange={(val) => { p.setLayers({ ...p.layers, ambient: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.ambient} />
+            <div className="grid grid-cols-2 gap-3 pt-3 mt-1 border-t border-white/5">
+              <DropdownControl label="Duration" value={p.layers.duration} options={TIME_DURATION} onChange={(val) => { p.setLayers({ ...p.layers, duration: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.duration} />
+              <DropdownControl label="Intensity" value={p.layers.intensity} options={INTENSITY_LEVELS} onChange={(val) => { p.setLayers({ ...p.layers, intensity: val }); p.setActivePreset(''); }} recommendedId={p.arcRecommended?.intensity} />
             </div>
+            {p.exportMode === 'vfx_pass' && (
+              <div className="pt-3 mt-1 border-t border-white/5 animate-fade-in-down flex flex-col gap-3">
+                <DropdownControl label="VFX Render Target" value={p.vfxTarget} options={VFX_TARGETS} onChange={p.setVfxTarget} highlight={true} />
+                <div className="bg-rose-500/10 border border-rose-500/40 p-2.5 rounded-lg flex flex-col gap-1.5 mt-1">
+                  <span className="text-[10px] font-bold text-rose-400">🚨 완벽한 추출 팁</span>
+                  <span className="text-[9.5px] text-zinc-100 leading-relaxed">텍스처 있는 원본 대신 흑백 실루엣 이미지(Matte)를 업로드하세요.</span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </SectionGroup>

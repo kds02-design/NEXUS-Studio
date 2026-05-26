@@ -1,7 +1,7 @@
 import {
   X, Upload, Plus, MinusSquare, Calendar, Check, AlertCircle, Edit3,
   Trash2, RotateCcw, Loader2, Bot, Sparkles, Maximize2, Save, FileText,
-  Download, Image as ImageIcon, Layers
+  Download, Layers
 } from 'lucide-react';
 import { DEFAULT_AI_PROMPT } from '../constants/categories';
 
@@ -218,57 +218,6 @@ export const PromptManagerModal = ({ isOpen, onClose, isLightMode, editingPrompt
           <button onClick={handleSavePrompt} className="px-6 py-2.5 rounded-xl text-sm font-bold bg-[#0eb9b3] hover:bg-[#39d4ce] text-white shadow-lg shadow-[#0eb9b3]/20 flex items-center gap-2 transition-all">
             <Save className="w-4 h-4" /> 클라우드에 저장 적용
           </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export const LogoManagerModal = ({ isOpen, onClose, isLightMode, availableGames, gameLogos, handleUpdateLogo, handleRemoveLogo }) => {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[300] flex items-center justify-center p-4 sm:p-8 animate-in fade-in" onClick={onClose}>
-      <div className={`w-full max-w-2xl h-[80vh] flex flex-col rounded-2xl shadow-2xl border overflow-hidden ${isLightMode ? 'bg-white border-slate-200' : 'bg-[#0c0c0e] border-zinc-800'}`} onClick={e => e.stopPropagation()}>
-        <div className={`flex items-center justify-between p-5 border-b ${isLightMode ? 'border-slate-200 bg-slate-50' : 'border-zinc-800 bg-[#111]'}`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-[#0eb9b3]/10 flex items-center justify-center"><ImageIcon className="w-5 h-5 text-[#0eb9b3]" /></div>
-            <div>
-              <h3 className={`text-base font-bold ${isLightMode ? 'text-slate-900' : 'text-white'}`}>로고 관리</h3>
-              <p className={`text-xs ${isLightMode ? 'text-slate-500' : 'text-zinc-400'}`}>사이드바에 표시될 각 게임별 로고를 설정합니다.</p>
-            </div>
-          </div>
-          <button onClick={onClose} className={`p-2 rounded-full transition-colors ${isLightMode ? 'hover:bg-slate-200 text-slate-500' : 'hover:bg-zinc-800 text-zinc-400 hover:text-white'}`}><X className="w-5 h-5" /></button>
-        </div>
-        <div className="flex-1 p-6 overflow-y-auto custom-scrollbar space-y-8">
-          <div>
-            <h4 className={`text-sm font-bold mb-4 uppercase tracking-wider ${isLightMode ? 'text-slate-500' : 'text-zinc-500'}`}>게임별 로고 설정</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {availableGames.map(game => (
-                <div key={game} className={`flex items-center justify-between p-3 rounded-xl border ${isLightMode ? 'bg-slate-50 border-slate-200' : 'bg-black border-zinc-800'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center overflow-hidden border ${isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-700'}`}>
-                      {gameLogos[game] ? <img src={gameLogos[game]} alt={game} className="w-full h-full object-cover" /> : <span className="text-sm font-bold text-zinc-500">{game.substring(0, 1)}</span>}
-                    </div>
-                    <span className={`text-sm font-bold ${isLightMode ? 'text-slate-800' : 'text-zinc-300'}`}>{game}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <label className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-colors border ${isLightMode ? 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100' : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white'}`} title="로고 업로드">
-                      <Upload className="w-4 h-4" />
-                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleUpdateLogo(game, e.target.files[0])} />
-                    </label>
-                    {gameLogos[game] && (
-                      <button onClick={() => handleRemoveLogo(game)} className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors border border-red-500/20 text-red-500 hover:bg-red-500/10" title="로고 삭제">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className={`p-5 border-t flex justify-end gap-3 ${isLightMode ? 'border-slate-200 bg-slate-50' : 'border-zinc-800 bg-[#111]'}`}>
-          <button onClick={onClose} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-colors border ${isLightMode ? 'bg-white border-slate-300 text-slate-600 hover:bg-slate-100' : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:bg-zinc-800'}`}>닫기</button>
         </div>
       </div>
     </div>

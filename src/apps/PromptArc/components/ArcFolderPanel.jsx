@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Folder, FolderPlus, Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { Folder, FolderPlus, Plus, Pencil, Trash2, Check, X, Lock } from "lucide-react";
+
+const PRIVATE_CATEGORY = 'my_private';
 
 export default function ArcFolderPanel({
   folders, category, setCategory, isSidebarCollapsed,
@@ -10,9 +12,15 @@ export default function ArcFolderPanel({
   const [newFolderName, setNewFolderName] = useState('');
   const [showNewFolderInput, setShowNewFolderInput] = useState(false);
 
+  const privateActive = category === PRIVATE_CATEGORY;
+
   if (isSidebarCollapsed) {
     return (
       <>
+        <button onClick={() => setCategory(PRIVATE_CATEGORY)} title="내 비공개"
+          className={`flex items-center h-9 w-full transition-colors ${privateActive ? 'text-slate-900 bg-black/5 dark:text-zinc-200 dark:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-500 dark:hover:text-white dark:hover:bg-white/5'}`}>
+          <div className="w-16 flex justify-center"><Lock size={14} className={privateActive ? 'text-[#C8A969]' : ''} /></div>
+        </button>
         {folders.map(f => {
           const fid = `folder:${f.id}`;
           const active = category === fid;
@@ -35,6 +43,16 @@ export default function ArcFolderPanel({
           className="p-1 text-slate-500 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-500 dark:hover:text-white dark:hover:bg-white/5 rounded" title="폴더 추가">
           <Plus size={12} />
         </button>
+      </div>
+      {/* 고정 항목: 내 비공개 — 사용자 폴더보다 항상 먼저, 이름·삭제 액션 없음 */}
+      <div
+        onClick={() => setCategory(PRIVATE_CATEGORY)}
+        className={`group flex items-center h-9 w-full transition-colors cursor-pointer ${privateActive ? 'text-slate-900 bg-black/5 dark:text-zinc-200 dark:bg-white/5' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-500 dark:hover:text-white dark:hover:bg-white/5'}`}
+      >
+        <div className="w-10 ml-2 flex justify-center shrink-0">
+          <Lock size={14} className={privateActive ? 'text-[#C8A969]' : ''} />
+        </div>
+        <span className={`text-xs flex-1 truncate ${privateActive ? 'font-bold' : ''}`}>내 비공개</span>
       </div>
       {folders.map(f => {
         const fid = `folder:${f.id}`;

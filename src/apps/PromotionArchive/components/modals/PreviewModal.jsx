@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useReducer, useCallback, useRef, useState } from 'react';
 import {
   X, Heart, Monitor, Smartphone, Download, Copy, Check, Plus,
-  Lock, ZoomIn, ZoomOut, Layers, Edit3, Scissors,
+  ZoomIn, ZoomOut, Layers, Edit3, Scissors,
   Signal, Wifi, Battery, Link as LinkIcon, Sparkles, Frame,
-  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, RotateCw, Star, Trash2, Repeat,
+  ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Star, Trash2, Repeat,
 } from "lucide-react";
 import { getWebFinalScore100, hasWebEvaluation } from '../../constants/webEvalCriteria';
 import RegionPicker from '../../../AssetLibrary/components/RegionPicker';
@@ -614,7 +614,7 @@ const PreviewModal = ({
                 {/* 일반 뷰: h-full 로 부모 높이에 딱 맞춰 padding 도 box-sizing border-box 로 안쪽 흡수 → 스크롤 안 생김.
                     풀뷰: min-h-full + start 정렬 — 컨텐츠가 길면 자연 스크롤. */}
                 <div
-                  className={`flex flex-col items-center transition-all duration-700 ${state.isFullView ? "min-h-full p-0 justify-start" : "h-full p-8 justify-center"}`}
+                  className={`flex flex-col items-center transition-all duration-700 ${state.isFullView ? "min-h-full p-0 justify-start" : "h-full py-4 px-6 justify-center"}`}
                 >
                   {state.isFullView ? (
                     // 풀뷰 — 브랜드웹은 패럴렉스 cross-fade(한 페이지씩), 그 외는 단일 이미지.
@@ -648,50 +648,29 @@ const PreviewModal = ({
                       </div>
                     )
                   ) : (
-                    // PC 일반 뷰 — Chrome 브라우저 프레임. 브랜드웹/일반 모두 같은 프레임.
-                    // max-width 를 min(1280, calc((100vh - 260px) * 16/9)) 로 산정 — viewport 작아지면 전체가 비례 축소.
-                    // chrome 헤더(~88px) + content aspect-video 가 viewport 안에 항상 들어옴.
+                    // PC 일반 뷰 — Chrome 브라우저 프레임 (주소창 제거, 탭 영역만 남김).
+                    // maxWidth 는 모달 높이(88vh, cap 920px) 기준으로 산정 — 모달 내부 reserved 영역
+                    // (상단 컨트롤 56 + py-4 padding 32 + 탭 헤더 35 + 페이저/여유 ~ 130px) 을 뺀 만큼
+                    // aspect-video(16:9) 로 컨텐츠가 들어가도록 계산.
                     <div
                       className="relative w-full flex flex-col items-center animate-in zoom-in-95 duration-500"
-                      style={{ maxWidth: 'min(1280px, calc((100vh - 260px) * 16 / 9))' }}
+                      style={{ maxWidth: 'min(1280px, calc((88vh - 130px) * 16 / 9))' }}
                     >
                       {/* 글로우 */}
                       <div className="absolute -inset-x-10 -top-6 -bottom-20 bg-gradient-radial from-white/[0.04] to-transparent blur-2xl pointer-events-none" />
 
-                      {/* 브라우저 윈도우 — Chrome 다크 모드 스타일 */}
+                      {/* 브라우저 윈도우 — Chrome 다크 모드 스타일 (탭만) */}
                       <div className="relative z-10 w-full rounded-xl overflow-hidden shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7),0_8px_24px_-8px_rgba(0,0,0,0.5)] border border-white/5 bg-[#202124]">
-                        {/* 타이틀바 — Chrome dark (#202124 / 활성탭 #35363a) */}
-                        <div className="bg-[#202124] border-b border-white/5 px-3 pt-2.5 pb-0">
-                          <div className="flex items-center gap-3 pb-2">
-                            {/* 트래픽 라이트 — 컬러는 유지(시스템 컨벤션) */}
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <div className="group/tl w-3 h-3 rounded-full bg-[#ff5f57] border border-[#e0443e] shadow-inner" />
+                        {/* 타이틀바 — 탭 영역만 (트래픽라이트는 탭 왼쪽에 인라인 배치) */}
+                        <div className="bg-[#202124] border-b border-white/5 px-3 pt-2 pb-0">
+                          <div className="flex items-end gap-2">
+                            {/* 트래픽 라이트 — 탭과 정렬되도록 인라인 */}
+                            <div className="flex items-center gap-1.5 shrink-0 pb-2">
+                              <div className="w-3 h-3 rounded-full bg-[#ff5f57] border border-[#e0443e] shadow-inner" />
                               <div className="w-3 h-3 rounded-full bg-[#febc2e] border border-[#dea123] shadow-inner" />
                               <div className="w-3 h-3 rounded-full bg-[#28c840] border border-[#1aab29] shadow-inner" />
                             </div>
-                            {/* 네비 컨트롤 — 다크 아이콘 컬러 (#9aa0a6 Chrome icon gray) */}
-                            <div className="flex items-center gap-0.5 text-[#9aa0a6] shrink-0 ml-1">
-                              <button className="w-6 h-6 rounded-md hover:bg-white/10 flex items-center justify-center" tabIndex={-1}>
-                                <ChevronLeft size={14} />
-                              </button>
-                              <button className="w-6 h-6 rounded-md hover:bg-white/10 flex items-center justify-center text-[#5f6368]" tabIndex={-1}>
-                                <ChevronRight size={14} />
-                              </button>
-                              <button className="w-6 h-6 rounded-md hover:bg-white/10 flex items-center justify-center" tabIndex={-1}>
-                                <RotateCw size={12} />
-                              </button>
-                            </div>
-                            {/* URL 바 (omnibox) — Chrome dark #3c4043 */}
-                            <div className="flex-1 h-7 bg-[#3c4043] border border-transparent rounded-md flex items-center px-2.5 gap-2 text-[11px] text-[#e8eaed] font-medium min-w-0">
-                              <Lock size={11} className="text-[#81c995] shrink-0" />
-                              <span className="truncate">plaync.com/{banner?.game}{banner?.title ? `/${encodeURIComponent(banner.title).slice(0, 28)}` : ''}</span>
-                              <Star size={11} className="text-[#9aa0a6] shrink-0 ml-auto" />
-                            </div>
-                            {/* 우측 사용자 아바타 자리 */}
-                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-[#d8b17e] to-[#a8814e] shrink-0 shadow-inner border border-white/10" />
-                          </div>
-                          {/* 탭 영역 — 활성탭 #35363a, 비활성 transparent */}
-                          <div className="flex items-end gap-1">
+                            {/* 탭 영역 */}
                             <div className="bg-[#35363a] rounded-t-md px-3 py-1.5 flex items-center gap-1.5 text-[10px] text-[#e8eaed] font-medium max-w-[200px]">
                               <div className="w-2.5 h-2.5 rounded-full bg-[#d8b17e]/70 shrink-0" />
                               <span className="truncate">{banner?.title || 'Promotion'}</span>
@@ -723,14 +702,6 @@ const PreviewModal = ({
                             </div>
                           )}
                         </div>
-                      </div>
-
-                      {/* 책상 반사 */}
-                      <div className="relative z-0 w-full max-w-[1100px] h-10 mt-1 overflow-hidden pointer-events-none opacity-50">
-                        <div
-                          className="w-full h-full bg-gradient-to-b from-white/10 to-transparent"
-                          style={{ maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.4), transparent)', WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.4), transparent)' }}
-                        />
                       </div>
                     </div>
                   )}
@@ -792,15 +763,38 @@ const PreviewModal = ({
               </div>
             ) : (
               // 모바일 일반 뷰 — 브랜드웹/프로모션 공통 iPhone 베젤 프레임.
-              // items-center/justify-center 로 고정 정렬 — 스크롤 시 위치가 흔들리던 문제 해소.
-              // 베젤(360×740) 이 viewport 보다 크면 overflow-y-auto 가 폴백.
-              <div className="w-full h-full flex items-center justify-center p-8 overflow-y-auto scrollbar-hide animate-in fade-in duration-300">
-                {/* 디바이스 외부 베젤 (티타늄) */}
+              // 베젤(360×740) 은 layout 사이즈는 고정하고 CSS scale 로 비례 축소 — px 단위 자식들
+              // (노치, 사이드버튼, 스테이터스 바 등) 도 함께 줄어들어 깨지지 않음.
+              // scale 공식은 실제 viewport(100vh) 기준 — 모달 outer 의 top-[52px] + p-10 패딩(80px)
+              // + 상단 컨트롤바(56) + py-4 패딩(32) + 페이저 영역(40) + 여유(20) = 280px 차감.
+              // overflow-hidden 으로 layout 오버플로(스케일은 visual 만 줄이고 box 는 그대로)를 가림.
+              <div className="w-full h-full flex items-center justify-center py-4 px-6 overflow-hidden animate-in fade-in duration-300 relative">
+                {/* 블러 배경 — 현재 모바일 이미지를 크게 깔고 blur + 낮은 opacity 로 깔아 뒷배경이 비어 보이지 않게.
+                    pointer-events-none 으로 베젤 위 인터랙션 방해 없음. */}
+                {moImage && (
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
+                    <img
+                      src={moImage}
+                      alt=""
+                      draggable={false}
+                      className="absolute inset-0 w-full h-full object-cover scale-150 opacity-30"
+                      style={{ filter: 'blur(60px) saturate(1.2)' }}
+                    />
+                    {/* 살짝 어둡게 덮어 베젤 가독성 보장 */}
+                    <div className="absolute inset-0 bg-black/40" />
+                  </div>
+                )}
+                {/* 디바이스 외부 베젤 (티타늄)
+                    scale 계산: calc((100vh - 280px) / 1px / 740) — `/ 1px` 로 length 를 unitless 로
+                    변환해야 scale() 에 들어갈 수 있다(없으면 단위 불일치로 CSS 가 무시함).
+                    280 = top-[52] + outer p-10 (80) + 상단바 (56) + py-4 (32) + 페이저 (40) + 여유 (20) */}
                 <div
-                  className="relative rounded-[44px] p-[3px] overflow-hidden shadow-[0_30px_60px_-12px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.04)]"
+                  className="relative rounded-[44px] p-[3px] overflow-hidden shadow-[0_30px_60px_-12px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,255,255,0.04)] shrink-0"
                   style={{
                     background: 'linear-gradient(145deg, #4a4a4f 0%, #2a2a2e 35%, #1a1a1e 65%, #3a3a3e 100%)',
                     width: 360, height: 740,
+                    transform: 'scale(clamp(0.3, calc((100vh - 280px) / 1px / 740), 1))',
+                    transformOrigin: 'center',
                   }}
                 >
                   {/* 사이드 버튼들 */}

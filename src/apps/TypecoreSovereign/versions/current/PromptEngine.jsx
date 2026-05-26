@@ -2,7 +2,7 @@
 // 버전 스냅샷(아카이브): TypecoreSovereign current. 2043줄 단일 파일을 components/hooks/constants 로
 // 격리 분리한 thin 진입점. versions/current/ 외부의 TypecoreSovereign 공유 모듈은 사용하지 않음 (격리 원칙).
 // Imagen 렌더링은 lib/imagenRender + PromptArc 저장 흐름을 RenderMatrix 와 동일하게 재사용.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Edit3, Settings } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../services/gemini';
@@ -11,6 +11,7 @@ import { uploadBase64 } from '../../../../lib/storage';
 import { db, appId } from '../../../../lib/firebase';
 import { serializeForFirestore } from '../../../PromptArc/services/firebase';
 import { useAuth } from '../../../../context/AuthContext';
+import { useGlobal } from '../../../../context/GlobalContext';
 
 import { useSovereignPromptCurrent } from './hooks/useSovereignPromptCurrent.js';
 import Sidebar from './components/Sidebar.jsx';
@@ -22,6 +23,7 @@ const App = ({ version, setVersion, versions } = {}) => {
   const apiKey = GEMINI_API_KEY;
   const rp = useSovereignPromptCurrent({ apiKey });
   const { user, grade } = useAuth();
+  const { navigate } = useGlobal();
   const canRender = grade === 'pro' || grade === 'expert';
 
   // Imagen 렌더링 — RenderMatrix 와 동일 흐름.
@@ -30,6 +32,18 @@ const App = ({ version, setVersion, versions } = {}) => {
   const [renderError, setRenderError] = useState(null);
   const [savingToArc, setSavingToArc] = useState(false);
   const [selectedImagenModel, setSelectedImagenModel] = useState(IMAGEN_MODELS[0].id);
+  // 자동 저장 결과 추적 — PromptArc doc id 가 있으면 "저장됨" 표시, null 이면 미저장.
+  const [savedToArcId, setSavedToArcId] = useState(null);
+  // 저장된 cloudinary URL 캐싱 — Render Matrix 송신 시 재업로드 회피.
+  const [savedCloudinaryUrl, setSavedCloudinaryUrl] = useState(null);
+  // Render Matrix 송신 진행 상태.
+  const [sendingToRenderMatrix, setSendingToRenderMatrix] = useState(false);
+
+  // 새 렌더 결과가 들어오면 저장 상태 초기화.
+  useEffect(() => {
+    setSavedToArcId(null);
+    setSavedCloudinaryUrl(null);
+  }, [renderedImage]);
 
   const saveRenderToPromptArc = useCallback(async (promptText, image) => {
     if (!user?.uid || !image?.dataUrl) return;
@@ -55,8 +69,11 @@ const App = ({ version, setVersion, versions } = {}) => {
         createdAt: now, updatedAt: now,
       };
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'prompts', id), serializeForFirestore(record));
+      // 저장 상태 + URL 캐시.
+      setSavedToArcId(id);
+      setSavedCloudinaryUrl(cloudinaryUrl);
       rp.showToast?.('✨ PromptArc 내 폴더에 저장됐어요');
-      return id;
+      return { id, cloudinaryUrl };
     } catch (e) {
       console.error('[TypecoreSovereign] save to PromptArc failed', e);
       rp.showToast?.(`PromptArc 저장 실패: ${e.message || e.code}`);
@@ -64,6 +81,29 @@ const App = ({ version, setVersion, versions } = {}) => {
       setSavingToArc(false);
     }
   }, [user, rp]);
+
+  // Render Matrix 로 송신 — 렌더된 이미지를 RenderMatrix edit 모드의 base image 로 자동 임포트.
+  // 자동 저장된 cloudinary URL 이 있으면 재사용. 없으면 즉시 업로드.
+  const handleSendToRenderMatrix = useCallback(async () => {
+    if (!renderedImage?.dataUrl) return;
+    setSendingToRenderMatrix(true);
+    try {
+      const url = savedCloudinaryUrl || await uploadBase64(renderedImage.dataUrl);
+      const text = rp.currentOutputContent || '';
+      navigate('render-metrics', {
+        source: 'typecore-sovereign',
+        mode: 'edit', // RenderMatrix 의 edit 뷰로 자동 전환되며 editImage(base image)에 들어감.
+        prompt: { text, tags: ['TypecoreSovereign', 'Typography'] },
+        image: { url, metadata: { from: 'TypecoreSovereign' } },
+      });
+      rp.showToast?.('🚀 Render Matrix 로 보냈어요');
+    } catch (e) {
+      console.error('[TypecoreSovereign] send to RenderMatrix failed', e);
+      rp.showToast?.(`Render Matrix 전송 실패: ${e.message || e.code}`);
+    } finally {
+      setSendingToRenderMatrix(false);
+    }
+  }, [renderedImage, savedCloudinaryUrl, navigate, rp]);
 
   const handleRender = useCallback(async (promptText) => {
     if (!promptText) return;
@@ -104,6 +144,9 @@ const App = ({ version, setVersion, versions } = {}) => {
     onDownloadRendered: handleDownloadRendered,
     onSaveToPromptArc: handleSaveToPromptArc,
     savingToArc,
+    savedToArcId,                       // null 이면 미저장, doc id 면 저장 완료.
+    onSendToRenderMatrix: handleSendToRenderMatrix,
+    sendingToRenderMatrix,
     isLoggedIn: !!user?.uid,
     canRender, grade,
   };

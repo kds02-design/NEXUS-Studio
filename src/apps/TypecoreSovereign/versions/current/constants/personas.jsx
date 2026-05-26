@@ -26,7 +26,7 @@ export const coreArchetypes = [
     tone: "[장엄하고 묵직한] AAA 게임 시네마틱 컷처럼 무게감 있는 시스템 명령어 문체로 오직 '글자 획의 위엄과 산업적 밀도'만을 시각적 언어로 치환할 것.",
     keywords: "AAA game title logo, monumental brutalist typography, heavy industrial metal block, dramatic rim lighting, console game packaging aesthetic, bottom-heavy pillar structure",
     language: "massive monolithic block letterforms carved from dark iron, brushed steel surface with subtle hammered texture, deeply chiseled bottom-heavy industrial mass, AAA video game title typography, dense pillar stems with chamfered edges, dramatic side rim light",
-    weightTags: "(massive architectural pillar stems:1.5), (brushed steel surface with hammered texture:1.3), (impenetrable thick monolithic structure:1.4), heavy bottom-heavy industrial mass",
+    weightTags: "(massive architectural pillar stems:1.5), (hammered geometric surface pattern:1.3), (impenetrable thick monolithic structure:1.4), heavy bottom-heavy industrial mass",
     forbidden: "NO extreme thin lines, NO fragile broken elements, NO fluid organic curves, NO playful rounded shapes, NO calligraphic flourishes, NO neon glow",
   },
   {
@@ -86,7 +86,7 @@ export const coreArchetypes = [
 // --- SAFETY GUARDS (변경 없음) ---
 export const safetyGuards = [
   { id: 'guard_mutation', label: '텍스트 보존 락', desc: '원문 100% 유지. 철자 누락/변형 절대 금지.', fixEn: '(perfectly intact text legibility:1.4), (100% correct spelling:1.5), absolutely NO missing letters' },
-  { id: 'guard_3d',       label: '2D 평면 강제 락', desc: '뎁스, 베벨, 그림자 생성 원천 차단.', fixEn: '(strictly zero perspective distortion:1.5), (flat focal plane:1.4), absolutely NO rear extrusion' },
+  { id: 'guard_3d',       label: '2D 평면 강제 락', desc: '뎁스, 베벨, 그림자 생성 원천 차단.', fixEn: '(zero depth flat 2D geometry:1.5), NO rear extrusion, NO volumetric form' },
   { id: 'guard_layout',   label: '세로 붕괴 방지 락', desc: '세로 찌그러짐/늘어남 방지. 1:1 골격 강제.', fixEn: '(strictly normal horizontal text proportions:1.5), (perfect text baseline:1.4), NO vertical stretching, NO tall letters' },
-  { id: 'guard_noise',    label: 'VFX 억제 락', desc: '실루엣을 해치는 부유물 및 파편 제거.', fixEn: '(clear cutout text shape:1.4), (flawless outer silhouette boundary:1.3), NO floating noise' },
+  { id: 'guard_noise',    label: 'VFX 억제 락', desc: '실루엣을 해치는 부유물 및 파편 제거.', fixEn: '(clear cutout text shape:1.4), (flawless silhouette boundary:1.5), NO floating noise' },
 ];

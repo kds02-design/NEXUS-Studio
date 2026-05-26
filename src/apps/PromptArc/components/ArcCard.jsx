@@ -43,38 +43,33 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
   const displayImage = baseImage || videoPoster;
   const isVideoOnly = (prompt.type === 'video') || (!baseImage && !!videoUrl);
   const [hov, setHov] = useState(false);
-  const [inView, setInView] = useState(false);
   const containerRef = useRef(null);
   const videoRef = useRef(null);
+  const playsRef = useRef(0);
 
-  // 카드가 뷰포트에 진입하면 inView=true → 영상 자동 재생.
-  // 영상 없는 카드는 옵저버 생성 자체를 스킵.
+  // hover 진입 → 처음부터 재생, 떠나면 정지·되감기. 한 hover 안에서 최대 2회 재생.
   useEffect(() => {
     if (!videoUrl) return;
-    const el = containerRef.current;
-    if (!el || typeof IntersectionObserver === 'undefined') return;
-    const io = new IntersectionObserver((entries) => {
-      const e = entries[0];
-      setInView(!!e?.isIntersecting);
-    }, { threshold: 0.1, rootMargin: '100px' });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [videoUrl]);
-
-  // inView 가 변하면 재생/일시정지. currentTime 은 유지해서 다시 보일 때 이어서 재생.
-  useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
-    if (inView) {
-      const p = v.play();
-      if (p && typeof p.catch === 'function') p.catch(() => {});
+    if (hov) {
+      playsRef.current = 0;
+      try { v.currentTime = 0; const p = v.play(); if (p?.catch) p.catch(() => {}); } catch { /* ignore */ }
     } else {
-      v.pause();
+      try { v.pause(); v.currentTime = 0; } catch { /* ignore */ }
     }
-  }, [inView, videoUrl]);
+  }, [hov, videoUrl]);
 
-  // 영상 노출 조건 — hover 가 아닌 뷰포트 진입 여부로 판단.
-  const showVideo = !!videoUrl && inView;
+  const handleVideoEnded = () => {
+    playsRef.current += 1;
+    if (playsRef.current < 2 && hov) {
+      const v = videoRef.current;
+      if (v) { try { v.currentTime = 0; const p = v.play(); if (p?.catch) p.catch(() => {}); } catch { /* ignore */ } }
+    }
+  };
+
+  // 영상 노출 조건 — hover 시에만 표시 (그 외에는 정지 썸네일/포스터).
+  const showVideo = !!videoUrl && hov;
 
   return (
     <div ref={containerRef} onClick={onClick} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
@@ -86,7 +81,7 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
           <div className="relative w-full aspect-video bg-gradient-to-br from-[#1a1521] to-[#0a0a0a] flex items-center justify-center">
             <div className={`text-5xl transition-transform ${showVideo ? 'scale-90 opacity-30' : 'scale-100 opacity-80'}`}>🎬</div>
             {videoUrl && (
-              <video ref={videoRef} src={videoUrl} poster={videoPosterSrc || undefined} muted loop playsInline preload="metadata"
+              <video ref={videoRef} src={videoUrl} poster={videoPosterSrc || undefined} muted playsInline preload="metadata" onEnded={handleVideoEnded}
                 className={`absolute inset-0 w-full h-full object-cover bg-black ${showVideo ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity`} />
             )}
           </div>
@@ -94,7 +89,7 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
           <>
             <PromptImage src={displayImage} alt={prompt.title} className={`w-full h-auto object-scale-down block bg-slate-50 dark:bg-[#0A0A0A] ${showVideo ? 'opacity-0' : 'opacity-100'} transition-opacity`} />
             {videoUrl && (
-              <video ref={videoRef} src={videoUrl} poster={videoPosterSrc || undefined} muted loop playsInline preload="metadata"
+              <video ref={videoRef} src={videoUrl} poster={videoPosterSrc || undefined} muted playsInline preload="metadata" onEnded={handleVideoEnded}
                 className={`absolute inset-0 w-full h-full object-cover bg-black ${showVideo ? 'opacity-100' : 'opacity-0 pointer-events-none'} transition-opacity`} />
             )}
           </>
@@ -109,7 +104,7 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
       {videoUrl && (
         <div className="absolute bottom-2 left-2 z-30 flex items-center gap-1.5 max-w-[calc(100%-1rem)]">
           <div className="flex items-center gap-1 px-1.5 py-0.5 bg-black/70 rounded text-[10px] font-bold text-white shrink-0">
-            <Play size={10} fill="currentColor" /> VIDEO
+            <Play size={10} fill="#ff4d4d" color="#ff4d4d" /> VIDEO
           </div>
           <div className={`flex items-center gap-1 overflow-hidden transition-opacity ${hov ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
             {(prompt.tags || []).slice(0, 4).map((tag, i) => (
