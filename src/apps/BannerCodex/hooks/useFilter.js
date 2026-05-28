@@ -18,6 +18,7 @@ const getDateValue = (b) => {
 export const useFilter = ({
   banners, tempBanners, cartIds, activeCategory, sortOrder,
   searchQuery, isAiSearchMode, aiSearchIds, filters,
+  folders = [], activeFolderId = null,
 }) => {
   const [filteredBanners, setFilteredBanners] = useState([]);
 
@@ -58,7 +59,11 @@ export const useFilter = ({
     }
     if (activeCategory === 'favorites') results = results.filter(b => b.liked);
     else if (activeCategory === 'cart') results = results.filter(b => cartIds.includes(b.id));
-    else if (activeCategory !== 'all' && activeCategory !== 'temp') {
+    else if (activeFolderId) {
+      const folder = folders.find(f => f.id === activeFolderId);
+      const ids = new Set(folder?.bannerIds || []);
+      results = results.filter(b => ids.has(b.id));
+    } else if (activeCategory !== 'all' && activeCategory !== 'temp') {
       const gameMap = { 'aion': '아이온', 'bns': '블소', 'etc': '기타' };
       const filterGame = gameMap[activeCategory] || activeCategory;
       results = results.filter(b => b.game === filterGame);
@@ -108,7 +113,7 @@ export const useFilter = ({
       return 0;
     });
     setFilteredBanners(results);
-  }, [searchQuery, banners, tempBanners, activeCategory, sortOrder, filters, cartIds, isAiSearchMode, aiSearchIds]);
+  }, [searchQuery, banners, tempBanners, activeCategory, sortOrder, filters, cartIds, isAiSearchMode, aiSearchIds, folders, activeFolderId]);
 
   return { filteredBanners, availableGames, recentGames, topTags };
 };

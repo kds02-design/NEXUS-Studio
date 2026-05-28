@@ -16,10 +16,38 @@ export const IMAGEN_MODELS = [
   },
 ];
 
+// Gemini image API 가 지원하는 출력 비율. 입력 시안 비율에 가장 가까운 값으로 매핑한다.
+const SUPPORTED_RATIOS = [
+  { id: "1:1", v: 1 }, { id: "2:3", v: 2 / 3 }, { id: "3:2", v: 3 / 2 },
+  { id: "3:4", v: 3 / 4 }, { id: "4:3", v: 4 / 3 }, { id: "4:5", v: 4 / 5 },
+  { id: "5:4", v: 5 / 4 }, { id: "9:16", v: 9 / 16 }, { id: "16:9", v: 16 / 9 },
+  { id: "21:9", v: 21 / 9 },
+];
+
+// dataURL 의 실제 픽셀 크기를 측정 → 지원 비율 중 가장 가까운 것을 반환.
+// 측정 실패 시 null (그러면 imageConfig 생략 → 모델 기본값).
+function probeAspectRatio(dataUrl) {
+  return new Promise((resolve) => {
+    if (!dataUrl || typeof Image === "undefined") { resolve(null); return; }
+    const img = new Image();
+    img.onload = () => {
+      const r = img.naturalWidth / img.naturalHeight;
+      if (!Number.isFinite(r) || r <= 0) { resolve(null); return; }
+      const nearest = SUPPORTED_RATIOS.reduce((best, cur) =>
+        Math.abs(cur.v - r) < Math.abs(best.v - r) ? cur : best
+      );
+      resolve(nearest.id);
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUrl;
+  });
+}
+
 export async function renderWithImagen(
   promptText,
   modelId,
-  referenceImageDataUrl = null
+  referenceImageDataUrl = null,
+  options = {}
 ) {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
@@ -37,9 +65,17 @@ export async function renderWithImagen(
 
   parts.push({ text: promptText });
 
+  // 출력 비율 — 명시값(options.aspectRatio) 우선, 없으면 입력 시안 비율 자동 감지.
+  // 이전엔 imageConfig 가 없어 기본 1:1 정사각형으로 나와 가로로 긴 타이포가 압축돼 디테일이 떨어졌음.
+  const aspectRatio = options.aspectRatio
+    || (referenceImageDataUrl ? await probeAspectRatio(referenceImageDataUrl) : null);
+
+  const generationConfig = { responseModalities: ["IMAGE", "TEXT"] };
+  if (aspectRatio) generationConfig.imageConfig = { aspectRatio };
+
   const body = {
     contents: [{ parts }],
-    generationConfig: { responseModalities: ["IMAGE", "TEXT"] },
+    generationConfig,
   };
 
   const res = await fetch(url, {

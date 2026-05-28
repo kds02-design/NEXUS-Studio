@@ -5,6 +5,8 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
+  sendEmailVerification,
+  reload as reloadUser,
 } from "firebase/auth";
 import { auth, googleProvider } from "../lib/firebase";
 import {
@@ -147,8 +149,27 @@ export function AuthProvider({ children }) {
   const signInEmail = useCallback((email, password) =>
     signInWithEmailAndPassword(auth, email, password), []);
 
-  const signUpEmail = useCallback((email, password) =>
-    createUserWithEmailAndPassword(auth, email, password), []);
+  const signUpEmail = useCallback(async (email, password) => {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    // 가입 직후 검증 메일 자동 발송. 실패해도 가입은 성공한 상태이므로 콘솔만 남김.
+    try { await sendEmailVerification(cred.user); }
+    catch (e) { console.warn("[Auth] sendEmailVerification failed", e); }
+    return cred;
+  }, []);
+
+  // 검증 메일 재발송 — 현재 로그인된 사용자에게.
+  const resendVerificationEmail = useCallback(async () => {
+    if (!auth.currentUser) throw new Error("로그인이 필요합니다.");
+    await sendEmailVerification(auth.currentUser);
+  }, []);
+
+  // 검증 완료 확인 — user.reload() 후 emailVerified 재확인하고 profile 재발급.
+  const refreshEmailVerification = useCallback(async () => {
+    if (!auth.currentUser) return false;
+    await reloadUser(auth.currentUser);
+    setUser({ ...auth.currentUser });
+    return auth.currentUser.emailVerified;
+  }, []);
 
   const signInGoogle = useCallback(() =>
     signInWithPopup(auth, googleProvider), []);
@@ -176,6 +197,7 @@ export function AuthProvider({ children }) {
     signInEmail, signUpEmail, signInGoogle, signOut,
     setPendingInviteCode, applyInviteCode,
     refreshProfile, tryConsumeUsage,
+    resendVerificationEmail, refreshEmailVerification,
   }), [
     user, profile, grade, loading, profileLoaded, isAuthLoading,
     isAdmin, isPending, isRejected, status,
@@ -183,6 +205,7 @@ export function AuthProvider({ children }) {
     signInEmail, signUpEmail, signInGoogle, signOut,
     setPendingInviteCode, applyInviteCode,
     refreshProfile, tryConsumeUsage,
+    resendVerificationEmail, refreshEmailVerification,
   ]);
 
   return (

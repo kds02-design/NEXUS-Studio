@@ -2,7 +2,7 @@
 // 경로: artifacts/{appId}/public/data/assets/{assetId}
 import {
   collection, doc, addDoc, deleteDoc, updateDoc,
-  onSnapshot, query, orderBy, serverTimestamp,
+  onSnapshot, getDocs, query, orderBy, serverTimestamp,
 } from "firebase/firestore";
 import { db, appId } from "../../../lib/firebase";
 import { uploadBase64 } from "../../../lib/storage";
@@ -11,23 +11,25 @@ import { cropImageToDataUrl } from "./cropper";
 const assetsColRef = () => collection(db, "artifacts", appId, "public", "data", "assets");
 const assetDocRef = (id) => doc(db, "artifacts", appId, "public", "data", "assets", id);
 
-// 실시간 구독 — createdAt desc.
-export function subscribeAssets(callback, onError) {
+// 일회성 fetch — createdAt desc. 이전엔 onSnapshot 으로 통째 실시간 구독했으나
+// Firestore 무료 한도 초과 문제로 단발 호출로 전환. 호출자가 명시적 refresh 가능.
+export async function fetchAssetsOnce() {
   try {
     const q = query(assetsColRef(), orderBy("createdAt", "desc"));
-    return onSnapshot(q, (snap) => {
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-    }, (err) => {
-      console.warn("[AssetLibrary] subscribe ordered failed, fallback:", err);
-      const u = onSnapshot(assetsColRef(), (snap) => {
-        callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      }, onError);
-      return u;
-    });
-  } catch (e) {
-    onError?.(e);
-    return () => {};
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.warn("[AssetLibrary] ordered fetch failed, fallback:", err);
+    const snap = await getDocs(assetsColRef());
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   }
+}
+
+// 하위 호환 — 기존 호출처가 (callback, onError) 패턴 유지하면서 1회 fetch 로 라우팅.
+// unsub 은 noop. 호출자가 새로 데이터를 가져오려면 fetchAssetsOnce 를 직접 호출.
+export function subscribeAssets(callback, onError) {
+  fetchAssetsOnce().then(callback).catch((e) => onError?.(e));
+  return () => {};
 }
 
 // 단일 에셋 저장 — 크롭된 dataURL 을 Cloudinary 업로드 후 Firestore 문서 생성.

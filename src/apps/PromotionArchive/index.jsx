@@ -319,6 +319,7 @@ function App() {
                 updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.new }));
                 await batch.commit();
             }
+            await refreshBanners();
             alert(`✅ ${updates.length}건 경로 정규화 완료`);
         } catch (e) {
             console.error('[PromotionArchive] normalize paths failed', e);
@@ -333,7 +334,23 @@ function App() {
     const [gameLogos, setGameLogos] = useState({});
     useEffect(() => subscribeToGameLogos(setGameLogos, (e) => console.error('[PromotionArchive] logos', e)), []);
 
-    // Firestore 실시간 구독 — Dexie의 useLiveQuery 대체
+    // Firestore 일회성 fetch + 낙관적 갱신.
+    // 이전엔 onSnapshot 으로 통째 실시간 구독 → 분석/수정 시 매번 read 카운트되어 무료 한도 초과.
+    // 다른 사용자 변경은 refresh() 수동 호출로 반영.
+    const refreshBanners = useCallback(async () => {
+        if (!db) return;
+        try {
+            const snap = await getDocs(promoColRef());
+            const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+            setAllBanners(arr);
+        } catch (err) {
+            console.error('[PromotionArchive] fetch error:', err);
+            alert(`데이터 로딩 실패: ${err.code || err.message}`);
+        } finally {
+            setIsLoadingData(false);
+        }
+    }, []);
+
     useEffect(() => {
         if (!db) { setIsLoadingData(false); return; }
         const watchdog = setTimeout(() => {
@@ -342,21 +359,9 @@ function App() {
                 return false;
             });
         }, 8000);
-        const unsub = onSnapshot(promoColRef(),
-            (snap) => {
-                clearTimeout(watchdog);
-                const arr = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                setAllBanners(arr);
-                setIsLoadingData(false);
-            },
-            (err) => {
-                clearTimeout(watchdog);
-                console.error('[PromotionArchive] listener error:', err);
-                alert(`데이터 로딩 실패: ${err.code || err.message}`);
-                setIsLoadingData(false);
-            });
-        return () => { clearTimeout(watchdog); unsub(); };
-    }, []);
+        refreshBanners().finally(() => clearTimeout(watchdog));
+        return () => clearTimeout(watchdog);
+    }, [refreshBanners]);
 
     const [currentView, setCurrentView] = useState('grid');
     const [searchQuery, setSearchQuery] = useState('');
@@ -510,6 +515,7 @@ function App() {
                 updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.path }));
                 await batch.commit();
             }
+            await refreshBanners();
             alert(`✅ ${updates.length}건 경로 prefix 자동 채움 완료`);
         } catch (e) {
             console.error('[PromotionArchive] autoFill paths failed', e);
@@ -567,6 +573,7 @@ function App() {
                 updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { section: u.section }));
                 await batch.commit();
             }
+            await refreshBanners();
             alert(`✅ ${updates.length}건 섹션 자동 분류 완료 (프로모션 ${promoCount} / 브랜드웹 ${brandwebCount})`);
         } catch (e) {
             console.error('[PromotionArchive] classify sections failed', e);
@@ -591,6 +598,7 @@ function App() {
                 selectedItems.slice(i, i + CHUNK).forEach(id => batch.update(promoDocRef(id), { section: 'promotion' }));
                 await batch.commit();
             }
+            await refreshBanners();
             alert(`✅ ${selectedItems.length}건 프로모션으로 설정 완료`);
         } catch (e) {
             console.error('[PromotionArchive] set section failed', e);
@@ -990,6 +998,8 @@ function App() {
             }
 
             if (chunkBanners.length > 0) await flushChunk();
+            // 업로드 완료 — local state 동기화 (onSnapshot 제거됨).
+            await refreshBanners();
 
             if (failedItems.length > 0) alert(`완료되었습니다. (성공: ${successCount}, 실패: ${failedItems.length})`);
 
@@ -1090,6 +1100,7 @@ function App() {
                     written += slice.length;
                     setUploadProgress({ current: written, total: data.length, percentage: Math.round((written / data.length) * 100) });
                 }
+                await refreshBanners();
                 alert(`복원 완료: ${written}개`);
             } catch (err) {
                 console.error(err);
@@ -1105,11 +1116,14 @@ function App() {
         if (selectedItems.length === 0) return;
         if (window.confirm("선택한 항목을 삭제하시겠습니까?")) {
             try {
+                const idsToDelete = new Set(selectedItems);
                 for (let i = 0; i < selectedItems.length; i += 500) {
                     const batch = writeBatch(db);
                     selectedItems.slice(i, i + 500).forEach(id => batch.delete(promoDocRef(id)));
                     await batch.commit();
                 }
+                // 낙관적 갱신 — refresh 대신 local 에서 직접 제거 (추가 read 회피).
+                setAllBanners(prev => prev.filter(b => !idsToDelete.has(b.id)));
                 setSelectedItems([]);
             } catch (e) { alert(`삭제 실패: ${e.message}`); }
         }
@@ -1140,6 +1154,7 @@ function App() {
                 });
                 await batch.commit();
             }
+            await refreshBanners();
             setIsBatchEditOpen(false);
             setSelectedItems([]);
         } catch (e) { alert(`일괄 업데이트 실패: ${e.message}`); }
@@ -1386,9 +1401,16 @@ function App() {
     }, [selectedBanner]);
 
     const toggleLike = useCallback(async (id, currentLiked) => {
+        const next = currentLiked ? 0 : 1;
+        // 낙관적 local 갱신 — onSnapshot 제거로 인한 stale UI 방지.
+        setAllBanners(prev => prev.map(b => b.id === id ? { ...b, liked: next } : b));
         try {
-            await updateDoc(promoDocRef(id), { liked: currentLiked ? 0 : 1 });
-        } catch (e) { console.error('[PromotionArchive] like toggle failed', e); }
+            await updateDoc(promoDocRef(id), { liked: next });
+        } catch (e) {
+            console.error('[PromotionArchive] like toggle failed', e);
+            // 실패 시 롤백.
+            setAllBanners(prev => prev.map(b => b.id === id ? { ...b, liked: currentLiked } : b));
+        }
     }, []);
 
     const getGridClass = () => {

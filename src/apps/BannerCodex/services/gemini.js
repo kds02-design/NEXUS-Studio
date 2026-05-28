@@ -34,8 +34,10 @@ const RESPONSE_SCHEMA = {
 };
 
 const REQUEST_TIMEOUT_MS = 60000;
-const MAX_ATTEMPTS = 3;
-const RETRY_DELAYS = [1000, 2000];
+// 일괄 분석 시 호출량 폭증을 막기 위해 보수적으로 — 첫 시도 + 한 번의 재시도만.
+// 재시도 간격도 늘려서 일시적 throttle 회복 시간을 확보.
+const MAX_ATTEMPTS = 2;
+const RETRY_DELAYS = [3000];
 
 export const callGeminiAPI = async (prompt, imageBase64 = null, isJson = false, opts = {}) => {
   const { apiKey: providedKey, isBatchCall = false, stopRef, onController } = opts;

@@ -1,6 +1,6 @@
 import {
-  collection, query, onSnapshot, addDoc, deleteDoc, doc, getDoc,
-  setDoc, writeBatch
+  collection, query, onSnapshot, addDoc, deleteDoc, doc, getDoc, getDocs,
+  setDoc, writeBatch, arrayUnion, arrayRemove
 } from "firebase/firestore";
 import { auth, db, appId } from "../../../lib/firebase";
 import { uploadBase64 } from "./cloudinary";
@@ -39,23 +39,35 @@ const settingsDoc = (key) => doc(db, 'artifacts', appId, 'public', 'data', 'sett
 const bookmarkDoc = (uid, id) => doc(db, 'artifacts', appId, 'users', uid, 'bookmarks', id);
 const bookmarksCol = (uid) => collection(db, 'artifacts', appId, 'users', uid, 'bookmarks');
 
+// banners 컬렉션 일회성 fetch — 이전엔 onSnapshot 으로 통째 구독해서 다른 사용자/본인 모든 변경마다
+// read 1회 카운트 (Firestore 무료 한도 빠르게 소진). 페이지 마운트 시 한 번만 읽고, 필요 시
+// 호출자가 명시적으로 refresh() 호출.
+const sortBanners = (data, sortOrder) => {
+  const toMs = (v) => {
+    if (typeof v === 'number') return v;
+    if (typeof v === 'string') { const t = Date.parse(v); return isNaN(t) ? 0 : t; }
+    if (v && typeof v.toMillis === 'function') return v.toMillis();
+    return 0;
+  };
+  if (sortOrder === 'oldest') return data.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt));
+  if (sortOrder === 'popular') return data.sort((a, b) => (b.liked === a.liked ? 0 : b.liked ? 1 : -1));
+  if (sortOrder === 'score') return data.sort((a, b) => (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0));
+  return data.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
+};
+
+export const fetchBannersOnce = async (sortOrder) => {
+  if (!db) return [];
+  const snap = await getDocs(query(bannersCol()));
+  const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return sortBanners(data, sortOrder);
+};
+
+// 하위 호환 — 기존 호출처를 일회성 fetch 로 라우팅. 첫 마운트 시 1회 onData 호출하고
+// unsub 은 noop. 호출자가 명시적으로 refresh 가 필요하면 fetchBannersOnce 를 직접 호출.
 export const subscribeToBanners = (sortOrder, onData, onError) => {
   if (!db) return () => {};
-  const q = query(bannersCol());
-  return onSnapshot(q, (snapshot) => {
-    const toMs = (v) => {
-      if (typeof v === 'number') return v;
-      if (typeof v === 'string') { const t = Date.parse(v); return isNaN(t) ? 0 : t; }
-      if (v && typeof v.toMillis === 'function') return v.toMillis();
-      return 0;
-    };
-    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-    if (sortOrder === 'oldest') data.sort((a, b) => toMs(a.createdAt) - toMs(b.createdAt));
-    else if (sortOrder === 'popular') data.sort((a, b) => (b.liked === a.liked ? 0 : b.liked ? 1 : -1));
-    else if (sortOrder === 'score') data.sort((a, b) => (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0));
-    else data.sort((a, b) => toMs(b.createdAt) - toMs(a.createdAt));
-    onData(data);
-  }, onError);
+  fetchBannersOnce(sortOrder).then(onData).catch(onError);
+  return () => {};
 };
 
 export const subscribeToBookmarks = (uid, onData, onError) => {
@@ -151,4 +163,67 @@ export const batchRemoveBookmarks = async (uid, ids) => {
     ids.slice(i, i + BATCH).forEach(id => batch.delete(bookmarkDoc(uid, id)));
     await batch.commit();
   }
+};
+
+// ─── 개인 폴더 (codexFolders) ─────────────────────────────────────────────
+// 멤버십은 폴더 doc 안의 bannerIds 배열로 표현. PromptArc 폴더와 분리된 별도 컬렉션.
+//   artifacts/{appId}/users/{uid}/codexFolders/{folderId} = { name, bannerIds: [], createdAt, updatedAt }
+const folderCol = (uid) => collection(db, 'artifacts', appId, 'users', uid, 'codexFolders');
+const folderDoc = (uid, fid) => doc(db, 'artifacts', appId, 'users', uid, 'codexFolders', fid);
+
+export const fetchFoldersOnce = async (uid) => {
+  if (!db || !uid) return [];
+  const snap = await getDocs(folderCol(uid));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+};
+
+export const createFolder = async (uid, name) => {
+  if (!db || !uid) throw new Error('login required');
+  const ref = doc(folderCol(uid));
+  const now = Date.now();
+  const data = { name, bannerIds: [], createdAt: now, updatedAt: now };
+  await setDoc(ref, data);
+  return { id: ref.id, ...data };
+};
+
+export const renameFolder = async (uid, fid, name) => {
+  if (!db || !uid) return;
+  await setDoc(folderDoc(uid, fid), { name, updatedAt: Date.now() }, { merge: true });
+};
+
+export const deleteFolder = async (uid, fid) => {
+  if (!db || !uid) return;
+  await deleteDoc(folderDoc(uid, fid));
+};
+
+// 배너를 여러 폴더에 toggle — Firestore arrayUnion/arrayRemove 로 race-free 처리.
+//   folderUpdates = [{ id, add }]  add=true: 추가, false: 제거
+export const setBannerInFolders = async (uid, bannerId, folderUpdates) => {
+  if (!db || !uid || !bannerId || !folderUpdates?.length) return;
+  const now = Date.now();
+  const batch = writeBatch(db);
+  for (const { id: fid, add } of folderUpdates) {
+    const ref = folderDoc(uid, fid);
+    batch.set(ref, {
+      bannerIds: add ? arrayUnion(bannerId) : arrayRemove(bannerId),
+      updatedAt: now,
+    }, { merge: true });
+  }
+  await batch.commit();
+};
+
+// 기존 bookmarks 컬렉션을 '내 모음' 기본 폴더로 1회 마이그레이션. 이미 마이그레이션 됐는지는
+// codexFolders 컬렉션이 비어 있는지로 판정. 안전하게 idempotent.
+export const migrateBookmarksToFolderIfNeeded = async (uid) => {
+  if (!db || !uid) return null;
+  const foldersSnap = await getDocs(folderCol(uid));
+  if (!foldersSnap.empty) return null; // 이미 폴더 있음 → 마이그레이션 건너뜀
+  const bookmarksSnap = await getDocs(bookmarksCol(uid));
+  if (bookmarksSnap.empty) return null;
+  const bannerIds = bookmarksSnap.docs.map(d => d.id);
+  const ref = doc(folderCol(uid));
+  const now = Date.now();
+  await setDoc(ref, { name: '내 모음', bannerIds, createdAt: now, updatedAt: now });
+  // bookmarks 는 그대로 둠 (안전). 별도 마이그레이션 후 cleanup 가능.
+  return { id: ref.id, name: '내 모음', bannerIds, createdAt: now, updatedAt: now };
 };

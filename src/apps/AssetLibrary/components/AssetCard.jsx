@@ -26,19 +26,6 @@ export default function AssetCard({ asset, onLikeToggle, onDelete, onClick }) {
         borderColor: hov ? `${hoverAccent}55` : undefined,
       }}
     >
-      {/* 블러 배경 */}
-      {asset.imageUrl && (
-        <img
-          src={asset.imageUrl}
-          alt=""
-          aria-hidden="true"
-          style={{
-            position: "absolute", inset: 0, width: "100%", height: "100%",
-            objectFit: "cover", filter: "blur(20px) saturate(1.1)",
-            transform: "scale(1.1)", opacity: 0.5, display: "block",
-          }}
-        />
-      )}
       {/* 원본 — contain */}
       {asset.imageUrl ? (
         <img

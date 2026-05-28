@@ -125,23 +125,30 @@ const usageRef = (uid, dayKey) => doc(db, "users", uid, "usage", dayKey);
 export const creditsRef = (uid, wk = weekKey()) => doc(db, "users", uid, "credits", wk);
 const inviteRef = (code) => doc(db, "inviteCodes", code);
 
-// Decide initial role/status/grade based on email.
-//   1) ADMIN_EMAILS              → role=admin, grade=expert, approved
-//   2) @ncsoft.com 회사 도메인     → grade=pro,  approved
-//   3) 외부 도메인이지만 local에 'ncsoft' 토큰 (예: id.ncsoft@gmail.com)
-//                                 → grade=pro,  approved
-//   4) 그 외 외부 이메일           → grade=general, pending (관리자 승인 대기)
-function inferAccessFromEmail(email) {
-  const e = String(email || "").toLowerCase();
+// Decide initial role/status/grade based on email + verification.
+//   1) ADMIN_EMAILS                                                  → role=admin, grade=expert, approved
+//   2) Google OAuth (providerData.providerId === 'google.com')        → 이메일 검증된 것으로 간주
+//   3) @ncsoft.com 회사 도메인 OR local에 'ncsoft' 토큰 + 이메일 검증완료 → grade=pro, approved
+//   4) ncsoft 도메인이지만 이메일 미검증                                → grade=general, pending (검증 후 승급)
+//   5) 그 외 외부 이메일                                              → grade=general, pending (관리자 승인 대기)
+function inferAccessFromEmail(emailOrUser) {
+  // 하위호환 — 기존 호출부가 email 문자열만 넘기는 경우도 지원.
+  const user = typeof emailOrUser === "string" ? { email: emailOrUser, emailVerified: false, providerData: [] } : (emailOrUser || {});
+  const e = String(user.email || "").toLowerCase();
   const domain = e.split("@")[1] || "";
   const isAdmin = ADMIN_EMAILS.includes(e);
   const isProDomain = PRO_DOMAINS.includes(domain);
   const isProLocal = isNcsoftLocal(e);
   const isPro = isProDomain || isProLocal;
+  // Google OAuth 로 들어왔으면 Google 이 이미 이메일 소유를 확인했음.
+  const isGoogleProvider = Array.isArray(user.providerData) && user.providerData.some(p => p?.providerId === "google.com");
+  const isVerified = !!user.emailVerified || isGoogleProvider;
+  // ncsoft 도메인이라도 이메일 미검증이면 pro 부여하지 않음 (가짜 도메인 가입 방지).
+  const grantPro = isPro && isVerified;
   return {
     role: isAdmin ? "admin" : "user",
-    grade: isAdmin ? GRADES.expert : (isPro ? GRADES.pro : GRADES.general),
-    status: (isAdmin || isPro) ? STATUS.approved : STATUS.pending,
+    grade: isAdmin ? GRADES.expert : (grantPro ? GRADES.pro : GRADES.general),
+    status: (isAdmin || grantPro) ? STATUS.approved : STATUS.pending,
   };
 }
 
@@ -149,7 +156,7 @@ export async function ensureUserProfile(user) {
   if (!user?.uid) throw new Error("user.uid required");
   const ref = userRef(user.uid);
   const snap = await getDoc(ref);
-  const inferred = inferAccessFromEmail(user.email);
+  const inferred = inferAccessFromEmail(user);
 
   if (snap.exists()) {
     const data = snap.data();
@@ -159,6 +166,12 @@ export async function ensureUserProfile(user) {
     if (!data.grade) patch.grade = inferred.grade;
     if (!data.role) patch.role = inferred.role;
     if (!data.status) patch.status = inferred.status;
+    // 이메일 검증 완료 직후 재진입 — 도메인 자격 있는 사용자(ncsoft)면 자동 승급.
+    // 단, 관리자가 명시적으로 다른 grade 를 부여(pro_plus/expert)했거나, 다른 사유로 rejected 한 경우엔 건드리지 않음.
+    if (inferred.grade === GRADES.pro && data.grade === GRADES.general && data.status === STATUS.pending) {
+      patch.grade = GRADES.pro;
+      patch.status = STATUS.approved;
+    }
     // Always promote known admin emails (idempotent safety).
     if (ADMIN_EMAILS.includes(String(data.email || user.email || "").toLowerCase())) {
       if (data.role !== "admin") patch.role = "admin";

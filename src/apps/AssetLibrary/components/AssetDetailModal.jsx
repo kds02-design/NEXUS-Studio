@@ -145,20 +145,27 @@ export default function AssetDetailModal({
       const { width, height } = await probeImageSize(dataUrl);
       setPending({ dataUrl, width, height, suggestedCategory: null, mime: f.type });
       setStep("preview");
+      // 업로드 직후 AI 자동 분석 트리거 — setPending 으로 state 갱신을 기다리지 않도록
+      // dataUrl 을 직접 인자로 넘김. 사용자는 분석 결과를 검토 후 저장.
+      handleAnalyze(dataUrl);
     } catch (err) {
       showToast?.(`파일 읽기 실패: ${err.message}`, "error");
     }
   };
 
-  const handleAnalyze = async () => {
-    if (!pending?.dataUrl) return;
+  const handleAnalyze = async (overrideDataUrl) => {
+    const dataUrl = overrideDataUrl || pending?.dataUrl;
+    if (!dataUrl) return;
+    // 중복 호출 차단 — handleFileChosen 자동 트리거 + 사용자가 수동 "분석" 버튼 클릭이
+    // 동시에 일어나면 같은 credits doc 에 transaction race 가 발생할 수 있음.
+    if (step === "analyzing") return;
     if (ensureCanGenerate) {
       const ok = await ensureCanGenerate("analysis");
       if (!ok) return;
     }
     setStep("analyzing");
     try {
-      const { title, tags, suggestedCategory } = await analyzeAssetImage(pending.dataUrl);
+      const { title, tags, suggestedCategory } = await analyzeAssetImage(dataUrl);
       setDraft((d) => ({
         ...d,
         title: title || d.title,
@@ -256,7 +263,7 @@ export default function AssetDetailModal({
               <button
                 onClick={() => onJumpToSource?.(asset)}
                 className="flex items-center gap-2 px-3 py-2 rounded-md text-[11px] font-bold border bg-black/50 border-white/10 text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10 backdrop-blur-md transition-all"
-                title={`${sourceLabel(asset.source.app)} 에서 원본 배너 열기`}
+                title={`${sourceLabel(asset.source.app)} 에서 출처로 이동`}
               >
                 <ExternalLink className="w-3.5 h-3.5" /> 출처로 이동
               </button>
@@ -508,7 +515,7 @@ export default function AssetDetailModal({
                       onClick={() => onJumpToSource?.(asset)}
                       className="mt-2 flex items-center gap-1 text-[11px] text-cyan-300 hover:text-cyan-200"
                     >
-                      <ExternalLink size={11} /> 원본 배너 열기
+                      <ExternalLink size={11} /> 출처로 이동
                     </button>
                   )}
                 </div>

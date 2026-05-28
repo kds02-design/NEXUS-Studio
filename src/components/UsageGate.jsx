@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/GlobalContext";
 import { GRADE_LABEL, REDEEM_ERROR_MESSAGES } from "../lib/grades";
@@ -153,20 +153,33 @@ export function StyleLock({ locked, children, label = "Pro+", onClickLocked }) {
 export function useUsageGate() {
   const { tryConsumeUsage } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
+  // in-flight 가드 — 동일 사용자가 같은 credits doc 에 동시 transaction 을 던지면
+  // Firestore 가 contention 으로 429(resource-exhausted) 를 내뱉음. 직전 차감이 끝나기 전
+  // 호출은 무시해서 같은 doc 에 transaction race 자체를 막는다.
+  const inflightRef = useRef(false);
 
   // useCallback 으로 identity 안정화 — 호출부의 useEffect deps 가 이 함수를 받아도 무한 재실행 방지.
   // tryConsumeUsage 는 AuthContext 에서 [user?.uid, profile?.grade] deps 로 좁혀져 있어 stable.
   const ensureCanGenerate = useCallback(async (action = "analysis") => {
-    const r = await tryConsumeUsage(action);
-    if (!r.ok && (r.reason === "INSUFFICIENT_CREDITS" || r.reason === "LIMIT_EXCEEDED")) {
-      setModalOpen(true);
+    if (inflightRef.current) {
+      console.warn("[UsageGate] consume skipped — another check is already in flight");
       return false;
     }
-    if (!r.ok) {
-      console.warn("[UsageGate] consume failed:", r.reason);
-      return false;
+    inflightRef.current = true;
+    try {
+      const r = await tryConsumeUsage(action);
+      if (!r.ok && (r.reason === "INSUFFICIENT_CREDITS" || r.reason === "LIMIT_EXCEEDED")) {
+        setModalOpen(true);
+        return false;
+      }
+      if (!r.ok) {
+        console.warn("[UsageGate] consume failed:", r.reason);
+        return false;
+      }
+      return true;
+    } finally {
+      inflightRef.current = false;
     }
-    return true;
   }, [tryConsumeUsage]);
 
   const modal = modalOpen ? <LimitReachedModal onClose={() => setModalOpen(false)} /> : null;

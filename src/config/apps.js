@@ -29,15 +29,12 @@ export const APP_REGISTRY = [
   { id: "prompt-audit",        label: "프롬프트 최적화",    sub: "Prompt Optimizer",    abbr: "Po", icon: "◎", desc: "프롬프트 충돌 검출 + 대안 제시 + 엔진 학습용 데이터 적재",   group: "explore", color: "#A29BFE", canReceive: ["prompt-arc","typecore-sovereign","typecore-breeze","render-metrics","motion-metrics"], canSend: ["prompt-arc","typecore-sovereign","render-metrics","motion-metrics"], beta: true },
   { id: "asset-library",       label: "에셋 라이브러리",   sub: "Asset Library",       abbr: "Al", icon: "▥", desc: "타이틀·버튼·박스·아이콘 등 영역 선택으로 모은 에셋 보관소", group: "explore", color: "#55EFC4", canReceive: ["banner-codex","promotion-archive"],                                          canSend: [] },
   { id: "brief-studio",        label: "브리프 스튜디오",    sub: "Brief Studio",        abbr: "Bs", icon: "◐", desc: "문서와 레퍼런스로 디자인 방향성을 잡아주는 AI 브리프 도구", group: "explore", color: "#A29BFE", canReceive: [],                                                                              canSend: ["typecore-sovereign","typecore-breeze","render-metrics","design-eval"], disabled: true, adminOnly: true },
-  { id: "typecore-sovereign",  label: "타이프코어 소버린",  sub: "Typecore Sovereign",  abbr: "Ts", icon: "⟁", desc: "RPG류 게임의 타이포그래피 프롬프트 생성 — 버전 선택 가능",  group: "generate", color: "#A29BFE", canReceive: ["prompt-arc"],                                                                  canSend: ["prompt-arc","render-metrics"],
+  { id: "typecore-sovereign",  label: "타이프코어 소버린",  sub: "Typecore Sovereign",  abbr: "Ts", icon: "⟁", desc: "RPG류 게임의 타이포그래피 프롬프트 생성",  group: "generate", color: "#A29BFE", canReceive: ["prompt-arc"],                                                                  canSend: ["prompt-arc","render-metrics"],
     versions: [
-      { key: "friendly", label: "쉬운 모드",  color: "#FDCB6E" },
-      { key: "v1",       label: "v1 안정",   color: "#74B9FF" },
-      { key: "v2",       label: "v2 개선",   color: "#A29BFE" },
       { key: "latest",   label: "최신",      color: "#0eb9b3" },
     ],
-    defaultVersion: "friendly" },
-  { id: "typecore-breeze",     label: "타이프코어 브리즈",  sub: "Typecore Breeze",     abbr: "Tb", icon: "◎", desc: "캐주얼 게임 · 타이포 · 캘리그라피 프롬프트 생성",  group: "generate", color: "#74B9FF", canReceive: ["prompt-arc"],                                                                  canSend: ["prompt-arc","render-metrics"], disabled: true },
+    defaultVersion: "latest" },
+  { id: "typecore-breeze",     label: "타이프코어 브리즈",  sub: "Typecore Breeze",     abbr: "Tb", icon: "◎", desc: "캐주얼 게임 · 타이포 · 캘리그라피 프롬프트 생성",  group: "generate", color: "#74B9FF", canReceive: ["prompt-arc"],                                                                  canSend: ["prompt-arc","render-metrics"] },
   { id: "render-metrics",      label: "렌더 메트릭스",      sub: "Render Matrix",       abbr: "Rm", icon: "⬡", desc: "2D 플랫 이미지에 입체감 · 재질감을 입히는 프롬프트 생성", group: "generate", color: "#00CEC9", canReceive: ["prompt-arc","typecore-sovereign","typecore-breeze"],                    canSend: ["prompt-arc","motion-metrics","design-eval"] },
   { id: "render-matrix-pop",   label: "Render Matrix: Pop", sub: "Render Matrix: Pop", abbr: "Rp", icon: "✦", desc: "캐주얼·팝 톤의 렌더링 프롬프트 생성기 — 버전 선택 가능",  group: "generate", color: "#55EFC4", canReceive: ["prompt-arc","typecore-sovereign","typecore-breeze"],                    canSend: ["prompt-arc","motion-metrics","design-eval"], beta: true, adminOnly: true,
     versions: [

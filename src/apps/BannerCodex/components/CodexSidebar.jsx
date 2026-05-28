@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, LayoutGrid, Heart, Layers, Zap, Star, Settings, ShieldCheck,
-  Save, FileJson, FolderPlus, Upload,
-  CheckSquare, Trash2
+  Save, FileJson, FolderPlus, Folder, Upload,
+  CheckSquare, Trash2, Pencil
 } from 'lucide-react';
 import CodexFolderSelector from './CodexFolderSelector';
 import { gameNameMap } from '../constants/categories';
@@ -58,6 +58,7 @@ const CodexSidebar = ({
   lastFolderName, handlePickFolder, handleReopenLastFolder, handleForgetLastFolder,
   isProcessingFiles, handleFileUpload, skipDuplicates, setSkipDuplicates,
   handleOpenDuplicateManager, handleSidebarClick,
+  folders = [], onCreateFolder, onRenameFolder, onDeleteFolder,
 }) => {
   const renderItem = (gameKey) => renderGameItem({
     gameKey, banners, pinnedGames, activeCategory, isLightMode, togglePinGame, handleGameClick
@@ -103,7 +104,6 @@ const CodexSidebar = ({
             <div className="space-y-1 w-full">
               <CategoryButton icon={LayoutGrid} label="전체 보기" count={banners.length} active={activeCategory === 'all'} isLightMode={isLightMode} isOpen={isDesktopSidebarOpen} onClick={() => handleGameClick('all')} />
               <CategoryButton icon={Heart} label="좋아요" count={banners.filter(b => b.liked).length} active={activeCategory === 'favorites'} isLightMode={isLightMode} isOpen={isDesktopSidebarOpen} onClick={() => handleGameClick('favorites')} />
-              <CategoryButton icon={Layers} label="담기" count={cartIds.length} active={activeCategory === 'cart'} isLightMode={isLightMode} isOpen={isDesktopSidebarOpen} onClick={() => handleGameClick('cart')} />
               {tempBanners.length > 0 && (
                 <button onClick={(e) => { e.stopPropagation(); handleGameClick('temp'); }}
                   className={`w-full flex items-center py-3 mt-1 transition-all group ${isDesktopSidebarOpen ? 'pl-4 pr-3 gap-3 justify-start' : 'justify-center'} ${activeCategory === 'temp' ? 'bg-violet-500/10 text-violet-500' : isLightMode ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-50' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}>
@@ -117,6 +117,15 @@ const CodexSidebar = ({
 
               {isDesktopSidebarOpen && (
                 <>
+                  <FolderSection
+                    folders={folders}
+                    activeCategory={activeCategory}
+                    isLightMode={isLightMode}
+                    handleGameClick={handleGameClick}
+                    onCreateFolder={onCreateFolder}
+                    onRenameFolder={onRenameFolder}
+                    onDeleteFolder={onDeleteFolder}
+                  />
                   <div className={`pt-2 mt-2 w-full mx-auto ${isLightMode ? 'border-t border-slate-200' : 'border-t border-white/5'}`}></div>
                   <div className="px-3 py-2 space-y-6">
                     <div>
@@ -233,5 +242,97 @@ const CodexSidebar = ({
     </>
   );
 };
+
+// 개인 폴더 섹션 — 사이드바 안에 펼쳐지는 폴더 목록.
+// 폴더 클릭 → 그 폴더 멤버만 필터링 (activeCategory='folder:<id>').
+// hover 시 이름변경/삭제 아이콘 노출.
+function FolderSection({ folders, activeCategory, isLightMode, handleGameClick, onCreateFolder, onRenameFolder, onDeleteFolder }) {
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState('');
+
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) { setCreating(false); return; }
+    await onCreateFolder?.(name);
+    setNewName('');
+    setCreating(false);
+  };
+
+  const startRename = (f) => { setEditingId(f.id); setEditingName(f.name); };
+  const commitRename = async () => {
+    if (editingId && editingName.trim()) await onRenameFolder?.(editingId, editingName.trim());
+    setEditingId(null); setEditingName('');
+  };
+
+  return (
+    <div className={`pt-2 mt-2 w-full mx-auto ${isLightMode ? 'border-t border-slate-200' : 'border-t border-white/5'} px-3 py-2`}>
+      <div className="flex items-center justify-between mb-2 ml-1">
+        <h4 className={`text-[10px] font-bold uppercase tracking-wider ${isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>My Folders</h4>
+        <button
+          onClick={() => setCreating(true)}
+          title="새 폴더"
+          className={`p-1 rounded hover:bg-white/5 ${isLightMode ? 'text-slate-400 hover:text-slate-700' : 'text-zinc-500 hover:text-zinc-300'}`}
+        ><FolderPlus size={12} /></button>
+      </div>
+      {creating && (
+        <div className="flex items-center gap-1 mb-2">
+          <input
+            type="text" value={newName} autoFocus
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') { setCreating(false); setNewName(''); } }}
+            placeholder="폴더 이름"
+            className={`flex-1 text-[11px] px-2 py-1 rounded border outline-none ${isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-700 text-white'}`}
+          />
+          <button onClick={handleCreate} className="text-[10px] px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30">+</button>
+        </div>
+      )}
+      <div className="space-y-0.5">
+        {folders.length === 0 && !creating && (
+          <div className={`text-[10px] ml-1 ${isLightMode ? 'text-slate-400' : 'text-zinc-600'}`}>아직 폴더가 없어요</div>
+        )}
+        {folders.map(f => {
+          const active = activeCategory === `folder:${f.id}`;
+          const isEditing = editingId === f.id;
+          return (
+            <div key={f.id} className="group flex items-center gap-1">
+              {isEditing ? (
+                <>
+                  <input
+                    type="text" value={editingName} autoFocus
+                    onChange={(e) => setEditingName(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') { setEditingId(null); setEditingName(''); } }}
+                    onBlur={commitRename}
+                    className={`flex-1 text-[11px] px-2 py-1 rounded border outline-none ${isLightMode ? 'bg-white border-slate-200' : 'bg-zinc-900 border-zinc-700 text-white'}`}
+                  />
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => handleGameClick(`folder:${f.id}`)}
+                    className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded text-[11px] transition-colors ${
+                      active
+                        ? 'bg-emerald-500/15 text-emerald-300'
+                        : isLightMode ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-50' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Folder size={12} className="shrink-0" />
+                    <span className="flex-1 truncate text-left">{f.name}</span>
+                    <span className={`text-[9px] font-mono shrink-0 ${active ? 'text-emerald-300' : 'text-zinc-500'}`}>{(f.bannerIds || []).length}</span>
+                  </button>
+                  <div className="hidden group-hover:flex items-center gap-0.5">
+                    <button onClick={() => startRename(f)} title="이름 변경" className="p-1 text-zinc-500 hover:text-zinc-200"><Pencil size={10} /></button>
+                    <button onClick={() => onDeleteFolder?.(f.id)} title="폴더 삭제" className="p-1 text-zinc-500 hover:text-red-300"><Trash2 size={10} /></button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export default CodexSidebar;

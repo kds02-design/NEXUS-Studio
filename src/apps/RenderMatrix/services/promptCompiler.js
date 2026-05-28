@@ -4,6 +4,49 @@
 
 import { DIRECTOR_PERSONAS, EDIT_BUDGETS, RENDER_ENGINES, getOptionEn } from "../constants/presets";
 
+// 페르소나별 톤 키워드 — 이전엔 모든 prompt 가 'cinematic' 으로 강제됐으나, persona 마다 다른 톤을 입혀
+// 결과 다양성 확보. id 가 매핑 표에 없으면 Cinematic 으로 fallback.
+const PERSONA_TONE = {
+  Cinematic: {
+    headlineKind: 'epic cinematic typography graphic',
+    subjectKind: 'cinematic legendary logo',
+    colorGrading: 'cinematic color grading, dramatic contrast, deep rich blacks',
+    remixTag: 'cinematic remix',
+    motionKind: 'high-quality cinematic video',
+  },
+  Alchemist: {
+    headlineKind: 'hyper-realistic material study typography graphic',
+    subjectKind: 'macro material product emblem',
+    colorGrading: 'physically-based natural color, high tonal range, true-to-life palette, accurate optical reaction',
+    remixTag: 'material macro remix',
+    motionKind: 'high-quality macro material study video',
+  },
+  DarkSmith: {
+    headlineKind: 'dark fantasy forged typography graphic',
+    subjectKind: 'gritty dark fantasy battle emblem',
+    colorGrading: 'desaturated dark fantasy palette, brooding mood, deep shadow color grading, scorched warm undertones',
+    remixTag: 'dark fantasy forged remix',
+    motionKind: 'dark fantasy cinematic video',
+  },
+  Premium: {
+    headlineKind: 'premium editorial typography graphic',
+    subjectKind: 'luxury minimalist emblem',
+    colorGrading: 'clean editorial color grading, refined neutral tones, high-key balance, restrained palette',
+    remixTag: 'premium editorial remix',
+    motionKind: 'premium editorial video',
+  },
+};
+const getTone = (personaId) => PERSONA_TONE[personaId] || PERSONA_TONE.Cinematic;
+
+// "후면 돌출 최소" 강제용 — projectionDepth='None' (isMinimal) 일 때 두꺼운 평면 강제.
+// 이전엔 "minimal side thickness, no rear extrusion" 정도만 박혀서 모델이 자주 무시 → 두께가 생김.
+// "flat / zero extrusion / paper-thin" 키워드를 positive · negative 양쪽에 동시 박아 강제력 ↑.
+// 추가로 "측면이 밝게 라이팅" 되는 사고 방지 — front-face only lighting + side walls drown in shadow.
+const FLAT_POSITIVE = "strictly flat letterform with zero extrusion depth, paper-thin profile, 2D surface only, no thickness, completely flat back face, razor-thin structure, front-face only rendering, zero rear depth, no 3D block, no side walls, no extrusion volume, flat planar surface, lighting strictly confined to the front face, any hint of side planes drowns in complete pitch-black shadow, unlit matte side edges";
+const FLAT_NEGATIVE = "(3d extrusion:2.0), (rear depth:2.0), (back face thickness:2.0), (thick letterform:1.9), (block letters:1.9), (volumetric depth:1.9), (visible side walls:1.9), (extruded geometry:2.0), (3d thickness:2.0), (deep letterpress:1.9), (raised block:1.9), (chunky 3d text:1.9), (heavy extrusion:2.0), (lit side walls:2.0), (illuminated thickness:2.0), (bright side planes:2.0), (highlighted side walls:1.9), (glowing chamfer:1.9), (golden side faces:1.9), (lit bevel edges:1.9), (visible side lighting:1.9), (overlit thickness:1.9)";
+// Midjourney 용 --no flags (가중치 문법 미지원이라 단어만 나열).
+const FLAT_MJ_NEGATIVE = "3d extrusion, rear depth, back face thickness, thick letterform, block letters, volumetric depth, visible side walls, extruded geometry, 3d thickness, deep letterpress, raised block, chunky 3d text, heavy extrusion, lit side walls, illuminated thickness, bright side planes, highlighted side walls, glowing chamfer, golden side faces, lit bevel edges, visible side lighting, overlit thickness";
+
 // ============================================================
 // IR Builders
 // ============================================================
@@ -44,10 +87,12 @@ export const generateIR = (state, appOptions) => {
 };
 
 export const generateEditIR = (state, appOptions) => {
-  const { editBudget, activeEditIntents, cameraLens, frontRelief, editBg, editRearExtrusion, editIntent, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity } = state;
+  const { editBudget, activeEditIntents, cameraLens, frontRelief, editBg, editRearExtrusion, editIntent, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity, directorPersona } = state;
   const budgetLevel = EDIT_BUDGETS.find(b => b.id === editBudget);
+  // directorPersona 도 함께 — edit 모드의 컬러/remix 톤이 페르소나에 맞춰 분기됨.
+  const persona = DIRECTOR_PERSONAS.find(p => p.id === directorPersona) || DIRECTOR_PERSONAS[0];
   const ir = {
-    _meta: { mode: "Micro-Edit", version: "19.34" },
+    _meta: { mode: "Micro-Edit", version: "19.34", persona },
     locks: { glyph: "Strictly lock exact character types, sequence, and spacing.", contour: "Preserve original outer silhouette perfectly.", stroke: "Maintain exact stroke thickness and internal counter spaces." },
     budget: budgetLevel,
     camera: getOptionEn(appOptions.cameraLenses, cameraLens),
@@ -57,7 +102,7 @@ export const generateEditIR = (state, appOptions) => {
       fx_containment: "All FX MUST originate from surface cracks/edges and remain tightly bound to the shape. NO floating particles.",
       material_integration: "All textures/FX MUST be physically embedded into the base material. NO floating decals.",
       extrusionId: editRearExtrusion,
-      extrusion: editRearExtrusion === "None" ? `[PROJECTION: MINIMAL] solid structural body with minimal side thickness, NO deep rear extrusion, NO heavy 3D block.` : editRearExtrusion === "Shallow" ? "Allow ONLY very shallow thin backward 3D extrusion. NO thick blocks." : "Allow controlled backward 3D extrusion.",
+      extrusion: editRearExtrusion === "None" ? `[PROJECTION: MINIMAL] ${FLAT_POSITIVE}. Absolutely zero rear depth, NO 3D block, NO side walls.` : editRearExtrusion === "Shallow" ? "Allow ONLY very shallow thin backward 3D extrusion. NO thick blocks." : "Allow controlled backward 3D extrusion.",
     },
     intents: activeEditIntents,
     details: {
@@ -77,9 +122,10 @@ export const generateEditIR = (state, appOptions) => {
 };
 
 export const generateMotionIR = (state, appOptions) => {
-  const { cameraMotion, vfxDynamics, motionIntent, energyCore } = state;
+  const { cameraMotion, vfxDynamics, motionIntent, energyCore, directorPersona } = state;
+  const persona = DIRECTOR_PERSONAS.find(p => p.id === directorPersona) || DIRECTOR_PERSONAS[0];
   return {
-    _meta: { mode: "Video-Motion", version: "19.34" },
+    _meta: { mode: "Video-Motion", version: "19.34", persona },
     subject_lock: "CRITICAL: The main typography and object shapes MUST remain perfectly solid and absolutely static. DO NOT morph, warp, melt, or distort the text structural integrity.",
     motion: { camera: getOptionEn(appOptions.cameraMotions, cameraMotion), dynamics: getOptionEn(appOptions.motionDynamics, vfxDynamics) },
     customIntent: motionIntent || "",
@@ -175,8 +221,13 @@ export const compileNanoBanana = (ir, state) => {
   const scaleTag = ir.subject.scale;
   const lensTag = ir.camera_and_depth.lens;
   // prose 는 '얇기/돌출' 골격만 담고, 구체 sculpting 디테일(MicroBevel/Crystalline 등)은 posTags 의 ir.surface_morphology.relief 에서만 한 번 출력 — 같은 정보를 두 번 다른 표현으로 박으면 옵티마이저가 "shallow relief" 같은 잘못된 가중치 태그를 만들어냄.
-  const projectionDesc = ir.camera_and_depth.isMinimal ? "It is presented as a solid structural standalone body with minimal side thickness and absolutely no rear extrusion." : "It is presented with 3D depth and extrusion.";
-  const prose = `An epic cinematic typography graphic rendered in a ${ir._meta.persona.name.split(' ')[1]} style. ${scaleTag}. ${lensTag}. The text is crafted from ${ir.material_stack.base} featuring ${ir.material_stack.internal_texture}. ${projectionDesc}`;
+  const projectionDesc = ir.camera_and_depth.isMinimal
+    ? `It is presented as a ${FLAT_POSITIVE}. The form has absolutely no rear depth — only the front face surface relief defines its dimensionality.`
+    : ir.camera_and_depth.projectionId === "Shallow"
+      ? "It is presented with only a very shallow front-face micro-depth — the rear face stays completely flat, unlit, and submerged in shadow. The sense of dimension comes from front-face bevel and lighting, NOT from rear extrusion. Absolutely zero rear 3D block."
+      : "It is presented with bold 3D depth and rear extrusion.";
+  const tone = getTone(ir._meta.persona.id);
+  const prose = `An ${tone.headlineKind} rendered in a ${ir._meta.persona.name.split(' ')[1]} style. ${scaleTag}. ${lensTag}. The text is crafted from ${ir.material_stack.base} featuring ${ir.material_stack.internal_texture}. ${projectionDesc}`;
   const posTags = [
     prose,
     "masterpiece, best quality, ultra highres, insanely detailed, 8k resolution",
@@ -203,7 +254,7 @@ export const compileNanoBanana = (ir, state) => {
     "(depth of field:1.9), (bokeh:1.9), (background blur:1.9), (lens blur:1.9), out of focus, soft focus, blurred foreground, blurry edges, smudged",
     "(melted shape:1.5), (illegible:1.5), (transparent text blending into background:1.5), (excessive glow destroying shape:1.5), (loss of silhouette:1.5)",
     "(circular brushing:1.5), (radial metal grain:1.5), (anisotropic reflection:1.5), curved scratches",
-    ir.camera_and_depth.isMinimal ? "(heavy 3d block:1.8), (deep rear extrusion:1.8), (massive depth:1.8), visible side walls, tilt" : ir.camera_and_depth.projectionId === "Shallow" ? "(thick extrusion:1.8), (heavy 3d block:1.8), (massive depth:1.8), (deep rear extrusion:1.8)" : "",
+    ir.camera_and_depth.isMinimal ? FLAT_NEGATIVE : ir.camera_and_depth.projectionId === "Shallow" ? "(thick extrusion:1.9), (heavy 3d block:1.9), (massive depth:1.9), (deep rear extrusion:2.0), (visible rear face:1.8), (lit back face:1.8), (3d block letters:1.8), (chunky 3d text:1.8)" : "",
   ];
   if (ir.edge_and_lighting.rimColorId === "None") negTags.push("(bottom light:1.8), (underglow:1.8), (colored rim light:1.5), bright glow from below");
   if (!ir.edge_and_lighting.shadow) {
@@ -211,10 +262,11 @@ export const compileNanoBanana = (ir, state) => {
     negTags.push("(drop shadow:1.9), (cast shadow:1.9), (contact shadow:1.9), floating shadow, drop shadow on background");
   }
   if (ir.camera_and_depth.isMinimal) {
-    posTags.push("perfectly straight-on front facing view, dead center orthographic layout, strict 2D planar composition");
+    // 평면 강제 — positive 와 negative 양쪽에 flat/zero-extrusion 키워드를 같이 박아야 모델이 무시 못 함.
+    posTags.push(`perfectly straight-on front facing view, dead center orthographic layout, strict 2D planar composition, ${FLAT_POSITIVE}`);
     negTags.push("(angled view:1.9), (side view:1.9), (isometric:1.9), (3d perspective:1.9), (tilt:1.9), diagonal, skewed");
   } else if (ir.camera_and_depth.projectionId === "Shallow") {
-    posTags.push("straight-on front facing view, dead center, very shallow thin 3d extrusion");
+    posTags.push("straight-on front facing view, dead center, very shallow front-face micro-depth only, rear face flat and unlit, depth from front-face lighting not rear extrusion");
     negTags.push("(extreme angled view:1.5), (side view:1.5), tilt");
   } else {
     posTags.push("straight-on front facing view, dead center");
@@ -235,9 +287,9 @@ export const compileNanoBanana = (ir, state) => {
     posTags.push("clean legible typography, simplified readable shapes");
     negTags.push("(excessive noise, cluttered details, unreadable, chaotic textures:1.5)");
   }
-  posTags.push("highly saturated, punchy vibrant colors, cinematic color grading, rich deep colors");
+  posTags.push(`highly saturated, punchy vibrant colors, ${tone.colorGrading}, rich deep colors`);
   negTags.push("(washed out:1.5), (desaturated:1.5), (dull colors:1.5), faded, grayscale, (dark, underexposed, gloomy:1.5)");
-  posTags.push("dramatic directional lighting, clearly lit front face, side thickness falls into deep shadow, preserve clean silhouette edges, flawless silhouette boundary, surface detail must not distort the outer contour, damage stays inside the front face only, clean and readable typography, rich luminous midtones, elegant material finish, crisp specular highlights on edges, high-end PBR shading, strong material contrast");
+  posTags.push("(dramatic directional lighting:1.4), clearly lit front face, side thickness falls into deep shadow, preserve clean silhouette edges, flawless silhouette boundary, surface detail must not distort the outer contour, damage stays inside the front face only, clean and readable typography, (rich luminous midtones:1.3), (rich tactile material finish:1.4), (crisp sharp specular highlights:1.4), (high-end PBR physically-based shading:1.4), (strong material contrast:1.3), (deep tonal range, lustrous reflective surface, photorealistic material depth:1.4)");
   posTags.push(ir.surface_morphology.relief, ir.surface_morphology.wear !== "factory-new flawless state" ? ir.surface_morphology.wear : "");
   posTags.push(ir.edge_and_lighting.rim_light, ir.edge_and_lighting.glint, "texture physically embedded into material");
   if (fxTag) posTags.push(fxTag);
@@ -265,7 +317,7 @@ export const compileChatGPT = (ir, state) => {
 - **Canvas**: ${ir.environment.background}
 - **Render Engine**: ${ir.environment.engine}`;
   }
-  if (ir.camera_and_depth.isMinimal) depthStr = `CRITICAL RULE: The typography must remain a perfectly front-facing orthographic silhouette. The outer contour must read as a flat 2D cutout shape. Absolutely no rear extrusion, no visible side planes, and no object thickness. All dimensionality must exist only inside the front face as surface relief and shading. The camera MUST be positioned perfectly straight-on, dead center. Absolutely NO angled views, NO side views, NO isometric angles.`;
+  if (ir.camera_and_depth.isMinimal) depthStr = `CRITICAL RULE: The typography must be a strictly flat letterform with zero extrusion depth and paper-thin profile. It is a 2D surface only with no thickness — completely flat back face, razor-thin structure, front-face only rendering. The outer contour reads as a flat 2D cutout shape. Absolutely zero rear depth, NO 3D block, NO side walls, NO extruded geometry, NO visible side planes, NO object thickness. All dimensionality must exist ONLY inside the front face as surface relief and shading. The camera MUST be positioned perfectly straight-on, dead center. Absolutely NO angled views, NO side views, NO isometric angles.`;
   else if (ir.camera_and_depth.projectionId === "Shallow") depthStr = `CRITICAL RULE: The typography must have ONLY a very shallow, thin 3D extrusion. Absolutely NO thick heavy 3D blocks. Keep the depth minimal.`;
   const lensDirective = `\n- **Lens & Perspective**: ${ir.camera_and_depth.lens}. CRITICAL: Use infinite depth of field. Every part of the text must be entirely in focus. Absolutely NO background blur, NO bokeh, NO blurry edges.`;
   let materialRule = ir.material_stack.integration_rule + " Must look highly organic, authentic, and photorealistic (PBR). STRICTLY AVOID cheap plastic, fake gold foil, or tacky over-shiny CGI look. Ensure extreme sharpness and elegant micro-details. The surface must not look chunky, blurry, or low-resolution. STRICTLY FORBIDDEN: Do NOT use cheap photoshop bevel and emboss effects, and avoid uniform V-shaped carving. AVOID decorative filigree, floral patterns, or ornate engravings. Do NOT use fake inner shadow or inner stroke layer styles.";
@@ -316,12 +368,16 @@ export const compileMidjourney = (ir, state) => {
     return `/imagine prompt: ${subject}, completely unlit black hole material, zero reflections, zero highlights, ${lightingFx} ${intent} ${mjNegatives}--style raw --v 6.1`.replace(/\s+/g, ' ').replace(/, ,/g, ',');
   }
   const lensTag = ir.camera_and_depth.lens;
-  let subject = `cinematic legendary logo, isolated standalone typography graphic, clear cutout text shape against background, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.subject.scale}, ${lensTag}, ${ir.subject.fidelity_enforcement}, ${ir.camera_and_depth.isMinimal ? "solid structural body with minimal side thickness, zero deep rear extrusion" : ir.camera_and_depth.projection}, ${ir.surface_morphology.relief}`;
+  const mjTone = getTone(ir._meta.persona.id);
+  const mjFlat = ir.camera_and_depth.isMinimal
+    ? FLAT_POSITIVE
+    : ir.camera_and_depth.projection;
+  let subject = `${mjTone.subjectKind}, isolated standalone typography graphic, clear cutout text shape against background, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.subject.scale}, ${lensTag}, ${ir.subject.fidelity_enforcement}, ${mjFlat}, ${ir.surface_morphology.relief}`;
   let detailTag = "";
   if (state.surfaceDetail === "Clean") detailTag = "perfectly smooth flawless clean surface, ";
   else if (state.surfaceDetail === "High") detailTag = "intense micro-details, fine hairline scratches, rich surface noise, ";
   const materialMood = `${ir._meta.persona.discipline}, ${ir._meta.persona.mj_tags}, highly saturated, punchy vibrant colors, ${detailTag}${ir.material_stack.base} material with ${ir.material_stack.internal_texture}, ${ir.surface_morphology.wear} surface`;
-  let lightingFx = `${fxPhrase}, dramatic directional lighting, clearly lit front face, dark shadowed side walls, deep ambient occlusion on extrusion, ${ir.edge_and_lighting.outline}, ${ir.edge_and_lighting.rim_light}, physically attached specular highlights, ${ir.edge_and_lighting.glint}, deep controlled shadows, clean high-value highlights, strong material contrast, ${ir.environment.background}`.replace(/^,\s*/, '');
+  let lightingFx = `${fxPhrase}, (dramatic directional lighting:1.4), clearly lit front face, dark shadowed side walls, deep ambient occlusion on extrusion, ${ir.edge_and_lighting.outline}, ${ir.edge_and_lighting.rim_light}, (physically attached crisp specular highlights:1.4), ${ir.edge_and_lighting.glint}, deep controlled shadows, clean high-value highlights, (strong material contrast:1.3), (high-end PBR physically-based shading, lustrous reflective surface, photorealistic material depth:1.4), ${ir.environment.background}`.replace(/^,\s*/, '');
   if (ir.edge_and_lighting.shadow) lightingFx += ", grounded with realistic drop shadow, soft cast shadow on backdrop, deep contact shadow anchoring the text";
   let mjNegatives = "--no background plate, plaque, signboard, engraved on a wall, solid metal block background, floating effects, background clutter, text mutation, extra letters, altered silhouette, random text, runes, hieroglyphs, symbols, written text on surface, watermark, gibberish, merged letters, illegible blob, melted together, filigree, floral patterns, decorative ornaments, ornate engravings, uniform stroke, photoshop bevel and emboss, cheap v-carve, wordart, disconnected rim light, floating edge light, artificial halo, separated highlight, dull gray midtones, framed, box around text, shield, emblem, baseplate, flat paper cutout, flat 2d sticker, inner shadow layer style, inner stroke, fake 2d deboss, flat paper with bevel, washed out, desaturated, faded, unnatural outline, glowing border, depth of field, bokeh, background blur, lens blur, out of focus, soft focus, blurred foreground, blurry edges, smudged, melted shape, illegible, transparent text blending into background, excessive glow destroying shape, loss of silhouette, bright side walls, overlit extrusion, glowing thickness, washed out sides, circular brushing, radial metal grain, anisotropic reflection, curved scratches, ";
   if (ir.edge_and_lighting.rimColorId === "None") mjNegatives += "bottom light, underglow, colored rim light, bright glow from below, ";
@@ -330,8 +386,8 @@ export const compileMidjourney = (ir, state) => {
     mjNegatives += "drop shadow, cast shadow, contact shadow, drop shadow on background, shadow behind text, ";
   }
   if (ir.camera_and_depth.isMinimal) {
-    subject += ", perfectly straight-on front facing view, dead center orthographic layout, 2D flat composition";
-    mjNegatives += "angled view, side view, isometric, 3d perspective, tilt, diagonal, skewed, heavy 3d block, perspective depth, deep rear extrusion, ";
+    subject += `, perfectly straight-on front facing view, dead center orthographic layout, 2D flat composition, ${FLAT_POSITIVE}`;
+    mjNegatives += `angled view, side view, isometric, 3d perspective, tilt, diagonal, skewed, ${FLAT_MJ_NEGATIVE}, `;
   } else if (ir.camera_and_depth.projectionId === "Shallow") {
     subject += ", straight-on front facing view, dead center, very shallow thin 3d extrusion";
     mjNegatives += "extreme angled view, side view, tilt, heavy 3d block, massive depth, thick extrusion, deep rear extrusion, ";
@@ -361,15 +417,16 @@ export const compileEditNanoBanana = (ir, state) => {
     const negTags = ["(worst quality, low quality:1.4), text mutation, extra letters, hallucinated text", "(rim light:1.8), (edge highlight:1.8), (glowing edge:1.8), (3d:1.8), (thickness:1.8), (extrusion:1.8), (bevel:1.8), (metallic:1.8), (reflections:1.8), (lighting on text:1.8), (3d block:1.8)", "lit text, text texture, outline, border, drop shadow, inner glow, lens flare"].filter(Boolean).map(t => t.trim()).join(", ");
     return `${posTags}\n\nNegative prompt: ${negTags}`;
   }
+  const editTone = getTone(ir._meta?.persona?.id);
   const frontVolumeModifier = frontVolumeModifierFor(ir.reliefId);
-  const projectionTag = ir.constraints.extrusion.includes("MINIMAL") ? `solid structural body with minimal side thickness, absolutely no rear extrusion, BUT ${frontVolumeModifier}` : "allow 3d extrusion";
+  const projectionTag = ir.constraints.extrusion.includes("MINIMAL") ? `${FLAT_POSITIVE}, BUT ${frontVolumeModifier}` : "allow 3d extrusion";
   const posTags = [
     "masterpiece, best quality, ultra highres, 8k resolution, perfectly exposed, bright base material",
     "isolated standalone typography graphic, clear cutout text shape against background",
     "clean and readable typography, rich luminous midtones, elegant material finish, crisp specular highlights, clearly lit front face, deep shadowed side walls",
-    "highly saturated, punchy vibrant colors, cinematic color grading, rich deep colors",
+    `highly saturated, punchy vibrant colors, ${editTone.colorGrading}, rich deep colors`,
     "infinite depth of field, entirely in focus, edge-to-edge sharp focus, zero background blur, crisp and clear entire frame",
-    `cinematic remix, ${ir.budget.en}`,
+    `${editTone.remixTag}, ${ir.budget.en}`,
     "Use the input image as the exact structural reference",
     "strict shape lock, exact silhouette preservation, preserve the original typography silhouette, spacing, stroke proportions, and letter shapes",
     ir.camera, projectionTag,
@@ -385,7 +442,7 @@ export const compileEditNanoBanana = (ir, state) => {
     "(runes, hieroglyphs, symbols, written text on surface, watermark, gibberish:1.6), (merged letters, illegible blob, melted together, fused typography:1.5)",
     "(filigree, floral patterns, decorative ornaments, ornate engravings:1.5)",
     "(background plate:1.9), (plaque:1.9), (signboard:1.9), (engraved on a wall:1.9), (solid metal block background:1.9), (framed:1.8), (box around text:1.8), text engraved on surface, shield, baseplate, flat paper cutout, flat 2d sticker, mounted metal plate, vector graphic",
-    ir.constraints.extrusionId === "None" ? "(heavy 3d block:1.8), (isometric:1.8), (perspective:1.8), (side view:1.8), (angled view:1.8), visible sides, tilt, (deep rear extrusion:1.8)" : ir.constraints.extrusionId === "Shallow" ? "(thick extrusion:1.8), (heavy 3d block:1.8), (massive depth:1.8), (deep rear extrusion:1.8), (chunky text:1.8)" : "(thick extrusion:1.4), (heavy 3d block:1.4)",
+    ir.constraints.extrusionId === "None" ? FLAT_NEGATIVE : ir.constraints.extrusionId === "Shallow" ? "(thick extrusion:1.8), (heavy 3d block:1.8), (massive depth:1.8), (deep rear extrusion:1.8), (chunky text:1.8)" : "(thick extrusion:1.4), (heavy 3d block:1.4)",
     "(uniform stroke:1.9), (even border thickness:1.9), (artificial outline:1.9), (unnatural outline:1.5), (glowing border:1.5), cheap 3d effect, wordart, 2d border, (low poly, jagged edges, messy bevel, crunchy artifacts, unrefined sculpt:1.5)",
     "(photoshop bevel and emboss:1.9), (cheap v-carve:1.9), (uniform V-shape depth:1.9), (inner shadow layer style:1.9), (inner stroke:1.9), (fake 2d deboss:1.9), (flat paper with bevel:1.9)",
     "floating FX, background noise, messy glow, overglare, disconnected rim light, floating edge light, artificial halo, separated highlight, (messy edge blending:1.6), detached stroke, (depth of field:1.9), (bokeh:1.9), (background blur:1.9), (lens blur:1.9), out of focus, soft focus, blurred foreground, blurry edges, smudged",
@@ -395,7 +452,7 @@ export const compileEditNanoBanana = (ir, state) => {
   ];
   if (ir.details.rimColorId === "None") negTags.push("(bottom light:1.8), (underglow:1.8), (colored rim light:1.5)");
   if (ir.constraints.extrusionId === "None") {
-    posTags.push("perfectly straight-on front facing view, dead center orthographic layout, strict 2D planar composition");
+    posTags.push(`perfectly straight-on front facing view, dead center orthographic layout, strict 2D planar composition, ${FLAT_POSITIVE}`);
     negTags.push("(angled view:1.9), (side view:1.9), (isometric:1.9), (3d perspective:1.9), (tilt:1.9), diagonal, skewed");
   } else if (ir.constraints.extrusionId === "Shallow") {
     posTags.push("straight-on front facing view, dead center, very shallow thin 3d extrusion");
@@ -479,14 +536,15 @@ export const compileEditMidjourney = (ir, state) => {
   if (ir.details.material) intentsArr.push(`material shift to ${ir.details.material}`);
   if (ir.details.lighting) intentsArr.push(`lighting tune: ${ir.details.lighting}`);
   if (ir.details.vfx) intentsArr.push(`surface VFX: ${ir.details.vfx}`);
-  let subject = `cinematic legendary logo remix, isolated standalone typography graphic, strict shape lock, exact silhouette preservation, Use the input image as the exact structural reference, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.camera}, ${ir.budget.en}`;
+  const editMjTone = getTone(ir._meta?.persona?.id);
+  let subject = `${editMjTone.subjectKind} remix, isolated standalone typography graphic, strict shape lock, exact silhouette preservation, Use the input image as the exact structural reference, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.camera}, ${ir.budget.en}`;
   const scope = intentsArr.length > 0 ? intentsArr.join(", ") : "surface polish";
   const custom = ir.customIntent !== "subtle surface enhancement" ? `, ${ir.customIntent}` : "";
   const constraints = `${ir.constraints.extrusion}, ${ir.constraints.material_integration}, ${ir.constraints.fx_containment}, physically attached specular highlights, deep controlled shadows, clean high-value highlights, strong material contrast, highly saturated, punchy vibrant colors`;
   let mjNegatives = "--no background plate, plaque, signboard, engraved on a wall, solid metal block background, text mutation, shape drift, stroke swell, floating FX, background noise, material sticker, extra letters, runes, hieroglyphs, symbols, written text on surface, watermark, gibberish, merged letters, illegible blob, melted together, filigree, floral patterns, decorative ornaments, ornate engravings, uniform stroke, photoshop bevel and emboss, cheap v-carve, wordart, disconnected rim light, floating edge light, artificial halo, separated highlight, dull gray midtones, framed, box around text, shield, emblem, baseplate, drop shadow, cast shadow revealing thickness, inner shadow layer style, inner stroke, fake 2d deboss, flat paper with bevel, washed out, desaturated, faded, unnatural outline, glowing border, depth of field, bokeh, background blur, lens blur, out of focus, soft focus, blurred foreground, blurry edges, smudged, melted shape, illegible, transparent text blending into background, excessive glow destroying shape, loss of silhouette, bright side walls, overlit extrusion, glowing thickness, washed out sides, circular brushing, radial metal grain, anisotropic reflection, curved scratches, ";
   if (ir.constraints.extrusionId === "None" || ir.constraints.extrusionId === "MINIMAL") {
-    subject += ", perfectly straight-on front facing view, dead center orthographic layout, 2D flat composition";
-    mjNegatives += "angled view, side view, isometric, 3d perspective, tilt, diagonal, skewed, heavy 3d block, perspective depth, deep rear extrusion, ";
+    subject += `, perfectly straight-on front facing view, dead center orthographic layout, 2D flat composition, ${FLAT_POSITIVE}`;
+    mjNegatives += `angled view, side view, isometric, 3d perspective, tilt, diagonal, skewed, ${FLAT_MJ_NEGATIVE}, `;
   } else if (ir.constraints.extrusionId === "Shallow") {
     subject += ", straight-on front facing view, dead center, very shallow thin 3d extrusion";
     mjNegatives += "extreme angled view, side view, tilt, heavy 3d block, massive depth, thick extrusion, deep rear extrusion, ";
@@ -536,7 +594,8 @@ export const compileVeo = (ir) => {
   const isStatic = ir.motion.camera.includes("ZERO zoom");
   const staticRule = isStatic ? "ABSOLUTE CAMERA LOCK: The camera MUST NOT zoom out, MUST NOT zoom in, pan, or move. The text scale and position must remain perfectly fixed throughout the video." : "";
   const fxRule = ir.energyCore !== "no surrounding FX" ? `with ${ir.energyCore}` : "";
-  return `Create a high-quality cinematic video of an isolated standalone typography graphic on a pure black background.
+  const motionTone = getTone(ir._meta?.persona?.id);
+  return `Create a ${motionTone.motionKind} of an isolated standalone typography graphic on a pure black background.
 Camera Motion: ${ir.motion.camera}
 Dynamics: ${ir.motion.dynamics} ${fxRule}
 ${ir.customIntent ? `Action: ${ir.customIntent}` : ""}

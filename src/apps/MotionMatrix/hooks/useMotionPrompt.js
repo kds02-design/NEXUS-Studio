@@ -88,8 +88,10 @@ export const compileRawPrompt = (layers, exportMode, animationMode, targetMat, v
   const tMat = TRANSITION_TARGETS.find((t) => t.id === targetMat) || TRANSITION_TARGETS[0];
   const flowOpt = FLOW_STYLES.find((f) => f.id === layers.flow) || FLOW_STYLES[0];
   const introOpt = INTRO_STYLES.find((i) => i.id === layers.intro) || INTRO_STYLES[0];
-  const intensity = INTENSITY_LEVELS.find((f) => f.id === layers.intensity).en;
-  const dynamics = MOTION_DYNAMICS.find((f) => f.id === layers.dynamics).en;
+  // fallback 필수 — PromptArc 보내기 payload 로 들어온 intensity/dynamics 가 옵션 리스트에
+  // 없으면 find() 가 undefined → .en 접근 시 크래시 (App 전체 화이트아웃). 다른 옵션들과 동일하게 [0] fallback.
+  const intensity = (INTENSITY_LEVELS.find((f) => f.id === layers.intensity) || INTENSITY_LEVELS[0]).en;
+  const dynamics = (MOTION_DYNAMICS.find((f) => f.id === layers.dynamics) || MOTION_DYNAMICS[0]).en;
   const guardrails = Array.from(new Set([sOpt.guardrail, eOpt.guardrail, aOpt.guardrail].filter(Boolean))).join(' ');
   const halfway = parseInt(layers.duration) / 2;
 

@@ -23,6 +23,7 @@ import CodexHeader from './components/CodexHeader';
 import CodexGrid from './components/CodexGrid';
 import CodexCard from './components/CodexCard';
 import CodexDetailModal from './components/CodexDetailModal';
+import FolderPickerPopover from './components/FolderPickerPopover';
 import {
   UploadModal, BatchEditModal, ConfirmModal,
   DuplicateModal, OCRProgressModal, UploadProgressModal, ProcessingFilesModal,
@@ -57,8 +58,10 @@ const handleCopy = (text) => {
 
 export default function App() {
   const { user, isAdmin } = useAuth();
-  const { theme, payload, clearPayload, navigate } = useGlobal();
-  const isLightMode = theme === 'light';
+  const { payload, clearPayload, navigate } = useGlobal();
+  // BannerCodex 는 다른 NEXUS 앱과 톤을 맞춰 항상 다크 테마로 표시.
+  // 글로벌 테마와 무관하게 첫 진입 흰 화면을 막기 위해 isLightMode 를 false 로 고정.
+  const isLightMode = false;
   const consumedPayloadRef = useRef(null);
   // AssetLibrary → 출처로 이동 시 returnToAssetId 가 있으면 저장.
   // 모달 닫기 때 이 정보로 다시 asset-library 로 돌아가서 detail 자동 오픈.
@@ -166,10 +169,19 @@ export default function App() {
   // Hooks
   const bannersHook = useBanners(user, sortOrder);
   const { banners, tempBanners, isLoadingData, cartIds, gameLogos, customAiPrompt,
-    addBanner, updateBanner, deleteMany, addTempBanners, toggleCartItem, addToCart, removeFromCart } = bannersHook;
+    addBanner, updateBanner, deleteMany, addTempBanners, toggleCartItem, addToCart, removeFromCart,
+    folders, createFolder, renameFolder, deleteFolder,
+    updateFolderMembership, bulkSetFolderMembership } = bannersHook;
+
+  // 활성 폴더 (사이드바에서 선택). 'folder:<id>' 형식으로 activeCategory 가 사용됨.
+  const activeFolderId = activeCategory?.startsWith?.('folder:') ? activeCategory.slice(7) : null;
+
+  // 폴더 picker popover 상태 — { bannerId, isBulk, bulkIds }
+  const [folderPicker, setFolderPicker] = useState(null);
 
   const { filteredBanners, availableGames, recentGames, topTags } = useFilter({
-    banners, tempBanners, cartIds, activeCategory, sortOrder, searchQuery, isAiSearchMode, aiSearchIds, filters
+    banners, tempBanners, cartIds, activeCategory, sortOrder, searchQuery, isAiSearchMode, aiSearchIds, filters,
+    folders, activeFolderId,
   });
 
   // Active evaluation criteria (Firestore w/ seed fallback)
@@ -223,6 +235,23 @@ export default function App() {
   useEffect(() => {
     if (activeCategory === 'temp' && tempBanners.length === 0) setActiveCategory('all');
   }, [tempBanners.length, activeCategory]);
+
+  // 모달 닫기 + AssetLibrary 복귀 처리. returnTarget 이 있으면 거기로 navigate.
+  // ESC handler 의 useEffect deps 에서 참조되므로 그 위에 정의되어야 함 (TDZ 회피).
+  const handleClosePreview = useCallback(() => {
+    setPreviewModalOpen(false);
+    if (returnTarget?.app && returnTarget?.assetId) {
+      navigate(returnTarget.app, {
+        source: 'banner-codex',
+        target: returnTarget.app,
+        prompt: { text: '', tags: [], style: '' },
+        image: { url: '', metadata: {} },
+        params: { openAssetId: returnTarget.assetId },
+        timestamp: Date.now(),
+      });
+      setReturnTarget(null);
+    }
+  }, [returnTarget, navigate]);
 
   // ESC handler
   useEffect(() => {
@@ -361,18 +390,17 @@ export default function App() {
     }
   };
 
-  const handleToggleCart = async (id) => {
+  // 단일 배너 담기 — 폴더 picker popover 띄움.
+  const handleToggleCart = (id) => {
     if (!user || !db) { showNotification("로그인이 필요합니다."); return; }
-    const wasInCart = cartIds.includes(id);
-    const ok = await toggleCartItem(id);
-    if (ok) showNotification(wasInCart ? "담기 취소되었습니다." : "담기 완료되었습니다.");
-    else showNotification("담기 변경 실패");
+    setFolderPicker({ bannerId: id, isBulk: false });
   };
 
-  const handleAddToCart = async () => {
+  // 다중 선택 담기 — 폴더 picker popover (bulk 모드).
+  const handleAddToCart = () => {
     if (selectedIds.length === 0) return;
-    try { await addToCart(selectedIds); showNotification(`${selectedIds.length}개의 배너를 담았습니다.`); setSelectedIds([]); }
-    catch { showNotification("담기 실패"); }
+    if (!user || !db) { showNotification("로그인이 필요합니다."); return; }
+    setFolderPicker({ bulkIds: [...selectedIds], isBulk: true });
   };
   const handleRemoveFromCart = async () => {
     if (selectedIds.length === 0) return;
@@ -810,22 +838,6 @@ export default function App() {
     } catch { showNotification("데이터 삭제 중 오류가 발생했습니다."); }
   };
 
-  // 모달 닫기 + AssetLibrary 복귀 처리. returnTarget 이 있으면 거기로 navigate.
-  const handleClosePreview = useCallback(() => {
-    setPreviewModalOpen(false);
-    if (returnTarget?.app && returnTarget?.assetId) {
-      navigate(returnTarget.app, {
-        source: 'banner-codex',
-        target: returnTarget.app,
-        prompt: { text: '', tags: [], style: '' },
-        image: { url: '', metadata: {} },
-        params: { openAssetId: returnTarget.assetId },
-        timestamp: Date.now(),
-      });
-      setReturnTarget(null);
-    }
-  }, [returnTarget, navigate]);
-
   // Detail modal helpers
   const handleOpenPreview = useCallback(async (banner) => {
     const sanitizeStr = (val, fb = '') => (val != null && typeof val !== 'object') ? String(val) : fb;
@@ -986,6 +998,10 @@ export default function App() {
         isProcessingFiles={isProcessingFiles} handleFileUpload={handleFileUpload}
         skipDuplicates={skipDuplicates} setSkipDuplicates={setSkipDuplicates}
         handleOpenDuplicateManager={handleOpenDuplicateManager} handleSidebarClick={handleSidebarClick}
+        folders={folders}
+        onCreateFolder={async (name) => { try { await createFolder(name); } catch (e) { showNotification(`폴더 생성 실패: ${e.message || e}`); } }}
+        onRenameFolder={renameFolder}
+        onDeleteFolder={async (fid) => { if (confirm('폴더를 삭제할까요? 폴더 안의 배너는 그대로 남습니다.')) await deleteFolder(fid); }}
       />
 
       <UploadModal isOpen={isUploadModalOpen} onClose={() => { setIsUploadModalOpen(false); setPendingFiles([]); }}
@@ -1091,6 +1107,33 @@ export default function App() {
           toggleLike={toggleLike} toggleFeature={toggleFeature} handleToggleCart={handleToggleCart}
           handleDeleteSingleBanner={handleDeleteSingleBanner} handleSmartAnalysis={handleSmartAnalysis}
           processingBannerId={processingBannerId} handleCopy={handleCopy} showNotification={showNotification} />
+
+        {folderPicker && (
+          <FolderPickerPopover
+            folders={folders}
+            bannerId={folderPicker.isBulk ? null : folderPicker.bannerId}
+            onClose={() => setFolderPicker(null)}
+            onCreateFolder={async (name) => {
+              try { return await createFolder(name); }
+              catch (e) { showNotification(`폴더 생성 실패: ${e.message || e}`); return null; }
+            }}
+            onCommit={async (updates) => {
+              if (folderPicker.isBulk) {
+                // bulk: 선택된 폴더 각각에 모든 bannerIds 일괄 추가/제거.
+                // updates 는 변경된 폴더만 — bulk 의도는 "선택된 폴더에 추가" 이므로 add=true 만 처리.
+                const addTargets = updates.filter(u => u.add).map(u => u.id);
+                for (const folderId of addTargets) {
+                  await bulkSetFolderMembership(folderId, folderPicker.bulkIds, true);
+                }
+                showNotification(`${folderPicker.bulkIds.length}개 배너를 ${addTargets.length}개 폴더에 담았습니다.`);
+                setSelectedIds([]);
+              } else {
+                await updateFolderMembership(folderPicker.bannerId, updates);
+                showNotification("폴더 멤버십이 갱신됐어요.");
+              }
+            }}
+          />
+        )}
       </main>
     </div>
   );

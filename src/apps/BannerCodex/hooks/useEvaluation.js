@@ -133,6 +133,11 @@ export const useEvaluation = ({
     finally { setProcessingBannerId(null); }
   }, [banners, customAiPrompt, criteriaListText, geminiApiKey, openAiApiKey, updateBanner, showNotification, onSelectionAffect]);
 
+  // 일괄 분석 — 순차 처리 + 호출 사이 throttle.
+  // 이전엔 concurrency=3 병렬 + Gemini 내부 retry 3회 조합으로 같은 시간에 최대 9건 동시 호출 가능했고,
+  // 무료 Gemini RPM(분당 60) 또는 일일 quota 를 빠르게 소진해 중간에 멈추는 사례가 있었음.
+  // PromotionArchive 패턴(순차)로 통일 + Gemini 무료 RPM 안전선(약 1.5초/요청) 확보.
+  const BATCH_THROTTLE_MS = 800;
   const runSelectedOCR = useCallback(async (selectedIds, sourceBanners, onComplete) => {
     if (isBatchProcessing) { stopBatchRef.current = true; return; }
     const targets = sourceBanners.filter(b => selectedIds.includes(b.id));
@@ -140,19 +145,20 @@ export const useEvaluation = ({
     setIsBatchProcessing(true);
     stopBatchRef.current = false;
     setOcrProgress({ isOpen: true, status: 'processing', current: 0, total: targets.length, target: '' });
-    showNotification(`${targets.length}개의 선택된 배너 분석 시작 (1개씩 순차)`);
+    showNotification(`${targets.length}개의 선택된 배너 순차 분석 시작`);
+    let done = 0;
     try {
       for (let i = 0; i < targets.length; i++) {
-        const banner = targets[i];
         if (stopBatchRef.current) break;
-        setOcrProgress(prev => ({ ...prev, current: i + 1, target: safeRender(banner.title) || '분석 중...' }));
+        const banner = targets[i];
+        setOcrProgress(prev => ({ ...prev, target: safeRender(banner?.title) || '분석 중...' }));
         try { await handleSmartAnalysis(banner, null, true); }
         catch (err) { console.error(`[BannerCodex] 분석 실패 (계속 진행):`, err); }
-        if (i < targets.length - 1) {
-          for (let t = 0; t < 3000; t += 100) {
-            if (stopBatchRef.current) break;
-            await new Promise(r => setTimeout(r, 100));
-          }
+        done += 1;
+        setOcrProgress(prev => ({ ...prev, current: done, target: safeRender(banner.title) || '분석 중...' }));
+        // 호출 사이 throttle — 마지막 항목 뒤엔 대기 생략.
+        if (i < targets.length - 1 && !stopBatchRef.current) {
+          await new Promise(resolve => setTimeout(resolve, BATCH_THROTTLE_MS));
         }
       }
     } finally {
