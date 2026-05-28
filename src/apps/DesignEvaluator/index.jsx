@@ -6,7 +6,11 @@ import {
 } from 'lucide-react';
 import { collection, addDoc, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../lib/gemini';
-import { fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES } from '../../lib/evaluationCriteria';
+import {
+  fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES,
+  weightsMap, resolveCriteriaType, getActiveRules, getSeedRules,
+  fetchAnchors, addAnchor, removeAnchor, formatAnchorsForPrompt,
+} from '../../lib/evaluationCriteria';
 import { db, appId } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
@@ -103,30 +107,6 @@ const getScoreLabel = (key, category = '') => {
         detail: '완성도 / 디테일', conversion: '클릭/전환 가능성'
     };
     return map[key.toLowerCase()] || key;
-};
-
-const getCategoryWeights = (category = '') => {
-    const cat = category.toLowerCase();
-    if (cat.includes('메인') || cat.includes('main')) {
-        return { impression: 10, concept: 15, layout: 15, typography: 12, color: 12, readability: 10, brand: 8, flow: 6, detail: 6, conversion: 6 };
-    }
-    if (cat.includes('서브') || cat.includes('sub')) {
-        return { impression: 14, concept: 10, layout: 15, typography: 14, color: 10, readability: 10, brand: 8, flow: 8, detail: 6, conversion: 5 };
-    }
-    if (cat.includes('프로모션') || cat.includes('promotion')) {
-        return { impression: 10, brand: 8, concept: 10, color: 15, layout: 10, typography: 10, conversion: 10, readability: 12, flow: 8, detail: 7 };
-    }
-    // ─── 타이포 카테고리 (시드와 weight 동기화) ───
-    if (cat.includes('2d') && cat.includes('타이포')) {
-        return { impression: 10, concept: 10, layout: 10, typography: 14, color: 10, readability: 12, brand: 8, flow: 10, detail: 8, conversion: 8 };
-    }
-    if (cat.includes('렌더링') && cat.includes('타이포')) {
-        return { impression: 10, concept: 10, layout: 8, typography: 14, color: 8, readability: 8, brand: 14, flow: 10, detail: 10, conversion: 8 };
-    }
-    if (cat.includes('모션') && cat.includes('타이포')) {
-        return { impression: 10, concept: 10, layout: 8, typography: 14, color: 8, readability: 10, brand: 10, flow: 12, detail: 8, conversion: 10 };
-    }
-    return { impression: 10, concept: 10, layout: 10, typography: 10, color: 10, readability: 10, brand: 10, flow: 10, detail: 10, conversion: 10 };
 };
 
 // eslint-disable-next-line no-unused-vars
@@ -459,13 +439,15 @@ export default function DesignEvaluator() {
 
   // ─── Firestore evaluationCriteria 동기화 ───
   // banner / promotion / brandweb / typo2d / typoRender / typoMotion 활성 버전을 한꺼번에 로드 → 카테고리별 기준 텍스트로 합성
+  const seedEntry = (type) => ({ items: getSeedCriteria(type), versionName: "(시드)", rules: getSeedRules(type) });
   const [criteriaByType, setCriteriaByType] = useState({
-    banner:     { items: getSeedCriteria(CRITERIA_TYPES.banner),     versionName: "(시드)" },
-    promotion:  { items: getSeedCriteria(CRITERIA_TYPES.promotion),  versionName: "(시드)" },
-    brandweb:   { items: getSeedCriteria(CRITERIA_TYPES.brandweb),   versionName: "(시드)" },
-    typo2d:     { items: getSeedCriteria(CRITERIA_TYPES.typo2d),     versionName: "(시드)" },
-    typoRender: { items: getSeedCriteria(CRITERIA_TYPES.typoRender), versionName: "(시드)" },
-    typoMotion: { items: getSeedCriteria(CRITERIA_TYPES.typoMotion), versionName: "(시드)" },
+    banner:      seedEntry(CRITERIA_TYPES.banner),
+    promotion:   seedEntry(CRITERIA_TYPES.promotion),
+    brandweb:    seedEntry(CRITERIA_TYPES.brandweb),
+    brandwebSub: seedEntry(CRITERIA_TYPES.brandwebSub),
+    typo2d:      seedEntry(CRITERIA_TYPES.typo2d),
+    typoRender:  seedEntry(CRITERIA_TYPES.typoRender),
+    typoMotion:  seedEntry(CRITERIA_TYPES.typoMotion),
   });
   const [criteriaLoading, setCriteriaLoading] = useState(true);
   useEffect(() => {
@@ -473,25 +455,27 @@ export default function DesignEvaluator() {
     (async () => {
       setCriteriaLoading(true);
       try {
-        const [b, p, w, t2, tr, tm] = await Promise.all([
+        const [b, p, w, ws, t2, tr, tm] = await Promise.all([
           fetchActiveCriteria(CRITERIA_TYPES.banner),
           fetchActiveCriteria(CRITERIA_TYPES.promotion),
           fetchActiveCriteria(CRITERIA_TYPES.brandweb),
+          fetchActiveCriteria(CRITERIA_TYPES.brandwebSub),
           fetchActiveCriteria(CRITERIA_TYPES.typo2d),
           fetchActiveCriteria(CRITERIA_TYPES.typoRender),
           fetchActiveCriteria(CRITERIA_TYPES.typoMotion),
         ]);
         if (cancelled) return;
         const pickOrSeed = (v, type) => (v && Array.isArray(v.criteria) && v.criteria.length > 0)
-          ? { items: v.criteria, versionName: v.name || "active" }
-          : { items: getSeedCriteria(type), versionName: "(시드 fallback)" };
+          ? { items: v.criteria, versionName: v.name || "active", rules: getActiveRules(v) || getSeedRules(type) }
+          : { items: getSeedCriteria(type), versionName: "(시드 fallback)", rules: getSeedRules(type) };
         setCriteriaByType({
-          banner:     pickOrSeed(b,  CRITERIA_TYPES.banner),
-          promotion:  pickOrSeed(p,  CRITERIA_TYPES.promotion),
-          brandweb:   pickOrSeed(w,  CRITERIA_TYPES.brandweb),
-          typo2d:     pickOrSeed(t2, CRITERIA_TYPES.typo2d),
-          typoRender: pickOrSeed(tr, CRITERIA_TYPES.typoRender),
-          typoMotion: pickOrSeed(tm, CRITERIA_TYPES.typoMotion),
+          banner:      pickOrSeed(b,  CRITERIA_TYPES.banner),
+          promotion:   pickOrSeed(p,  CRITERIA_TYPES.promotion),
+          brandweb:    pickOrSeed(w,  CRITERIA_TYPES.brandweb),
+          brandwebSub: pickOrSeed(ws, CRITERIA_TYPES.brandwebSub),
+          typo2d:      pickOrSeed(t2, CRITERIA_TYPES.typo2d),
+          typoRender:  pickOrSeed(tr, CRITERIA_TYPES.typoRender),
+          typoMotion:  pickOrSeed(tm, CRITERIA_TYPES.typoMotion),
         });
       } catch (e) {
         console.warn("[DesignEvaluator] criteria load failed; using seeds", e);
@@ -518,8 +502,11 @@ ${formatCriteriaList(criteriaByType.banner.items)}
 ▶ [프로모션 페이지] 카테고리:
 ${formatCriteriaList(criteriaByType.promotion.items)}
 
-▶ [브랜드웹_메인] / [브랜드웹_서브] 카테고리:
+▶ [브랜드웹_메인] 카테고리:
 ${formatCriteriaList(criteriaByType.brandweb.items)}
+
+▶ [브랜드웹_서브] 카테고리:
+${formatCriteriaList(criteriaByType.brandwebSub.items)}
 
 ▶ [2D 타이포] 카테고리 (평면 디자인 — 벡터/플랫):
 ${formatCriteriaList(criteriaByType.typo2d.items)}
@@ -535,6 +522,21 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
 - 저점 항목 (80점 미만): 절대 칭찬하거나 "무난하다"고 타협하지 마세요. 명확한 단점과 아쉬운 점을 날카롭게 비판하고 지적하세요.
 - 구어체나 불필요한 미사여구를 빼고 핵심만 심플하게 작성하세요.
 - 모션 타이포 카테고리는 키프레임 한 장으로 평가하지만, 가능한 한 시간 축의 흔적(motion blur, sequential frames, easing 흔적 등)을 추론하여 timing/loop/모션 관련 항목에도 점수를 매기세요.`;
+  }, [criteriaByType]);
+
+  // 카테고리별 채점 규칙(rules) — 공유 기준의 rules. 비어있지 않은 것만 라벨과 함께 노출.
+  // 판별/지정된 카테고리에 해당하는 규칙을 AI 가 적용하도록 프롬프트에 주입.
+  const scoringRulesText = useMemo(() => {
+    const labelOf = {
+      banner: "배너 / 기타", promotion: "프로모션 페이지", brandweb: "브랜드웹_메인",
+      brandwebSub: "브랜드웹_서브", typo2d: "2D 타이포", typoRender: "렌더링 타이포", typoMotion: "모션 타이포",
+    };
+    const blocks = Object.entries(criteriaByType)
+      .filter(([, v]) => v?.rules && v.rules.trim())
+      .map(([type, v]) => `▶ [${labelOf[type] || type}] 채점 규칙:\n${v.rules.trim()}`);
+    return blocks.length
+      ? `\n[★ 카테고리별 채점 규칙 — 판별된 카테고리에 해당하는 규칙을 반드시 적용하세요]\n${blocks.join("\n\n")}\n`
+      : "";
   }, [criteriaByType]);
 
   useEffect(() => {
@@ -722,6 +724,14 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
               ? '첨부된 이미지를 분석하여 디자인 카테고리를 분류하고,'
               : `첨부된 디자인은 [${selectedCategory}]입니다. 이 사실을 바탕으로`;
 
+          // 기준점 앵커 — 카테고리가 고정된 경우에만 해당 타입 앵커를 few-shot 으로 주입.
+          // (auto 모드는 분석 전 타입을 알 수 없어 생략.)
+          let anchorsText = "";
+          if (selectedCategory !== 'auto') {
+            try { anchorsText = formatAnchorsForPrompt(await fetchAnchors(resolveCriteriaType(selectedCategory))); }
+            catch (e) { console.warn('[DesignEvaluator] fetchAnchors failed', e); }
+          }
+
           const dynamicPrompt = `당신은 게임/IT 디자인을 심사하는 최고 권위의 AI 평가단입니다.
 ${introInstruction} 반드시 10가지 세부 항목 '모두'에 대해 누락 없이 정밀 평가하세요.
 
@@ -732,7 +742,7 @@ ${categoryInstruction}
 - tags: 컬러, 분위기, 특징 위주로 반드시 '한글'로만 3~5개 작성 (예: "다크판타지", "황금빛", "캐주얼", "화려한").
 
 ${evaluationCriteria}
-
+${scoringRulesText}${anchorsText}
 반드시 지정된 JSON 스키마에 맞추어 10개 평가 항목 전체를 단 하나도 누락 없이 답변하세요.`;
 
           let geminiResult = null;
@@ -762,21 +772,24 @@ ${evaluationCriteria}
               };
               const mergeReason = (gReason, oReason) => gReason || oReason || '';
               const detectedCategory = primaryData.category || '미분류';
-              const weights = getCategoryWeights(detectedCategory);
+              // 가중치 단일 소스 — 공유 평가 기준(criteriaByType[resolvedType])의 weight 사용.
+              // 누락/합≠100 안전하게 weight 합으로 정규화한 가중 평균(0~100) → 0~10.
+              const resolvedType = resolveCriteriaType(detectedCategory);
+              const weights = weightsMap(criteriaByType[resolvedType]?.items || []);
               const keys = ['impression', 'concept', 'layout', 'typography', 'color', 'readability', 'brand', 'flow', 'detail', 'conversion'];
               const mergedScoresData = {};
-              let weightedScoreSum = 0;
+              let weightedSum = 0, totalW = 0;
               keys.forEach(key => {
                   const gScore = geminiData?.scores_data?.[key]?.score;
                   const oScore = openaiData?.scores_data?.[key]?.score;
                   const score = mergeScore(gScore, oScore);
-                  const weight = weights[key];
+                  const w = Number(weights[key]) > 0 ? Number(weights[key]) : 1;
                   const reason = mergeReason(geminiData?.scores_data?.[key]?.reason, openaiData?.scores_data?.[key]?.reason);
-                  mergedScoresData[key] = { score: Math.round(score), reason, weight };
-                  weightedScoreSum += score * (weight / 100);
+                  mergedScoresData[key] = { score: Math.round(score), reason, weight: w };
+                  weightedSum += score * w; totalW += w;
               });
-              let aiScoreRaw = weightedScoreSum / 10;
-              let aiScore = Math.round(aiScoreRaw * 10) / 10;
+              const weightedAvg100 = totalW > 0 ? weightedSum / totalW : 0;
+              let aiScore = Math.round((weightedAvg100 / 10) * 10) / 10;
               const finalResult = {
                   title: primaryData.title,
                   category: detectedCategory,
@@ -812,6 +825,47 @@ ${evaluationCriteria}
       }
       const a = Number.isFinite(parseFloat(adj)) ? parseFloat(adj) : 0;
       return Math.min(99, Math.max(0, base + a));
+  };
+
+  // ─── 기준점(앵커) 큐레이션 — 이 앱이 허브. 추가/삭제/목록. ───
+  const ANCHOR_TYPE_TABS = [
+    { id: CRITERIA_TYPES.banner, label: '배너' },
+    { id: CRITERIA_TYPES.promotion, label: '프로모션' },
+    { id: CRITERIA_TYPES.brandweb, label: '브랜드웹 메인' },
+    { id: CRITERIA_TYPES.brandwebSub, label: '브랜드웹 서브' },
+    { id: CRITERIA_TYPES.typo2d, label: '2D 타이포' },
+    { id: CRITERIA_TYPES.typoRender, label: '렌더링 타이포' },
+    { id: CRITERIA_TYPES.typoMotion, label: '모션 타이포' },
+  ];
+  const [anchorMgrType, setAnchorMgrType] = useState(CRITERIA_TYPES.banner);
+  const [anchorMgrList, setAnchorMgrList] = useState([]);
+  const [anchorMgrLoading, setAnchorMgrLoading] = useState(false);
+  const loadAnchorMgr = async (type) => {
+    setAnchorMgrLoading(true);
+    try { setAnchorMgrList(await fetchAnchors(type)); }
+    catch { setAnchorMgrList([]); }
+    finally { setAnchorMgrLoading(false); }
+  };
+  useEffect(() => {
+    if (isSettingsOpen && settingsTab === 'anchors') loadAnchorMgr(anchorMgrType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSettingsOpen, settingsTab, anchorMgrType]);
+  const handleAddAnchor = async () => {
+    if (!resultData) return;
+    const type = resolveCriteriaType(resultData.category);
+    const verdict = window.prompt('이 평가를 기준점(캘리브레이션 앵커)으로 추가합니다.\n점수의 근거가 되는 한 줄 평을 입력하세요:', '');
+    if (verdict === null) return; // 취소
+    try {
+      await addAnchor(type, {
+        score: getFinalScore100(resultData, manualScoreAdj),
+        verdict, tags: resultData.tags || [], thumbnailUrl: '',
+      });
+      showNotification('기준점으로 추가했습니다. 이후 분석에 반영됩니다.');
+    } catch (e) { showNotification('기준점 추가 실패: ' + (e.message || e)); }
+  };
+  const handleRemoveAnchor = async (id) => {
+    try { await removeAnchor(anchorMgrType, id); await loadAnchorMgr(anchorMgrType); }
+    catch (e) { showNotification('삭제 실패: ' + (e.message || e)); }
   };
 
   const copyResultJson = () => {
@@ -1146,6 +1200,11 @@ ${evaluationCriteria}
                                             className="p-1.5 rounded-md bg-[#0eb9b3]/10 hover:bg-[#0eb9b3]/20 border border-[#0eb9b3]/40 text-[#0eb9b3] transition-colors">
                                             <Layers className="w-3.5 h-3.5" />
                                         </button>
+                                        <button onClick={handleAddAnchor}
+                                            title="이 평가를 기준점(캘리브레이션 앵커)으로 추가 — 이후 분석이 이 점수 감각에 맞춰짐"
+                                            className="p-1.5 rounded-md bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-400 transition-colors">
+                                            <Plus className="w-3.5 h-3.5" />
+                                        </button>
                                         {registerTarget.id === 'banner-codex' && (
                                             <button onClick={sendToBannerCreator}
                                                 title="배너 에디터로 보내기"
@@ -1243,6 +1302,9 @@ ${evaluationCriteria}
                             <button onClick={() => setSettingsTab('prompt')} className={`text-lg font-bold flex items-center gap-2 transition-colors ${settingsTab === 'prompt' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}>
                                 <Edit3 className={`w-5 h-5 ${settingsTab === 'prompt' ? 'text-[#0eb9b3]' : ''}`} /> 평가 기준 편집
                             </button>
+                            <button onClick={() => setSettingsTab('anchors')} className={`text-lg font-bold flex items-center gap-2 transition-colors ${settingsTab === 'anchors' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}>
+                                <Sparkles className={`w-5 h-5 ${settingsTab === 'anchors' ? 'text-[#df6a78]' : ''}`} /> 기준점
+                            </button>
                         </div>
                         <button onClick={() => setIsSettingsOpen(false)} className="text-zinc-500 hover:text-white transition-colors"><X className="w-5 h-5"/></button>
                     </div>
@@ -1259,7 +1321,7 @@ ${evaluationCriteria}
                                     <p className="text-[11px] text-zinc-500 mt-2 leading-relaxed">Gemini 단독 평가도 가능하며, OpenAI 키를 추가로 입력하면 듀얼 AI 검증으로 더욱 정밀한 평균 점수를 도출합니다.</p>
                                 </div>
                             </div>
-                        ) : (
+                        ) : settingsTab === 'prompt' ? (
                             <div className="flex flex-col h-full min-h-[300px]">
                                 <div className="flex justify-between items-center mb-3">
                                     <label className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
@@ -1277,6 +1339,34 @@ ${evaluationCriteria}
                                 </div>
                                 <textarea value={evaluationCriteria} readOnly className="w-full flex-1 min-h-[350px] bg-black/50 border border-white/10 rounded-lg p-4 text-[13px] text-zinc-400 outline-none transition-colors custom-scrollbar leading-relaxed resize-none cursor-default" />
                                 <p className="text-[11px] text-zinc-500 mt-3 leading-relaxed">※ 위 내용은 Firestore 활성 버전을 합성한 결과로, 읽기 전용입니다. 변경하려면 NEXUS Admin 으로 이동하세요.</p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col h-full min-h-[300px]">
+                                <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+                                    {ANCHOR_TYPE_TABS.map(t => (
+                                        <button key={t.id} onClick={() => setAnchorMgrType(t.id)}
+                                            className={`text-[11px] px-2.5 py-1 rounded-md border transition-colors ${anchorMgrType === t.id ? 'bg-[#df6a78]/15 border-[#df6a78]/40 text-[#df6a78]' : 'border-white/10 text-zinc-400 hover:text-white'}`}>
+                                            {t.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[11px] text-zinc-500 mb-2 leading-relaxed">기준점은 분석 시 few-shot 으로 주입되어 평가자의 점수 감각에 맞춥니다. 평가 결과 화면의 <b className="text-amber-400">＋</b> 버튼으로 추가하세요. (BannerCodex 분석에도 동일하게 반영)</p>
+                                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1.5 min-h-[200px]">
+                                    {anchorMgrLoading ? (
+                                        <div className="text-center py-8 text-zinc-500 text-xs">불러오는 중...</div>
+                                    ) : anchorMgrList.length === 0 ? (
+                                        <div className="text-center py-8 text-zinc-600 text-xs">등록된 기준점이 없습니다.</div>
+                                    ) : anchorMgrList.map(a => (
+                                        <div key={a.id} className="flex items-center gap-3 bg-black/40 border border-white/10 rounded-lg px-3 py-2">
+                                            <span className="text-base font-black tabular-nums text-[#df6a78] w-9 text-center shrink-0">{a.score}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-[12px] text-zinc-200 truncate">{a.verdict || '(한줄평 없음)'}</div>
+                                                {a.tags?.length > 0 && <div className="text-[10px] text-zinc-500 truncate">{a.tags.map(t => `#${t}`).join(' ')}</div>}
+                                            </div>
+                                            <button onClick={() => handleRemoveAnchor(a.id)} className="p-1.5 rounded text-zinc-500 hover:text-rose-400 hover:bg-rose-500/10 shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>

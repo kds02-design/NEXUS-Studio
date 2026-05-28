@@ -11,14 +11,15 @@ const safeRender = (v, fb = '') => {
 };
 
 export const useEvaluation = ({
-  banners, updateBanner, customAiPrompt, criteriaListText,
+  banners, updateBanner, customAiPrompt, criteriaListText, criteriaWeights,
+  criteriaRules, anchorsText,
   geminiApiKey, openAiApiKey, showNotification, onSelectionAffect,
 }) => {
   const [processingBannerId, setProcessingBannerId] = useState(null);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState({ isOpen: false, status: 'idle', current: 0, total: 0, target: '' });
   const stopBatchRef = useRef(false);
-  const activeFetchControllerRef = useRef(null);
+  const activeFetchControllerRef = useRef(new Set()); // 진행 중 fetch controllers (동시성 취소 대응)
 
   const handleSmartAnalysis = useCallback(async (banner, e, isBatch = false) => {
     if (e) e.stopPropagation();
@@ -52,18 +53,22 @@ export const useEvaluation = ({
         setProcessingBannerId(null); return;
       }
 
-      const learningContext = buildLearningContext(banner, banners);
-      const dynamicPrompt = buildEvalPrompt(customAiPrompt || DEFAULT_AI_PROMPT, learningContext, criteriaListText);
+      // 앵커(기준점)를 학습 컨텍스트 앞에 결합 — 앵커 우선, 최근 피드백 보조.
+      const baseLearning = buildLearningContext(banner, banners);
+      const learningContext = `${anchorsText || ''}${baseLearning || ''}`;
+      const dynamicPrompt = buildEvalPrompt(customAiPrompt || DEFAULT_AI_PROMPT, learningContext, criteriaListText, criteriaRules);
 
       let geminiResult = null;
       let openaiResult = null;
       try {
+        let myController = null;
         const promises = [callGeminiAPI(dynamicPrompt, base64Image, true, {
           apiKey: geminiApiKey, isBatchCall: isBatch, stopRef: stopBatchRef,
-          onController: (c) => { activeFetchControllerRef.current = c; }
+          onController: (c) => { myController = c; activeFetchControllerRef.current.add(c); }
         })];
         if (openAiApiKey) promises.push(callOpenAIAPI(dynamicPrompt, base64Image, openAiApiKey));
         const results = await Promise.allSettled(promises);
+        if (myController) activeFetchControllerRef.current.delete(myController);
         if (results[0].status === 'fulfilled' && !results[0].value?.startsWith?.('ERROR:')) geminiResult = results[0].value;
         else if (!isBatch) showNotification(`Gemini API 오류: ${results[0].value?.replace?.('ERROR:', '')}`);
         if (openAiApiKey && results[1]?.status === 'fulfilled' && results[1].value) openaiResult = results[1].value;
@@ -98,7 +103,9 @@ export const useEvaluation = ({
           };
           const mergeReason = (g, o) => g || o || '';
           const merged = {};
-          let totalSum = 0, validCount = 0;
+          // 가중 평균 — 항목별 weight 로 가중. 누락 항목은 분모(totalWeight)에서도 빠져 점수 왜곡 방지.
+          // weight 가 없거나 0 이면 1 로 폴백(= 단순 평균과 동일).
+          let weightedSum = 0, totalWeight = 0, validCount = 0;
           const missing = [];
           EVALUATION_KEYS.forEach(key => {
             const gS = geminiData?.scores_data?.[key]?.score;
@@ -110,11 +117,12 @@ export const useEvaluation = ({
               merged[key] = { score: null, reason: reason || '(분석 누락 — AI 응답에 없음)' };
             } else {
               merged[key] = { score: Math.round(score), reason };
-              totalSum += score; validCount++;
+              const w = Number(criteriaWeights?.[key]) > 0 ? Number(criteriaWeights[key]) : 1;
+              weightedSum += score * w; totalWeight += w; validCount++;
             }
           });
           if (missing.length > 0) console.warn(`[BannerCodex] AI 응답에서 누락된 항목 ${missing.length}/10: ${missing.join(', ')}`);
-          const avg100 = validCount > 0 ? totalSum / validCount : 0;
+          const avg100 = totalWeight > 0 ? weightedSum / totalWeight : 0;
           let aiScore = Math.round((avg100 / 10) * 10) / 10;
           updateData.scores = merged;
           updateData.aiScore = aiScore;
@@ -131,13 +139,14 @@ export const useEvaluation = ({
       } else if (!isBatch) showNotification("정보를 찾을 수 없습니다.");
     } catch (e) { if (!isBatch) showNotification("오류가 발생했습니다."); }
     finally { setProcessingBannerId(null); }
-  }, [banners, customAiPrompt, criteriaListText, geminiApiKey, openAiApiKey, updateBanner, showNotification, onSelectionAffect]);
+  }, [banners, customAiPrompt, criteriaListText, criteriaWeights, criteriaRules, anchorsText, geminiApiKey, openAiApiKey, updateBanner, showNotification, onSelectionAffect]);
 
-  // 일괄 분석 — 순차 처리 + 호출 사이 throttle.
-  // 이전엔 concurrency=3 병렬 + Gemini 내부 retry 3회 조합으로 같은 시간에 최대 9건 동시 호출 가능했고,
-  // 무료 Gemini RPM(분당 60) 또는 일일 quota 를 빠르게 소진해 중간에 멈추는 사례가 있었음.
-  // PromotionArchive 패턴(순차)로 통일 + Gemini 무료 RPM 안전선(약 1.5초/요청) 확보.
-  const BATCH_THROTTLE_MS = 800;
+  // 일괄 분석 — 제한된 동시성(concurrency) + 청크 사이 throttle.
+  // flash + thinkingBudget:0 로 per-call 이 빨라졌고, 각 call 의 retry 는 순차라 동시성을 늘리지 않으므로
+  // 어느 순간에도 동시 fetch 는 최대 BATCH_CONCURRENCY 건 → 무료 Gemini RPM(60/분) 안전선 내.
+  // 더 빠르게/보수적으로 조정하려면 아래 두 상수만 바꾸면 됨.
+  const BATCH_CONCURRENCY = 3;
+  const BATCH_THROTTLE_MS = 300;
   const runSelectedOCR = useCallback(async (selectedIds, sourceBanners, onComplete) => {
     if (isBatchProcessing) { stopBatchRef.current = true; return; }
     const targets = sourceBanners.filter(b => selectedIds.includes(b.id));
@@ -145,24 +154,26 @@ export const useEvaluation = ({
     setIsBatchProcessing(true);
     stopBatchRef.current = false;
     setOcrProgress({ isOpen: true, status: 'processing', current: 0, total: targets.length, target: '' });
-    showNotification(`${targets.length}개의 선택된 배너 순차 분석 시작`);
+    showNotification(`${targets.length}개의 선택된 배너 분석 시작 (동시 ${BATCH_CONCURRENCY}건)`);
     let done = 0;
     try {
-      for (let i = 0; i < targets.length; i++) {
+      for (let i = 0; i < targets.length; i += BATCH_CONCURRENCY) {
         if (stopBatchRef.current) break;
-        const banner = targets[i];
-        setOcrProgress(prev => ({ ...prev, target: safeRender(banner?.title) || '분석 중...' }));
-        try { await handleSmartAnalysis(banner, null, true); }
-        catch (err) { console.error(`[BannerCodex] 분석 실패 (계속 진행):`, err); }
-        done += 1;
-        setOcrProgress(prev => ({ ...prev, current: done, target: safeRender(banner.title) || '분석 중...' }));
-        // 호출 사이 throttle — 마지막 항목 뒤엔 대기 생략.
-        if (i < targets.length - 1 && !stopBatchRef.current) {
+        const chunk = targets.slice(i, i + BATCH_CONCURRENCY);
+        setOcrProgress(prev => ({ ...prev, target: `${i + 1}~${Math.min(i + chunk.length, targets.length)}번 동시 분석 중...` }));
+        await Promise.allSettled(chunk.map(async (banner) => {
+          try { await handleSmartAnalysis(banner, null, true); }
+          catch (err) { console.error(`[BannerCodex] 분석 실패 (계속 진행):`, err); }
+          done += 1;
+          setOcrProgress(prev => ({ ...prev, current: done }));
+        }));
+        // 청크 사이 throttle — 마지막 청크 뒤엔 대기 생략.
+        if (i + BATCH_CONCURRENCY < targets.length && !stopBatchRef.current) {
           await new Promise(resolve => setTimeout(resolve, BATCH_THROTTLE_MS));
         }
       }
     } finally {
-      activeFetchControllerRef.current = null;
+      activeFetchControllerRef.current.clear();
       setIsBatchProcessing(false);
       setOcrProgress({ isOpen: false, status: 'idle', current: 0, total: 0, target: '' });
       if (!stopBatchRef.current) showNotification("선택된 항목 분석 완료");
@@ -173,7 +184,8 @@ export const useEvaluation = ({
 
   const handleCancelBatch = useCallback(() => {
     stopBatchRef.current = true;
-    try { activeFetchControllerRef.current?.abort(new Error("사용자가 분석을 중지했습니다.")); } catch {}
+    // 동시 진행 중인 모든 fetch 중단.
+    try { activeFetchControllerRef.current.forEach(c => { try { c.abort(new Error("사용자가 분석을 중지했습니다.")); } catch {} }); } catch {}
   }, []);
 
   return {

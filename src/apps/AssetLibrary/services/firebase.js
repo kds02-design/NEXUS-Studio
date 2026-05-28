@@ -11,8 +11,7 @@ import { cropImageToDataUrl } from "./cropper";
 const assetsColRef = () => collection(db, "artifacts", appId, "public", "data", "assets");
 const assetDocRef = (id) => doc(db, "artifacts", appId, "public", "data", "assets", id);
 
-// 일회성 fetch — createdAt desc. 이전엔 onSnapshot 으로 통째 실시간 구독했으나
-// Firestore 무료 한도 초과 문제로 단발 호출로 전환. 호출자가 명시적 refresh 가능.
+// 일회성 fetch — createdAt desc. (수동 새로고침 용으로 유지)
 export async function fetchAssetsOnce() {
   try {
     const q = query(assetsColRef(), orderBy("createdAt", "desc"));
@@ -25,11 +24,23 @@ export async function fetchAssetsOnce() {
   }
 }
 
-// 하위 호환 — 기존 호출처가 (callback, onError) 패턴 유지하면서 1회 fetch 로 라우팅.
-// unsub 은 noop. 호출자가 새로 데이터를 가져오려면 fetchAssetsOnce 를 직접 호출.
+// 실시간 구독 — createdAt desc. orderBy 인덱스 누락 시 unordered 로 폴백.
+// (BannerCodex 무한 루프가 read 폭주의 진짜 원인이었고 그건 해결됨 → 실시간 구독 복원)
 export function subscribeAssets(callback, onError) {
-  fetchAssetsOnce().then(callback).catch((e) => onError?.(e));
-  return () => {};
+  try {
+    const q = query(assetsColRef(), orderBy("createdAt", "desc"));
+    return onSnapshot(q, (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, (err) => {
+      console.warn("[AssetLibrary] subscribe ordered failed, fallback:", err);
+      return onSnapshot(assetsColRef(), (snap) => {
+        callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }, onError);
+    });
+  } catch (e) {
+    onError?.(e);
+    return () => {};
+  }
 }
 
 // 단일 에셋 저장 — 크롭된 dataURL 을 Cloudinary 업로드 후 Firestore 문서 생성.

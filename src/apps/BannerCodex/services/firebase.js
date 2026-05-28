@@ -62,12 +62,14 @@ export const fetchBannersOnce = async (sortOrder) => {
   return sortBanners(data, sortOrder);
 };
 
-// 하위 호환 — 기존 호출처를 일회성 fetch 로 라우팅. 첫 마운트 시 1회 onData 호출하고
-// unsub 은 noop. 호출자가 명시적으로 refresh 가 필요하면 fetchBannersOnce 를 직접 호출.
+// 실시간 구독 — banners 컬렉션 전체. read 폭주의 진짜 원인은 cartIds 무한 루프였고 그건 해결됐으므로
+// 실시간 구독 복원 (다른 사용자/탭 변경 즉시 반영).
 export const subscribeToBanners = (sortOrder, onData, onError) => {
   if (!db) return () => {};
-  fetchBannersOnce(sortOrder).then(onData).catch(onError);
-  return () => {};
+  return onSnapshot(query(bannersCol()), (snapshot) => {
+    const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    onData(sortBanners(data, sortOrder));
+  }, onError);
 };
 
 export const subscribeToBookmarks = (uid, onData, onError) => {

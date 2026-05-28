@@ -2,7 +2,30 @@
 // 브랜드웹 라이브러리 전용 키 → 미설정 시 공용 VITE_GEMINI_API_KEY 로 폴백.
 // 별도 quota/billing 관리가 필요할 때 .env 에 VITE_GEMINI_API_KEY_BRANDWEB 만 추가하면 됨.
 import { GEMINI_API_KEY as DEFAULT_GEMINI_KEY } from "../../../lib/gemini";
-import { WEB_EVALUATION_KEYS, DEFAULT_WEB_EVAL_PROMPT, BRAND_WEB_EVAL_PROMPT } from "../constants/webEvalCriteria";
+import { WEB_EVALUATION_KEYS, DEFAULT_WEB_EVAL_PROMPT, BRAND_WEB_EVAL_PROMPT, getWebWeightsFor } from "../constants/webEvalCriteria";
+import {
+  CRITERIA_TYPES, fetchActiveCriteria, getActiveRules, getSeedRules,
+  fetchAnchors, formatAnchorsForPrompt,
+} from "../../../lib/evaluationCriteria";
+
+// 공유 캘리브레이션(앵커 + 채점 규칙) 세션 캐시 — 일괄 분석에서 Firestore 반복 read 방지.
+const _webCalibCache = new Map(); // type -> { anchorsText, rules, ts }
+const _CALIB_TTL_MS = 60_000;
+async function _getWebCalibration(type) {
+  const hit = _webCalibCache.get(type);
+  if (hit && Date.now() - hit.ts < _CALIB_TTL_MS) return hit;
+  let anchorsText = "", rules = "";
+  try {
+    const [anchors, v] = await Promise.all([fetchAnchors(type), fetchActiveCriteria(type)]);
+    anchorsText = formatAnchorsForPrompt(anchors);
+    rules = getActiveRules(v) || getSeedRules(type);
+  } catch (e) {
+    console.warn("[PromotionArchive] calibration load failed", e);
+  }
+  const entry = { anchorsText, rules, ts: Date.now() };
+  _webCalibCache.set(type, entry);
+  return entry;
+}
 
 const apiKey = (import.meta.env.VITE_GEMINI_API_KEY_BRANDWEB || "").trim() || DEFAULT_GEMINI_KEY;
 // 콘솔에서 어떤 키 소스가 활성화됐는지 확인 — 값은 노출하지 않음.
@@ -161,9 +184,15 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     const keyToUse = (options.apiKey || apiKey || '').trim();
     // 브랜드웹은 다른 평가 관점(메인 메시지/세계관 중심) 사용.
     const basePrompt = options.isBrandWeb ? BRAND_WEB_EVAL_PROMPT : DEFAULT_WEB_EVAL_PROMPT;
-    const prompt = userComment
-        ? `${basePrompt}\n\n[사용자 피드백]\n${userComment}\n`
-        : basePrompt;
+    // 공유 캘리브레이션 주입 — 채점 규칙 + 기준점 앵커. 타입은 브랜드웹/프로모션 공유 버킷 사용
+    // (앵커는 최종 점수+한줄평이라 키 셋과 무관 → DesignEvaluator 와 같은 기준점 공유).
+    const calibType = options.isBrandWeb ? CRITERIA_TYPES.brandweb : CRITERIA_TYPES.promotion;
+    const calib = await _getWebCalibration(calibType);
+    const ruleBlock = calib.rules && calib.rules.trim() ? `\n\n[채점 규칙]\n${calib.rules.trim()}\n` : '';
+    const anchorBlock = calib.anchorsText || '';
+    const weights = getWebWeightsFor(!!options.isBrandWeb);
+    const prompt = `${basePrompt}${ruleBlock}${anchorBlock}`
+        + (userComment ? `\n\n[사용자 피드백]\n${userComment}\n` : '');
 
     const imageParts = (Array.isArray(imagesBase64) ? imagesBase64 : [imagesBase64])
         .filter(Boolean)
@@ -219,23 +248,24 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
             const cleaned = text.replace(/```json|```/g, '').trim();
             const parsed = JSON.parse(cleaned);
 
-            // 점수 정리 + aiScore 계산
+            // 점수 정리 + aiScore 계산 — 가중 평균(weights). 누락 항목은 분모(weight 합)에서도 제외.
             const scores = {};
-            let sum = 0;
-            let count = 0;
+            let weightedSum = 0;
+            let totalW = 0;
             const missing = [];
             WEB_EVALUATION_KEYS.forEach(key => {
                 const item = parsed?.scores_data?.[key];
                 if (item && typeof item.score === 'number') {
-                    scores[key] = { score: Math.round(item.score), reason: String(item.reason || '') };
-                    sum += item.score;
-                    count++;
+                    const w = Number(weights[key]) > 0 ? Number(weights[key]) : 1;
+                    scores[key] = { score: Math.round(item.score), reason: String(item.reason || ''), weight: w };
+                    weightedSum += item.score * w;
+                    totalW += w;
                 } else {
                     missing.push(key);
                     scores[key] = { score: null, reason: '(분석 누락)' };
                 }
             });
-            const aiScore = count > 0 ? +(sum / count / 10).toFixed(1) : 0;
+            const aiScore = totalW > 0 ? +((weightedSum / totalW) / 10).toFixed(1) : 0;
 
             // 날짜 정리 — 빈 값/추측 단어 필터
             const isInvalidDate = (val) => !val || ['null', 'none', 'unknown', '없음', '불명'].some(s => String(val).toLowerCase().includes(s));

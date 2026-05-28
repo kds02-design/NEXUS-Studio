@@ -47,10 +47,12 @@ const Sidebar = ({
 
   // 설정 팝오버 — aside의 overflow-hidden에 잘리지 않도록 portal로 body에 렌더링.
   const settingsBtnRef = useRef(null);
-  // 사이드바가 데스크탑/모바일에서 축소(접힘)될 때 "전체 게임" 팝오버 자동 닫기.
-  // 좁아진 컬럼 안에 팝오버가 어색하게 끼이는 사고 방지.
+  // 사이드바가 (현재 뷰포트에서) 완전히 접혔을 때만 "전체 게임" 팝오버 자동 닫기.
+  // 데스크탑은 isDesktopSidebarOpen, 모바일은 isSidebarOpen 으로 펼침을 표현하고
+  // 반대쪽 플래그는 항상 false 로 남으므로, OR 로 검사하면 데스크탑에서 열자마자 닫혀버림.
+  // → 둘 다 false(어느 모드에서도 안 펼쳐짐)일 때만 닫는다.
   useEffect(() => {
-    if ((!isDesktopSidebarOpen || !isSidebarOpen) && isAllGamesModalOpen) {
+    if (!isDesktopSidebarOpen && !isSidebarOpen && isAllGamesModalOpen) {
       setIsAllGamesModalOpen(false);
     }
   }, [isDesktopSidebarOpen, isSidebarOpen, isAllGamesModalOpen, setIsAllGamesModalOpen]);

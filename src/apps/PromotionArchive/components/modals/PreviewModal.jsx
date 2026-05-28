@@ -932,13 +932,61 @@ const PreviewModal = ({
               </button>
             </div>
 
+            {/* Section — 프로모션 / 브랜드웹 구분. 편집: 세그먼트 토글 / 표시: chip.
+                선택 시 렌더링용 assetType('프로모션'/'브랜드웹')과 필터용 section('promotion'/'brandweb')을 함께 갱신.
+                (resolveSection 이 section 을 최우선으로 보므로 둘 다 세팅해야 섹션 탭에 즉시 반영됨) */}
+            <div className="mb-5 pb-5 border-b border-white/5">
+              <label className={labelStyle}>Section</label>
+              {state.isEditing ? (
+                <div className="flex gap-1.5">
+                  {[
+                    { type: "프로모션", section: "promotion" },
+                    { type: "브랜드웹", section: "brandweb" },
+                  ].map(opt => {
+                    const active = (editedBanner?.assetType || "") === opt.type;
+                    return (
+                      <button
+                        key={opt.type}
+                        type="button"
+                        onClick={() => { onEditChange("assetType", opt.type); onEditChange("section", opt.section); }}
+                        className={`flex-1 px-3 py-1.5 rounded-md text-[12px] font-bold border transition-colors ${
+                          active
+                            ? "bg-[#d8b17e]/15 border-[#d8b17e]/50 text-[#d8b17e]"
+                            : "border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500"
+                        }`}
+                      >
+                        {opt.type}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                editedBanner?.assetType ? (
+                  <span className="inline-flex items-center px-2 py-0.5 text-[12px] font-bold rounded border bg-[#d8b17e]/15 text-[#d8b17e] border-[#d8b17e]/40">
+                    {editedBanner.assetType}
+                  </span>
+                ) : (
+                  <span className="text-[12px] text-zinc-600">미지정</span>
+                )
+              )}
+            </div>
+
             {/* Game — 표시: chip(태그와 다른 #d8b17e 컬러) / 편집: select */}
             <div className="mb-5 pb-5 border-b border-white/5">
               <label className={labelStyle}>Game</label>
               {state.isEditing ? (
-                <select className={inputStyle} value={editedBanner?.game || ""} onChange={(e) => onEditChange("game", e.target.value)}>
-                  {availableGames?.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
+                <>
+                  <input
+                    list="pa-preview-game-options"
+                    className={inputStyle}
+                    value={editedBanner?.game || ""}
+                    onChange={(e) => onEditChange("game", e.target.value)}
+                    placeholder="게임명 입력 또는 선택"
+                  />
+                  <datalist id="pa-preview-game-options">
+                    {availableGames?.map(g => <option key={g} value={g} />)}
+                  </datalist>
+                </>
               ) : (
                 editedBanner?.game ? (
                   <span className="inline-flex items-center px-2 py-0.5 text-[12px] font-bold rounded border bg-[#d8b17e]/15 text-[#d8b17e] border-[#d8b17e]/40">
@@ -979,27 +1027,37 @@ const PreviewModal = ({
               )}
             </div>
 
-            {/* Asset Path — 박스 유지 + 카피 버튼 컬러 액센트 */}
+            {/* Asset Path — 편집 모드: 직접 입력 가능 / 표시 모드: 읽기 전용 박스 + 카피 */}
             <div className="mb-5 pb-5 border-b border-white/5">
               <label className={labelStyle}>Asset Path</label>
-              <div className="flex gap-1.5">
-                <div className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-md px-2.5 py-2 text-[11px] text-zinc-500 font-mono break-all leading-relaxed">
-                  {banner?.path || '경로 없음'}
+              {state.isEditing ? (
+                <textarea
+                  value={editedBanner?.path || ''}
+                  onChange={(e) => onEditChange("path", e.target.value)}
+                  rows={2}
+                  placeholder={`\\\\ppc-file\\{게임}\\{연도}\\{섹션}\\{캠페인}\\03.디자인\\`}
+                  className="w-full bg-zinc-900 border border-zinc-700 rounded-md px-2.5 py-2 text-[11px] text-zinc-300 font-mono break-all leading-relaxed focus:border-[#d8b17e] focus:outline-none resize-none transition-colors"
+                />
+              ) : (
+                <div className="flex gap-1.5">
+                  <div className="flex-1 bg-zinc-900/50 border border-zinc-800 rounded-md px-2.5 py-2 text-[11px] text-zinc-500 font-mono break-all leading-relaxed">
+                    {editedBanner?.path || banner?.path || '경로 없음'}
+                  </div>
+                  {/* 고정 width 아이콘 버튼 — 복사 전/후 폭이 동일해야 path 박스 width 가 흔들리지 않음.
+                      텍스트 없이 컬러만 emerald 로 전환되어 시각 피드백 (1.5초 후 원복). */}
+                  <button onClick={() => handleCopyPath(editedBanner?.path || banner?.path)}
+                    className={`w-9 h-9 flex items-center justify-center rounded-md border transition-colors self-start shrink-0 ${
+                      pathCopied
+                        ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/40'
+                        : 'text-[#d8b17e] bg-[#d8b17e]/10 border-[#d8b17e]/40 hover:bg-[#d8b17e] hover:text-black'
+                    }`}
+                    title={pathCopied ? "복사됨" : "경로 복사"}
+                    aria-label={pathCopied ? "경로 복사됨" : "경로 복사"}
+                    aria-live="polite">
+                    {pathCopied ? <Check size={14} /> : <Copy size={14} />}
+                  </button>
                 </div>
-                {/* 고정 width 아이콘 버튼 — 복사 전/후 폭이 동일해야 path 박스 width 가 흔들리지 않음.
-                    텍스트 없이 컬러만 emerald 로 전환되어 시각 피드백 (1.5초 후 원복). */}
-                <button onClick={() => handleCopyPath(banner?.path)}
-                  className={`w-9 h-9 flex items-center justify-center rounded-md border transition-colors self-start shrink-0 ${
-                    pathCopied
-                      ? 'text-emerald-300 bg-emerald-500/15 border-emerald-500/40'
-                      : 'text-[#d8b17e] bg-[#d8b17e]/10 border-[#d8b17e]/40 hover:bg-[#d8b17e] hover:text-black'
-                  }`}
-                  title={pathCopied ? "복사됨" : "경로 복사"}
-                  aria-label={pathCopied ? "경로 복사됨" : "경로 복사"}
-                  aria-live="polite">
-                  {pathCopied ? <Check size={14} /> : <Copy size={14} />}
-                </button>
-              </div>
+              )}
             </div>
 
             {/* Upload + Link */}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
-  fetchBannersOnce, subscribeToPrompt,
+  fetchBannersOnce, subscribeToBanners, subscribeToPrompt,
   addBannerToCloud, updateBannerInCloud, deleteBannerFromCloud,
   delay, WRITE_DELAY_MS, db,
   fetchFoldersOnce, createFolder as createFolderCloud,
@@ -50,8 +50,7 @@ export const useBanners = (user, sortOrder) => {
     return () => { unsubLogos(); unsubPrompt(); };
   }, [user]);
 
-  // 일회성 fetch — Firestore 무료 한도 초과 문제로 onSnapshot 통째 구독 제거.
-  // 다른 사용자 변경은 자동 반영 안 됨 (refresh() 수동 호출 또는 페이지 재진입).
+  // 수동 새로고침 — 일회성 fetch (필요 시 호출).
   const refresh = useCallback(async () => {
     if (!user || !db) return;
     try {
@@ -64,19 +63,26 @@ export const useBanners = (user, sortOrder) => {
     }
   }, [user, sortOrder]);
 
+  // 실시간 구독 복원 — read 폭주의 진짜 원인(cartIds 무한 루프)은 해결됨.
   useEffect(() => {
     if (!user || !db) return;
     const isMajorChange = prevSortOrderRef.current !== sortOrder || banners.length === 0;
     if (isMajorChange) setIsLoadingData(true);
     prevSortOrderRef.current = sortOrder;
     const dataWatchdog = setTimeout(() => {
-      console.warn('[BannerCodex] data fetch: no response in 8s. Releasing spinner.');
+      console.warn('[BannerCodex] data listener: no response in 8s. Releasing spinner.');
       setIsLoadingData(false);
     }, 8000);
-    fetchBannersOnce(sortOrder)
-      .then(data => { clearTimeout(dataWatchdog); setBanners(data); setIsLoadingData(false); })
-      .catch(error => { clearTimeout(dataWatchdog); console.error('[BannerCodex] fetch error:', error); setIsLoadingData(false); });
-    return () => clearTimeout(dataWatchdog);
+    const unsub = subscribeToBanners(sortOrder, (data) => {
+      clearTimeout(dataWatchdog);
+      setBanners(data);
+      setIsLoadingData(false);
+    }, (error) => {
+      clearTimeout(dataWatchdog);
+      console.error('[BannerCodex] listener error:', error);
+      setIsLoadingData(false);
+    });
+    return () => { clearTimeout(dataWatchdog); unsub(); };
   }, [user, sortOrder]);
 
   // ─ 본인 변경은 낙관적 local 갱신 ─

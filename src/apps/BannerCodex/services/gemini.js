@@ -43,6 +43,8 @@ export const callGeminiAPI = async (prompt, imageBase64 = null, isJson = false, 
   const { apiKey: providedKey, isBatchCall = false, stopRef, onController } = opts;
   const apiKey = providedKey || GEMINI_API_KEY;
   try {
+    // gemini-2.5-pro(고급 모델) — 10지표 평가 품질 우선. pro 의 강점인 추론(thinking)을
+    // 그대로 살리기 위해 thinkingBudget 을 끄지 않음(끄면 품질↓, pro 는 최소 budget 강제라 0 도 무의미).
     const generationConfig = { temperature: 0.1 };
     if (isJson) {
       generationConfig.responseMimeType = "application/json";
@@ -73,7 +75,7 @@ export const callGeminiAPI = async (prompt, imageBase64 = null, isJson = false, 
       }, REQUEST_TIMEOUT_MS);
       try {
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
           { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody), signal: controller.signal }
         );
         clearTimeout(timeoutId);
@@ -146,10 +148,15 @@ export const callOpenAIAPI = async (prompt, imageBase64, openAiApiKey) => {
   }
 };
 
-export const buildEvalPrompt = (basePrompt, learningContext, criteriaListText) => {
+export const buildEvalPrompt = (basePrompt, learningContext, criteriaListText, scoringRules = '') => {
   let p = basePrompt;
   if (p.includes('{{EVALUATION_CRITERIA_LIST}}')) {
     p = p.replace('{{EVALUATION_CRITERIA_LIST}}', criteriaListText || '');
+  }
+  // SCORING_RULES 는 placeholder 가 있을 때만 치환. 자동 append 안 함 — 기존 커스텀 프롬프트에
+  // 이미 채점 규칙이 박혀 있을 수 있어 중복 주입 방지.
+  if (p.includes('{{SCORING_RULES}}')) {
+    p = p.replace('{{SCORING_RULES}}', scoringRules || '');
   }
   if (p.includes('{{LEARNING_CONTEXT}}')) {
     p = p.replace('{{LEARNING_CONTEXT}}', learningContext || '');

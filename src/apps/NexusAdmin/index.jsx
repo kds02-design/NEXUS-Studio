@@ -3,7 +3,7 @@ import {
   Users, ListChecks, Ticket, Settings as SettingsIcon,
   Shield, Plus, Trash2, Edit2, X, RefreshCw, AlertTriangle,
   FileText, Upload, Download, Save, RotateCcw, Sparkles, Power,
-  ShieldCheck, BarChart3, Image as ImageIcon,
+  ShieldCheck, BarChart3, Image as ImageIcon, Bot,
 } from "lucide-react";
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
@@ -15,7 +15,11 @@ import {
   listUsersByStatus, approveUser, rejectUser, deleteUserDoc,
   GRADES, GRADE_LABEL, STATUS,
 } from "../../lib/grades";
-import { migrateInitialCriteria } from "../../lib/evaluationCriteria";
+import {
+  migrateInitialCriteria, getSeedCriteria, getSeedRules,
+  fetchActiveCriteria, formatCriteriaList, getActiveRules,
+  fetchAnchors, formatAnchorsForPrompt, CRITERIA_TYPES,
+} from "../../lib/evaluationCriteria";
 import { DEFAULT_AI_PROMPT } from "../BannerCodex/constants/categories";
 import { DEFAULT_HERO_IMAGE, fetchDashboardSettings, updateDashboardHeroImage } from "../../lib/dashboardSettings";
 import { uploadBase64 } from "../../lib/storage";
@@ -361,7 +365,8 @@ function UserTable({ users, status, busyUid, onApprove, onReject, onDelete, onCh
 const CRITERIA_TYPE_LIST = [
   { id: "banner",     label: "배너" },
   { id: "promotion",  label: "프로모션" },
-  { id: "brandweb",   label: "브랜드웹" },
+  { id: "brandweb",   label: "브랜드웹 메인" },
+  { id: "brandwebSub",label: "브랜드웹 서브" },
   { id: "prompt",     label: "프롬프트" },
   // ─── 타이포그래피 평가 (디자인 평가도구 v2 — 2026-05) ───
   { id: "typo2d",     label: "2D 타이포" },
@@ -457,6 +462,7 @@ function CriteriaPanel() {
         name: versionData.name || "untitled",
         isActive: !!versionData.isActive,
         note: versionData.note || "",
+        rules: typeof versionData.rules === "string" ? versionData.rules : "",
         criteria: (versionData.criteria || []).map(c => ({
           id: c.id || cryptoId(),
           name: c.name || "",
@@ -528,6 +534,25 @@ function CriteriaPanel() {
     finally { setMigrating(false); }
   };
 
+  // 코드 시드(BANNER_SEED 등 — 최신 가중치)로 현재 유형의 새 활성 버전을 생성.
+  // migrateInitialCriteria 는 버전이 이미 있으면 건너뛰므로, 코드에서 가중치를 바꾼 뒤
+  // 라이브(Firestore 활성 버전)에 반영하려면 이 동기화가 필요. 기존 버전은 보존(비활성화만).
+  const handleSyncFromSeed = async () => {
+    const seed = getSeedCriteria(type);
+    if (!seed || seed.length === 0) { setError("이 유형은 코드 시드가 비어 있습니다."); return; }
+    const label = CRITERIA_TYPE_LIST.find(t => t.id === type)?.label || type;
+    if (!confirm(`코드 시드(현재 가중치)로 "${label}" 새 활성 버전을 생성합니다.\n기존 활성 버전은 비활성화됩니다(삭제되지 않음). 진행할까요?`)) return;
+    await handleSave({
+      _mode: "create",
+      id: null,
+      name: `${label} v${versions.length + 1} (시드 동기화)`,
+      isActive: true,
+      note: "코드 시드와 동기화 — 최신 가중치·채점 규칙 반영",
+      criteria: seed.map(c => ({ ...c })),
+      rules: getSeedRules(type),
+    });
+  };
+
   return (
     <AdminSection
       title="평가 기준 관리"
@@ -537,6 +562,11 @@ function CriteriaPanel() {
           <button onClick={handleManualMigrate} disabled={migrating}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold text-zinc-400 border border-white/10 hover:bg-white/5 disabled:opacity-40">
             {migrating ? "마이그레이션 중..." : "시드 마이그레이션"}
+          </button>
+          <button onClick={handleSyncFromSeed} disabled={migrating}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold text-zinc-400 border border-white/10 hover:bg-white/5 disabled:opacity-40"
+            title="현재 유형의 코드 시드(최신 가중치)로 새 활성 버전 생성">
+            시드로 동기화 (현재 유형)
           </button>
           <button onClick={handleNew}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors"
@@ -596,6 +626,12 @@ function CriteriaPanel() {
           </div>
           {activeVersion.note && (
             <div className="px-3 pt-2 text-[10px] text-zinc-400 italic">"{activeVersion.note}"</div>
+          )}
+          {activeVersion.rules && activeVersion.rules.trim() && (
+            <div className="px-3 pt-2">
+              <div className="text-[9px] font-bold uppercase tracking-widest text-zinc-500 mb-1">채점 규칙</div>
+              <pre className="text-[10px] text-zinc-400 whitespace-pre-wrap leading-relaxed font-mono bg-black/30 border border-white/5 rounded p-2 max-h-32 overflow-y-auto custom-scrollbar">{activeVersion.rules}</pre>
+            </div>
           )}
           <div className="p-3">
             <CriteriaList items={activeVersion.criteria || []} readOnly/>
@@ -667,6 +703,7 @@ function CriteriaVersionEditor({ version, onClose, onSave, onSaveAsNew }) {
   const [isActive, setIsActive] = useState(!!version.isActive);
   const [note, setNote] = useState(version.note || "");
   const [criteria, setCriteria] = useState(version.criteria || []);
+  const [rules, setRules] = useState(version.rules || "");
   const [saving, setSaving] = useState(false);
   const isEditingExisting = !!version.id;
 
@@ -682,13 +719,13 @@ function CriteriaVersionEditor({ version, onClose, onSave, onSaveAsNew }) {
 
   const handleSaveOverwrite = async () => {
     setSaving(true);
-    try { await onSave({ ...version, name, isActive, note, criteria }); }
+    try { await onSave({ ...version, name, isActive, note, criteria, rules }); }
     finally { setSaving(false); }
   };
   const handleSaveAsNew = async () => {
     if (!name.trim()) return;
     setSaving(true);
-    try { await onSaveAsNew({ ...version, name, isActive, note, criteria }); }
+    try { await onSaveAsNew({ ...version, name, isActive, note, criteria, rules }); }
     finally { setSaving(false); }
   };
 
@@ -721,6 +758,14 @@ function CriteriaVersionEditor({ version, onClose, onSave, onSaveAsNew }) {
             <textarea value={note} onChange={e => setNote(e.target.value)}
               placeholder="예: 가중치 조정 및 항목 추가 / 디자인 평가도구 v2 와 동기화"
               className="w-full h-16 bg-[#0a0a0c] border border-white/10 rounded px-3 py-2 text-xs text-zinc-300 outline-none focus:border-white/20 resize-none"/>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">채점 규칙 (선택)</label>
+            <textarea value={rules} onChange={e => setRules(e.target.value)}
+              placeholder={"항목 점수와 별개인 홀리스틱 채점 규칙(총점 cap, 점수대, 감점 가이드 등).\nBannerCodex/DesignEvaluator 분석 프롬프트의 채점 규칙 자리에 그대로 주입됩니다."}
+              className="w-full h-28 bg-[#0a0a0c] border border-white/10 rounded px-3 py-2 text-xs text-zinc-300 outline-none focus:border-white/20 resize-none custom-scrollbar font-mono leading-relaxed"/>
+            <p className="text-[10px] text-zinc-600 mt-1">※ 두 평가 도구가 공유하는 채점 규칙. 비워두면 규칙 없이 항목 점수만 평가합니다.</p>
           </div>
 
           <label className="flex items-center gap-2 cursor-pointer">
@@ -1834,6 +1879,8 @@ function PromptPanel() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
   const [error, setError] = useState("");
+  const [previewText, setPreviewText] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -1864,40 +1911,38 @@ function PromptPanel() {
     if (!confirm("프롬프트를 기본값으로 되돌리시겠습니까? (저장 버튼을 눌러야 실제 반영됩니다)")) return;
     setText(DEFAULT_AI_PROMPT);
   };
-  const handleFileUpload = (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => setText(String(ev.target.result || ""));
-    reader.onerror = () => setError("파일 읽기에 실패했습니다.");
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-  const handleFileDownload = () => {
-    if (!text) { setError("내보낼 프롬프트 내용이 없습니다."); return; }
-    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `ai_prompt_backup_${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+  // 치환 결과 미리보기 — 현재 편집 중인 텍스트의 placeholder 를 배너 활성 기준/규칙/앵커로 치환해
+  // 분석 시 실제로 나갈 모습을 보여줌(읽기 전용). 다시 누르면 닫힘.
+  const buildPreview = async () => {
+    if (previewText !== null) { setPreviewText(null); return; }
+    setPreviewLoading(true); setError("");
+    try {
+      const v = await fetchActiveCriteria(CRITERIA_TYPES.banner);
+      const items = (v && Array.isArray(v.criteria) && v.criteria.length) ? v.criteria : getSeedCriteria(CRITERIA_TYPES.banner);
+      const criteriaText = formatCriteriaList(items);
+      const rules = getActiveRules(v) || getSeedRules(CRITERIA_TYPES.banner);
+      const anchors = formatAnchorsForPrompt(await fetchAnchors(CRITERIA_TYPES.banner));
+      let p = text || "";
+      p = p.replace("{{EVALUATION_CRITERIA_LIST}}", criteriaText)
+           .replace("{{SCORING_RULES}}", rules || "(채점 규칙 없음)")
+           .replace("{{LEARNING_CONTEXT}}", anchors || "(분석 시 기준점·사용자 피드백이 여기에 자동 주입됩니다)");
+      setPreviewText(p);
+    } catch (e) {
+      setPreviewText("미리보기 생성 실패: " + (e.message || e));
+    } finally { setPreviewLoading(false); }
   };
 
   return (
     <AdminSection
       title="AI 평가 프롬프트"
-      subtitle="BannerCodex AI 분석 시 사용되는 시스템 프롬프트 (Firestore settings/aiPrompt 단일 문서). {{EVALUATION_CRITERIA_LIST}} / {{LEARNING_CONTEXT}} 자동 치환."
+      subtitle="BannerCodex 전용 시스템 프롬프트 (Firestore settings/aiPrompt). 채점 규칙·평가 항목은 [평가 기준] 탭에서 관리하고, 여기서는 {{SCORING_RULES}} / {{EVALUATION_CRITERIA_LIST}} / {{LEARNING_CONTEXT}} placeholder 로 분석 시 자동 치환됩니다."
     >
       {error && <ErrorBanner message={error}/>}
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-zinc-300 border border-white/10 rounded-md hover:bg-white/5 cursor-pointer">
-          <Upload size={11}/> .txt 불러오기
-          <input type="file" accept=".txt" className="hidden" onChange={handleFileUpload}/>
-        </label>
-        <button onClick={handleFileDownload}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-zinc-300 border border-white/10 rounded-md hover:bg-white/5">
-          <Download size={11}/> .txt 내보내기
+        <button onClick={buildPreview} disabled={previewLoading}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-zinc-300 border border-white/10 rounded-md hover:bg-white/5 disabled:opacity-40">
+          <Bot size={11}/> {previewLoading ? "생성 중..." : previewText !== null ? "미리보기 닫기" : "치환 결과 미리보기 (배너)"}
         </button>
         <button onClick={handleReset}
           className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-rose-300 border border-rose-500/30 rounded-md hover:bg-rose-500/10">
@@ -1905,9 +1950,18 @@ function PromptPanel() {
         </button>
         <div className="flex-1"/>
         <div className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded px-2 py-1">
-          💡 <span className="font-mono font-bold">{"{{LEARNING_CONTEXT}}"}</span> · <span className="font-mono font-bold">{"{{EVALUATION_CRITERIA_LIST}}"}</span> placeholder 자동 치환
+          💡 <span className="font-mono font-bold">{"{{SCORING_RULES}}"}</span> · <span className="font-mono font-bold">{"{{EVALUATION_CRITERIA_LIST}}"}</span> · <span className="font-mono font-bold">{"{{LEARNING_CONTEXT}}"}</span> 자동 치환
         </div>
       </div>
+
+      {previewText !== null && (
+        <div className="rounded-lg border border-[#0eb9b3]/30 bg-[#0eb9b3]/5">
+          <div className="px-3 py-2 border-b border-[#0eb9b3]/20 text-[10px] font-bold uppercase tracking-widest text-[#0eb9b3]">
+            치환 결과 미리보기 — 배너 활성 기준/규칙/앵커 기준 (읽기 전용)
+          </div>
+          <pre className="p-4 text-[11px] font-mono leading-relaxed text-zinc-300 whitespace-pre-wrap max-h-[40vh] overflow-y-auto custom-scrollbar">{previewText}</pre>
+        </div>
+      )}
 
       <textarea
         value={text}

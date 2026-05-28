@@ -318,9 +318,7 @@ function App() {
                 const batch = writeBatch(db);
                 updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.new }));
                 await batch.commit();
-            }
-            await refreshBanners();
-            alert(`✅ ${updates.length}건 경로 정규화 완료`);
+            }            alert(`✅ ${updates.length}건 경로 정규화 완료`);
         } catch (e) {
             console.error('[PromotionArchive] normalize paths failed', e);
             alert(`❌ 정규화 실패: ${e.message || e.code}`);
@@ -334,9 +332,7 @@ function App() {
     const [gameLogos, setGameLogos] = useState({});
     useEffect(() => subscribeToGameLogos(setGameLogos, (e) => console.error('[PromotionArchive] logos', e)), []);
 
-    // Firestore 일회성 fetch + 낙관적 갱신.
-    // 이전엔 onSnapshot 으로 통째 실시간 구독 → 분석/수정 시 매번 read 카운트되어 무료 한도 초과.
-    // 다른 사용자 변경은 refresh() 수동 호출로 반영.
+    // 수동 새로고침 — 일회성 fetch (batch mutate 직후 등에서 호출).
     const refreshBanners = useCallback(async () => {
         if (!db) return;
         try {
@@ -345,12 +341,13 @@ function App() {
             setAllBanners(arr);
         } catch (err) {
             console.error('[PromotionArchive] fetch error:', err);
-            alert(`데이터 로딩 실패: ${err.code || err.message}`);
         } finally {
             setIsLoadingData(false);
         }
     }, []);
 
+    // Firestore 실시간 구독 복원 — read 폭주의 진짜 원인(BannerCodex 무한 루프)은 해결됨.
+    // 분석/수정/다른 사용자 변경이 즉시 반영됨.
     useEffect(() => {
         if (!db) { setIsLoadingData(false); return; }
         const watchdog = setTimeout(() => {
@@ -359,9 +356,20 @@ function App() {
                 return false;
             });
         }, 8000);
-        refreshBanners().finally(() => clearTimeout(watchdog));
-        return () => clearTimeout(watchdog);
-    }, [refreshBanners]);
+        const unsub = onSnapshot(promoColRef(),
+            (snap) => {
+                clearTimeout(watchdog);
+                setAllBanners(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                setIsLoadingData(false);
+            },
+            (err) => {
+                clearTimeout(watchdog);
+                console.error('[PromotionArchive] listener error:', err);
+                alert(`데이터 로딩 실패: ${err.code || err.message}`);
+                setIsLoadingData(false);
+            });
+        return () => { clearTimeout(watchdog); unsub(); };
+    }, []);
 
     const [currentView, setCurrentView] = useState('grid');
     const [searchQuery, setSearchQuery] = useState('');
@@ -514,9 +522,7 @@ function App() {
                 const batch = writeBatch(db);
                 updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.path }));
                 await batch.commit();
-            }
-            await refreshBanners();
-            alert(`✅ ${updates.length}건 경로 prefix 자동 채움 완료`);
+            }            alert(`✅ ${updates.length}건 경로 prefix 자동 채움 완료`);
         } catch (e) {
             console.error('[PromotionArchive] autoFill paths failed', e);
             alert(`❌ 자동 채움 실패: ${e.message || e.code}`);
@@ -572,9 +578,7 @@ function App() {
                 const batch = writeBatch(db);
                 updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { section: u.section }));
                 await batch.commit();
-            }
-            await refreshBanners();
-            alert(`✅ ${updates.length}건 섹션 자동 분류 완료 (프로모션 ${promoCount} / 브랜드웹 ${brandwebCount})`);
+            }            alert(`✅ ${updates.length}건 섹션 자동 분류 완료 (프로모션 ${promoCount} / 브랜드웹 ${brandwebCount})`);
         } catch (e) {
             console.error('[PromotionArchive] classify sections failed', e);
             alert(`❌ 자동 분류 실패: ${e.message || e.code}`);
@@ -597,9 +601,7 @@ function App() {
                 const batch = writeBatch(db);
                 selectedItems.slice(i, i + CHUNK).forEach(id => batch.update(promoDocRef(id), { section: 'promotion' }));
                 await batch.commit();
-            }
-            await refreshBanners();
-            alert(`✅ ${selectedItems.length}건 프로모션으로 설정 완료`);
+            }            alert(`✅ ${selectedItems.length}건 프로모션으로 설정 완료`);
         } catch (e) {
             console.error('[PromotionArchive] set section failed', e);
             alert(`❌ 설정 실패: ${e.message || e.code}`);
@@ -739,7 +741,13 @@ function App() {
         // 섹션 필터 (프로모션 / 브랜드웹 / 미분류).
         //   section 필드가 비어 있는 기존 doc 도 path 에서 즉석 추론해서 분류 — '섹션 자동 분류' 버튼을
         //   누르지 않아도 필터가 작동하도록. 'none' 은 추론마저 실패한 진짜 미분류만 표시.
-        const resolveSection = (b) => b.section || inferSectionFromPath(b.path);
+        // assetType('브랜드웹'/'프로모션') 을 최우선 — 카드 유형이 명시돼 있으면 그것이 섹션을 결정.
+        // (필터의 assetType 기준과 동일하게 맞춤. path/section 이 '프로모션'으로 잡혀도 assetType='브랜드웹'이면
+        //  브랜드웹으로 분류돼 섹션 탭에 노출됨 — 예: 아지트. assetType 이 없을 때만 section/path 추론으로 폴백.)
+        const resolveSection = (b) =>
+            (b.assetType === '브랜드웹' ? 'brandweb'
+             : b.assetType === '프로모션' ? 'promotion'
+             : (b.section || inferSectionFromPath(b.path) || null));
         if (activeFilters.section === 'promotion') {
             result = result.filter(b => resolveSection(b) === 'promotion');
         } else if (activeFilters.section === 'brandweb') {
@@ -998,9 +1006,6 @@ function App() {
             }
 
             if (chunkBanners.length > 0) await flushChunk();
-            // 업로드 완료 — local state 동기화 (onSnapshot 제거됨).
-            await refreshBanners();
-
             if (failedItems.length > 0) alert(`완료되었습니다. (성공: ${successCount}, 실패: ${failedItems.length})`);
 
         } catch (err) {
@@ -1100,7 +1105,6 @@ function App() {
                     written += slice.length;
                     setUploadProgress({ current: written, total: data.length, percentage: Math.round((written / data.length) * 100) });
                 }
-                await refreshBanners();
                 alert(`복원 완료: ${written}개`);
             } catch (err) {
                 console.error(err);
@@ -1153,9 +1157,7 @@ function App() {
                     });
                 });
                 await batch.commit();
-            }
-            await refreshBanners();
-            setIsBatchEditOpen(false);
+            }            setIsBatchEditOpen(false);
             setSelectedItems([]);
         } catch (e) { alert(`일괄 업데이트 실패: ${e.message}`); }
     };
@@ -1600,7 +1602,7 @@ function App() {
                             setCollectionIds(next);
                             localStorage.setItem('myCollection', JSON.stringify(next));
                         }}
-                        availableGames={GAMES}
+                        availableGames={availableGames}
                         gameLogos={gameLogos}
                         isAdminMode={isAdminMode}
                         onOpenAnalysis={(b) => {

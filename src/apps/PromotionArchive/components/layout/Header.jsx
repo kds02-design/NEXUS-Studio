@@ -174,6 +174,31 @@ const Header = ({
           {isAiSearchMode && <Sparkles className="w-4 h-4 text-violet-400 shrink-0" />}
           <span className="truncate">{titleText}</span>
         </h2>
+        {/* 섹션 탭 — 전체/브랜드웹/프로모션. 일반 목록 보기에서만 노출. */}
+        {!isCollectionMode && !isAiSearchMode && !searchQuery && (
+          <div className="hidden md:flex items-center gap-1 ml-1 shrink-0">
+            {[
+              { id: 'all', label: '전체' },
+              { id: 'brandweb', label: '브랜드웹' },
+              { id: 'promotion', label: '프로모션' },
+            ].map(opt => {
+              const active = (f.section || 'all') === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => setActiveFilters(p => ({ ...p, section: opt.id }))}
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-all ${
+                    active
+                      ? 'bg-[#d8b17e]/15 border-[#d8b17e]/50 text-[#d8b17e]'
+                      : 'border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {/* AI 검색 키워드 뱃지 */}
         {isAiSearchMode && aiSearchKeywords?.length > 0 && (
           <div className="hidden lg:flex items-center gap-1.5 ml-1 shrink-0">

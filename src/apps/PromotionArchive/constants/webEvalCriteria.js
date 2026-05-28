@@ -45,6 +45,19 @@ export const WEB_EVALUATION_KEYS = [
   'cta_interaction', 'brand_consistency', 'event_clarity', 'content_readability', 'impact',
 ];
 
+// 항목별 가중치(합 100) — 단순 평균 대신 가중 평균으로 최종 점수 산출.
+// 프로모션: 이벤트·CTA 전달력 중심 / 브랜드웹: IP·세계관·메인 메시지·임팩트 중심.
+// (web 전용 키 셋이라 공유 evaluationCriteria 와 별개. 비파괴 — 저장 데이터 키는 그대로.)
+export const WEB_WEIGHTS = {
+  info_structure: 10, visual_hierarchy: 12, typography: 8, color_system: 8, layout_spacing: 8,
+  cta_interaction: 12, brand_consistency: 8, event_clarity: 14, content_readability: 10, impact: 10,
+};
+export const BRAND_WEB_WEIGHTS = {
+  info_structure: 10, visual_hierarchy: 12, typography: 8, color_system: 10, layout_spacing: 8,
+  cta_interaction: 6, brand_consistency: 12, event_clarity: 14, content_readability: 8, impact: 12,
+};
+export const getWebWeightsFor = (isBrandWeb) => (isBrandWeb ? BRAND_WEB_WEIGHTS : WEB_WEIGHTS);
+
 export const getWebFinalScore100 = (banner) => {
   const aiBase100 = banner?.webAiScore != null
     ? Math.round(parseFloat(banner.webAiScore) * 10)
