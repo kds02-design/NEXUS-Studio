@@ -7,6 +7,7 @@ import {
   signOut as fbSignOut,
   sendEmailVerification,
   reload as reloadUser,
+  deleteUser as fbDeleteUser,
 } from "firebase/auth";
 import { auth, googleProvider } from "../lib/firebase";
 import {
@@ -24,6 +25,7 @@ import {
   USAGE_ERROR_MESSAGES,
   CREDIT_ERROR_MESSAGES,
   invalidateUsageCache,
+  deleteUserDoc,
 } from "../lib/grades";
 
 const AuthContext = createContext(null);
@@ -151,9 +153,14 @@ export function AuthProvider({ children }) {
 
   const signUpEmail = useCallback(async (email, password) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
-    // 가입 직후 검증 메일 자동 발송. 실패해도 가입은 성공한 상태이므로 콘솔만 남김.
-    try { await sendEmailVerification(cred.user); }
-    catch (e) { console.warn("[Auth] sendEmailVerification failed", e); }
+    // 가입 직후 검증 메일 자동 발송. 실패해도 가입은 성공한 상태이므로 진행은 막지 않되,
+    // 원인 파악을 위해 error code/message 를 명확히 남김 (이전엔 warn 으로 묻혀 진단 불가했음).
+    try {
+      await sendEmailVerification(cred.user);
+      console.info("[Auth] verification email sent to", email);
+    } catch (e) {
+      console.error("[Auth] sendEmailVerification FAILED", { code: e.code, message: e.message, email });
+    }
     return cred;
   }, []);
 
@@ -176,6 +183,17 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(() => fbSignOut(auth), []);
 
+  // 회원 탈퇴 — Firestore 사용자 doc 정리 후 Auth 계정 삭제.
+  // Firestore 를 먼저 지워야 함 (Auth 삭제 후엔 본인 권한이 사라져 doc 정리 불가).
+  // 오래된 세션이면 deleteUser 가 auth/requires-recent-login 을 throw → 호출부에서 재로그인 안내.
+  const deleteAccount = useCallback(async () => {
+    const u = auth.currentUser;
+    if (!u) throw new Error("로그인이 필요합니다.");
+    try { await deleteUserDoc(u.uid); }
+    catch (e) { console.warn("[Auth] deleteUserDoc failed (계속 진행)", e); }
+    await fbDeleteUser(u); // 성공 시 onAuthStateChanged 가 자동으로 로그아웃 처리
+  }, []);
+
   const grade = profile?.grade || GRADES.general;
   const limit = dailyLimit(grade);
   const remaining = remainingToday(grade, usageToday);
@@ -194,7 +212,7 @@ export function AuthProvider({ children }) {
     user, profile, grade, loading, profileLoaded, isAuthLoading,
     isAdmin, isPending, isRejected, status,
     usageToday, dailyLimit: limit, remainingToday: remaining,
-    signInEmail, signUpEmail, signInGoogle, signOut,
+    signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,
     setPendingInviteCode, applyInviteCode,
     refreshProfile, tryConsumeUsage,
     resendVerificationEmail, refreshEmailVerification,
@@ -202,7 +220,7 @@ export function AuthProvider({ children }) {
     user, profile, grade, loading, profileLoaded, isAuthLoading,
     isAdmin, isPending, isRejected, status,
     usageToday, limit, remaining,
-    signInEmail, signUpEmail, signInGoogle, signOut,
+    signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,
     setPendingInviteCode, applyInviteCode,
     refreshProfile, tryConsumeUsage,
     resendVerificationEmail, refreshEmailVerification,

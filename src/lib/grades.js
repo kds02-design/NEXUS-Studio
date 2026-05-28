@@ -44,13 +44,13 @@ export const GRADE_LABEL = {
 
 // 주간 크레딧 예산. 월요일 00:00 KST 리셋 (weekKey() 참조).
 // general 50  = 이미지3 (30c) + 분석20 (20c)              · 또는 영상 1편(30c) + 분석20
-// pro     150 = 이미지10 (100) + 분석50 (50)              · 영상 5편 가능
-// pro+    300 = 이미지20 (200) + 분석100 (100)            · 영상 10편 가능
+// pro     500 = 이미지30 (300) + 분석200 (200)            · 영상 16편 가능
+// pro+    800 = 이미지50 (500) + 분석300 (300)            · 영상 26편 가능
 // expert  1000= 이미지50 (500) + 분석500 (500)            · 영상 33편 가능
 export const WEEKLY_CREDITS = {
   general: 50,
-  pro: 150,
-  pro_plus: 300,
+  pro: 500,
+  pro_plus: 800,
   expert: 1000,
 };
 
@@ -68,8 +68,8 @@ export const ACTION_COSTS = {
 // video 칸은 "분석/이미지 사용 안 했을 때 최대 영상 편수".
 export const GRADE_QUOTAS = {
   general:  { image: 3,  video: 1,  analysis: 20  },
-  pro:      { image: 10, video: 5,  analysis: 50  },
-  pro_plus: { image: 20, video: 10, analysis: 100 },
+  pro:      { image: 30, video: 16, analysis: 200 },
+  pro_plus: { image: 50, video: 26, analysis: 300 },
   expert:   { image: 50, video: 33, analysis: 500 },
 };
 

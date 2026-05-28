@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, isValidElement } from "react";
 import {
   Settings, Moon, Sun, Globe, TrendingUp, Key,
   LayoutDashboard, KeyRound, Bot, Activity,
-  Mail, Info, LogOut,
+  Mail, Info, LogOut, UserX,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useGlobal, useTheme } from "../context/GlobalContext";
@@ -28,7 +28,7 @@ const gradeColor = {
 const THEME_SWITCH_LOCKED = false;
 
 export default function ProfilePopover({ open, onClose }) {
-  const { user, profile, grade, isAdmin, signOut } = useAuth();
+  const { user, profile, grade, isAdmin, signOut, deleteAccount } = useAuth();
   const { used: weekUsed, cap: weekCap, byAction: weekByAction } = useWeeklyCredits();
   const { setCurrentApp, isLight, toggleTheme } = useGlobal();
   const T = useTheme();
@@ -62,6 +62,23 @@ export default function ProfilePopover({ open, onClose }) {
   const doLogout = async () => {
     if (!confirm("로그아웃 하시겠습니까?")) return;
     try { await signOut(); } catch (e) { console.error("[Auth] signOut failed", e); }
+  };
+  const doDeleteAccount = async () => {
+    if (!confirm("정말 탈퇴하시겠습니까?\n계정과 프로필 데이터가 영구 삭제되며 되돌릴 수 없습니다.")) return;
+    if (!confirm("마지막 확인입니다. 탈퇴를 진행할까요?")) return;
+    try {
+      await deleteAccount();
+      onClose?.();
+      // 성공 시 onAuthStateChanged 가 자동 로그아웃 → 로그인 화면으로 전환됨.
+    } catch (e) {
+      if (e.code === "auth/requires-recent-login") {
+        alert("보안을 위해 다시 로그인한 뒤 탈퇴를 진행해주세요. 로그아웃합니다.");
+        try { await signOut(); } catch {}
+      } else {
+        alert(`탈퇴 처리 실패: ${e.message || e.code}`);
+        console.error("[Auth] deleteAccount failed", e);
+      }
+    }
   };
 
   return (
@@ -123,6 +140,7 @@ export default function ProfilePopover({ open, onClose }) {
 
           <Section last>
             <Row icon={<LogOut size={14} />} label="로그아웃" onClick={doLogout} danger />
+            <Row icon={<UserX size={14} />} label="회원 탈퇴" onClick={doDeleteAccount} danger />
           </Section>
         </div>
       )}

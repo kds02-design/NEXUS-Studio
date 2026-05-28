@@ -13,14 +13,19 @@ export default function MatrixStyleCard({ preset, active, isPresetModified, onAp
     : 'text-white group-hover:text-emerald-400';
   return (
     <button onClick={() => onApply(preset)} className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all group flex flex-col gap-0.5 ${stateClass}`}>
-      <div className="flex items-center justify-between w-full">
+      <div className="flex items-center justify-between w-full gap-1.5">
         <span className={`text-[11px] font-bold transition-colors whitespace-nowrap flex items-center gap-1.5 ${titleClass}`}>
           {active && !isPresetModified && <CheckCircle className="w-3.5 h-3.5" />}
           {preset.label}
         </span>
-        {active && isPresetModified && (
-          <span className="px-1.5 py-0.5 text-[8px] bg-amber-500/20 text-amber-400 rounded font-black border border-amber-500/30">수정됨</span>
-        )}
+        <span className="flex items-center gap-1 shrink-0">
+          {preset.test && (
+            <span className="px-1.5 py-0.5 text-[8px] bg-sky-500/15 text-sky-400 rounded font-black border border-sky-500/30 tracking-wider">TEST</span>
+          )}
+          {active && isPresetModified && (
+            <span className="px-1.5 py-0.5 text-[8px] bg-amber-500/20 text-amber-400 rounded font-black border border-amber-500/30">수정됨</span>
+          )}
+        </span>
       </div>
       <span className="text-[9px] text-zinc-500 truncate leading-snug w-full">
         {preset.description || "해당 테마 렌더링 세팅 적용"}
