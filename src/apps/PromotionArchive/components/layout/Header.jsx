@@ -299,13 +299,12 @@ const Header = ({
                   </div>
                   <div className="space-y-6 max-h-[70vh] overflow-y-auto pr-2 custom-scrollbar">
 
-                    {/* 캠페인 목적 (에셋 타입) */}
+                    {/* 캠페인 목적 (에셋 타입) — 배너는 BannerCodex 에서 별도 관리하므로 제외. */}
                     <FilterGroup label="캠페인 목적 (에셋 타입)">
                       {[
                         { label: '전체', value: 'all' },
                         { label: '브랜드웹', value: '브랜드웹' },
                         { label: '프로모션', value: '프로모션' },
-                        { label: '배너', value: '배너' },
                       ].map(opt => (
                         <FilterButton
                           key={opt.value}

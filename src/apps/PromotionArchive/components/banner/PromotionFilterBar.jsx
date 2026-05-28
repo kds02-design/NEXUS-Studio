@@ -80,7 +80,8 @@ const PromotionFilterBar = ({
             (activeFilters.score !== 'all' ? 1 : 0) +
             (activeFilters.year !== 'all' ? 1 : 0) +
             (activeFilters.status !== 'all' ? 1 : 0) +
-            (activeFilters.pathStatus && activeFilters.pathStatus !== 'all' ? 1 : 0);
+            (activeFilters.pathStatus && activeFilters.pathStatus !== 'all' ? 1 : 0) +
+            (activeFilters.section && activeFilters.section !== 'all' ? 1 : 0);
           const sortLabel = { latest: '최신순', oldest: '오래된순', score_desc: '점수 높은순', score_asc: '점수 낮은순' }[sortOrder] || '정렬';
           return (
             <>
@@ -155,6 +156,28 @@ const PromotionFilterBar = ({
                               onClick={() => setActiveFilters(prev => ({...prev, pathStatus: opt.id}))}
                               className={`px-2 py-1.5 text-xs rounded-lg border transition-colors ${
                                 (activeFilters.pathStatus || 'all') === opt.id
+                                  ? 'bg-[#d8b17e]/20 border-[#d8b17e] text-[#d8b17e]'
+                                  : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                              }`}
+                            >{opt.label}</button>
+                          ))}
+                        </div>
+                      </div>
+                      {/* 섹션 — 프로모션 / 브랜드웹 / 미분류 */}
+                      <div>
+                        <div className="text-[10px] font-bold text-zinc-500 mb-2 uppercase tracking-wider">Section</div>
+                        <div className="grid grid-cols-4 gap-2">
+                          {[
+                            { id: 'all', label: '전체' },
+                            { id: 'promotion', label: '프로모션' },
+                            { id: 'brandweb', label: '브랜드웹' },
+                            { id: 'none', label: '미분류' },
+                          ].map(opt => (
+                            <button
+                              key={opt.id}
+                              onClick={() => setActiveFilters(prev => ({...prev, section: opt.id}))}
+                              className={`px-2 py-1.5 text-xs rounded-lg border transition-colors ${
+                                (activeFilters.section || 'all') === opt.id
                                   ? 'bg-[#d8b17e]/20 border-[#d8b17e] text-[#d8b17e]'
                                   : 'border-zinc-700 text-zinc-400 hover:border-zinc-500'
                               }`}

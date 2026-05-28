@@ -22,6 +22,7 @@ import { analyzeWebDesign, prepareImageForAI } from './services/gemini';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import FloatingActionBar from './components/layout/FloatingActionBar';
+import { scanCampaigns } from './scanCampaigns';
 
 
 const GAMES = ['아이온', '블소', '리니지', '기타'];
@@ -79,45 +80,94 @@ const hasGameSegment = (path) => {
 };
 const hasYearSegment = (path) => /\\(20\d{2})\\/.test(path || '');
 
-// File 의 webkitRelativePath 에서 부모 폴더만 추출 → prefix + 슬래시→백슬래시 변환.
-// game/year 인자가 주어지면 webkitRelativePath 가 게임/연도 폴더로 시작하지 않을 때 자동 보정.
-// year 가 비어있어도 폴더명(예: '20260121_새로...')의 앞 4자리에서 자동 추출 시도.
+// 정식 segment 시퀀스 [게임폴더, 연도, '프로모션', 캠페인폴더, '03.디자인'] 빌드.
+// 입력 parts 가 어떤 순서·중복·영문 segment 를 가지고 있어도 위 형식으로 정규화.
+//   - 비표준 영문 섹션('Promotion'/'BrandWeb' 등) 자동 제거
+//   - 게임 폴더 뒤에 중복된 게임명 segment 자동 제거
+//   - 캠페인 폴더(yyyymmdd_ prefix)에서 연도 자동 추출
+//   - 디바이스 폴더(pc/mobile/web), 기존 '03.디자인', '디자인' segment 제거 후 끝에 재부착
+const NON_STANDARD_SECTION = /^(promotion|brandweb|brand[\s_-]?web|promo)$/i;
+const DEVICE_FOLDER = /^(pc|mobile|web|mo|m|design)$/i;
+const buildCanonicalSegments = (parts, { gameFolder, yearStr }) => {
+    // 게임 segment — 인자 우선, 없으면 parts 에서 찾기.
+    let gameSeg = gameFolder || '';
+    if (!gameSeg) {
+        const found = parts.find(p => /^\d{1,2}\./.test(p));
+        if (found) gameSeg = found;
+    }
+    // 연도 — 인자 우선, 없으면 yyyymmdd 캠페인 폴더에서, 다음 단독 연도 segment.
+    let year = String(yearStr || '').trim();
+    if (!/^20\d{2}$/.test(year)) {
+        const dated = parts.find(p => /^20\d{2}\d{4}/.test(p));
+        if (dated) year = dated.slice(0, 4);
+    }
+    if (!/^20\d{2}$/.test(year)) {
+        const ySeg = parts.find(p => /^20\d{2}$/.test(p));
+        if (ySeg) year = ySeg;
+    }
+    // 캠페인 폴더 — yyyymmdd_ prefix.
+    const campaign = parts.find(p => /^20\d{2}\d{4}/.test(p));
+
+    // 게임 키워드 (중복 게임명 segment 식별용).
+    const gameKeywordSet = new Set();
+    for (const key of Object.keys(GAME_FOLDER_MAP)) {
+        if (key) gameKeywordSet.add(key.toLowerCase());
+    }
+    const isGameKeyword = (seg) => gameKeywordSet.has(String(seg || '').toLowerCase().trim());
+
+    const segments = [];
+    if (gameSeg) segments.push(gameSeg);
+    if (year) segments.push(year);
+    segments.push('프로모션');
+
+    if (campaign) {
+        segments.push(campaign);
+    } else {
+        // 캠페인 폴더 패턴이 없으면 알려진 segment 를 제외하고 마지막에 남는 폴더를 캠페인으로 추정.
+        const reserved = new Set([gameSeg, year, '프로모션', '03.디자인']);
+        const remaining = parts.filter(p => {
+            if (!p) return false;
+            if (reserved.has(p)) return false;
+            if (/^\d{1,2}\./.test(p)) return false;          // 다른 게임 폴더
+            if (/^20\d{2}$/.test(p)) return false;            // 다른 연도
+            if (NON_STANDARD_SECTION.test(p)) return false;   // 영문 비표준 섹션
+            if (isGameKeyword(p)) return false;               // 중복 게임명
+            if (DEVICE_FOLDER.test(p)) return false;          // 디바이스 폴더
+            if (/^0?3\.\s*디자인$/.test(p)) return false;     // 03.디자인 / 3.디자인
+            if (p === '디자인') return false;
+            return true;
+        });
+        if (remaining.length > 0) segments.push(remaining[remaining.length - 1]);
+    }
+    segments.push('03.디자인');
+    return segments;
+};
+
+// path segment 에서 섹션('promotion'|'brandweb') 자동 추론.
+//   '\프로모션\' / '/프로모션/' / 'Promotion' / 'promo' → 'promotion'
+//   '\브랜드웹\' / '/브랜드웹-업데이트/' / 'BrandWeb' / 'brand_web' → 'brandweb'
+// 슬래시·백슬래시 구분자 모두 매치 (webkitRelativePath '/' / Windows '\' 양쪽 지원).
+// 브랜드웹이 더 구체적인 매치이므로 먼저 검사 — 'brandweb' 폴더 안에 'promo' 하위가 있는 케이스 우선순위.
+// 어느 패턴에도 안 맞으면 null (수동 분류 필요).
+const inferSectionFromPath = (path) => {
+    if (!path || typeof path !== 'string') return null;
+    if (/[\\/]브랜드웹/.test(path) || /brand[\s_-]?web/i.test(path)) return 'brandweb';
+    if (/[\\/]프로모션[\\/]/.test(path) || /promotion|promo/i.test(path)) return 'promotion';
+    return null;
+};
+
+// File 의 webkitRelativePath 에서 부모 폴더만 추출 → 정식 형식으로 정규화 + prefix 부착.
+//   \\ppc-file\{게임폴더}\{연도}\프로모션\{캠페인}\03.디자인\
 const buildCanonicalPath = (file, game, year) => {
     if (!file) return '';
     const rel = file.webkitRelativePath || file.name || '';
     const parts = rel.split('/');
     parts.pop(); // 파일명 제거 → 부모 폴더만
 
-    // game/year 자동 prefix 삽입.
     const gameFolder = getGameFolder(game);
-    let yearStr = String(year || '').trim();
-    if (!/^20\d{2}$/.test(yearStr)) {
-        // 폴더명 prefix 에서 추출 (예: '20260121_새로...' → 2026).
-        const dated = parts.find(p => /^20\d{2}\d{4}/.test(p));
-        if (dated) yearStr = dated.slice(0, 4);
-        else {
-            const ySeg = parts.find(p => /^20\d{2}$/.test(p));
-            if (ySeg) yearStr = ySeg;
-        }
-    }
-    const firstSeg = parts[0] || '';
-    const startsWithGameFolder = /^\d+\./.test(firstSeg);
-
-    if (gameFolder && !startsWithGameFolder) {
-        // 게임 폴더 누락 — 맨 앞에 삽입.
-        parts.unshift(gameFolder);
-        // 연도도 빠져 있으면 게임 폴더 바로 다음에 삽입 (정식 형식 맞춤).
-        if (yearStr && !parts.slice(1).some(p => /^20\d{2}$/.test(p))) {
-            parts.splice(1, 0, yearStr);
-        }
-    } else if (yearStr && !parts.some(p => /^20\d{2}$/.test(p))) {
-        // 게임 폴더는 있는데 연도가 없으면 게임 폴더 다음 위치에 연도 삽입.
-        parts.splice(1, 0, yearStr);
-    }
-
-    const folderRel = parts.join('/');
-    if (!folderRel) return getCanonicalPrefix();
-    return getCanonicalPrefix() + folderRel.replace(/\//g, '\\') + '\\';
+    const segments = buildCanonicalSegments(parts, { gameFolder, yearStr: year });
+    if (segments.length === 0) return getCanonicalPrefix();
+    return getCanonicalPrefix() + segments.join('\\') + '\\';
 };
 
 // 기존 doc 의 path 한 건 정규화 — game/year 매핑에 따라 누락된 segment 를 채워 넣음.
@@ -135,41 +185,34 @@ const extractYearFromPath = (path) => {
     if (m4) return m4[1];
     return '';
 };
+// 기존 doc 의 path 한 건 정규화 — buildCanonicalSegments 와 동일 로직 적용.
+//   - 비표준 영문 섹션 'Promotion'/'BrandWeb' 제거 후 한국어 '프로모션' 으로 치환
+//   - 게임 폴더 뒤에 중복된 게임명 segment 제거
+//   - '03.디자인' suffix 자동 부착
+// 이미 정식 형식이면 null 반환 (변경 불필요).
 const normalizePromoPath = (oldPath, game, year) => {
     if (!oldPath || typeof oldPath !== 'string') return null;
     const prefix = DEFAULT_PATH_PREFIX;
     if (!oldPath.startsWith(prefix)) return null;
+
+    // prefix 제거 후 segment 분해. trailing 백슬래시는 무시.
+    const rest = oldPath.slice(prefix.length).replace(/\\+$/, '');
+    const parts = rest.split('\\').filter(Boolean);
+
     const gameFolder = getGameFolder(game);
-    // year 우선순위:
-    //  1) path 의 yyyymmdd 폴더명 prefix (예: '20260121_새로...' → 2026) — 실제 캠페인 날짜라 가장 신뢰.
-    //  2) doc.year (4자리 유효) — fallback.
-    //  3) ''  — 둘 다 없으면 skip.
-    let yearStr = extractYearFromPath(oldPath);
-    if (!yearStr) {
-        const docY = String(year || '').trim();
-        if (/^20\d{2}$/.test(docY)) yearStr = docY;
+    // year 우선순위: 인자 → path 의 yyyymmdd 캠페인 prefix → 단독 연도 segment.
+    let yearStr = String(year || '').trim();
+    if (!/^20\d{2}$/.test(yearStr)) {
+        const fromPath = extractYearFromPath(oldPath);
+        if (fromPath) yearStr = fromPath;
     }
-    const needGame = gameFolder && !hasGameSegment(oldPath);
-    // path 안에 이미 들어가 있는 year segment 가 yearStr 와 다르면 교정 필요.
-    const existingYear = (oldPath.match(/\\(20\d{2})\\/) || [])[1] || '';
-    const needYear = !!yearStr && (!existingYear || existingYear !== yearStr);
-    if (!needGame && !needYear) return null;
-    // 잘못된 기존 year segment 가 있으면 먼저 교체 후 가공.
-    let workingPath = oldPath;
-    if (existingYear && existingYear !== yearStr) {
-        workingPath = workingPath.replace(new RegExp('\\\\' + existingYear + '\\\\'), '\\' + yearStr + '\\');
-    }
-    const rest = workingPath.slice(prefix.length);
-    let restWithFix = rest;
-    if (needGame) {
-        // 게임 폴더 누락 — 맨 앞에 game/year 삽입.
-        restWithFix = gameFolder + '\\' + (yearStr && !hasYearSegment(workingPath) ? yearStr + '\\' : '') + rest;
-    } else if (yearStr && !hasYearSegment(workingPath)) {
-        // 게임 폴더는 있는데 year segment 자체가 없으면 게임 폴더 다음에 삽입.
-        restWithFix = rest.replace(/^(\d{1,2}\.[^\\]+)\\/, `$1\\${yearStr}\\`);
-    }
-    const newPath = prefix + restWithFix;
-    return newPath === oldPath ? null : newPath;
+
+    const segments = buildCanonicalSegments(parts, { gameFolder, yearStr });
+    if (segments.length === 0) return null;
+    const newPath = prefix + segments.join('\\') + '\\';
+    // trailing 백슬래시 차이만 있는 경우(이미 정규형)는 변경 없음으로 처리.
+    if (newPath === oldPath || newPath === oldPath + '\\') return null;
+    return newPath;
 };
 
 // 컬렉션 경로 — BannerCodex/PromptArc와 같은 패턴으로 통일.
@@ -375,6 +418,7 @@ function App() {
         game: 'all',
         ocr: 'all',
         pathStatus: 'all', // 'all' | 'missing' | 'present' — 경로 누락 일괄 처리용 필터.
+        section: 'all',    // 'all' | 'promotion' | 'brandweb' | 'none' — 섹션 분류 필터.
     });
     const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
@@ -474,6 +518,88 @@ function App() {
             setIsAutoFilling(false);
         }
     }, [isAdmin, isAutoFilling, selectedItems, allBanners]);
+
+    // 섹션 자동 분류 — 전체 doc 의 path 에서 '\프로모션\' / '\브랜드웹\' 패턴을 보고 section 채움.
+    // section 이 이미 있는 doc 은 스킵. path 가 없거나 추론 불가면 스킵.
+    const [isClassifying, setIsClassifying] = useState(false);
+    const handleAutoClassifySections = useCallback(async () => {
+        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
+        if (isClassifying) return;
+        setIsClassifying(true);
+        try {
+            const snap = await getDocs(promoColRef());
+            const updates = [];
+            const skipped = { alreadyClassified: 0, noInference: 0, noPath: 0 };
+            const noInferenceSamples = [];
+            snap.docs.forEach(d => {
+                const data = d.data();
+                if (data.section) { skipped.alreadyClassified++; return; }
+                if (!data.path) { skipped.noPath++; return; }
+                const inferred = inferSectionFromPath(data.path);
+                if (!inferred) {
+                    skipped.noInference++;
+                    if (noInferenceSamples.length < 3) noInferenceSamples.push(`${data.title || '?'}: ${data.path}`);
+                    return;
+                }
+                updates.push({ id: d.id, section: inferred, title: data.title });
+            });
+            const total = snap.docs.length;
+            const promoCount = updates.filter(u => u.section === 'promotion').length;
+            const brandwebCount = updates.filter(u => u.section === 'brandweb').length;
+            const report = [
+                `검사 결과 (총 ${total}건):`,
+                `  • 자동 분류 대상: ${updates.length} (프로모션 ${promoCount} / 브랜드웹 ${brandwebCount})`,
+                `  • 이미 분류됨: ${skipped.alreadyClassified}`,
+                `  • path 에서 추론 불가: ${skipped.noInference}${noInferenceSamples.length ? '\n     예: ' + noInferenceSamples.join('\n     ') : ''}`,
+                `  • path 없음: ${skipped.noPath}`,
+            ].join('\n');
+            console.log('[PromotionArchive] classify report\n' + report);
+
+            if (updates.length === 0) {
+                alert(`자동 분류할 항목이 없습니다.\n\n${report}`);
+                return;
+            }
+            if (!confirm(`${report}\n\n계속할까요?`)) return;
+
+            const CHUNK = 400;
+            for (let i = 0; i < updates.length; i += CHUNK) {
+                const batch = writeBatch(db);
+                updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { section: u.section }));
+                await batch.commit();
+            }
+            alert(`✅ ${updates.length}건 섹션 자동 분류 완료 (프로모션 ${promoCount} / 브랜드웹 ${brandwebCount})`);
+        } catch (e) {
+            console.error('[PromotionArchive] classify sections failed', e);
+            alert(`❌ 자동 분류 실패: ${e.message || e.code}`);
+        } finally {
+            setIsClassifying(false);
+        }
+    }, [isAdmin, isClassifying]);
+
+    // 선택된 항목들 일괄로 section='promotion' 으로 설정 — path 추론 안 되는 케이스를 위한 수동 백업.
+    const [isSettingSection, setIsSettingSection] = useState(false);
+    const handleSetSectionPromotion = useCallback(async () => {
+        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
+        if (isSettingSection) return;
+        if (selectedItems.length === 0) { alert('선택된 항목이 없습니다.'); return; }
+        if (!confirm(`선택된 ${selectedItems.length}건을 '프로모션'으로 설정합니다. 계속할까요?`)) return;
+        setIsSettingSection(true);
+        try {
+            const CHUNK = 400;
+            for (let i = 0; i < selectedItems.length; i += CHUNK) {
+                const batch = writeBatch(db);
+                selectedItems.slice(i, i + CHUNK).forEach(id => batch.update(promoDocRef(id), { section: 'promotion' }));
+                await batch.commit();
+            }
+            alert(`✅ ${selectedItems.length}건 프로모션으로 설정 완료`);
+        } catch (e) {
+            console.error('[PromotionArchive] set section failed', e);
+            alert(`❌ 설정 실패: ${e.message || e.code}`);
+        } finally {
+            setIsSettingSection(false);
+        }
+    }, [isAdmin, isSettingSection, selectedItems]);
+
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -487,6 +613,9 @@ function App() {
     const [isEvalRunning, setIsEvalRunning] = useState(false);
 
     const [pendingFiles, setPendingFiles] = useState([]);
+    // 사전 스캔 결과 — handleFileUpload 에서 무거운 스캔을 ProcessingModal 안에서 실행한 뒤 저장.
+    // UploadModal 은 prop 으로 받아서 즉시 표시 (useMemo 동기 계산으로 UI freeze 되는 걸 막음).
+    const [uploadScan, setUploadScan] = useState(null);
     const [uploadSettings, setUploadSettings] = useState({ game: '아이온', year: new Date().getFullYear().toString(), visibility: 'public' });
     const [isProcessingModalOpen, setIsProcessingModalOpen] = useState(false);
     const [processingMessage, setProcessingMessage] = useState("");
@@ -532,9 +661,20 @@ function App() {
             );
         }
 
-        // 에셋 타입 — b.assetType 직접 비교. 없는 데이터는 'all' 외 필터에서 자동 제외됨.
+        // 에셋 타입 — b.assetType 직접 비교 + 누락 시 section / path 에서 fallback 추론.
+        //   '프로모션' ↔ section='promotion' / path '\프로모션\'
+        //   '브랜드웹'  ↔ section='brandweb'  / path '\브랜드웹\'
+        // 기존 데이터에 assetType 안 채워진 경우에도 즉석 분류로 필터 작동.
         if (activeFilters.assetType !== 'all') {
-            result = result.filter(b => (b.assetType || '').toLowerCase() === activeFilters.assetType.toLowerCase());
+            const target = activeFilters.assetType;
+            const sectionMap = { '프로모션': 'promotion', '브랜드웹': 'brandweb' };
+            const targetSection = sectionMap[target];
+            result = result.filter(b => {
+                if ((b.assetType || '').toLowerCase() === target.toLowerCase()) return true;
+                if (!targetSection) return false;
+                const inferred = b.section || inferSectionFromPath(b.path);
+                return inferred === targetSection;
+            });
         }
 
         // 년도 — 'custom' 일 때는 created_at 기준 날짜 범위 비교.
@@ -588,17 +728,44 @@ function App() {
             result = result.filter(b => b.path && typeof b.path === 'string' && b.path.trim() !== '');
         }
 
+        // 섹션 필터 (프로모션 / 브랜드웹 / 미분류).
+        //   section 필드가 비어 있는 기존 doc 도 path 에서 즉석 추론해서 분류 — '섹션 자동 분류' 버튼을
+        //   누르지 않아도 필터가 작동하도록. 'none' 은 추론마저 실패한 진짜 미분류만 표시.
+        const resolveSection = (b) => b.section || inferSectionFromPath(b.path);
+        if (activeFilters.section === 'promotion') {
+            result = result.filter(b => resolveSection(b) === 'promotion');
+        } else if (activeFilters.section === 'brandweb') {
+            result = result.filter(b => resolveSection(b) === 'brandweb');
+        } else if (activeFilters.section === 'none') {
+            result = result.filter(b => !resolveSection(b));
+        }
+
+        // 정렬 키 추출 헬퍼.
+        //   - 제작 날짜: path 의 캠페인 폴더 prefix(yyyymmdd) > year+month > created_at fallback.
+        //     업로드 시점(created_at) 이 아니라 실제 제작 시점 기준으로 정렬되도록 함.
+        //   - 평가 점수: webAiScore(실제 Gemini 분석) > designScore(레거시 fallback).
+        const productionTime = (b) => {
+            if (b?.path) {
+                const m = String(b.path).match(/[\\/](20\d{2})(\d{2})(\d{2})[_\-]/);
+                if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+            }
+            const y = parseInt(b?.year, 10);
+            if (Number.isFinite(y) && y > 2000) {
+                const mo = parseInt(b?.month, 10);
+                const monthIdx = Number.isFinite(mo) && mo >= 1 && mo <= 12 ? mo - 1 : 0;
+                return Date.UTC(y, monthIdx, 1);
+            }
+            return new Date(b?.created_at || 0).getTime();
+        };
+        const evalScore = (b) => parseFloat(b?.webAiScore ?? b?.designScore) || 0;
+
         const sorted = [...result];
         sorted.sort((a, b) => {
-            const dateA = new Date(a.created_at || 0);
-            const dateB = new Date(b.created_at || 0);
-            const scoreA = a.designScore || 0;
-            const scoreB = b.designScore || 0;
             switch (sortOrder) {
-                case 'latest': return dateB - dateA;
-                case 'oldest': return dateA - dateB;
-                case 'score_desc': return scoreB - scoreA;
-                case 'score_asc': return scoreA - scoreB;
+                case 'latest':     return productionTime(b) - productionTime(a);
+                case 'oldest':     return productionTime(a) - productionTime(b);
+                case 'score_desc': return evalScore(b) - evalScore(a);
+                case 'score_asc':  return evalScore(a) - evalScore(b);
                 default: return 0;
             }
         });
@@ -625,12 +792,13 @@ function App() {
         const fileList = e.target.files;
         if (!fileList || fileList.length === 0) return;
         // 큰 폴더의 경우 FileList → Array 변환만으로도 수 초 freeze 가능.
-        // 즉시 로딩 모달을 띄우고 다음 tick 에서 처리해서 사용자가 진행 상태를 인지하게 만든다.
+        // 단계별로 setTimeout 으로 끊어서 ProcessingModal 의 메시지가 매 단계마다 paint 되도록 함.
         const inputEl = e.target;
         setProcessingMessage(`폴더 분석 중… 파일 ${fileList.length.toLocaleString()}개 확인 중`);
         setUploadProgress({ current: 0, total: 0, percentage: 0 });
         setIsProcessingModalOpen(true);
-        // 다음 macrotask 로 미뤄 모달이 paint 된 뒤 무거운 작업 진행.
+
+        // 단계 1: FileList → Array (큰 폴더일수록 무거움)
         setTimeout(() => {
             try {
                 const all = Array.from(fileList);
@@ -648,20 +816,34 @@ function App() {
                     inputEl.value = '';
                     return;
                 }
-                setPendingFiles(validFiles);
-                setIsProcessingModalOpen(false);
-                if (invalidNames.length > 0) {
-                    const preview = invalidNames.slice(0, 5).join('\n');
-                    const more = invalidNames.length > 5 ? `\n…외 ${invalidNames.length - 5}개` : '';
-                    // 비차단 안내 — confirm 대신 그냥 alert (사용자가 인지만 하면 됨).
-                    alert(`보안 차단으로 ${invalidNames.length}개 파일을 건너뜁니다.\n나머지 ${validFiles.length}개로 업로드를 진행합니다.\n\n[건너뛴 파일]\n${preview}${more}\n\n읽지 못한 파일은 폴더를 '바탕화면'으로 복사하면 해결됩니다.`);
-                }
-                setIsUploadModalOpen(true);
+
+                // 단계 2: 캠페인 구조 사전 스캔 (handleUpload 와 동일 규칙) — UploadModal 이 즉시 표시할 수 있도록.
+                setProcessingMessage(`캠페인 구조 분석 중… (파일 ${validFiles.length.toLocaleString()}개)`);
+                // 다시 macrotask 로 미뤄 메시지가 paint 된 뒤 무거운 스캔 실행.
+                setTimeout(() => {
+                    try {
+                        const scan = scanCampaigns(validFiles);
+                        setPendingFiles(validFiles);
+                        setUploadScan(scan);
+                        setIsProcessingModalOpen(false);
+                        if (invalidNames.length > 0) {
+                            const preview = invalidNames.slice(0, 5).join('\n');
+                            const more = invalidNames.length > 5 ? `\n…외 ${invalidNames.length - 5}개` : '';
+                            alert(`보안 차단으로 ${invalidNames.length}개 파일을 건너뜁니다.\n나머지 ${validFiles.length}개로 업로드를 진행합니다.\n\n[건너뛴 파일]\n${preview}${more}\n\n읽지 못한 파일은 폴더를 '바탕화면'으로 복사하면 해결됩니다.`);
+                        }
+                        setIsUploadModalOpen(true);
+                    } catch (err) {
+                        console.error('[PromotionArchive] campaign scan failed', err);
+                        setIsProcessingModalOpen(false);
+                        alert(`캠페인 분석 실패: ${err.message || err}`);
+                    } finally {
+                        inputEl.value = '';
+                    }
+                }, 30);
             } catch (err) {
                 console.error('[PromotionArchive] file scan failed', err);
                 setIsProcessingModalOpen(false);
                 alert(`파일 분석 실패: ${err.message || err}`);
-            } finally {
                 inputEl.value = '';
             }
         }, 30);
@@ -680,7 +862,9 @@ function App() {
         try {
             const directItems = [];
             const groups = {};
-            const excludeRegex = /개발|팝업|popup|가이드|guide|Thumbs\.db|^\./i;
+            // 블랙리스트 — 원본 키 비주얼이 아닌 보조 파일 제외.
+            // 명세상 '개발 / 팝업 / popup' 만 핵심이지만 Thumbs.db·dotfile 같은 시스템 노이즈도 같이 차단.
+            const excludeRegex = /개발|팝업|popup|Thumbs\.db|^\./i;
             // 허용 확장자 — jpg/jpeg/png 만 통과. psd/ai/gif/webp/tif 등은 모두 제외.
             const allowedExtRegex = /\.(jpe?g|png)$/i;
 
@@ -694,25 +878,26 @@ function App() {
                 }
 
                 const pathParts = file.webkitRelativePath.split('/');
-                const folderName = pathParts[pathParts.length - 2].toLowerCase();
-                const fileName = file.name.toLowerCase();
 
+                // [필수] 디자인 폴더 식별 — '디자인' segment 가 없으면 키 비주얼이 아니므로 무시.
+                const designIndex = pathParts.findIndex(p => p.includes('디자인'));
+                if (designIndex < 0 || designIndex === 0) return;
+
+                // [필수] pc/mobile 폴더의 '직속 자식' 파일만 처리.
+                //   허용 구조: [상위…, '03.디자인', 'pc'|'mobile', '<파일명>']
+                //   → pathParts.length 는 designIndex + 3 이어야 함.
+                // crop / m_crop / banner 같은 하위 폴더는 자동 무시 — 키 비주얼이 가공물·잘림본과
+                // 한 그룹에 섞이지 않음.
+                if (pathParts.length !== designIndex + 3) return;
+
+                const deviceFolder = pathParts[designIndex + 1] || '';
                 let type = null;
-                if (/(?:^|[^a-z])(pc|web)(?:[^a-z]|$)/i.test(folderName)) type = 'pc';
-                else if (/(?:^|[^a-z])(mo|mobile|m)(?:[^a-z]|$)/i.test(folderName)) type = 'mobile';
-
-                if (!type) {
-                    if (/(?:_|-|\[|\(|^| )(pc|web)(?:_|-|\]|\)|\.| |$)/i.test(fileName)) type = 'pc';
-                    else if (/(?:_|-|\[|\(|^| )(mo|mobile|mb)(?:_|-|\]|\)|\.| |$)/i.test(fileName)) type = 'mobile';
-                }
-
+                if (/^(pc|web)$/i.test(deviceFolder)) type = 'pc';
+                else if (/^(mo|mobile|m)$/i.test(deviceFolder)) type = 'mobile';
                 if (!type) return;
 
-                const designIndex = pathParts.findIndex(p => p.includes('디자인'));
-                let title;
-                if (designIndex > 0) title = pathParts[designIndex - 1].trim();
-                else title = pathParts.length >= 3 ? pathParts[pathParts.length - 3].trim() : pathParts[pathParts.length - 2].trim();
-                if (!title) title = "미분류";
+                // 타이틀 — 디자인 폴더 바로 위 segment (캠페인 폴더명).
+                const title = pathParts[designIndex - 1].trim() || '미분류';
 
                 if (!groups[title]) groups[title] = { title, pcCandidates: [], moCandidates: [] };
 
@@ -774,11 +959,19 @@ function App() {
 
                     if (!pcData && !moData) throw new Error("이미지 로드 실패");
 
+                    const sourceFile = item.pcFile || item.mobileFile;
+                    const canonicalPath = buildCanonicalPath(sourceFile, uploadSettings.game, uploadSettings.year);
+                    // section 추론은 원본 webkitRelativePath 에서 해야 함 —
+                    // canonicalPath 는 정규화 과정에서 항상 '\프로모션\' 을 강제 삽입하므로
+                    // 거기서 추론하면 브랜드웹 폴더에서 업로드해도 'promotion' 으로 잘못 분류됨.
+                    const sourceRel = sourceFile?.webkitRelativePath || '';
+                    const inferredSection = inferSectionFromPath(sourceRel) || 'promotion';
                     chunkBanners.push({
                         title: item.title,
                         game: uploadSettings.game,
                         year: uploadSettings.year,
-                        path: buildCanonicalPath(item.pcFile || item.mobileFile, uploadSettings.game, uploadSettings.year),
+                        path: canonicalPath,
+                        section: inferredSection,
                         preview: pcData?.thumbnail || moData?.thumbnail,
                         full_image: pcData?.detail || null,
                         mobile_image: moData?.detail || null,
@@ -1342,6 +1535,10 @@ function App() {
                         isNormalizing={isNormalizing}
                         onAutoFillPaths={isAdmin ? handleAutoFillPaths : undefined}
                         isAutoFilling={isAutoFilling}
+                        onAutoClassifySections={isAdmin ? handleAutoClassifySections : undefined}
+                        isClassifying={isClassifying}
+                        onSetSectionPromotion={isAdmin ? handleSetSectionPromotion : undefined}
+                        isSettingSection={isSettingSection}
                     />
                 )}
 
@@ -1543,7 +1740,7 @@ function App() {
                     />
                 )}
 
-                <UploadModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} pendingFiles={pendingFiles} setPendingFiles={setPendingFiles} uploadSettings={uploadSettings} setUploadSettings={setUploadSettings} confirmUpload={handleUpload} />
+                <UploadModal isOpen={isUploadModalOpen} onClose={() => setIsUploadModalOpen(false)} pendingFiles={pendingFiles} setPendingFiles={setPendingFiles} scan={uploadScan} uploadSettings={uploadSettings} setUploadSettings={setUploadSettings} confirmUpload={handleUpload} />
                 <ProcessingModal isOpen={isProcessingModalOpen} message={processingMessage} progress={uploadProgress} />
                 <BatchEditModal isOpen={isBatchEditOpen} onClose={() => setIsBatchEditOpen(false)} selectedCount={selectedItems.length} availableGames={GAMES} onApply={handleBatchUpdate} />
                 <AiAnalysisModal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} selectedIds={selectedItems} onComplete={() => { setIsAiModalOpen(false); setSelectedItems([]); }} />

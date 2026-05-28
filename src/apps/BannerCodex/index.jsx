@@ -57,9 +57,12 @@ const handleCopy = (text) => {
 
 export default function App() {
   const { user, isAdmin } = useAuth();
-  const { theme, payload, clearPayload } = useGlobal();
+  const { theme, payload, clearPayload, navigate } = useGlobal();
   const isLightMode = theme === 'light';
   const consumedPayloadRef = useRef(null);
+  // AssetLibrary → 출처로 이동 시 returnToAssetId 가 있으면 저장.
+  // 모달 닫기 때 이 정보로 다시 asset-library 로 돌아가서 detail 자동 오픈.
+  const [returnTarget, setReturnTarget] = useState(null); // { app, assetId } | null
 
   // 관리자 권한(isAdmin) 과 별도로, 설정에서 명시적으로 켠 "관리 모드" 토글.
   // 관리자라도 토글 OFF 면 일반 사용자처럼 보이고 (체크박스/편집 UI 숨김), 토글 ON 시에만 admin UI 노출.
@@ -226,8 +229,8 @@ export default function App() {
     const handler = (e) => {
       if (e.key !== 'Escape') return;
       if (previewModalOpen) {
-        if (hasChanges || isEditingPreview) { if (confirm("변경사항을 취소하시겠습니까?")) { setPreviewModalOpen(false); setIsEditingPreview(false); } }
-        else setPreviewModalOpen(false);
+        if (hasChanges || isEditingPreview) { if (confirm("변경사항을 취소하시겠습니까?")) { handleClosePreview(); setIsEditingPreview(false); } }
+        else handleClosePreview();
       } else if (isAllGamesModalOpen) setIsAllGamesModalOpen(false);
       else if (isDuplicateModalOpen) setIsDuplicateModalOpen(false);
       else if (isUploadModalOpen) setIsUploadModalOpen(false);
@@ -240,7 +243,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [previewModalOpen, isUploadModalOpen, isBatchEditModalOpen, isSettingsOpen, isFilterMenuOpen, isSidebarOpen, hasChanges, isEditingPreview, selectedIds, isDuplicateModalOpen, ocrProgress.isOpen, ocrProgress.status, isAllGamesModalOpen, setOcrProgress]);
+  }, [previewModalOpen, isUploadModalOpen, isBatchEditModalOpen, isSettingsOpen, isFilterMenuOpen, isSidebarOpen, hasChanges, isEditingPreview, selectedIds, isDuplicateModalOpen, ocrProgress.isOpen, ocrProgress.status, isAllGamesModalOpen, setOcrProgress, handleClosePreview]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -807,6 +810,22 @@ export default function App() {
     } catch { showNotification("데이터 삭제 중 오류가 발생했습니다."); }
   };
 
+  // 모달 닫기 + AssetLibrary 복귀 처리. returnTarget 이 있으면 거기로 navigate.
+  const handleClosePreview = useCallback(() => {
+    setPreviewModalOpen(false);
+    if (returnTarget?.app && returnTarget?.assetId) {
+      navigate(returnTarget.app, {
+        source: 'banner-codex',
+        target: returnTarget.app,
+        prompt: { text: '', tags: [], style: '' },
+        image: { url: '', metadata: {} },
+        params: { openAssetId: returnTarget.assetId },
+        timestamp: Date.now(),
+      });
+      setReturnTarget(null);
+    }
+  }, [returnTarget, navigate]);
+
   // Detail modal helpers
   const handleOpenPreview = useCallback(async (banner) => {
     const sanitizeStr = (val, fb = '') => (val != null && typeof val !== 'object') ? String(val) : fb;
@@ -859,6 +878,10 @@ export default function App() {
     const banner = banners.find(b => b.id === id) || tempBanners?.find(b => b.id === id);
     if (banner) {
       handleOpenPreview(banner);
+      // returnToAssetId 가 있으면 닫기 시 asset-library 로 돌아가도록 기억.
+      const retId = payload.params?.returnToAssetId;
+      if (retId && payload.source) setReturnTarget({ app: payload.source, assetId: retId });
+      else setReturnTarget(null);
       consumedPayloadRef.current = payload.timestamp;
       clearPayload?.();
     } else if (banners.length === 0 && (!tempBanners || tempBanners.length === 0)) {
@@ -1062,7 +1085,7 @@ export default function App() {
           isScorePopoverOpen={isScorePopoverOpen} setIsScorePopoverOpen={setIsScorePopoverOpen}
           isScoreAdjExpanded={isScoreAdjExpanded} setIsScoreAdjExpanded={setIsScoreAdjExpanded}
           newTagInput={newTagInput} setNewTagInput={setNewTagInput} isCopied={isCopied}
-          onClose={() => setPreviewModalOpen(false)} handleDownloadImage={handleDownloadImage}
+          onClose={handleClosePreview} handleDownloadImage={handleDownloadImage}
           handleEditChange={handleEditChange} handleSaveEdit={handleSaveEdit} handleCancelEdit={handleCancelEdit}
           handleAddTag={handleAddTag} handleRemoveTag={handleRemoveTag} handleCopyPathModal={handleCopyPathModal}
           toggleLike={toggleLike} toggleFeature={toggleFeature} handleToggleCart={handleToggleCart}

@@ -1,8 +1,8 @@
-import { Layers, Edit3, X, Sparkles, Trash2, Wrench, FolderPlus } from 'lucide-react';
+import { Layers, Edit3, X, Sparkles, Trash2, Wrench, FolderPlus, Tag, Tags } from 'lucide-react';
 
 // 하단 중앙 floating bar.
 // - 다중 선택 시(selectedCount > 0): 메인 액션 그룹(담기/속성/선택 취소/AI/삭제) 표시.
-// - 관리자 모드 + 선택 있음: 우측에 admin 액션 그룹 추가 ("경로 정규화").
+// - 관리자 모드 + 선택 있음: 우측에 admin 액션 그룹 추가 ("경로 정규화" / 섹션 분류).
 // - selection 이 없으면 바 자체를 띄우지 않음 — 관리자라도 빈 화면에 단독으로 뜨지 않도록.
 const FloatingActionBar = ({
     selectedCount,
@@ -16,9 +16,13 @@ const FloatingActionBar = ({
     isNormalizing,
     onAutoFillPaths,
     isAutoFilling,
+    onAutoClassifySections,
+    isClassifying,
+    onSetSectionPromotion,
+    isSettingSection,
 }) => {
     const hasSelection = selectedCount > 0;
-    const hasAdminActions = !!onNormalizePaths || !!onAutoFillPaths;
+    const hasAdminActions = !!onNormalizePaths || !!onAutoFillPaths || !!onAutoClassifySections || !!onSetSectionPromotion;
     if (!hasSelection) return null; // admin 액션은 selection 과 함께만 노출
 
     return (
@@ -89,6 +93,28 @@ const FloatingActionBar = ({
                             >
                                 <Wrench size={14} />
                                 <span>{isNormalizing ? '정규화 중…' : '경로 정규화'}</span>
+                            </button>
+                        )}
+                        {onAutoClassifySections && (
+                            <button
+                                onClick={onAutoClassifySections}
+                                disabled={isClassifying}
+                                title="전체 DB 의 path 에서 '\\프로모션\\' / '\\브랜드웹\\' 패턴을 보고 section 자동 채움"
+                                className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-cyan-300 hover:text-cyan-200 hover:bg-cyan-500/10 rounded-xl transition-all disabled:opacity-50"
+                            >
+                                <Tags size={14} />
+                                <span>{isClassifying ? '분류 중…' : '섹션 자동 분류'}</span>
+                            </button>
+                        )}
+                        {onSetSectionPromotion && (
+                            <button
+                                onClick={onSetSectionPromotion}
+                                disabled={isSettingSection}
+                                title="선택 항목을 '프로모션' 으로 일괄 설정"
+                                className="flex items-center gap-2 px-3 py-2.5 text-xs font-bold text-emerald-300 hover:text-emerald-200 hover:bg-emerald-500/10 rounded-xl transition-all disabled:opacity-50"
+                            >
+                                <Tag size={14} />
+                                <span>{isSettingSection ? '설정 중…' : '프로모션으로 설정'}</span>
                             </button>
                         )}
                     </>
