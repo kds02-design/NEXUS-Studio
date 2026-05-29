@@ -48,14 +48,14 @@ const CodexCard = memo(({
           {selected ? <Check className="w-4 h-4 stroke-[3]" /> : <div className="w-4 h-4 border-2 border-current rounded-sm" />}
         </button>
       )}
-      <div className="relative w-full h-full overflow-hidden flex items-center justify-center bg-black/5">
+      <div className="relative w-full h-full overflow-hidden flex items-center justify-center">
         {isLoadingImage ? (
           <div className="w-full h-full animate-pulse flex items-center justify-center">
             <ImageIcon className={`w-8 h-8 ${isLightMode ? 'text-slate-300' : 'text-zinc-800'} opacity-50`} />
           </div>
         ) : (
           <img src={imageData} alt={safeTitle}
-            className={`w-full h-full object-cover transition-transform duration-500 ${selected && showSelect ? 'scale-105' : 'group-hover:scale-105'}`} />
+            className={`w-full h-full object-contain transition-transform duration-500 ${selected && showSelect ? 'scale-105' : 'group-hover:scale-105'}`} />
         )}
         <div className={`absolute inset-0 transition-colors pointer-events-none ${selected && showSelect ? 'bg-[#0eb9b3]/10' : 'bg-black/0 group-hover:bg-black/40'}`} />
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none flex flex-col justify-between p-3 z-20">

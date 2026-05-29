@@ -19,6 +19,7 @@ import {
   migrateInitialCriteria, getSeedCriteria, getSeedRules,
   fetchActiveCriteria, formatCriteriaList, getActiveRules,
   fetchAnchors, formatAnchorsForPrompt, CRITERIA_TYPES,
+  fetchCalibration, saveCalibration, computeSuggestedOffset,
 } from "../../lib/evaluationCriteria";
 import { DEFAULT_AI_PROMPT } from "../BannerCodex/constants/categories";
 import { DEFAULT_HERO_IMAGE, fetchDashboardSettings, updateDashboardHeroImage } from "../../lib/dashboardSettings";
@@ -374,6 +375,86 @@ const CRITERIA_TYPE_LIST = [
   { id: "typoMotion", label: "모션 타이포" },
 ];
 
+// 전역 점수 보정(offset) — 유형별로 AI 가중평균 점수에 일괄 더해지는 보정값.
+// 앵커의 (평가자 점수 - AI 점수) 평균을 제안값으로 보여주되, 적용은 관리자가 결정(이중 보정 방지).
+function CalibrationOffsetCard({ type }) {
+  const [offset, setOffset] = useState(0);
+  const [input, setInput] = useState("0");
+  const [suggested, setSuggested] = useState({ offset: 0, sampleCount: 0 });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([fetchCalibration(type), fetchAnchors(type)])
+      .then(([c, anchors]) => {
+        if (cancelled) return;
+        const off = c?.offset || 0;
+        setOffset(off); setInput(String(off));
+        setSuggested(computeSuggestedOffset(anchors));
+      })
+      .catch(e => console.warn("[NexusAdmin] calibration load failed", e))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [type]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const saved = await saveCalibration(type, parseInt(input, 10) || 0);
+      setOffset(saved); setInput(String(saved));
+      setSavedAt(Date.now());
+    } catch (e) { console.warn("[NexusAdmin] saveCalibration failed", e); }
+    finally { setSaving(false); }
+  };
+
+  const parsedInput = parseInt(input, 10) || 0;
+  const dirty = parsedInput !== offset;
+
+  return (
+    <div className="rounded-lg border border-white/10 bg-[#111118] p-3 space-y-2.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <BarChart3 size={13} style={{ color: ACCENT }} />
+        <span className="text-xs font-bold text-white">전역 점수 보정 (offset)</span>
+        <span className="text-[10px] text-zinc-500">AI 가중평균(0~100)에 일괄로 더해짐 · −50~+50</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <input type="number" min={-50} max={50} value={input} disabled={loading}
+          onChange={e => setInput(e.target.value)}
+          className="w-24 px-2.5 py-1.5 rounded-md bg-black/40 border border-white/10 text-white text-sm font-mono focus:outline-none focus:border-white/30 disabled:opacity-40" />
+        <span className="text-[11px] text-zinc-500 font-mono">현재 적용값: {loading ? "…" : (offset > 0 ? `+${offset}` : offset)}</span>
+        <button onClick={handleSave} disabled={saving || loading || !dirty}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold transition-colors disabled:opacity-40"
+          style={{ background: `${ACCENT}15`, color: ACCENT, border: `1px solid ${ACCENT}55` }}>
+          <Save size={11} /> {saving ? "저장 중…" : "저장"}
+        </button>
+        {savedAt > 0 && !dirty && <span className="text-[10px] text-emerald-400">저장됨</span>}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] pt-1.5 border-t border-white/5">
+        {suggested.sampleCount > 0 ? (
+          <>
+            <span className="text-zinc-400">
+              앵커 {suggested.sampleCount}건 기준 — AI 가 평가자보다 평균{" "}
+              <span className="font-mono font-bold" style={{ color: ACCENT }}>
+                {suggested.offset > 0 ? `${suggested.offset}점 낮음` : suggested.offset < 0 ? `${-suggested.offset}점 높음` : "일치"}
+              </span>
+              {" "}→ 제안 offset <span className="font-mono font-bold" style={{ color: ACCENT }}>{suggested.offset > 0 ? `+${suggested.offset}` : suggested.offset}</span>
+            </span>
+            <button onClick={() => setInput(String(suggested.offset))}
+              className="ml-auto px-2 py-1 rounded text-[10px] font-bold text-zinc-300 border border-white/10 hover:bg-white/5">
+              이 값 적용
+            </button>
+          </>
+        ) : (
+          <span className="text-zinc-600">제안값 없음 — 평가도구에서 점수와 함께 기준점(앵커)을 등록하면 제안 offset 이 계산됩니다.</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function CriteriaPanel() {
   const [type, setType] = useState("banner");
   const [versions, setVersions] = useState([]);
@@ -605,6 +686,9 @@ function CriteriaPanel() {
       </div>
 
       {error && <ErrorBanner message={error}/>}
+
+      {/* 전역 점수 보정 (offset) */}
+      <CalibrationOffsetCard type={type} />
 
       {/* 활성 버전 카드 */}
       {activeVersion ? (

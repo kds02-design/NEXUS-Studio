@@ -10,7 +10,9 @@ import {
   fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES,
   weightsMap, resolveCriteriaType, getActiveRules, getSeedRules,
   fetchAnchors, addAnchor, removeAnchor, formatAnchorsForPrompt,
+  fetchCalibration, buildAnchorFewShot, applyOffset,
 } from '../../lib/evaluationCriteria';
+import { prepareAnchorImages } from '../../lib/anchorImages';
 import { db, appId } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
@@ -618,7 +620,7 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
     }
   };
 
-  const callGeminiAPI = async (prompt, imageBase64 = null) => {
+  const callGeminiAPI = async (prompt, imageBase64 = null, anchorImages = []) => {
     const apiKey = geminiApiKey || GEMINI_API_KEY;
     const delays = [1000, 2000, 4000, 8000, 16000];
     try {
@@ -653,8 +655,14 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
               required: ["title", "category", "tags", "scores_data"]
           }
       };
+      // 앵커 few-shot 이미지가 있으면 [프롬프트 → 참고 이미지들 → 평가 대상] 순으로 배치.
+      const anchorParts = Array.isArray(anchorImages) ? anchorImages.filter(Boolean) : [];
+      const targetPart = imageBase64 ? [{ inlineData: { mimeType: "image/jpeg", data: imageBase64 } }] : [];
+      const parts = anchorParts.length
+        ? [{ text: prompt }, ...anchorParts, { text: "[평가 대상 이미지 — 위 참고 이미지들의 점수 감각으로 채점하세요]" }, ...targetPart]
+        : [{ text: prompt }, ...targetPart];
       const requestBody = {
-          contents: [{ parts: [ { text: prompt }, ...(imageBase64 ? [{ inlineData: { mimeType: "image/jpeg", data: imageBase64 } }] : []) ] }],
+          contents: [{ parts }],
           generationConfig,
           safetySettings: [
               { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -725,10 +733,20 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
               : `첨부된 디자인은 [${selectedCategory}]입니다. 이 사실을 바탕으로`;
 
           // 기준점 앵커 — 카테고리가 고정된 경우에만 해당 타입 앵커를 few-shot 으로 주입.
-          // (auto 모드는 분석 전 타입을 알 수 없어 생략.)
+          // (auto 모드는 분석 전 타입을 알 수 없어 생략.) 썸네일 있는 앵커는 시각 이미지로,
+          // 없는 앵커는 텍스트로. 점수대를 고르게 덮는 상위 N개를 이미지로 첨부.
           let anchorsText = "";
+          let anchorImageParts = [];
           if (selectedCategory !== 'auto') {
-            try { anchorsText = formatAnchorsForPrompt(await fetchAnchors(resolveCriteriaType(selectedCategory))); }
+            try {
+              const rawAnchors = await fetchAnchors(resolveCriteriaType(selectedCategory));
+              const { anchors: pickedAnchors } = buildAnchorFewShot(rawAnchors);
+              const prepared = pickedAnchors.length ? await prepareAnchorImages(pickedAnchors) : [];
+              const fewShot = prepared.length ? buildAnchorFewShot(prepared.map(p => p.anchor)) : { text: '' };
+              anchorImageParts = prepared.map(p => ({ inlineData: { mimeType: 'image/jpeg', data: p.base64 } }));
+              const textOnly = (rawAnchors || []).filter(a => !a?.thumbnailUrl);
+              anchorsText = `${fewShot.text || ''}${formatAnchorsForPrompt(textOnly) || ''}`;
+            }
             catch (e) { console.warn('[DesignEvaluator] fetchAnchors failed', e); }
           }
 
@@ -747,7 +765,7 @@ ${scoringRulesText}${anchorsText}
 
           let geminiResult = null;
           let openaiResult = null;
-          const promises = [callGeminiAPI(dynamicPrompt, base64Image)];
+          const promises = [callGeminiAPI(dynamicPrompt, base64Image, anchorImageParts)];
           if (openAiApiKey) promises.push(callOpenAIAPI(dynamicPrompt, base64Image));
           const results = await Promise.allSettled(promises);
 
@@ -789,7 +807,12 @@ ${scoringRulesText}${anchorsText}
                   weightedSum += score * w; totalW += w;
               });
               const weightedAvg100 = totalW > 0 ? weightedSum / totalW : 0;
-              let aiScore = Math.round((weightedAvg100 / 10) * 10) / 10;
+              // 전역 보정(offset) 적용 — resolvedType 별 평가자 점수 감각으로 점수대 시프트.
+              let calibOffset = 0;
+              try { calibOffset = (await fetchCalibration(resolvedType))?.offset || 0; }
+              catch (e) { console.warn('[DesignEvaluator] fetchCalibration failed', e); }
+              const adjusted100 = applyOffset(weightedAvg100, calibOffset);
+              let aiScore = Math.round((adjusted100 / 10) * 10) / 10;
               const finalResult = {
                   title: primaryData.title,
                   category: detectedCategory,
@@ -853,14 +876,29 @@ ${scoringRulesText}${anchorsText}
   const handleAddAnchor = async () => {
     if (!resultData) return;
     const type = resolveCriteriaType(resultData.category);
-    const verdict = window.prompt('이 평가를 기준점(캘리브레이션 앵커)으로 추가합니다.\n점수의 근거가 되는 한 줄 평을 입력하세요:', '');
+    // 평가자의 "진짜 점수" 입력 — ±3 보정 캡과 무관. 현재 화면 점수를 prefill.
+    const aiScore100 = Number.isFinite(parseFloat(resultData.aiScore)) ? Math.round(parseFloat(resultData.aiScore) * 10) : null;
+    const prefill = getFinalScore100(resultData, manualScoreAdj);
+    const scoreStr = window.prompt('이 디자인에 대한 당신의 점수(0~99)를 입력하세요.\n이 점수가 향후 분석의 기준점이 됩니다:', String(prefill));
+    if (scoreStr === null) return; // 취소
+    const myScore = Math.max(0, Math.min(99, parseInt(scoreStr, 10)));
+    if (Number.isNaN(myScore)) { showNotification('숫자 점수를 입력해주세요.'); return; }
+    const verdict = window.prompt('점수의 근거가 되는 한 줄 평을 입력하세요:', '');
     if (verdict === null) return; // 취소
     try {
+      // 썸네일 — 시각 few-shot 레퍼런스. 작게 압축한 dataURL 저장(앵커 수가 적어 1MB 무관).
+      let thumbnailUrl = '';
+      try {
+        let src = previewUrl;
+        if (src?.startsWith('blob:')) src = await blobUrlToBase64(src);
+        if (src?.startsWith('data:image')) thumbnailUrl = await compressImage(src, 320, 0.7);
+      } catch (e) { console.warn('[DesignEvaluator] anchor thumbnail capture failed', e); }
       await addAnchor(type, {
-        score: getFinalScore100(resultData, manualScoreAdj),
-        verdict, tags: resultData.tags || [], thumbnailUrl: '',
+        score: myScore, aiScore: aiScore100,
+        verdict, tags: resultData.tags || [], thumbnailUrl,
       });
       showNotification('기준점으로 추가했습니다. 이후 분석에 반영됩니다.');
+      if (settingsTab === 'anchors') loadAnchorMgr(anchorMgrType);
     } catch (e) { showNotification('기준점 추가 실패: ' + (e.message || e)); }
   };
   const handleRemoveAnchor = async (id) => {

@@ -143,7 +143,7 @@ const CodexHeader = ({
           <div className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors z-10 ${isAiSearchMode ? 'text-violet-400' : isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>
             {isSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-500" /> : isAiSearchMode ? <Bot className="w-3.5 h-3.5" /> : <Search className="w-3.5 h-3.5" strokeWidth={1.5} />}
           </div>
-          <input type="text" placeholder={isAiSearchMode ? 'AI에게 물어보세요...' : '검색...'}
+          <input type="search" name="bannerSearch" autoComplete="off" data-1p-ignore data-lpignore="true" placeholder={isAiSearchMode ? 'AI에게 물어보세요...' : '검색...'}
             className={`w-full pl-9 pr-14 py-1.5 border rounded-lg focus:outline-none text-xs transition-colors ${isLightMode ? 'bg-white text-slate-900 placeholder:text-slate-400' : 'bg-[#121212] text-white placeholder:text-zinc-600'} ${isAiSearchMode ? 'border-violet-500/50 focus:border-violet-500' : isLightMode ? 'border-slate-300 focus:border-[#0eb9b3]' : 'border-white/10 focus:border-[#0eb9b3]/50'}`}
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} disabled={isSearching} />
           <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10">

@@ -9,7 +9,7 @@
 // 하드코딩 시드를 v1.0 으로 자동 등록합니다.
 
 import {
-  collection, getDocs, addDoc, doc, deleteDoc, query, where, limit, orderBy,
+  collection, getDocs, getDoc, setDoc, addDoc, doc, deleteDoc, query, where, limit, orderBy,
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -317,10 +317,14 @@ export async function fetchAnchors(type) {
   }
 }
 
-export async function addAnchor(type, { score, verdict, tags, thumbnailUrl } = {}) {
+export async function addAnchor(type, { score, aiScore, verdict, tags, thumbnailUrl } = {}) {
   if (!type) throw new Error("type required");
+  // aiScore = 앵커 등록 시점에 AI 가 줬던 원본 점수(0~99). 평가자 점수(score)와의 차이가
+  // 전역 offset 제안값의 데이터 소스. null 허용(구버전 앵커 호환).
+  const aiNum = (aiScore == null || Number.isNaN(Number(aiScore))) ? null : Math.max(0, Math.min(99, Number(aiScore)));
   const ref = await addDoc(anchorsCol(type), {
     score: Math.max(0, Math.min(99, Number(score) || 0)),
+    aiScore: aiNum,
     verdict: String(verdict || "").trim(),
     tags: Array.isArray(tags) ? tags.map(String) : [],
     thumbnailUrl: thumbnailUrl || "",
@@ -346,4 +350,73 @@ export function formatAnchorsForPrompt(anchors) {
       return `- [기준점] ${a.score}점${verdict}${tags}`;
     });
   return `\n[★ 평가자 기준점(Calibration Anchors) — 아래는 평가자가 직접 점수를 확정한 레퍼런스입니다. 이 점수 감각에 맞춰 일관되게 채점하세요.]\n${lines.join("\n")}\n`;
+}
+
+// ─── 전역 점수 보정(calibration offset) ─────────────────
+// 경로: evaluationCriteria/{type}/calibration/current → { offset:Number(0~100 스케일), updatedAt }
+// AI 가중평균(0~100)에 더해지는 일률 보정값. "AI 가 전반적으로 N점 높/낮게 느껴진다"를 한 번에 당김.
+// 어드민 수동값(기본 0). 앵커 기반 제안값은 computeSuggestedOffset 로 계산해 참고만 함(자동 적용 안 함).
+const calibrationDoc = (type) => doc(db, "evaluationCriteria", type, "calibration", "current");
+
+export async function fetchCalibration(type) {
+  if (!type) return { offset: 0 };
+  try {
+    const snap = await getDoc(calibrationDoc(type));
+    if (snap.exists()) {
+      const offset = Number(snap.data()?.offset);
+      return { offset: Number.isFinite(offset) ? offset : 0 };
+    }
+  } catch (e) {
+    console.warn(`[evaluationCriteria] fetchCalibration(${type}) failed`, e);
+  }
+  return { offset: 0 };
+}
+
+export async function saveCalibration(type, offset) {
+  if (!type) throw new Error("type required");
+  const clamped = Math.max(-50, Math.min(50, Math.round(Number(offset) || 0)));
+  await setDoc(calibrationDoc(type), { offset: clamped, updatedAt: serverTimestamp() }, { merge: true });
+  return clamped;
+}
+
+// 앵커의 (평가자 점수 - AI 점수) 평균 → 제안 offset. aiScore 가 있는 앵커만 표본.
+export function computeSuggestedOffset(anchors) {
+  const samples = (anchors || []).filter(a => a && typeof a.aiScore === "number" && typeof a.score === "number");
+  if (samples.length === 0) return { offset: 0, sampleCount: 0 };
+  const sum = samples.reduce((acc, a) => acc + (a.score - a.aiScore), 0);
+  return { offset: Math.round(sum / samples.length), sampleCount: samples.length };
+}
+
+// AI 가중평균(0~100)에 offset 적용 → 0~99 clamp.
+export function applyOffset(weightedAvg100, offset) {
+  const base = Number(weightedAvg100) || 0;
+  const off = Number(offset) || 0;
+  return Math.max(0, Math.min(99, Math.round(base + off)));
+}
+
+// ─── 시각 few-shot 빌더 ─────────────────────────────────
+// 점수대를 고르게 덮는 상위 max 개 앵커를 골라 프롬프트 텍스트 + 선택 앵커 배열 반환.
+// 이미지 변환은 lib/anchorImages.prepareAnchorImages 가 담당(여기선 텍스트만).
+// 썸네일 있는 앵커를 우선(시각 비교 가능), 점수 내림차순.
+export function buildAnchorFewShot(anchors, max = 8) {
+  const withImg = (anchors || []).filter(a => a && a.thumbnailUrl);
+  if (withImg.length === 0) return { text: "", anchors: [] };
+  // 점수 내림차순 정렬 후, max 보다 많으면 점수대를 고르게 샘플링.
+  const sorted = withImg.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+  let picked = sorted;
+  if (sorted.length > max) {
+    picked = [];
+    for (let i = 0; i < max; i++) {
+      picked.push(sorted[Math.round((i * (sorted.length - 1)) / (max - 1))]);
+    }
+    // 중복 제거(반올림 충돌)
+    picked = picked.filter((a, i, arr) => arr.indexOf(a) === i);
+  }
+  const lines = picked.map((a, i) => {
+    const verdict = a.verdict ? ` — "${a.verdict}"` : "";
+    const tags = Array.isArray(a.tags) && a.tags.length ? ` (${a.tags.join(", ")})` : "";
+    return `참고 이미지 ${i + 1}: ${a.score}점${verdict}${tags}`;
+  });
+  const text = `\n[★★ 평가자 기준 레퍼런스 이미지 — 아래 첨부된 "참고 이미지"들은 평가자가 직접 점수를 확정한 디자인입니다. 새 평가 대상의 점수는 이 레퍼런스들의 점수 감각(분포)에 정렬되어야 합니다. 마지막에 첨부된 이미지가 실제 평가 대상입니다.]\n${lines.join("\n")}\n`;
+  return { text, anchors: picked };
 }

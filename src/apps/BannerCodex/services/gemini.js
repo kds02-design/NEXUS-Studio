@@ -40,7 +40,7 @@ const MAX_ATTEMPTS = 2;
 const RETRY_DELAYS = [3000];
 
 export const callGeminiAPI = async (prompt, imageBase64 = null, isJson = false, opts = {}) => {
-  const { apiKey: providedKey, isBatchCall = false, stopRef, onController } = opts;
+  const { apiKey: providedKey, isBatchCall = false, stopRef, onController, anchorImages = [] } = opts;
   const apiKey = providedKey || GEMINI_API_KEY;
   try {
     // gemini-2.5-pro(고급 모델) — 10지표 평가 품질 우선. pro 의 강점인 추론(thinking)을
@@ -50,11 +50,14 @@ export const callGeminiAPI = async (prompt, imageBase64 = null, isJson = false, 
       generationConfig.responseMimeType = "application/json";
       generationConfig.responseSchema = RESPONSE_SCHEMA;
     }
+    // 앵커 few-shot 이미지가 있으면 [프롬프트 → 참고 이미지들 → 평가 대상] 순으로 배치.
+    const anchorParts = Array.isArray(anchorImages) ? anchorImages.filter(Boolean) : [];
+    const targetPart = imageBase64 ? [{ inlineData: { mimeType: "image/jpeg", data: imageBase64 } }] : [];
+    const parts = anchorParts.length
+      ? [{ text: prompt }, ...anchorParts, { text: "[평가 대상 이미지 — 위 참고 이미지들의 점수 감각으로 채점하세요]" }, ...targetPart]
+      : [{ text: prompt }, ...targetPart];
     const requestBody = {
-      contents: [{ parts: [
-        { text: prompt },
-        ...(imageBase64 ? [{ inlineData: { mimeType: "image/jpeg", data: imageBase64 } }] : [])
-      ] }],
+      contents: [{ parts }],
       generationConfig,
       safetySettings: [
         { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },

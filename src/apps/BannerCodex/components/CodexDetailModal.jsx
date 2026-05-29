@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import {
   X, Download, Loader2, Copy, Check, Trash2, Edit3, Heart, Layers, Star,
-  Bot, Wand2, MoreHorizontal, Cpu, Box, Save, Scissors,
+  Bot, Wand2, MoreHorizontal, Cpu, Box, Save, Scissors, Crosshair,
 } from 'lucide-react';
 import CodexEvalPanel, { getFinalScore100 } from './CodexEvalPanel';
 import RegionPicker from '../../AssetLibrary/components/RegionPicker';
+import { addAnchor, CRITERIA_TYPES } from '../../../lib/evaluationCriteria';
 
 const safeRender = (v, fb = '') => {
   if (v == null) return fb;
@@ -26,9 +27,32 @@ const CodexDetailModal = ({
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [pickMode, setPickMode] = useState(false);
   const [pickToast, setPickToast] = useState(null);
+  const [anchorBusy, setAnchorBusy] = useState(false);
   const showPickToast = (msg, type = "info") => {
     setPickToast({ msg, type });
     setTimeout(() => setPickToast(null), 2000);
+  };
+  // 기준점(앵커) 추가 — 현재 배너의 최종 점수(수동 보정 포함)를 평가자 기준점으로 저장.
+  // 다음 분석부터 few-shot 으로 주입되어 Gemini 점수 척도를 평가자에 맞춤.
+  const handleAddAnchor = async () => {
+    const score = getFinalScore100(editedBanner);
+    const verdict = window.prompt(
+      `이 배너를 기준점으로 추가합니다 (현재 ${score}점).\n점수 보정이 필요하면 먼저 점수를 조정한 뒤 추가하세요.\n점수의 근거가 되는 한 줄 평을 입력하세요:`,
+      editedBanner?.userComment || ''
+    );
+    if (verdict === null) return;
+    setAnchorBusy(true);
+    try {
+      await addAnchor(CRITERIA_TYPES.banner, {
+        score,
+        verdict,
+        tags: Array.isArray(editedBanner?.tags) ? editedBanner.tags.filter(t => t && t !== '기타') : [],
+        thumbnailUrl: editedBanner?.thumbnailUrl || editedBanner?.imageUrl || '',
+      });
+      (showNotification || showPickToast)?.('기준점으로 추가했습니다. 다음 분석부터 반영됩니다.');
+    } catch (e) {
+      (showNotification || showPickToast)?.('기준점 추가 실패: ' + (e.message || e), 'error');
+    } finally { setAnchorBusy(false); }
   };
   if (!isOpen || !selectedBanner) return null;
   const wantsConfirmClose = (action) => {
@@ -229,7 +253,12 @@ const CodexDetailModal = ({
                 <div className="text-2xl font-black text-[#0eb9b3] font-mono tracking-tighter">{getFinalScore100(editedBanner)}</div>
               </button>
               {(isAdminMode || editedBanner?.isTemp) && (
-                <div className="flex justify-end mt-2">
+                <div className="flex justify-end gap-2 mt-2">
+                  <button onClick={(e) => { e.stopPropagation(); handleAddAnchor(); }} disabled={anchorBusy}
+                    title="이 배너의 현재 점수를 평가 기준점(캘리브레이션 앵커)으로 저장 — 다음 분석부터 Gemini 점수 척도가 여기에 맞춰짐"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-colors ${anchorBusy ? 'bg-amber-500/20 text-amber-300 border-amber-500/30 cursor-wait' : isLightMode ? 'bg-amber-50 text-amber-600 border-amber-200 hover:bg-amber-100' : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'}`}>
+                    {anchorBusy ? (<><Loader2 className="w-3.5 h-3.5 animate-spin" /> 추가 중...</>) : (<><Crosshair className="w-3.5 h-3.5" /> 기준점 추가</>)}
+                  </button>
                   <button onClick={(e) => { e.stopPropagation(); handleSmartAnalysis(editedBanner, null, false); }} disabled={processingBannerId === editedBanner?.id}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border transition-colors ${processingBannerId === editedBanner?.id ? 'bg-violet-500/20 text-violet-300 border-violet-500/30 cursor-not-allowed' : isLightMode ? 'bg-violet-50 text-violet-600 border-violet-200 hover:bg-violet-100' : 'bg-violet-500/10 text-violet-400 border-violet-500/20 hover:bg-violet-500/20'}`}>
                     {processingBannerId === editedBanner?.id ? (<><Loader2 className="w-3.5 h-3.5 animate-spin" /> 재분석 중...</>) : (<><Wand2 className="w-3.5 h-3.5" /> AI 재분석</>)}

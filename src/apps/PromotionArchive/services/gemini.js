@@ -6,23 +6,26 @@ import { WEB_EVALUATION_KEYS, DEFAULT_WEB_EVAL_PROMPT, BRAND_WEB_EVAL_PROMPT, ge
 import {
   CRITERIA_TYPES, fetchActiveCriteria, getActiveRules, getSeedRules,
   fetchAnchors, formatAnchorsForPrompt,
+  fetchCalibration, buildAnchorFewShot, applyOffset,
 } from "../../../lib/evaluationCriteria";
+import { prepareAnchorImages } from "../../../lib/anchorImages";
 
-// 공유 캘리브레이션(앵커 + 채점 규칙) 세션 캐시 — 일괄 분석에서 Firestore 반복 read 방지.
-const _webCalibCache = new Map(); // type -> { anchorsText, rules, ts }
+// 공유 캘리브레이션(앵커 + 채점 규칙 + 전역 보정) 세션 캐시 — 일괄 분석에서 Firestore 반복 read 방지.
+const _webCalibCache = new Map(); // type -> { anchors, rules, offset, ts }
 const _CALIB_TTL_MS = 60_000;
 async function _getWebCalibration(type) {
   const hit = _webCalibCache.get(type);
   if (hit && Date.now() - hit.ts < _CALIB_TTL_MS) return hit;
-  let anchorsText = "", rules = "";
+  let anchors = [], rules = "", offset = 0;
   try {
-    const [anchors, v] = await Promise.all([fetchAnchors(type), fetchActiveCriteria(type)]);
-    anchorsText = formatAnchorsForPrompt(anchors);
+    const [a, v, c] = await Promise.all([fetchAnchors(type), fetchActiveCriteria(type), fetchCalibration(type)]);
+    anchors = a || [];
     rules = getActiveRules(v) || getSeedRules(type);
+    offset = c?.offset || 0;
   } catch (e) {
     console.warn("[PromotionArchive] calibration load failed", e);
   }
-  const entry = { anchorsText, rules, ts: Date.now() };
+  const entry = { anchors, rules, offset, ts: Date.now() };
   _webCalibCache.set(type, entry);
   return entry;
 }
@@ -189,7 +192,13 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     const calibType = options.isBrandWeb ? CRITERIA_TYPES.brandweb : CRITERIA_TYPES.promotion;
     const calib = await _getWebCalibration(calibType);
     const ruleBlock = calib.rules && calib.rules.trim() ? `\n\n[채점 규칙]\n${calib.rules.trim()}\n` : '';
-    const anchorBlock = calib.anchorsText || '';
+    // 기준점 앵커 — 썸네일 있는 앵커는 시각 few-shot 이미지로, 없는 앵커는 텍스트로 주입.
+    const { anchors: pickedAnchors } = buildAnchorFewShot(calib.anchors || []);
+    const preparedAnchors = pickedAnchors.length ? await prepareAnchorImages(pickedAnchors) : [];
+    const fewShot = preparedAnchors.length ? buildAnchorFewShot(preparedAnchors.map(p => p.anchor)) : { text: '' };
+    const anchorImageParts = preparedAnchors.map(p => ({ inlineData: { mimeType: "image/jpeg", data: p.base64 } }));
+    const textOnlyAnchors = (calib.anchors || []).filter(a => !a?.thumbnailUrl);
+    const anchorBlock = `${fewShot.text || ''}${formatAnchorsForPrompt(textOnlyAnchors) || ''}`;
     const weights = getWebWeightsFor(!!options.isBrandWeb);
     const prompt = `${basePrompt}${ruleBlock}${anchorBlock}`
         + (userComment ? `\n\n[사용자 피드백]\n${userComment}\n` : '');
@@ -197,9 +206,10 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     const imageParts = (Array.isArray(imagesBase64) ? imagesBase64 : [imagesBase64])
         .filter(Boolean)
         .map(b64 => ({ inlineData: { mimeType: "image/jpeg", data: b64 } }));
+    const targetMarker = anchorImageParts.length ? [{ text: "[평가 대상 이미지 — 위 참고 이미지들의 점수 감각으로 채점하세요]" }] : [];
 
     const requestBody = {
-        contents: [{ parts: [{ text: prompt }, ...imageParts] }],
+        contents: [{ parts: [{ text: prompt }, ...anchorImageParts, ...targetMarker, ...imageParts] }],
         generationConfig: {
             temperature: 0.2,
             responseMimeType: "application/json",
@@ -224,7 +234,7 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
 
         try {
             const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${keyToUse}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${keyToUse}`,
                 {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -265,7 +275,9 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
                     scores[key] = { score: null, reason: '(분석 누락)' };
                 }
             });
-            const aiScore = totalW > 0 ? +((weightedSum / totalW) / 10).toFixed(1) : 0;
+            // 전역 보정(offset) 적용 — 평가자 점수 감각으로 점수대 시프트(0~99 clamp).
+            const adjusted100 = applyOffset(totalW > 0 ? weightedSum / totalW : 0, calib.offset);
+            const aiScore = totalW > 0 ? +(adjusted100 / 10).toFixed(1) : 0;
 
             // 날짜 정리 — 빈 값/추측 단어 필터
             const isInvalidDate = (val) => !val || ['null', 'none', 'unknown', '없음', '불명'].some(s => String(val).toLowerCase().includes(s));

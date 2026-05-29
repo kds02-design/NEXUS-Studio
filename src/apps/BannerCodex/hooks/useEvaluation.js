@@ -3,6 +3,8 @@ import { callGeminiAPI, callOpenAIAPI, buildEvalPrompt, buildLearningContext } f
 import { prepareImageForAI } from '../services/cloudinary';
 import { fetchBannerImage } from '../services/firebase';
 import { DEFAULT_AI_PROMPT, EVALUATION_KEYS } from '../constants/categories';
+import { buildAnchorFewShot, formatAnchorsForPrompt, applyOffset } from '../../../lib/evaluationCriteria';
+import { prepareAnchorImages } from '../../../lib/anchorImages';
 
 const safeRender = (v, fb = '') => {
   if (v == null) return fb;
@@ -12,7 +14,7 @@ const safeRender = (v, fb = '') => {
 
 export const useEvaluation = ({
   banners, updateBanner, customAiPrompt, criteriaListText, criteriaWeights,
-  criteriaRules, anchorsText,
+  criteriaRules, anchors, calibOffset,
   geminiApiKey, openAiApiKey, showNotification, onSelectionAffect,
 }) => {
   const [processingBannerId, setProcessingBannerId] = useState(null);
@@ -53,9 +55,16 @@ export const useEvaluation = ({
         setProcessingBannerId(null); return;
       }
 
-      // 앵커(기준점)를 학습 컨텍스트 앞에 결합 — 앵커 우선, 최근 피드백 보조.
+      // 기준점 앵커 — 썸네일 있는 앵커는 시각 few-shot 이미지로, 없는 앵커는 텍스트로 주입.
+      const { anchors: pickedAnchors } = buildAnchorFewShot(anchors || []);
+      const preparedAnchors = pickedAnchors.length ? await prepareAnchorImages(pickedAnchors) : [];
+      const fewShot = preparedAnchors.length
+        ? buildAnchorFewShot(preparedAnchors.map(p => p.anchor))
+        : { text: '' };
+      const anchorImageParts = preparedAnchors.map(p => ({ inlineData: { mimeType: 'image/jpeg', data: p.base64 } }));
+      const textOnlyAnchors = (anchors || []).filter(a => !a?.thumbnailUrl);
       const baseLearning = buildLearningContext(banner, banners);
-      const learningContext = `${anchorsText || ''}${baseLearning || ''}`;
+      const learningContext = `${fewShot.text || ''}${formatAnchorsForPrompt(textOnlyAnchors) || ''}${baseLearning || ''}`;
       const dynamicPrompt = buildEvalPrompt(customAiPrompt || DEFAULT_AI_PROMPT, learningContext, criteriaListText, criteriaRules);
 
       let geminiResult = null;
@@ -64,6 +73,7 @@ export const useEvaluation = ({
         let myController = null;
         const promises = [callGeminiAPI(dynamicPrompt, base64Image, true, {
           apiKey: geminiApiKey, isBatchCall: isBatch, stopRef: stopBatchRef,
+          anchorImages: anchorImageParts,
           onController: (c) => { myController = c; activeFetchControllerRef.current.add(c); }
         })];
         if (openAiApiKey) promises.push(callOpenAIAPI(dynamicPrompt, base64Image, openAiApiKey));
@@ -123,7 +133,9 @@ export const useEvaluation = ({
           });
           if (missing.length > 0) console.warn(`[BannerCodex] AI 응답에서 누락된 항목 ${missing.length}/10: ${missing.join(', ')}`);
           const avg100 = totalWeight > 0 ? weightedSum / totalWeight : 0;
-          let aiScore = Math.round((avg100 / 10) * 10) / 10;
+          // 전역 보정(offset) 적용 — 평가자 점수 감각으로 점수대 시프트(0~99 clamp).
+          const adjusted100 = applyOffset(avg100, calibOffset);
+          let aiScore = Math.round((adjusted100 / 10) * 10) / 10;
           updateData.scores = merged;
           updateData.aiScore = aiScore;
           updateData.scoredCount = validCount;
@@ -139,7 +151,7 @@ export const useEvaluation = ({
       } else if (!isBatch) showNotification("정보를 찾을 수 없습니다.");
     } catch (e) { if (!isBatch) showNotification("오류가 발생했습니다."); }
     finally { setProcessingBannerId(null); }
-  }, [banners, customAiPrompt, criteriaListText, criteriaWeights, criteriaRules, anchorsText, geminiApiKey, openAiApiKey, updateBanner, showNotification, onSelectionAffect]);
+  }, [banners, customAiPrompt, criteriaListText, criteriaWeights, criteriaRules, anchors, calibOffset, geminiApiKey, openAiApiKey, updateBanner, showNotification, onSelectionAffect]);
 
   // 일괄 분석 — 제한된 동시성(concurrency) + 청크 사이 throttle.
   // flash + thinkingBudget:0 로 per-call 이 빨라졌고, 각 call 의 retry 는 순차라 동시성을 늘리지 않으므로

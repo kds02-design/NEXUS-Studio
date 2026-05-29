@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
 import {
   fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES, weightsMap,
-  getActiveRules, getSeedRules, fetchAnchors, formatAnchorsForPrompt
+  getActiveRules, getSeedRules, fetchAnchors, fetchCalibration,
 } from '../../lib/evaluationCriteria';
 import {
   pickDirectory, collectImageFiles, ensureReadPermission,
@@ -206,13 +206,14 @@ export default function App() {
   const criteriaWeights = useMemo(() => weightsMap(activeCriteria?.criteria || []), [activeCriteria]);
   // 채점 규칙(rules) — 활성 기준 우선, 시드 폴백. {{SCORING_RULES}} 로 주입.
   const criteriaRules = useMemo(() => getActiveRules(activeCriteria) || getSeedRules(CRITERIA_TYPES.banner), [activeCriteria]);
-  // 기준점 앵커(banner) — 마운트 시 1회 로드, 분석 시 few-shot 으로 주입.
-  const [anchorsText, setAnchorsText] = useState("");
+  // 기준점 앵커(banner) + 전역 보정 — 마운트 시 1회 로드. 분석 시 시각 few-shot + offset 으로 주입.
+  const [anchors, setAnchors] = useState([]);
+  const [calibOffset, setCalibOffset] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    fetchAnchors(CRITERIA_TYPES.banner)
-      .then(a => { if (!cancelled) setAnchorsText(formatAnchorsForPrompt(a)); })
-      .catch(e => console.warn('[BannerCodex] fetchAnchors failed', e));
+    Promise.all([fetchAnchors(CRITERIA_TYPES.banner), fetchCalibration(CRITERIA_TYPES.banner)])
+      .then(([a, c]) => { if (!cancelled) { setAnchors(a || []); setCalibOffset(c?.offset || 0); } })
+      .catch(e => console.warn('[BannerCodex] anchors/calibration load failed', e));
     return () => { cancelled = true; };
   }, []);
 
@@ -225,7 +226,7 @@ export default function App() {
 
   const evalHook = useEvaluation({
     banners, updateBanner, customAiPrompt, criteriaListText, criteriaWeights,
-    criteriaRules, anchorsText,
+    criteriaRules, anchors, calibOffset,
     geminiApiKey, openAiApiKey, showNotification, onSelectionAffect
   });
   const { processingBannerId, isBatchProcessing, ocrProgress, setOcrProgress,
@@ -982,6 +983,10 @@ export default function App() {
 
   const isAllSelected = filteredBanners.length > 0 && selectedIds.length >= filteredBanners.length;
   const isChildContextActive = !!searchQuery;
+  // 관리자는 비밀번호 없이 삭제(handleConfirmDelete) → 입력칸을 띄우지 않는다.
+  // 비번 input(type=password)을 띄우면 브라우저 비밀번호 매니저가 헤더 검색창을 아이디칸으로 오인해
+  // 저장된 이메일을 자동완성으로 밀어넣는 부작용이 있어 admin·temp 케이스에선 아예 렌더하지 않음.
+  const requiresDeletePassword = !isAdmin && !selectedIds.every(id => id.startsWith('temp_'));
 
   return (
     <div className={`flex h-full font-sans overflow-hidden selection:bg-[#0eb9b3]/30 ${isLightMode ? 'bg-[#f8f9fa] text-slate-900' : 'bg-[#0c0c0e] text-zinc-300'}`}
@@ -1082,13 +1087,14 @@ export default function App() {
 
         <ConfirmModal isOpen={isDeleteModalOpen} isLightMode={isLightMode} icon={Trash2} color="red"
           title="삭제 확인" confirmLabel="삭제"
-          message={`선택한 ${selectedIds.length}개의 항목을 삭제하시겠습니까?<br/>${selectedIds.every(id => id.startsWith('temp_')) ? '' : '삭제하려면 비밀번호를 입력하세요.'}`}
+          message={`선택한 ${selectedIds.length}개의 항목을 삭제하시겠습니까?<br/>${requiresDeletePassword ? '삭제하려면 비밀번호를 입력하세요.' : ''}`}
           onClose={() => { setIsDeleteModalOpen(false); setDeletePassword(''); }}
           onConfirm={handleConfirmDelete}
-          extra={!selectedIds.every(id => id.startsWith('temp_')) && (
+          extra={requiresDeletePassword && (
             <input type="password" placeholder="비밀번호 입력" value={deletePassword}
               onChange={(e) => setDeletePassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleConfirmDelete()}
+              autoComplete="new-password"
               className={`w-full text-center px-4 py-3 rounded-lg border text-sm focus:outline-none focus:border-red-500 transition-colors ${isLightMode ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-zinc-900 border-zinc-700 text-white'}`}
               autoFocus />
           )} />
