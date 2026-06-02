@@ -971,6 +971,43 @@ const PreviewModal = ({
               )}
             </div>
 
+            {/* 브랜드웹 평가 모드 — 메인(히어로) / 서브(콘텐츠 페이지) 구분.
+                평가 렌즈 결정용: 어드민 evaluationCriteria 의 brandweb vs brandwebSub 활성 버전을 선택. */}
+            {editedBanner?.assetType === '브랜드웹' && (
+              <div className="mb-5 pb-5 border-b border-white/5">
+                <label className={labelStyle}>Brand Web Mode</label>
+                {state.isEditing ? (
+                  <div className="flex gap-1.5">
+                    {[
+                      { value: 'main', label: '메인' },
+                      { value: 'sub',  label: '서브' },
+                    ].map(opt => {
+                      const current = editedBanner?.brandWebKind === 'sub' ? 'sub' : 'main';
+                      const active = current === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => onEditChange('brandWebKind', opt.value)}
+                          className={`flex-1 px-3 py-1.5 rounded-md text-[12px] font-bold border transition-colors ${
+                            active
+                              ? 'bg-[#d8b17e]/15 border-[#d8b17e]/50 text-[#d8b17e]'
+                              : 'border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 text-[12px] font-bold rounded border bg-[#d8b17e]/15 text-[#d8b17e] border-[#d8b17e]/40">
+                    {editedBanner?.brandWebKind === 'sub' ? '서브' : '메인'}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Game — 표시: chip(태그와 다른 #d8b17e 컬러) / 편집: select */}
             <div className="mb-5 pb-5 border-b border-white/5">
               <label className={labelStyle}>Game</label>

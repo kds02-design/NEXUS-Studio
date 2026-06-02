@@ -4,6 +4,7 @@ import { useState } from "react";
 import { APP_MAP, APP_REGISTRY } from "../config/apps";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { GEMINI_API_KEY, geminiUrl } from "../lib/gemini";
+import { useAppVisibility, isAppHidden } from "../lib/appVisibility";
 
 // 칩 라벨 → 이동할 앱 id. 사용자 친화적 문구로 두고 안쪽에서 매핑.
 const QUICK_CHIPS = [
@@ -14,10 +15,11 @@ const QUICK_CHIPS = [
 ];
 
 // Gemini에게 사용자 문의를 보내고 가장 적합한 app id 하나를 받는 한 줄 프롬프트.
-async function recommendApp(query) {
+// overrides: appVisibility 오버라이드 맵 — 관리자가 토글한 공개/숨김 상태 반영.
+async function recommendApp(query, overrides = {}) {
   if (!GEMINI_API_KEY) throw new Error("Gemini API 키가 설정되지 않았습니다.");
   const list = APP_REGISTRY
-    .filter((a) => !a.adminOnly && !a.disabled)
+    .filter((a) => !isAppHidden(a, overrides) && !a.disabled)
     .map((a) => `- ${a.id}: ${a.sub} — ${a.desc}`)
     .join("\n");
 
@@ -55,6 +57,7 @@ ${list}
 export default function IndexSearchBar() {
   const { navigate, isLight } = useGlobal();
   const T = useTheme();
+  const overrides = useAppVisibility();
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
@@ -65,7 +68,7 @@ export default function IndexSearchBar() {
     if (!q || busy) return;
     setBusy(true); setErr(""); setResult(null);
     try {
-      const rec = await recommendApp(q);
+      const rec = await recommendApp(q, overrides);
       setResult(rec);
     } catch (e) {
       setErr(e.message || "분석 실패");

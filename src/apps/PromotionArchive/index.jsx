@@ -19,6 +19,7 @@ import AiAnalysisModal from './components/modals/AiAnalysisModal';
 import WebDesignEvalModal from './components/modals/WebDesignEvalModal';
 import ConfirmWorkspace from './components/modals/ConfirmWorkspace';
 import { analyzeWebDesign, prepareImageForAI } from './services/gemini';
+import { resolveWebCriteriaType } from './constants/webEvalCriteria';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import FloatingActionBar from './components/layout/FloatingActionBar';
@@ -255,78 +256,6 @@ function App() {
     }, [isAdmin, isAdminMode]);
     // 관리자 모드 토글 시 다중 선택 초기화는 setSelectedItems 선언 이후로 이동 (아래 별도 effect)
 
-    // 일괄 경로 정규화 — 기존 doc 의 path 에 게임/연도 폴더가 누락된 항목을 GAME_FOLDER_MAP 기반으로 보정.
-    // 관리자 모드에서 한 번만 실행하면 됨. dry-run preview 후 confirm.
-    const [isNormalizing, setIsNormalizing] = useState(false);
-    // 선택된 항목들 중 path 가 빈 것만 자동 채움 — handleAutoFillPaths 는 selectedItems
-    // (useState 선언 위치가 아래) 를 deps 로 가지므로 변수 선언 이후로 옮김. 여기서는 isAutoFilling 만 선언.
-    const [isAutoFilling, setIsAutoFilling] = useState(false);
-
-    const handleNormalizePaths = useCallback(async () => {
-        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
-        if (isNormalizing) return;
-        setIsNormalizing(true);
-        try {
-            const snap = await getDocs(promoColRef());
-            const updates = [];
-            const skipped = { wrongPrefix: 0, noGameMapping: 0, alreadyNormalized: 0, noPath: 0 };
-            const skipSamples = { wrongPrefix: [], noGameMapping: [], alreadyNormalized: [] };
-            snap.docs.forEach(d => {
-                const data = d.data();
-                const oldPath = data.path || '';
-                if (!oldPath || typeof oldPath !== 'string') { skipped.noPath++; return; }
-                if (!oldPath.startsWith(DEFAULT_PATH_PREFIX)) {
-                    skipped.wrongPrefix++;
-                    if (skipSamples.wrongPrefix.length < 2) skipSamples.wrongPrefix.push(`${data.game || '?'}: ${oldPath}`);
-                    return;
-                }
-                const gameFolder = getGameFolder(data.game);
-                if (!gameFolder) {
-                    skipped.noGameMapping++;
-                    if (skipSamples.noGameMapping.length < 2) skipSamples.noGameMapping.push(`game="${data.game || '?'}"`);
-                    return;
-                }
-                const newPath = normalizePromoPath(oldPath, data.game, data.year);
-                if (newPath) {
-                    updates.push({ id: d.id, old: oldPath, new: newPath, game: data.game, year: data.year });
-                } else {
-                    skipped.alreadyNormalized++;
-                    if (skipSamples.alreadyNormalized.length < 2) skipSamples.alreadyNormalized.push(oldPath);
-                }
-            });
-            const total = snap.docs.length;
-            const report = [
-                `검사 결과 (총 ${total}건):`,
-                `  • 변경 대상: ${updates.length}`,
-                `  • 이미 정상: ${skipped.alreadyNormalized}${skipSamples.alreadyNormalized.length ? '\n     예: ' + skipSamples.alreadyNormalized.join('\n     ') : ''}`,
-                `  • 게임 매핑 없음: ${skipped.noGameMapping}${skipSamples.noGameMapping.length ? '\n     예: ' + skipSamples.noGameMapping.join(', ') : ''}`,
-                `  • prefix 불일치: ${skipped.wrongPrefix}${skipSamples.wrongPrefix.length ? '\n     예: ' + skipSamples.wrongPrefix.join('\n     ') : ''}`,
-                `  • path 없음: ${skipped.noPath}`,
-            ].join('\n');
-            console.log('[PromotionArchive] normalize report\n' + report);
-
-            if (updates.length === 0) {
-                alert(`변경할 경로가 없습니다.\n\n${report}\n\n게임 매핑이 없으면 GAME_FOLDER_MAP 에 추가하세요.`);
-                return;
-            }
-            const preview = updates.slice(0, 5).map(u => `[${u.game}/${u.year || '?'}]\n  ${u.old}\n  → ${u.new}`).join('\n\n');
-            if (!confirm(`${report}\n\n미리보기 (처음 5건):\n\n${preview}\n\n계속할까요?`)) return;
-
-            // 400개씩 batch — Firestore 단일 batch 최대 500.
-            const CHUNK = 400;
-            for (let i = 0; i < updates.length; i += CHUNK) {
-                const batch = writeBatch(db);
-                updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.new }));
-                await batch.commit();
-            }            alert(`✅ ${updates.length}건 경로 정규화 완료`);
-        } catch (e) {
-            console.error('[PromotionArchive] normalize paths failed', e);
-            alert(`❌ 정규화 실패: ${e.message || e.code}`);
-        } finally {
-            setIsNormalizing(false);
-        }
-    }, [isAdmin, isNormalizing]);
-
     // 게임 로고 — NexusAdmin → "게임 로고" 패널에서 단일 관리. 공유 lib 으로 구독만 함.
     // (저장 위치: artifacts/{appId}/public/data/settings/gameLogos)
     const [gameLogos, setGameLogos] = useState({});
@@ -461,154 +390,6 @@ function App() {
     useEffect(() => {
         if (!isAdminMode) setSelectedItems(prev => (prev.length > 0 ? [] : prev));
     }, [isAdminMode]);
-
-    // 선택된 항목들 중 path 가 빈 것만 골라서 game/year 기준 표준 prefix 자동 채움.
-    // (selectedItems 선언 직후에 위치 — 그 전에 두면 useCallback deps 에서 TDZ ReferenceError 로 화면 crash)
-    const handleAutoFillPaths = useCallback(async () => {
-        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
-        if (isAutoFilling) return;
-        if (selectedItems.length === 0) { alert('선택된 항목이 없습니다.'); return; }
-
-        const targets = allBanners.filter(b =>
-            selectedItems.includes(b.id) &&
-            (!b.path || (typeof b.path === 'string' && b.path.trim() === ''))
-        );
-        if (targets.length === 0) {
-            alert('선택된 항목 모두 이미 경로가 있습니다.');
-            return;
-        }
-
-        // game/year 으로 표준 prefix 조합 — 캠페인 폴더명은 모르므로 prefix 까지만.
-        const buildPrefixOnly = (game, year) => {
-            const gameFolder = getGameFolder(game);
-            if (!gameFolder) return '';
-            const y = /^20\d{2}$/.test(String(year || '').trim()) ? String(year).trim() : '';
-            return getCanonicalPrefix() + gameFolder + '\\' + (y ? y + '\\' : '');
-        };
-
-        const updates = [];
-        const skipNoGame = [];
-        targets.forEach(b => {
-            const prefix = buildPrefixOnly(b.game, b.year);
-            if (!prefix) { skipNoGame.push({ id: b.id, game: b.game, title: b.title }); return; }
-            updates.push({ id: b.id, path: prefix });
-        });
-
-        const report = [
-            `선택된 ${selectedItems.length}건 중 경로 없는 항목: ${targets.length}건`,
-            `  • 자동 채울 대상: ${updates.length}`,
-            `  • 게임 매핑 없음(스킵): ${skipNoGame.length}${skipNoGame.length ? '\n     예: ' + skipNoGame.slice(0, 3).map(s => `${s.title || '?'} (game="${s.game || '?'}")`).join(', ') : ''}`,
-            '',
-            '※ 캠페인 폴더명은 자동 추론 불가 → game/year 까지의 prefix 만 채웁니다.',
-            '   이후 PreviewModal 에서 개별 항목별로 끝부분을 보완하세요.',
-        ].join('\n');
-        console.log('[PromotionArchive] autoFill report\n' + report);
-
-        if (updates.length === 0) {
-            alert(`자동 채울 항목이 없습니다.\n\n${report}\n\nGAME_FOLDER_MAP 에 게임이 등록돼 있는지 확인하세요.`);
-            return;
-        }
-
-        const preview = updates.slice(0, 5).map(u => {
-            const b = allBanners.find(x => x.id === u.id);
-            return `[${b?.game || '?'}/${b?.year || '?'}] ${b?.title || '?'}\n  → ${u.path}`;
-        }).join('\n\n');
-        if (!confirm(`${report}\n\n미리보기 (처음 5건):\n\n${preview}\n\n계속할까요?`)) return;
-
-        setIsAutoFilling(true);
-        try {
-            const CHUNK = 400;
-            for (let i = 0; i < updates.length; i += CHUNK) {
-                const batch = writeBatch(db);
-                updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { path: u.path }));
-                await batch.commit();
-            }            alert(`✅ ${updates.length}건 경로 prefix 자동 채움 완료`);
-        } catch (e) {
-            console.error('[PromotionArchive] autoFill paths failed', e);
-            alert(`❌ 자동 채움 실패: ${e.message || e.code}`);
-        } finally {
-            setIsAutoFilling(false);
-        }
-    }, [isAdmin, isAutoFilling, selectedItems, allBanners]);
-
-    // 섹션 자동 분류 — 전체 doc 의 path 에서 '\프로모션\' / '\브랜드웹\' 패턴을 보고 section 채움.
-    // section 이 이미 있는 doc 은 스킵. path 가 없거나 추론 불가면 스킵.
-    const [isClassifying, setIsClassifying] = useState(false);
-    const handleAutoClassifySections = useCallback(async () => {
-        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
-        if (isClassifying) return;
-        setIsClassifying(true);
-        try {
-            const snap = await getDocs(promoColRef());
-            const updates = [];
-            const skipped = { alreadyClassified: 0, noInference: 0, noPath: 0 };
-            const noInferenceSamples = [];
-            snap.docs.forEach(d => {
-                const data = d.data();
-                if (data.section) { skipped.alreadyClassified++; return; }
-                if (!data.path) { skipped.noPath++; return; }
-                const inferred = inferSectionFromPath(data.path);
-                if (!inferred) {
-                    skipped.noInference++;
-                    if (noInferenceSamples.length < 3) noInferenceSamples.push(`${data.title || '?'}: ${data.path}`);
-                    return;
-                }
-                updates.push({ id: d.id, section: inferred, title: data.title });
-            });
-            const total = snap.docs.length;
-            const promoCount = updates.filter(u => u.section === 'promotion').length;
-            const brandwebCount = updates.filter(u => u.section === 'brandweb').length;
-            const report = [
-                `검사 결과 (총 ${total}건):`,
-                `  • 자동 분류 대상: ${updates.length} (프로모션 ${promoCount} / 브랜드웹 ${brandwebCount})`,
-                `  • 이미 분류됨: ${skipped.alreadyClassified}`,
-                `  • path 에서 추론 불가: ${skipped.noInference}${noInferenceSamples.length ? '\n     예: ' + noInferenceSamples.join('\n     ') : ''}`,
-                `  • path 없음: ${skipped.noPath}`,
-            ].join('\n');
-            console.log('[PromotionArchive] classify report\n' + report);
-
-            if (updates.length === 0) {
-                alert(`자동 분류할 항목이 없습니다.\n\n${report}`);
-                return;
-            }
-            if (!confirm(`${report}\n\n계속할까요?`)) return;
-
-            const CHUNK = 400;
-            for (let i = 0; i < updates.length; i += CHUNK) {
-                const batch = writeBatch(db);
-                updates.slice(i, i + CHUNK).forEach(u => batch.update(promoDocRef(u.id), { section: u.section }));
-                await batch.commit();
-            }            alert(`✅ ${updates.length}건 섹션 자동 분류 완료 (프로모션 ${promoCount} / 브랜드웹 ${brandwebCount})`);
-        } catch (e) {
-            console.error('[PromotionArchive] classify sections failed', e);
-            alert(`❌ 자동 분류 실패: ${e.message || e.code}`);
-        } finally {
-            setIsClassifying(false);
-        }
-    }, [isAdmin, isClassifying]);
-
-    // 선택된 항목들 일괄로 section='promotion' 으로 설정 — path 추론 안 되는 케이스를 위한 수동 백업.
-    const [isSettingSection, setIsSettingSection] = useState(false);
-    const handleSetSectionPromotion = useCallback(async () => {
-        if (!isAdmin) { alert('관리자 권한이 필요합니다.'); return; }
-        if (isSettingSection) return;
-        if (selectedItems.length === 0) { alert('선택된 항목이 없습니다.'); return; }
-        if (!confirm(`선택된 ${selectedItems.length}건을 '프로모션'으로 설정합니다. 계속할까요?`)) return;
-        setIsSettingSection(true);
-        try {
-            const CHUNK = 400;
-            for (let i = 0; i < selectedItems.length; i += CHUNK) {
-                const batch = writeBatch(db);
-                selectedItems.slice(i, i + CHUNK).forEach(id => batch.update(promoDocRef(id), { section: 'promotion' }));
-                await batch.commit();
-            }            alert(`✅ ${selectedItems.length}건 프로모션으로 설정 완료`);
-        } catch (e) {
-            console.error('[PromotionArchive] set section failed', e);
-            alert(`❌ 설정 실패: ${e.message || e.code}`);
-        } finally {
-            setIsSettingSection(false);
-        }
-    }, [isAdmin, isSettingSection, selectedItems]);
 
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
@@ -1544,8 +1325,7 @@ function App() {
                     )}
                 </main>
 
-                {/* 하단 중앙 floating bar — 다중 선택 또는 admin 액션 있을 때 표시.
-                    FloatingActionBar 내부에서 selection/admin 그룹을 독립적으로 렌더. */}
+                {/* 하단 중앙 floating bar — 다중 선택 시 메인 액션 표시. */}
                 {isAdminMode && (
                     <FloatingActionBar
                         selectedCount={selectedItems.length}
@@ -1554,15 +1334,6 @@ function App() {
                         onDeselectAll={() => setSelectedItems([])}
                         onAiAnalysis={() => setIsAiModalOpen(true)}
                         onDelete={handleDelete}
-                        // admin 전용 — admin 모드일 때 항상 노출
-                        onNormalizePaths={isAdmin ? handleNormalizePaths : undefined}
-                        isNormalizing={isNormalizing}
-                        onAutoFillPaths={isAdmin ? handleAutoFillPaths : undefined}
-                        isAutoFilling={isAutoFilling}
-                        onAutoClassifySections={isAdmin ? handleAutoClassifySections : undefined}
-                        isClassifying={isClassifying}
-                        onSetSectionPromotion={isAdmin ? handleSetSectionPromotion : undefined}
-                        isSettingSection={isSettingSection}
                     />
                 )}
 
@@ -1662,7 +1433,7 @@ function App() {
                                 }
 
                                 const result = await analyzeWebDesign(validImages, target.webUserComment || '', {
-                                    isBrandWeb: target.assetType === '브랜드웹',
+                                    criteriaType: resolveWebCriteriaType(target),
                                 });
                                 if (!result.ok) {
                                     alert(`AI 분석 실패: ${result.error}`);

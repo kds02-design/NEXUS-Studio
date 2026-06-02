@@ -286,7 +286,8 @@ export const DuplicateModal = ({ isOpen, onClose, isLightMode, duplicateGroups, 
 export const OCRProgressModal = ({ ocrProgress, setOcrProgress, isLightMode, runSelectedOCR, handleCancelBatch }) => {
   if (!ocrProgress.isOpen) return null;
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-200"
+    // z-[2100] — CodexDetailModal(z-[2000]) 위로 띄움. 분석 진행/완료 상태는 다른 모달이 열려 있어도 가려지면 안 됨.
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2100] flex items-center justify-center p-4 animate-in fade-in duration-200"
       onMouseDown={() => { if (ocrProgress.status === 'confirm') setOcrProgress(prev => ({ ...prev, isOpen: false })); }}>
       <div className={`w-full max-w-sm rounded-3xl p-8 flex flex-col items-center shadow-2xl border ${isLightMode ? 'bg-white border-slate-200' : 'bg-[#1c1c1e] border-zinc-800'}`} onMouseDown={(e) => e.stopPropagation()}>
         <div className="relative mb-6">
@@ -354,7 +355,7 @@ export const UploadProgressModal = ({ isUploading, uploadProgress, isLightMode, 
 export const ProcessingFilesModal = ({ isOpen, isLightMode }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 animate-in fade-in duration-300">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[2100] flex items-center justify-center p-4 animate-in fade-in duration-300">
       <div className={`rounded-2xl p-8 flex flex-col items-center shadow-2xl border ${isLightMode ? 'bg-white border-slate-200' : 'bg-[#1c1c1e] border-zinc-800'}`}>
         <Loader2 className="w-12 h-12 text-[#0eb9b3] animate-spin mb-4" />
         <h3 className={`text-xl font-bold mb-2 ${isLightMode ? 'text-slate-900' : 'text-white'}`}>작업을 준비하는 중...</h3>
@@ -367,7 +368,7 @@ export const ProcessingFilesModal = ({ isOpen, isLightMode }) => {
 export const NotificationToast = ({ notification, isLightMode }) => {
   if (!notification) return null;
   return (
-    <div className={`fixed top-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-4 z-[2000] w-max ${isLightMode ? 'bg-white text-slate-900 border-slate-200 shadow-slate-200/50' : 'bg-zinc-900 text-white border-zinc-800'}`}>
+    <div className={`fixed top-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-2xl border flex items-center gap-3 animate-in fade-in slide-in-from-top-4 z-[2200] w-max ${isLightMode ? 'bg-white text-slate-900 border-slate-200 shadow-slate-200/50' : 'bg-zinc-900 text-white border-zinc-800'}`}>
       <div className={`w-2 h-2 rounded-full animate-pulse ${isLightMode ? 'bg-[#0eb9b3]' : 'bg-white'}`} />
       <span className="text-sm font-medium">{typeof notification === 'string' ? notification : '알림'}</span>
     </div>
@@ -377,7 +378,7 @@ export const NotificationToast = ({ notification, isLightMode }) => {
 export const BatchProcessingPill = ({ isBatchProcessing, isOpen, ocrProgress, onClick }) => {
   if (!isBatchProcessing || isOpen) return null;
   return (
-    <button onClick={onClick} className="fixed bottom-6 left-6 z-[1000] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl bg-violet-600 hover:bg-violet-500 text-white transition-all animate-in slide-in-from-bottom-4 border border-violet-400/30 group" title="진행 상황 보기">
+    <button onClick={onClick} className="fixed bottom-6 left-6 z-[2100] flex items-center gap-3 px-4 py-3 rounded-2xl shadow-2xl bg-violet-600 hover:bg-violet-500 text-white transition-all animate-in slide-in-from-bottom-4 border border-violet-400/30 group" title="진행 상황 보기">
       <div className="relative flex items-center justify-center w-6 h-6"><Loader2 className="w-5 h-5 animate-spin text-white" /><div className="absolute inset-0 bg-white/20 rounded-full blur-md animate-pulse"></div></div>
       <div className="flex flex-col text-left"><span className="text-xs font-bold leading-tight">AI 분석 진행 중</span><span className="text-[10px] text-violet-200 leading-none mt-0.5">{ocrProgress.current} / {ocrProgress.total} 완료</span></div>
       <Maximize2 className="w-3.5 h-3.5 ml-2 opacity-50 group-hover:opacity-100 transition-opacity" />

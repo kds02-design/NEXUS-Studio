@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { APP_REGISTRY, THEME } from "../config/apps";
 import { useGlobal } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
+import { useAppVisibility, isAppHidden } from "../lib/appVisibility";
 
 const GROUPS = [
   { key: "explore",    label: "허브 / 평가" },
@@ -14,6 +15,7 @@ const GROUPS = [
 export default function AppNavPopover({ open, onClose }) {
   const { currentApp, setCurrentApp } = useGlobal();
   const { isAdmin } = useAuth();
+  const overrides = useAppVisibility();
   const panelRef = useRef(null);
 
   useEffect(() => {
@@ -105,7 +107,7 @@ export default function AppNavPopover({ open, onClose }) {
           {GROUPS.map((g) => {
             const apps = APP_REGISTRY.filter((a) =>
               a.group === g.key
-              && (!a.adminOnly || isAdmin)
+              && (!isAppHidden(a, overrides) || isAdmin)
               && (!a.disabled || isAdmin)
             );
             if (!apps.length) return null;

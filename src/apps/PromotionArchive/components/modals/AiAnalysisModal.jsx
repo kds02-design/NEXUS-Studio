@@ -5,10 +5,8 @@ import { useState, useEffect, useRef } from "react";
 import { X, Sparkles, Cpu, CheckCircle2, Loader2, AlertTriangle, SkipForward } from "lucide-react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db as firestore, appId } from "../../../../lib/firebase";
-// 일괄 분석은 의도적으로 공용 키(GEMINI_API_KEY) 사용. brandweb dedicated 키는 단일 분석에만.
-// → analyzeWebDesign 호출 시 { apiKey: SHARED_GEMINI_KEY } 로 명시 override.
-import { GEMINI_API_KEY as SHARED_GEMINI_KEY } from "../../../../lib/gemini";
 import { analyzeWebDesign, prepareImageForAI } from "../../services/gemini";
+import { resolveWebCriteriaType } from "../../constants/webEvalCriteria";
 
 const CONCURRENCY = 3;
 const promoDocRef = (id) => doc(firestore, "artifacts", appId, "public", "data", "promotion-banners", id);
@@ -83,8 +81,7 @@ const AiAnalysisModal = ({ isOpen, onClose, selectedIds, onComplete }) => {
       }
 
       const result = await analyzeWebDesign(validImages, banner.webUserComment || "", {
-        apiKey: SHARED_GEMINI_KEY,
-        isBrandWeb: banner.assetType === '브랜드웹',
+        criteriaType: resolveWebCriteriaType(banner),
       });
       if (!result.ok) {
         addLog(`AI 실패: ${banner.title || id} — ${result.error}`);
@@ -177,9 +174,6 @@ const AiAnalysisModal = ({ isOpen, onClose, selectedIds, onComplete }) => {
             </h2>
             <p className="text-sm text-zinc-400 mt-1">
               {selectedIds.length}개 항목을 Gemini 2.5 Flash로 분석합니다.
-            </p>
-            <p className="text-[10px] text-zinc-600 mt-0.5 font-mono">
-              일괄 분석은 공용 API 키 사용 (VITE_GEMINI_API_KEY)
             </p>
           </div>
           {canClose && (

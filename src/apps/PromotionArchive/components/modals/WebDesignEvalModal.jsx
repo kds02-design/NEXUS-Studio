@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { X, Settings, ChevronUp, ChevronDown, Edit3, Sparkles, Loader2, Wand2 } from 'lucide-react';
 import {
-  WEB_EVALUATION_KEYS,
-  getWebScoreLabelFor,
   getWebFinalScore100,
   hasWebEvaluation,
   isBrandWebBanner,
+  resolveWebCriteriaType,
 } from '../../constants/webEvalCriteria';
+import { loadActiveWebCriteria } from '../../services/gemini';
+import { getSeedCriteria, labelsMap } from '../../../../lib/evaluationCriteria';
 
 const WebDesignEvalModal = ({
   isOpen,
@@ -18,16 +19,40 @@ const WebDesignEvalModal = ({
   isAdmin = false,
 }) => {
   const [isScoreAdjExpanded, setIsScoreAdjExpanded] = useState(false);
+  // 활성 평가기준(어드민 evaluationCriteria) 로드 — banner 의 criteriaType 에 맞춰.
+  // 실패 시 시드 폴백. items 변경되면 라벨/그리드 즉시 갱신.
+  const criteriaType = banner ? resolveWebCriteriaType(banner) : null;
+  const [activeCriteria, setActiveCriteria] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!isOpen || !criteriaType) { setActiveCriteria(null); return undefined; }
+    loadActiveWebCriteria(criteriaType)
+      .then(entry => { if (!cancelled) setActiveCriteria(entry); })
+      .catch(e => {
+        console.warn('[WebDesignEvalModal] criteria load failed', e);
+        if (!cancelled) setActiveCriteria({ items: getSeedCriteria(criteriaType), versionName: '(시드 폴백)' });
+      });
+    return () => { cancelled = true; };
+  }, [isOpen, criteriaType]);
+
+  const items = useMemo(() => (activeCriteria?.items?.length ? activeCriteria.items : (criteriaType ? getSeedCriteria(criteriaType) : [])), [activeCriteria, criteriaType]);
+  const itemKeys = useMemo(() => items.map(c => c.id).filter(Boolean), [items]);
+  const labelMap = useMemo(() => labelsMap(items), [items]);
+
   if (!isOpen || !banner) return null;
 
   const hasEval = hasWebEvaluation(banner);
-  const validScores = WEB_EVALUATION_KEYS
+  const validScores = itemKeys
     .map(k => banner?.webScores?.[k]?.score)
     .filter(s => s != null)
     .map(s => Math.round(s));
   const maxScore = validScores.length > 0 ? Math.max(...validScores) : -1;
   const minScore = validScores.length > 0 ? Math.min(...validScores) : 101;
   const manualAdj = parseInt(banner?.webManualScoreAdj || 0);
+  // 옛 키 셋으로 저장된 도큐먼트 — 현재 itemKeys 와 webScores 키가 하나도 안 겹치면 안내.
+  const storedKeys = banner?.webScores ? Object.keys(banner.webScores) : [];
+  const staleKeySet = hasEval && itemKeys.length > 0 && storedKeys.length > 0
+    && !storedKeys.some(k => itemKeys.includes(k));
 
   return (
     <div
@@ -35,9 +60,18 @@ const WebDesignEvalModal = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl max-h-[85vh] bg-[#121214] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+        className="relative w-full max-w-4xl max-h-[85vh] bg-[#121214] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-visible"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* 닫기 버튼 — 박스 바깥 우상단 모서리에 floating */}
+        <button
+          onClick={onClose}
+          className="absolute -top-3 -right-3 p-2 bg-[#1a1a1c] hover:bg-zinc-800 border border-white/15 text-zinc-300 hover:text-white rounded-full transition-colors shadow-lg z-10"
+          title="닫기"
+        >
+          <X className="w-4 h-4" />
+        </button>
+
         {/* 헤더 */}
         <div className="flex items-start justify-between p-6 pb-4 border-b border-white/5">
           <div>
@@ -46,32 +80,29 @@ const WebDesignEvalModal = ({
               {isBrandWebBanner(banner) ? 'Brand Site Analysis' : 'Web Design Analysis'}
               {isBrandWebBanner(banner) && (
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-widest bg-rose-400/15 border border-rose-400/40 text-rose-300">
-                  BRAND
+                  {banner?.brandWebKind === 'sub' ? 'BRAND · SUB' : 'BRAND'}
+                </span>
+              )}
+              {activeCriteria?.versionName && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-white/5 border border-white/10 text-zinc-400" title={`기준 type=${criteriaType} versionId=${activeCriteria.versionId || 'seed'}`}>
+                  {activeCriteria.versionName}
                 </span>
               )}
             </h3>
             <p className="text-[12px] text-zinc-500 mt-1">
               {hasEval
-                ? `AI가 분석한 10대 지표 결과 (${isBrandWebBanner(banner) ? '브랜드 사이트 기준' : '프로모션 페이지 기준'}).`
+                ? `AI가 분석한 ${itemKeys.length}개 지표 결과 (${isBrandWebBanner(banner) ? '브랜드 사이트' : '프로모션'} 기준).`
                 : `아직 분석되지 않은 ${isBrandWebBanner(banner) ? '브랜드 사이트' : '페이지'}입니다. 분석을 시작해 보세요.`}
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {hasEval && (
-              <div className="text-right">
-                <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">최종 점수</div>
-                <div className="text-4xl font-black text-[#d8b17e] font-mono tracking-tighter leading-none mt-1">
-                  {getWebFinalScore100(banner)}
-                </div>
+          {hasEval && (
+            <div className="text-right pr-2">
+              <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">최종 점수</div>
+              <div className="text-4xl font-black text-[#d8b17e] font-mono tracking-tighter leading-none mt-1">
+                {getWebFinalScore100(banner)}
               </div>
-            )}
-            <button
-              onClick={onClose}
-              className="p-2 bg-white/5 hover:bg-white/15 border border-white/10 text-zinc-400 hover:text-white rounded-full transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+            </div>
+          )}
         </div>
 
         {/* 본문 */}
@@ -83,7 +114,7 @@ const WebDesignEvalModal = ({
               </div>
               <div className="text-center space-y-1">
                 <p className="text-zinc-200 text-sm font-medium">AI 디자인 분석을 시작할까요?</p>
-                <p className="text-xs text-zinc-500">정보 구조, 비주얼 위계, 컬러, CTA 등 10개 지표로 페이지를 평가합니다.</p>
+                <p className="text-xs text-zinc-500">{`총 ${itemKeys.length || 10}개 지표로 페이지를 평가합니다. (기준: ${activeCriteria?.versionName || '시드'})`}</p>
               </div>
               {onAnalyze && (
                 <button
@@ -105,15 +136,22 @@ const WebDesignEvalModal = ({
             </div>
           ) : (
             <>
-              {/* 10대 지표 그리드 */}
+              {staleKeySet && (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px]">
+                  <span className="font-bold">⚠ 평가 기준 갱신됨</span>
+                  <span className="flex-1 leading-snug">이 항목은 옛 키 셋으로 저장되어 현재 평가 항목 라벨과 매핑되지 않습니다. 재분석을 권장합니다.</span>
+                </div>
+              )}
+              {/* 평가 항목 그리드 (어드민 활성 버전의 항목 수만큼 동적 렌더) */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-                {WEB_EVALUATION_KEYS.map((key) => {
+                {itemKeys.map((key) => {
                   const data = banner?.webScores?.[key];
+                  const label = labelMap[key] || key;
                   if (!data) {
                     return (
                       <div key={key} className="bg-zinc-900/40 border border-dashed border-zinc-700/40 rounded-lg px-4 py-2.5 opacity-60 flex items-center gap-4">
                         <div className="w-[110px] shrink-0 flex items-center justify-between">
-                          <span className="text-[11px] text-zinc-400 font-medium">{getWebScoreLabelFor(banner, key)}</span>
+                          <span className="text-[11px] text-zinc-400 font-medium">{label}</span>
                           <span className="text-lg font-mono font-bold leading-none text-zinc-600">—</span>
                         </div>
                         <div className="w-px h-5 bg-white/10 shrink-0" />
@@ -132,7 +170,7 @@ const WebDesignEvalModal = ({
                   return (
                     <div key={key} className={`${boxClass} border rounded-lg px-4 py-2.5 flex items-center gap-4 transition-colors`}>
                       <div className="w-[110px] shrink-0 flex items-center justify-between">
-                        <span className="text-[11px] text-zinc-300 font-medium">{getWebScoreLabelFor(banner, key)}</span>
+                        <span className="text-[11px] text-zinc-300 font-medium">{label}</span>
                         <span className="text-lg font-mono font-bold leading-none text-[#d8b17e]">{scoreVal}</span>
                       </div>
                       <div className="w-px h-5 bg-white/10 shrink-0" />

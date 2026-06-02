@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, Lock, MoreHorizontal } from "lucide-react";
+import { Menu, Lock, MoreHorizontal, Eye, EyeOff } from "lucide-react";
 import { APP_MAP, APP_REGISTRY } from "../config/apps";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
 import { GRADE_LABEL, GRADES } from "../lib/grades";
 import useWeeklyCredits from "../lib/useWeeklyCredits";
+import { useAppVisibility, isAppHidden, setAppHidden } from "../lib/appVisibility";
 
 // 등급 컬러 — ProfilePopover 와 동일. lib/grades에 없어서 인라인 정의.
 const GRADE_COLOR = {
@@ -241,16 +242,28 @@ const readSelectedVersion = (app) => {
   return app.defaultVersion || app.versions[app.versions.length - 1].key;
 };
 
-function AppCard({ app, onOpen, isAdmin }) {
+function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false }) {
   const T = useTheme();
   const { isLight } = useGlobal();
   const [hov, setHov] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(() => readSelectedVersion(app));
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
+  const [visBusy, setVisBusy] = useState(false);
   const versionMenuRef = useRef(null);
   const disabled = !!app.disabled && !isAdmin;
   const adminUnlocked = !!app.disabled && isAdmin;
   const hasVersions = Array.isArray(app.versions) && app.versions.length > 0;
+  // 관리자에게만 보이는 가시성 토글 — 원래 adminOnly 였던 카드에서만 의미 있음.
+  // 일반 카드는 토글 대상이 아님 (의도치 않은 숨김 방지).
+  const canToggleVisibility = isAdmin && !!app.adminOnly;
+  const toggleVisibility = async (e) => {
+    e.stopPropagation();
+    if (visBusy) return;
+    setVisBusy(true);
+    try { await setAppHidden(app.id, !hiddenFromUsers); }
+    catch (err) { console.warn("[appVisibility] toggle failed", err?.message || err); }
+    finally { setVisBusy(false); }
+  };
   // 카드 본문 클릭은 항상 selectedVersion (기본 최신) 으로 실행.
   const handleClick = (e) => { if (!disabled) onOpen(e); };
   // ... 메뉴에서 다른 버전 선택 → localStorage 저장 + 그 버전으로 실행.
@@ -272,14 +285,15 @@ function AppCard({ app, onOpen, isAdmin }) {
   const disabledBorder = isLight ? "rgba(0,0,0,0.08)"    : "rgba(122,122,154,0.25)";
   return (
     <div onClick={handleClick} onMouseEnter={() => !disabled && setHov(true)} onMouseLeave={() => setHov(false)}
-      title={disabled ? "준비 중인 앱입니다" : (adminUnlocked ? "관리자 권한으로 활성화됨" : (hasVersions ? "버전 선택 후 카드를 눌러 실행" : undefined))}
+      title={disabled ? "준비 중인 앱입니다" : (hiddenFromUsers && canToggleVisibility ? "일반 사용자에게는 숨겨진 앱 — 우측 [숨김] 뱃지를 눌러 공개로 전환" : (adminUnlocked ? "관리자 권한으로 활성화됨" : (hasVersions ? "버전 선택 후 카드를 눌러 실행" : undefined)))}
       style={{
         // 준비 중: 한층 더 어두운/연한 배경 + 점선 보더로 "미완성" 시그널
+        // 숨김 카드 (admin 시점): 점선 보더로 "공개 안 됨" 시각화
         background: disabled ? disabledBg : (hov ? T.card : T.surface),
-        border: disabled ? `1px dashed ${disabledBorder}` : `1px solid ${T.border}`,
+        border: disabled ? `1px dashed ${disabledBorder}` : (hiddenFromUsers && canToggleVisibility ? `1px dashed rgba(225,112,85,0.45)` : `1px solid ${T.border}`),
         borderRadius: 10, padding: "18px 20px",
         cursor: disabled ? "not-allowed" : "pointer",
-        opacity: disabled ? 0.55 : (adminUnlocked ? 0.85 : 1),
+        opacity: disabled ? 0.55 : (adminUnlocked ? 0.85 : (hiddenFromUsers && canToggleVisibility ? 0.85 : 1)),
         filter: disabled ? "grayscale(0.8)" : "none",
         transition: "all 0.2s",
         transform: (!disabled && hov) ? "translateY(-2px)" : "none",
@@ -311,7 +325,39 @@ function AppCard({ app, onOpen, isAdmin }) {
           </div>
         </div>
         {/* 우상단 뱃지 */}
-        <div style={{ display:"flex", alignItems:"flex-start", shrink:0, flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6, shrink:0, flexShrink:0 }}>
+          {/* 관리자 전용 가시성 토글 — adminOnly 카드에만 노출.
+              숨김 상태: 주황 톤 "숨김" pill / 공개 상태: 옅은 Eye 아이콘 버튼. */}
+          {canToggleVisibility && (
+            hiddenFromUsers ? (
+              <button type="button" onClick={toggleVisibility} disabled={visBusy}
+                title="이 카드는 일반 사용자에게 숨겨져 있습니다. 클릭하면 공개로 전환됩니다."
+                style={{
+                  display:"inline-flex", alignItems:"center", gap:4,
+                  fontSize:9, letterSpacing:"0.1em", textTransform:"uppercase", fontWeight:700,
+                  color:"#E17055", background:"rgba(225,112,85,0.12)",
+                  border:"1px solid rgba(225,112,85,0.45)", borderRadius:999,
+                  padding:"3px 8px", cursor: visBusy ? "wait" : "pointer",
+                  fontFamily:"inherit",
+                }}>
+                <EyeOff size={10} strokeWidth={2.5} /> 숨김
+              </button>
+            ) : (
+              <button type="button" onClick={toggleVisibility} disabled={visBusy}
+                title="현재 일반 사용자에게도 공개됨. 클릭하면 다시 숨김 처리됩니다."
+                style={{
+                  display:"inline-flex", alignItems:"center", justifyContent:"center",
+                  width:22, height:22, padding:0, border:0, borderRadius:6,
+                  background:"transparent", color:T.textDim,
+                  cursor: visBusy ? "wait" : "pointer", opacity:0.7,
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = T.hoverBg; e.currentTarget.style.color = T.text; e.currentTarget.style.opacity = "1"; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = T.textDim; e.currentTarget.style.opacity = "0.7"; }}
+              >
+                <Eye size={12} strokeWidth={2} />
+              </button>
+            )
+          )}
           {disabled ? (
             <span style={{ display:"inline-flex", alignItems:"center", gap:4, fontSize:9, letterSpacing:"0.1em", color: T.textMuted, textTransform:"uppercase", background: T.hoverBg, border:`1px solid ${disabledBorder}`, padding:"3px 8px", borderRadius:999, fontWeight:700 }}>
               <Lock size={9} strokeWidth={2.5} /> 준비 중
@@ -401,6 +447,7 @@ function AppCard({ app, onOpen, isAdmin }) {
 function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
   const { navigate, isLight } = useGlobal();
   const { isAdmin } = useAuth();
+  const overrides = useAppVisibility();
   const T = useTheme();
   const scrollRef = useRef(null);
 
@@ -434,8 +481,9 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
       <DashboardRecentPrompts />
       <div style={{ padding:"0 40px 60px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box" }}>
       {groups.map(g => {
-        // adminOnly 앱은 비-관리자 화면에서 카드 자체가 보이지 않음
-        const apps = APP_REGISTRY.filter(a => a.group === g.key && (!a.adminOnly || isAdmin));
+        // 숨김 처리된 앱(원래 adminOnly 또는 관리자 토글)은 비-관리자에게 보이지 않음.
+        // 관리자에게는 보이되 '숨김' 표시 + 토글 가능.
+        const apps = APP_REGISTRY.filter(a => a.group === g.key && (!isAppHidden(a, overrides) || isAdmin));
         if (!apps.length) return null;
         // 섹션 타이틀 앞 세로 바 — 거의 보이지 않을 정도로 극단적으로 미세하게.
         const labelStyle = g.adminLabel
@@ -445,7 +493,7 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
           <div key={g.key} style={{ marginBottom:40 }}>
             <div style={labelStyle}>{g.label}</div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
-              {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} onOpen={(e) => {
+              {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} onOpen={(e) => {
                 if (e?.ctrlKey || e?.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
                 navigate(app.id);
               }} />)}

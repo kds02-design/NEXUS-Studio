@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { APP_REGISTRY, APP_MAP } from "../config/apps";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
+import { useAppVisibility, isAppHidden } from "../lib/appVisibility";
 import { Lock, Search, X, Home } from "lucide-react";
 
 const matches = (app, q) => {
@@ -118,18 +119,19 @@ export default function CommandPalette({ open, onClose }) {
   const { setCurrentApp, currentApp, isLight } = useGlobal();
   const T = useTheme();
   const { isAdmin } = useAuth();
+  const overrides = useAppVisibility();
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const inputRef = useRef(null);
 
-  // 섹션별 노출 앱 — 관리자는 disabled 도 포함, adminOnly 는 비관리자에게 숨김.
+  // 섹션별 노출 앱 — 관리자는 disabled 도 포함, 숨김 처리(adminOnly + 오버라이드)는 비관리자에게 숨김.
   const sections = useMemo(() => {
     const out = [];
     for (const groupKey of GROUP_ORDER) {
       const apps = APP_REGISTRY.filter(
         (a) =>
           a.group === groupKey
-          && (!a.adminOnly || isAdmin)
+          && (!isAppHidden(a, overrides) || isAdmin)
           && (!a.disabled || isAdmin)
           && matches(a, query)
       );
@@ -137,7 +139,7 @@ export default function CommandPalette({ open, onClose }) {
       out.push({ key: groupKey, label: GROUP_LABELS[groupKey], apps });
     }
     return out;
-  }, [query, isAdmin]);
+  }, [query, isAdmin, overrides]);
 
   // 평탄화된 클릭 가능 카드 id 리스트 — 키보드 탐색용.
   const flatIds = useMemo(() => {

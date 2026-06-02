@@ -1,41 +1,65 @@
 // --- API Key Definition ---
-// 브랜드웹 라이브러리 전용 키 → 미설정 시 공용 VITE_GEMINI_API_KEY 로 폴백.
-// 별도 quota/billing 관리가 필요할 때 .env 에 VITE_GEMINI_API_KEY_BRANDWEB 만 추가하면 됨.
+// PromotionArchive 의 모든 평가(프로모션/브랜드웹/브랜드웹서브, 단일/일괄)는 공용 VITE_GEMINI_API_KEY 사용.
 import { GEMINI_API_KEY as DEFAULT_GEMINI_KEY } from "../../../lib/gemini";
-import { WEB_EVALUATION_KEYS, DEFAULT_WEB_EVAL_PROMPT, BRAND_WEB_EVAL_PROMPT, getWebWeightsFor } from "../constants/webEvalCriteria";
+import { getIntroTemplateFor } from "../constants/webEvalCriteria";
 import {
   CRITERIA_TYPES, fetchActiveCriteria, getActiveRules, getSeedRules,
+  getSeedCriteria, formatCriteriaList, weightsMap,
   fetchAnchors, formatAnchorsForPrompt,
   fetchCalibration, buildAnchorFewShot, applyOffset,
 } from "../../../lib/evaluationCriteria";
 import { prepareAnchorImages } from "../../../lib/anchorImages";
 
-// 공유 캘리브레이션(앵커 + 채점 규칙 + 전역 보정) 세션 캐시 — 일괄 분석에서 Firestore 반복 read 방지.
-const _webCalibCache = new Map(); // type -> { anchors, rules, offset, ts }
+// 공유 캘리브레이션(어드민 활성 평가기준 + 앵커 + 채점 규칙 + 전역 보정) 세션 캐시.
+// 캐시 키에 versionId 를 포함 — 어드민이 활성 버전을 토글하면 다음 호출에서 새 항목/가중치로 자동 전환.
+// 일괄 분석 도중 어드민 변경도 60s TTL 안에서 새 versionId 로 자연스럽게 반영됨.
+const _webCalibCache = new Map(); // `${type}::${versionId}` -> entry
 const _CALIB_TTL_MS = 60_000;
+const _CALIB_CACHE_MAX = 20;
+
 async function _getWebCalibration(type) {
-  const hit = _webCalibCache.get(type);
-  if (hit && Date.now() - hit.ts < _CALIB_TTL_MS) return hit;
-  let anchors = [], rules = "", offset = 0;
+  let v = null, anchors = [], offset = 0;
   try {
-    const [a, v, c] = await Promise.all([fetchAnchors(type), fetchActiveCriteria(type), fetchCalibration(type)]);
+    const [a, ver, c] = await Promise.all([fetchAnchors(type), fetchActiveCriteria(type), fetchCalibration(type)]);
+    v = ver;
     anchors = a || [];
-    rules = getActiveRules(v) || getSeedRules(type);
     offset = c?.offset || 0;
   } catch (e) {
     console.warn("[PromotionArchive] calibration load failed", e);
   }
-  const entry = { anchors, rules, offset, ts: Date.now() };
-  _webCalibCache.set(type, entry);
+  const versionId = v?.id || 'seed';
+  const versionName = v?.name || '(시드)';
+  const key = `${type}::${versionId}`;
+
+  const hit = _webCalibCache.get(key);
+  if (hit && Date.now() - hit.ts < _CALIB_TTL_MS) {
+    // 캐시 히트 — anchors/offset 은 최신값으로 갱신 (versionId 변동과 별개)
+    hit.anchors = anchors;
+    hit.offset = offset;
+    return hit;
+  }
+
+  const items = (Array.isArray(v?.criteria) && v.criteria.length) ? v.criteria : getSeedCriteria(type);
+  const rules = getActiveRules(v) || getSeedRules(type);
+
+  const entry = { items, rules, anchors, offset, versionId, versionName, ts: Date.now() };
+
+  if (_webCalibCache.size >= _CALIB_CACHE_MAX) {
+    const oldestKey = _webCalibCache.keys().next().value;
+    if (oldestKey) _webCalibCache.delete(oldestKey);
+  }
+  _webCalibCache.set(key, entry);
+  console.info(`[PromotionArchive] criteria source: type=${type} versionId=${versionId} name=${versionName} keys=${items.length}`);
   return entry;
 }
 
-const apiKey = (import.meta.env.VITE_GEMINI_API_KEY_BRANDWEB || "").trim() || DEFAULT_GEMINI_KEY;
-// 콘솔에서 어떤 키 소스가 활성화됐는지 확인 — 값은 노출하지 않음.
-if (typeof window !== "undefined") {
-  const usingDedicated = !!(import.meta.env.VITE_GEMINI_API_KEY_BRANDWEB || "").trim();
-  console.info(`[PromotionArchive] Gemini key source: ${usingDedicated ? "VITE_GEMINI_API_KEY_BRANDWEB (dedicated)" : "VITE_GEMINI_API_KEY (shared default)"}`);
+// 외부(예: WebDesignEvalModal 의 버전 뱃지 / 라벨 맵)에서 활성 버전 메타를 미리 받기 위한 export.
+export async function loadActiveWebCriteria(type) {
+  if (!type) return null;
+  return _getWebCalibration(type);
 }
+
+const apiKey = (DEFAULT_GEMINI_KEY || "").trim();
 
 // Gemini API 호출 함수
 export const callGeminiAPI = async (prompt, images = [], temperature = 0.4) => {
@@ -104,7 +128,9 @@ const WEB_SCORE_OBJ = {
     required: ["score", "reason"]
 };
 
-const WEB_RESPONSE_SCHEMA = {
+// 어드민 활성 평가기준의 항목 id 들로 scores_data 스키마를 매 호출 시 빌드.
+// (BannerCodex 도 같은 10개 키 universe 지만 스키마는 정적; 우리는 어드민 추가/삭제도 반영하려 동적 빌드.)
+const _buildResponseSchema = (scoreKeys) => ({
     type: "OBJECT",
     properties: {
         title: { type: "STRING" },
@@ -120,12 +146,12 @@ const WEB_RESPONSE_SCHEMA = {
         summary: { type: "STRING" },
         scores_data: {
             type: "OBJECT",
-            properties: Object.fromEntries(WEB_EVALUATION_KEYS.map(k => [k, WEB_SCORE_OBJ])),
-            required: [...WEB_EVALUATION_KEYS]
+            properties: Object.fromEntries(scoreKeys.map(k => [k, WEB_SCORE_OBJ])),
+            required: [...scoreKeys]
         }
     },
     required: ["title", "tags", "scores_data"]
-};
+});
 
 const WEB_REQUEST_TIMEOUT_MS = 60000;
 const WEB_MAX_ATTEMPTS = 3;
@@ -181,17 +207,27 @@ export const prepareImageForAI = async (imgSource, maxWidth = 1280, quality = 0.
 };
 
 // 웹 디자인 평가 호출 (JSON 모드 + 자동 재시도).
-// options.apiKey 가 주어지면 그 키 사용 (예: 일괄 분석에서 공용 키로 호출).
-// 미지정 시 기본 apiKey (brandweb dedicated → 공용 fallback) 사용.
+// 모든 평가는 공용 VITE_GEMINI_API_KEY 사용.
+// 평가 항목/가중치/라벨은 NexusAdmin 활성 버전(evaluationCriteria) 에서 동적 로드.
+// criteriaType 우선; 미지정 시 isBrandWeb 폴백(true → brandweb, 그 외 → promotion).
 export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', options = {}) => {
-    const keyToUse = (options.apiKey || apiKey || '').trim();
-    // 브랜드웹은 다른 평가 관점(메인 메시지/세계관 중심) 사용.
-    const basePrompt = options.isBrandWeb ? BRAND_WEB_EVAL_PROMPT : DEFAULT_WEB_EVAL_PROMPT;
-    // 공유 캘리브레이션 주입 — 채점 규칙 + 기준점 앵커. 타입은 브랜드웹/프로모션 공유 버킷 사용
-    // (앵커는 최종 점수+한줄평이라 키 셋과 무관 → DesignEvaluator 와 같은 기준점 공유).
-    const calibType = options.isBrandWeb ? CRITERIA_TYPES.brandweb : CRITERIA_TYPES.promotion;
+    const keyToUse = apiKey;
+    const calibType = options.criteriaType
+        || (options.isBrandWeb ? CRITERIA_TYPES.brandweb : CRITERIA_TYPES.promotion);
     const calib = await _getWebCalibration(calibType);
+    const items = calib.items || [];
+    const SCORE_KEYS = items.map(c => c.id).filter(Boolean);
+    if (SCORE_KEYS.length === 0) {
+        return { ok: false, error: `평가 항목이 비어 있습니다 (type=${calibType}). NexusAdmin 에서 활성 버전을 확인하세요.` };
+    }
+    const weights = weightsMap(items);
+
+    // 프롬프트 인트로(타입별) + 동적 평가 항목 리스트 주입.
+    const introTemplate = getIntroTemplateFor(calibType);
+    const criteriaListBlock = formatCriteriaList(items);
+    const introFilled = introTemplate.replace('{{CRITERIA_LIST}}', criteriaListBlock);
     const ruleBlock = calib.rules && calib.rules.trim() ? `\n\n[채점 규칙]\n${calib.rules.trim()}\n` : '';
+
     // 기준점 앵커 — 썸네일 있는 앵커는 시각 few-shot 이미지로, 없는 앵커는 텍스트로 주입.
     const { anchors: pickedAnchors } = buildAnchorFewShot(calib.anchors || []);
     const preparedAnchors = pickedAnchors.length ? await prepareAnchorImages(pickedAnchors) : [];
@@ -199,8 +235,8 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     const anchorImageParts = preparedAnchors.map(p => ({ inlineData: { mimeType: "image/jpeg", data: p.base64 } }));
     const textOnlyAnchors = (calib.anchors || []).filter(a => !a?.thumbnailUrl);
     const anchorBlock = `${fewShot.text || ''}${formatAnchorsForPrompt(textOnlyAnchors) || ''}`;
-    const weights = getWebWeightsFor(!!options.isBrandWeb);
-    const prompt = `${basePrompt}${ruleBlock}${anchorBlock}`
+
+    const prompt = `${introFilled}${ruleBlock}${anchorBlock}`
         + (userComment ? `\n\n[사용자 피드백]\n${userComment}\n` : '');
 
     const imageParts = (Array.isArray(imagesBase64) ? imagesBase64 : [imagesBase64])
@@ -208,12 +244,14 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
         .map(b64 => ({ inlineData: { mimeType: "image/jpeg", data: b64 } }));
     const targetMarker = anchorImageParts.length ? [{ text: "[평가 대상 이미지 — 위 참고 이미지들의 점수 감각으로 채점하세요]" }] : [];
 
+    const responseSchema = _buildResponseSchema(SCORE_KEYS);
+
     const requestBody = {
         contents: [{ parts: [{ text: prompt }, ...anchorImageParts, ...targetMarker, ...imageParts] }],
         generationConfig: {
             temperature: 0.2,
             responseMimeType: "application/json",
-            responseSchema: WEB_RESPONSE_SCHEMA,
+            responseSchema,
         },
         safetySettings: [
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
@@ -263,7 +301,7 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
             let weightedSum = 0;
             let totalW = 0;
             const missing = [];
-            WEB_EVALUATION_KEYS.forEach(key => {
+            SCORE_KEYS.forEach(key => {
                 const item = parsed?.scores_data?.[key];
                 if (item && typeof item.score === 'number') {
                     const w = Number(weights[key]) > 0 ? Number(weights[key]) : 1;
@@ -316,6 +354,9 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
                 tags: Array.isArray(parsed?.tags) ? parsed.tags.map(String) : [],
                 summary: parsed?.summary ? String(parsed.summary) : '',
                 missingCount: missing.length,
+                criteriaType: calibType,
+                criteriaVersionId: calib.versionId,
+                criteriaVersionName: calib.versionName,
             };
         } catch (e) {
             clearTimeout(timeoutId);
