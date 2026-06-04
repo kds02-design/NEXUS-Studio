@@ -3,13 +3,23 @@ import { PRESET_GROUPS } from "../constants/presets";
 
 // 프리셋 그룹/선택 상태 + 적용 핸들러.
 // RenderMatrix 와 거의 동일한 구조이지만 Pop 의 setter 키들과 일치하도록 별도 유지.
-export function usePresets({ setters, onApplied }) {
+// onAnalyzeReference — "레퍼런스 완벽 복사" 프리셋(ref_copy)이 클릭됐을 때 정적 옵션 적용 대신
+//                      분석 버튼과 동일한 흐름을 트리거. 사이드바 분석 버튼과 진입점 통일.
+export function usePresets({ setters, onApplied, onAnalyzeReference }) {
   const [activePresetGroup, setActivePresetGroup] = useState(PRESET_GROUPS[0].id);
   const [activePresetId, setActivePresetId] = useState(null);
   const [isPresetModified, setIsPresetModified] = useState(false);
 
   const handleApplyPreset = (preset) => {
     if (!preset) return;
+    // ref_copy — 정적 옵션 셋을 박지 않고 사이드바 "레퍼런스 분석" 흐름으로 위임.
+    // 이미지에 맞춘 동적 매핑이 정적 카멜레온 세팅(HyperChrome 등)보다 정확.
+    if (preset.id === "ref_copy") {
+      setActivePresetId(preset.id);
+      setIsPresetModified(false);
+      onAnalyzeReference?.();
+      return;
+    }
     const s = preset.settings;
     if (s.directorPersona) setters.directorPersona(s.directorPersona);
     if (s.material) setters.material(s.material);

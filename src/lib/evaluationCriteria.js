@@ -19,6 +19,12 @@ export const CRITERIA_TYPES = {
   promotion: "promotion",
   brandweb: "brandweb",
   brandwebSub: "brandwebSub", // 브랜드웹 서브 페이지 — 메인과 다른 가중치/기준.
+  // ─── 모바일 전용 평가 타입 (2026-06 추가) ──────────────────
+  // 모바일은 데스크톱과 폭/뷰포트/엄지 동선/스크롤 패턴이 달라 별도 기준이 필요.
+  // 권장 입력 해상도: 브랜드웹 모바일 750×~1234 (단일 화면 기준 mockup),
+  //                   프로모션 모바일 750×5000+ (긴 세로 스크롤 랜딩).
+  brandwebMobile: "brandwebMobile",
+  promotionMobile: "promotionMobile",
   prompt: "prompt",
   // ─── 타이포그래피 전용 평가 타입 (2026-05 추가) ─────────────
   // 각 타이포 성격에 맞는 항목으로 시드. 관리자가 NexusAdmin 에서 가중치/항목 자유 조정.
@@ -82,6 +88,38 @@ const BRANDWEB_SUB_SEED = [
   { id: "flow",       name: "탐색 스크롤 흐름", weight: 8,  maxScore: 100, description: "스크롤에 따른 정보 전개의 자연스러움." },
   { id: "detail",     name: "디테일 완성도",   weight: 6,  maxScore: 100, description: "여백·정렬·마감의 픽셀 완성도." },
   { id: "conversion", name: "운영 안정성",     weight: 5,  maxScore: 100, description: "링크/CTA/안내 등 운영 요소의 신뢰성." },
+];
+
+// ─── 브랜드웹 모바일 (750×~1234 단일 화면 mockup 기준) ─────────────────
+// 데스크톱 메인과 동일한 10개 표준 키를 유지하되, 좁은 폭·엄지 동선·세로 흐름에 맞춰 가중치/설명 재조정.
+// 메인 비주얼 단일 컬럼, 타이틀 압축, 본문 사이즈 가독성, 엄지 reach 영역 CTA 등이 핵심.
+const BRANDWEB_MOBILE_SEED = [
+  { id: "impression", name: "첫 화면 임팩트",      weight: 13, maxScore: 100, description: "모바일 첫 폴드(above-the-fold) 한 폭 안에서 시선을 사로잡는가. 작은 화면이라 첫인상의 비중이 데스크톱보다 큼." },
+  { id: "concept",    name: "키 메시지 전달",      weight: 12, maxScore: 100, description: "좁은 폭 안에서 캠페인/브랜드 메시지가 즉시 읽히는가. 메인 카피의 압축력." },
+  { id: "layout",     name: "단일 컬럼 리듬",      weight: 11, maxScore: 100, description: "세로 흐름의 자연스러움. 섹션 분절·여백·정렬이 모바일 뷰포트에 최적화돼 있는가." },
+  { id: "typography", name: "타이틀 압축력",       weight: 12, maxScore: 100, description: "메인 타이틀이 좁은 폭에서도 위계와 박력을 잃지 않는가. 줄바꿈/잘림 처리의 의도성." },
+  { id: "color",      name: "세계관·톤 유지",      weight: 9,  maxScore: 100, description: "작은 캔버스에서도 브랜드 컬러와 톤이 분리·각인되는가." },
+  { id: "readability",name: "모바일 본문 가독성",  weight: 11, maxScore: 100, description: "본문/캡션 폰트 크기·행간이 모바일 시청 거리에 맞는가 (보통 ≥14px, 행간 1.4 이상)." },
+  { id: "brand",      name: "브랜드 정체성",       weight: 8,  maxScore: 100, description: "데스크톱과 톤이 끊기지 않고 작은 화면에서도 브랜드가 살아 있는가." },
+  { id: "flow",       name: "엄지 동선·CTA 위치",  weight: 9,  maxScore: 100, description: "Thumb reach — 주요 CTA·핵심 요소가 엄지가 닿기 쉬운 하단 영역에 배치되었는가." },
+  { id: "detail",     name: "모바일 디테일",       weight: 8,  maxScore: 100, description: "안전 영역(safe area)·노치 회피·터치 타깃 최소 크기(≥44px)·정렬 픽셀 완성도." },
+  { id: "conversion", name: "탭 유도력",           weight: 7,  maxScore: 100, description: "CTA 가 분명히 인지되고 누르고 싶게 만드는가 — 형태·색 대비·문구의 명확성." },
+];
+
+// ─── 프로모션 모바일 (750×5000+ 긴 세로 스크롤 랜딩) ───────────────────
+// 데스크톱 프로모션 페이지와 평가 축은 비슷하지만, 모바일은 스크롤 피로·하단 sticky CTA·
+// 정보 압축·터치 타깃이 결정적. weight 는 그 비중에 맞춰 재조정.
+const PROMOTION_MOBILE_SEED = [
+  { id: "impression", name: "첫 화면 흡입력",      weight: 12, maxScore: 100, description: "Hook — 모바일 첫 폴드에서 무엇을 주는 캠페인인지 즉시 인지되는가." },
+  { id: "brand",      name: "브랜드·이벤트 톤",    weight: 7,  maxScore: 100, description: "캠페인 무드와 브랜드 정체성이 모바일 작은 폭에서도 일관되는가." },
+  { id: "concept",    name: "캠페인 명료성",       weight: 10, maxScore: 100, description: "참여 조건·혜택의 핵심이 모바일에서도 명료히 압축돼 있는가." },
+  { id: "color",      name: "보상 매력도",         weight: 13, maxScore: 100, description: "Reward appeal — 좁은 폭 안에서도 보상의 매력이 시각적으로 전달되는가." },
+  { id: "layout",     name: "보상 구조·조건",      weight: 10, maxScore: 100, description: "조건/단계 구조가 모바일 카드/리스트 형태로 잘 압축돼 있는가." },
+  { id: "typography", name: "정보 위계",           weight: 10, maxScore: 100, description: "타이틀/서브/본문의 위계가 좁은 폭에서도 한눈에 들어오는가." },
+  { id: "conversion", name: "CTA·하단 sticky",    weight: 12, maxScore: 100, description: "주요 CTA 의 위치·반복·하단 고정(sticky) 처리가 모바일 전환에 효과적인가." },
+  { id: "readability",name: "정보 가독성",         weight: 10, maxScore: 100, description: "긴 세로 스크롤 페이지에서 본문이 충분히 크고 행간이 답답하지 않은가." },
+  { id: "flow",       name: "스크롤 피로·리듬",   weight: 9,  maxScore: 100, description: "Scroll fatigue — 섹션 길이·전환 신호·여백으로 사용자가 스크롤을 포기하지 않게 설계됐는가." },
+  { id: "detail",     name: "운영 신뢰성",         weight: 7,  maxScore: 100, description: "안내·면책·기간 명시·터치 타깃 크기 등 모바일 운영 디테일의 완성도." },
 ];
 
 // 프롬프트 평가 — placeholder. 사용자가 NexusAdmin 에서 직접 채워 넣을 수 있도록 빈 시드.
@@ -150,12 +188,14 @@ export const SCORING_RULES_SEED = {
 };
 
 const SEEDS = {
-  [CRITERIA_TYPES.banner]:      { items: BANNER_SEED,       name: "v1.0 (시드)", rules: SCORING_RULES_SEED.banner || "" },
-  [CRITERIA_TYPES.promotion]:   { items: PROMOTION_SEED,    name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.brandweb]:    { items: BRANDWEB_SEED,     name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.brandwebSub]: { items: BRANDWEB_SUB_SEED, name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.prompt]:      { items: PROMPT_SEED,       name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.typo2d]:      { items: TYPO2D_SEED,       name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.banner]:          { items: BANNER_SEED,           name: "v1.0 (시드)", rules: SCORING_RULES_SEED.banner || "" },
+  [CRITERIA_TYPES.promotion]:       { items: PROMOTION_SEED,        name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.brandweb]:        { items: BRANDWEB_SEED,         name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.brandwebSub]:     { items: BRANDWEB_SUB_SEED,     name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.brandwebMobile]:  { items: BRANDWEB_MOBILE_SEED,  name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.promotionMobile]: { items: PROMOTION_MOBILE_SEED, name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.prompt]:          { items: PROMPT_SEED,           name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.typo2d]:          { items: TYPO2D_SEED,           name: "v1.0 (시드)", rules: "" },
   [CRITERIA_TYPES.typoRender]:  { items: TYPO_RENDER_SEED,  name: "v1.0 (시드)", rules: "" },
   [CRITERIA_TYPES.typoMotion]:  { items: TYPO_MOTION_SEED,  name: "v1.0 (시드)", rules: "" },
 };
@@ -264,9 +304,14 @@ export function labelsMap(items) {
 }
 
 // ─── 카테고리 → 기준 타입 리졸버 ───────────────────────
-// DesignEvaluator 가 쓰는 한글 카테고리 라벨("배너"/"브랜드웹_메인"/"2D 타이포" 등)이나
+// DesignEvaluator 가 쓰는 한글 카테고리 라벨("배너"/"브랜드웹_메인"/"브랜드웹_모바일"/"2D 타이포" 등)이나
 // AI 판별 결과 문자열을 CRITERIA_TYPES 키로 정규화. 매칭 실패 시 'banner' fallback.
-// 주의: 브랜드웹은 '서브' 가 더 구체적이라 먼저 검사.
+// 검사 순서:
+//   1) 타이포 (가장 구체적)
+//   2) 모바일 한정자 + 브랜드웹/프로모션 → 모바일 타입
+//   3) 브랜드웹 서브 → 메인
+//   4) 프로모션 (데스크톱)
+//   5) 배너
 export function resolveCriteriaType(category) {
   const c = String(category || "").toLowerCase();
   if (!c) return CRITERIA_TYPES.banner;
@@ -274,6 +319,11 @@ export function resolveCriteriaType(category) {
     if (c.includes("2d")) return CRITERIA_TYPES.typo2d;
     if (c.includes("렌더") || c.includes("render")) return CRITERIA_TYPES.typoRender;
     if (c.includes("모션") || c.includes("motion")) return CRITERIA_TYPES.typoMotion;
+  }
+  const isMobile = c.includes("모바일") || c.includes("mobile");
+  if (isMobile) {
+    if (c.includes("브랜드웹") || c.includes("brand")) return CRITERIA_TYPES.brandwebMobile;
+    if (c.includes("프로모션") || c.includes("promo")) return CRITERIA_TYPES.promotionMobile;
   }
   if (c.includes("서브") || c.includes("sub")) return CRITERIA_TYPES.brandwebSub;
   if (c.includes("브랜드웹") || c.includes("brand")) return CRITERIA_TYPES.brandweb; // 메인 포함

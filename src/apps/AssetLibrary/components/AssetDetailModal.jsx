@@ -10,9 +10,11 @@ import {
   ASSET_CATEGORY_LIST, getCategoryMeta, getCategoryIcon,
   CATEGORY_BADGE_TONE, TEMP_BADGE_TONE, isTempAsset,
 } from "../constants/categories";
+import { ASSET_THEME_LIST, getThemeMeta } from "../constants/themes";
 import { readFileAsDataUrl, probeImageSize } from "../services/cropper";
 import { replaceAssetImage, updateAssetMeta } from "../services/firebase";
-import { analyzeAssetImage } from "../services/gemini";
+import { analyzeAssetImage, inferAssetTheme } from "../services/gemini";
+import { useAuth } from "../../../context/AuthContext";
 
 const sourceLabel = (app) =>
   app === "banner-codex" ? "배너 코덱스"
@@ -57,7 +59,10 @@ export default function AssetDetailModal({
   const meta = getCategoryMeta(asset.category);
   const temp = isTempAsset(asset);
   const canJump = !!(asset.source?.app && asset.source?.bannerId);
+  const { isAdmin } = useAuth();
   const isOwner = user?.uid && user.uid === asset.ownerUid;
+  // 어드민은 본인 소유가 아닌 옛 에셋도 수정 가능. UI 가드만이고 Firestore rules 는 별도.
+  const canEdit = isOwner || isAdmin;
   const hasChanges = isEditing && (
     draft.title !== (asset.title || "") ||
     draft.category !== (asset.category || "etc") ||
@@ -109,6 +114,49 @@ export default function AssetDetailModal({
     setTagInput("");
   };
   const removeTag = (t) => setDraft((d) => ({ ...d, tags: d.tags.filter((x) => x !== t) }));
+
+  // 테마는 편집 토글 없이 즉시 반영 — 클릭 한 번에 저장. 사용자 의도 = "user" 마킹.
+  const [themeBusy, setThemeBusy] = useState(false);
+  const handlePickTheme = async (themeId) => {
+    if (themeBusy) return;
+    setThemeBusy(true);
+    try {
+      // 같은 값 다시 클릭 = 해제 (null 로).
+      const next = asset.theme === themeId ? null : themeId;
+      await updateAssetMeta(asset.id, { theme: next, themeSource: next ? "user" : null });
+      showToast?.(next ? `테마: ${getThemeMeta(next)?.name}` : "테마 해제");
+    } catch (e) {
+      showToast?.(`테마 저장 실패: ${e.message}`, "error");
+    } finally { setThemeBusy(false); }
+  };
+  const handleInferTheme = async () => {
+    if (themeBusy) return;
+    if (!asset.imageUrl) { showToast?.("이미지가 없어요", "error"); return; }
+    if (ensureCanGenerate) {
+      const ok = await ensureCanGenerate("analysis");
+      if (!ok) return;
+    }
+    setThemeBusy(true);
+    try {
+      const res = await fetch(asset.imageUrl);
+      const blob = await res.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onloadend = () => resolve(r.result);
+        r.onerror = reject;
+        r.readAsDataURL(blob);
+      });
+      const theme = await inferAssetTheme(dataUrl);
+      if (theme) {
+        await updateAssetMeta(asset.id, { theme, themeSource: "ai" });
+        showToast?.(`AI 추정: ${getThemeMeta(theme)?.name}`);
+      } else {
+        showToast?.("추정 실패 — 직접 선택해주세요", "error");
+      }
+    } catch (e) {
+      showToast?.(`AI 추정 실패: ${e.message}`, "error");
+    } finally { setThemeBusy(false); }
+  };
 
   const handleSaveMeta = async () => {
     try {
@@ -244,7 +292,7 @@ export default function AssetDetailModal({
             >
               <Download className="w-3.5 h-3.5" /> 이미지 저장
             </button>
-            {isOwner && (
+            {canEdit && (
               <button
                 onClick={handlePickFile}
                 disabled={step === "uploading" || step === "analyzing"}
@@ -429,22 +477,22 @@ export default function AssetDetailModal({
 
             {/* action row */}
             <div className="flex items-center gap-1.5 mb-4 border-b border-white/5 pb-4">
-              {isOwner && (
+              {canEdit && (
                 <button
                   onClick={() => onDelete?.(asset)}
                   className="w-9 h-9 rounded-full border flex items-center justify-center transition-colors border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-                  title="삭제"
+                  title={isOwner ? "삭제" : "삭제 (어드민 권한)"}
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
               )}
-              {isOwner && (
+              {canEdit && (
                 <button
                   onClick={() => setIsEditing(!isEditing)}
                   className={`w-9 h-9 rounded-full border flex items-center justify-center transition-colors ${
                     isEditing ? "bg-[#0eb9b3] text-white border-[#0eb9b3]" : "border-zinc-800 text-zinc-400 hover:bg-zinc-800 hover:text-white"
                   }`}
-                  title="속성 편집"
+                  title={isOwner ? "속성 편집" : "속성 편집 (어드민 권한)"}
                 >
                   <Edit3 className="w-4 h-4" />
                 </button>
@@ -458,6 +506,63 @@ export default function AssetDetailModal({
                 <Heart className={`w-4 h-4 ${asset.liked ? "fill-current text-red-400" : ""}`} />
                 <span>{asset.liked ? "1" : "0"}</span>
               </button>
+            </div>
+
+            {/* theme — 컬러톤 4단계. 클릭 한 번에 즉시 저장. */}
+            <div className="mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 flex items-center gap-1.5">
+                  테마
+                  {asset.themeSource === "ai" && asset.theme && (
+                    <span
+                      title="AI 추정 — 직접 클릭하면 수동 지정으로 바뀝니다"
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[8px] bg-purple-500/15 border border-purple-500/30 text-purple-300 normal-case tracking-normal"
+                    >
+                      <Wand2 className="w-2.5 h-2.5" /> AI
+                    </span>
+                  )}
+                </div>
+                {canEdit && (
+                  <button
+                    onClick={handleInferTheme}
+                    disabled={themeBusy}
+                    className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-200 disabled:opacity-50"
+                    title={`Gemini 로 이미지 컬러톤 재추정 (analysis 1c 소모)${!isOwner ? " · 어드민 권한" : ""}`}
+                  >
+                    {themeBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                    AI 추정
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {ASSET_THEME_LIST.map((t) => {
+                  const active = asset.theme === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => canEdit && handlePickTheme(t.id)}
+                      disabled={!canEdit || themeBusy}
+                      title={!canEdit ? "본인 또는 어드민만 수정 가능" : (active ? "다시 클릭하면 해제" : "테마로 지정")}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                        active
+                          ? "bg-white/10 border-white/30 text-white"
+                          : "bg-transparent border-zinc-800 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200"
+                      } ${(!canEdit || themeBusy) ? "cursor-not-allowed opacity-60" : ""}`}
+                    >
+                      <span
+                        className="w-3 h-3 rounded-full border border-white/20"
+                        style={{ background: t.swatch }}
+                      />
+                      {t.name}
+                    </button>
+                  );
+                })}
+              </div>
+              {!asset.theme && (
+                <div className="mt-1.5 text-[10px] text-zinc-600">
+                  {canEdit ? "테마 미지정 — 칩 클릭 또는 'AI 추정'" : "테마 미지정"}
+                </div>
+              )}
             </div>
 
             {/* tags */}

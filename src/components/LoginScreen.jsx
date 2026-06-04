@@ -21,7 +21,9 @@ const friendly = (err) => {
   return err?.message || "알 수 없는 오류가 발생했습니다.";
 };
 
-export default function LoginScreen() {
+// asModal: 풀스크린 대신 오버레이 + 카드. 비로그인 상태에서 Topbar 로그인 버튼이나
+// 서브앱 진입 시도 시 띄움. onClose 가 있으면 오른쪽 상단 X 버튼 + 배경 클릭으로 닫기.
+export default function LoginScreen({ asModal = false, onClose }) {
   const T = useTheme();
   const { signInEmail, signUpEmail, signInGoogle, setPendingInviteCode } = useAuth();
   const [mode, setMode] = useState("signin");
@@ -43,6 +45,8 @@ export default function LoginScreen() {
       applyInvite();
       if (mode === "signin") await signInEmail(email, password);
       else await signUpEmail(email, password);
+      // 모달 모드: 성공 직후 닫기. onAuthStateChanged 가 비동기로 user/profile 채움.
+      if (asModal) onClose?.();
     } catch (err) {
       console.error("[Login] email auth failed", err);
       setError(friendly(err));
@@ -54,6 +58,7 @@ export default function LoginScreen() {
     try {
       applyInvite();
       await signInGoogle();
+      if (asModal) onClose?.();
     }
     catch (err) {
       console.error("[Login] google auth failed", err);
@@ -67,16 +72,43 @@ export default function LoginScreen() {
     color: T.text, outline: "none", transition: "border-color 0.15s",
   };
 
+  const wrapperStyle = asModal
+    ? {
+        position: "fixed", inset: 0, zIndex: 50000,
+        background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        fontFamily: "'Noto Sans KR', sans-serif",
+      }
+    : {
+        minHeight: "100vh", background: T.bg, color: T.text,
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+        fontFamily: "'Noto Sans KR', sans-serif",
+      };
+
   return (
-    <div style={{
-      minHeight: "100vh", background: T.bg, color: T.text,
-      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-      fontFamily: "'Noto Sans KR', sans-serif",
-    }}>
+    <div
+      style={wrapperStyle}
+      onClick={asModal ? (e) => { if (e.target === e.currentTarget) onClose?.(); } : undefined}
+    >
       <div style={{
-        width: "100%", maxWidth: 380, background: T.surface,
+        width: "100%", maxWidth: 380, background: T.surface, color: T.text,
         border: `1px solid ${T.border}`, borderRadius: 14, padding: "36px 32px",
+        position: "relative",
+        boxShadow: asModal ? "0 24px 60px rgba(0,0,0,0.45)" : "none",
       }}>
+        {asModal && (
+          <button
+            type="button" onClick={onClose} aria-label="닫기"
+            style={{
+              position: "absolute", top: 12, right: 12, width: 28, height: 28,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "transparent", color: T.textMuted, border: 0, borderRadius: 6,
+              cursor: "pointer", fontSize: 16, lineHeight: 1,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = T.hoverBg; e.currentTarget.style.color = T.text; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = T.textMuted; }}
+          >×</button>
+        )}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.18em", color: T.accent, textTransform: "uppercase", marginBottom: 6 }}>
             NEXUS Studio

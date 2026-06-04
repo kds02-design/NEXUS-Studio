@@ -364,15 +364,17 @@ function UserTable({ users, status, busyUid, onApprove, onReject, onDelete, onCh
 
 // ─────────────── 2. 평가 기준 관리 ───────────────
 const CRITERIA_TYPE_LIST = [
-  { id: "banner",     label: "배너" },
-  { id: "promotion",  label: "프로모션" },
-  { id: "brandweb",   label: "브랜드웹 메인" },
-  { id: "brandwebSub",label: "브랜드웹 서브" },
-  { id: "prompt",     label: "프롬프트" },
+  { id: "banner",          label: "배너" },
+  { id: "promotion",       label: "프로모션" },
+  { id: "promotionMobile", label: "프로모션 모바일" },
+  { id: "brandweb",        label: "브랜드웹 메인" },
+  { id: "brandwebSub",     label: "브랜드웹 서브" },
+  { id: "brandwebMobile",  label: "브랜드웹 모바일" },
+  { id: "prompt",          label: "프롬프트" },
   // ─── 타이포그래피 평가 (디자인 평가도구 v2 — 2026-05) ───
-  { id: "typo2d",     label: "2D 타이포" },
-  { id: "typoRender", label: "렌더링 타이포" },
-  { id: "typoMotion", label: "모션 타이포" },
+  { id: "typo2d",          label: "2D 타이포" },
+  { id: "typoRender",      label: "렌더링 타이포" },
+  { id: "typoMotion",      label: "모션 타이포" },
 ];
 
 // 전역 점수 보정(offset) — 유형별로 AI 가중평균 점수에 일괄 더해지는 보정값.

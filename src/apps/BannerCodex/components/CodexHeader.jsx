@@ -107,7 +107,7 @@ const CodexHeader = ({
   const sortLabel = { newest: '최신순', oldest: '오래된순', popular: '인기순', score: '평가순', name: '이름순' }[sortOrder] || '정렬';
 
   return (
-    <header className={`h-14 flex flex-nowrap items-center px-4 md:px-6 gap-3 z-40 shrink-0 sticky top-0 backdrop-blur-sm whitespace-nowrap transition-colors duration-300 ${isLightMode ? 'bg-white/90 border-b border-slate-200' : 'bg-[#0c0c0e]/90 border-b border-white/5'}`}>
+    <header className={`h-14 flex flex-nowrap items-center px-4 md:px-8 gap-3 z-40 shrink-0 sticky top-0 backdrop-blur-sm whitespace-nowrap transition-colors duration-300 ${isLightMode ? 'bg-white/90 border-b border-slate-200' : 'bg-[#0c0c0e]/90 border-b border-white/5'}`}>
       {/* 좌측: 모바일 메뉴 + 타이틀 + 전체 선택 */}
       <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
         <button onClick={() => setIsSidebarOpen(true)} className={`md:hidden shrink-0 ${isLightMode ? 'text-slate-400 hover:text-slate-900' : 'text-zinc-400 hover:text-white'}`}>

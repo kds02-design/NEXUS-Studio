@@ -15,11 +15,11 @@ import {
 // Pop 전용 메인 state + IR/compile orchestrator.
 // RenderMatrix 의 useRenderPrompt 와 비교 시:
 //   - usageGate / useGlobal payload 없음 (Pop 은 독립적)
-//   - 초기 currentView 가 "edit"
+//   - 초기 currentView 가 "editor" (생성 모드 — 신규 사용자 진입 시 첫 화면)
 //   - sendToMotion 도 없음 (copy 만 노출)
 export function usePopPrompt() {
   // ===== view / model / options =====
-  const [currentView, setCurrentView] = useState("edit");
+  const [currentView, setCurrentView] = useState("editor");
   const [aiModel, setAiModel] = useState("NanoBanana");
   const [appOptions, setAppOptions] = useState(INITIAL_OPTIONS);
 
@@ -53,7 +53,11 @@ export function usePopPrompt() {
   const [imageRatio] = useState("16:9");
 
   // ===== analyzer =====
+  // referenceImage — 사이드바의 "레퍼런스 이미지". 스타일/옵션 분석 입력.
+  // baseImage — 우측 결과 패널의 "기본 이미지". Imagen 렌더링의 base(image-to-image) 입력.
+  // 두 슬롯을 분리해 사용 — 분석용과 렌더용을 다른 이미지로 다룰 수 있도록.
   const [referenceImage, setReferenceImage] = useState(null);
+  const [baseImage, setBaseImage] = useState(null);
   const [isAnalyzingRef, setIsAnalyzingRef] = useState(false);
   const [importPromptStr, setImportPromptStr] = useState("");
   const [isAnalyzingPrompt, setIsAnalyzingPrompt] = useState(false);
@@ -119,24 +123,63 @@ export function usePopPrompt() {
         return next;
       });
     }
-    const so = parsed.selected_options;
+    const so = parsed.selected_options || {};
+    // 2D 평면 레퍼런스면 입체 가정을 강제 차단 — AI 가 selected_options 를 누락하거나
+    // 매끈한 값으로 잘못 잡아도 클라이언트에서 그런지/디스트레스 표현이 보존되도록 보정.
+    const is2DFlat = !!parsed.is2DFlat;
     if (so.directorPersona) setDirectorPersona(so.directorPersona);
+
+    // material — AI 가 new_options 에 평면 페인트/그런지 material 을 만들면 그 ID 로 자동 선택.
+    // selected_options.material 이 누락된 경우의 폴백.
+    const materialNewOpt = (parsed.new_options || []).find(o => o.category === 'materials');
     if (so.material) setMaterial(so.material);
-    if (so.surfaceDetail) setSurfaceDetail(so.surfaceDetail);
-    if (so.dramaticTex) setDramaticTex(so.dramaticTex);
-    if (so.wearLevel) setWearLevel(so.wearLevel);
+    else if (materialNewOpt) setMaterial(materialNewOpt.id);
+
+    // surfaceDetail — 2D 평면 + "Clean"(매끈 강제) 조합은 모순. 그런지 보존 위해 "High" 로 승격.
+    //   "perfectly smooth, flawless clean surface, absolutely NO scratches" 가 prompt 에 들어가면
+    //   분석이 잡아준 페인트/스크래치 텍스처를 완전히 무효화함.
+    if (is2DFlat) {
+      if (!so.surfaceDetail || so.surfaceDetail === "Clean") setSurfaceDetail("High");
+      else setSurfaceDetail(so.surfaceDetail);
+    } else if (so.surfaceDetail) setSurfaceDetail(so.surfaceDetail);
+
+    // dramaticTex — 2D 평면 + "None"("flawless polished uniform material") 도 마찬가지 모순.
+    //   AI 가 새 텍스처 옵션을 만들었으면 우선 사용, 아니면 기존 그런지 옵션(AncientErosion)으로 강제.
+    const dramaticTexNewOpt = (parsed.new_options || []).find(o => o.category === 'dramaticTextures');
+    if (is2DFlat) {
+      if (dramaticTexNewOpt) setDramaticTex(dramaticTexNewOpt.id);
+      else if (so.dramaticTex && so.dramaticTex !== "None") setDramaticTex(so.dramaticTex);
+      else setDramaticTex("AncientErosion"); // 그런지/페인트 디스트레스 톤 보존
+    } else if (so.dramaticTex) setDramaticTex(so.dramaticTex);
+
+    // wearLevel — 2D 평면 + "None"(Pristine) 도 디스트레스 표현과 충돌. 최소 MicroScratches.
+    if (is2DFlat) {
+      if (so.wearLevel && so.wearLevel !== "None") setWearLevel(so.wearLevel);
+      else setWearLevel("MicroScratches");
+    } else if (so.wearLevel) setWearLevel(so.wearLevel);
+
     if (so.frontRelief) setFrontRelief(so.frontRelief);
+    else if (is2DFlat) setFrontRelief("Flat");
     if (so.projectionDepth) setProjectionDepth(so.projectionDepth);
+    else if (is2DFlat) setProjectionDepth("None");
     if (so.energyCore) setEnergyCore(so.energyCore);
     if (so.enableVfx !== undefined) setEnableVfx(so.enableVfx);
     if (so.enableShadow !== undefined) setEnableShadow(so.enableShadow);
+    else if (is2DFlat) setEnableShadow(false);
     if (so.rimIntensity) setRimIntensity(so.rimIntensity);
     if (so.rimColor) setRimColor(so.rimColor);
+    // editBudget — 2D 면 SilhouetteTrace 강제(입체 추출 방지). 3D 면 모델 응답 그대로(없으면 유지).
+    if (so.editBudget) setEditBudget(so.editBudget);
+    else if (is2DFlat) setEditBudget("SilhouetteTrace");
     if (parsed.custom_intent) setUserIntent(parsed.custom_intent);
   };
 
   const handleAnalyzeReference = async () => {
-    if (!referenceImage) return;
+    if (!referenceImage) {
+      // 프리셋(ref_copy)이나 사이드바 분석 버튼 어디서 호출되든 일관된 안내.
+      showToast("📷 사이드바 \"레퍼런스 이미지\" 슬롯에 이미지를 먼저 등록하세요.", 4000);
+      return;
+    }
     setIsAnalyzingRef(true);
     try {
       const parsed = await analyzeReferenceImage(referenceImage, appOptions);
@@ -285,6 +328,7 @@ export function usePopPrompt() {
     rimColor, setRimColor, rimIntensity, setRimIntensity, enableGlint, setEnableGlint,
     renderEngine, setRenderEngine, userIntent, setUserIntent,
     referenceImage, setReferenceImage, isAnalyzingRef,
+    baseImage, setBaseImage,
     importPromptStr, setImportPromptStr, isAnalyzingPrompt,
     handleAnalyzeReference, handleAnalyzePrompt,
     editImage, setEditImage, editBudget, setEditBudget,

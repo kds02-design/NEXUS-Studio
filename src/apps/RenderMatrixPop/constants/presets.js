@@ -32,7 +32,7 @@ export const PRESET_GROUPS = [
   {
     id: "utility", icon: "🛠️", name: "카피/특수",
     presets: [
-      { id: "ref_copy", label: "레퍼런스 완벽 복사 모드", settings: { directorPersona: "Chameleon", material: "HyperChrome", dramaticTex: "Auto", surfaceDetail: "Standard", wearLevel: "None", energyCore: "None", fxOrigin: "Overall", fxIntensity: "Subtle", rimIntensity: "Moderate", rimColor: "White", vfxPassMode: false }, description: "업로드한 타겟 이미지의 렌더링 스타일, 질감, 톤앤매너를 그대로 1:1로 카피하는 데 집중합니다." },
+      { id: "ref_copy", label: "🦎 레퍼런스 분석 실행 (1:1 카피)", settings: {}, description: "사이드바의 \"레퍼런스 이미지\" 를 즉시 분석해 카멜레온 1:1 카피 세팅을 자동 적용합니다. (이 버튼 = 사이드바 \"레퍼런스 분석\" 버튼)" },
       { id: "vfx_pass", label: "이펙트 소스 추출 (매트)", settings: { vfxPassMode: true, background: "RealBlack", cameraLens: "Telephoto", energyCore: "MagmaEmbers", fxOrigin: "Overall", fxIntensity: "Intense", rimIntensity: "None" }, description: "타이포그래피 본체는 완전히 블랙아웃 처리하고, 주변에 발생하는 이펙트 요소만 분리하여 추출합니다." },
     ],
   },

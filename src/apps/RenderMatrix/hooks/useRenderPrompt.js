@@ -56,10 +56,18 @@ export function useRenderPrompt() {
   const [imageRatio] = useState("16:9");
 
   // ===== analyzer (reference image + prompt text) =====
+  // referenceImage 는 사이드바 "Image Analyzer" 의 역분석용 입력.
+  // 분석 버튼을 눌렀을 때만 옵션을 역공학해서 채우고, 실제 렌더링에는 사용하지 않는다.
   const [referenceImage, setReferenceImage] = useState(null);
   const [isAnalyzingRef, setIsAnalyzingRef] = useState(false);
   const [importPromptStr, setImportPromptStr] = useState("");
   const [isAnalyzingPrompt, setIsAnalyzingPrompt] = useState(false);
+
+  // ===== base image (image-to-image 렌더 입력) =====
+  // referenceImage 와 의도적으로 분리 — 사용자가 사이드바에서 레퍼런스를 올려도
+  // 우측 "기본 이미지" 패널은 비어있어야 한다 (실제 렌더 입력은 별도 업로드 요구).
+  // 변경: 이전엔 referenceImage 한 state 가 두 곳을 동시에 표시해 의도치 않은 교차가 발생.
+  const [baseImage, setBaseImage] = useState(null);
 
   // ===== arc payload =====
   const [incomingFromArc, setIncomingFromArc] = useState(null);
@@ -503,6 +511,8 @@ export function useRenderPrompt() {
     importPromptStr, setImportPromptStr,
     isAnalyzingPrompt,
     handleAnalyzeReference, handleAnalyzePrompt,
+    // base image (image-to-image 렌더 입력)
+    baseImage, setBaseImage,
     // arc
     incomingFromArc, setIncomingFromArc,
     arcRecommended, setArcRecommended,

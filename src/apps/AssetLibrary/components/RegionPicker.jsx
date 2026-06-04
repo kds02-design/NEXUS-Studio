@@ -8,8 +8,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, X } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
-import { captureAndSaveAsset } from "../services/firebase";
+import { captureAndSaveAsset, updateAssetMeta } from "../services/firebase";
+import { inferAssetTheme } from "../services/gemini";
 import { ASSET_CATEGORY_LIST, getCategoryIcon } from "../constants/categories";
+import { isAutoThemeEnabled } from "../constants/themes";
 
 export default function RegionPicker({ imageUrl, active, onCancel, onSaved, source, showToast }) {
   const { user } = useAuth();
@@ -134,6 +136,29 @@ export default function RegionPicker({ imageUrl, active, onCancel, onSaved, sour
       });
       showToast?.(`에셋 저장 완료: ${categoryId}`);
       onSaved?.(asset);
+      // 컬러톤 테마 백그라운드 추정 — 자동실행 토글이 켜진 경우만.
+      // 실패해도 사용자 흐름은 막지 않는다 (저장 자체는 이미 완료됨).
+      // Cloudinary 업로드 직후 imageUrl 가 있어 그걸 다시 fetch 해 base64 로 변환.
+      if (isAutoThemeEnabled() && asset?.imageUrl) {
+        (async () => {
+          try {
+            const res = await fetch(asset.imageUrl);
+            const blob = await res.blob();
+            const dataUrl = await new Promise((resolve, reject) => {
+              const r = new FileReader();
+              r.onloadend = () => resolve(r.result);
+              r.onerror = reject;
+              r.readAsDataURL(blob);
+            });
+            const theme = await inferAssetTheme(dataUrl);
+            if (theme) {
+              await updateAssetMeta(asset.id, { theme, themeSource: "ai" });
+            }
+          } catch (e) {
+            console.warn("[RegionPicker] theme inference failed (무시)", e?.message || e);
+          }
+        })();
+      }
       close();
     } catch (e) {
       console.error("[RegionPicker] save failed", e);

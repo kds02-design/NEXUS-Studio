@@ -151,7 +151,7 @@ const Sidebar = ({
         onClick={handleSidebarClick}
         className={`fixed inset-y-0 left-0 z-50 flex flex-col transition-[width] duration-300 ease-in-out cursor-default
           bg-[#111] border-r border-white/5
-          md:relative md:inset-auto md:bg-[#141414] md:border md:border-zinc-800/80 md:rounded-[16px] md:mt-[60px] md:mb-3 md:ml-3 md:shadow-2xl md:overflow-hidden
+          md:relative md:inset-auto md:bg-[#141414] md:border md:border-zinc-800/80 md:rounded-[16px] md:mt-3 md:mb-3 md:ml-3 md:shadow-2xl md:overflow-hidden
           ${isSidebarOpen ? 'translate-x-0 w-[190px]' : '-translate-x-full md:translate-x-0'}
           ${isDesktopSidebarOpen ? 'md:w-[190px]' : 'md:w-16'}
         `}

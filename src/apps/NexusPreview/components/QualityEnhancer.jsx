@@ -1,7 +1,8 @@
-// 퀄리티 업 — 배너 업로드 → (크기·위치 조절) → Gemini 분석으로 향상 프롬프트 생성 OR Pro 이미지 모델로 바로 렌더링.
+// 퀄리티 업 — 배너 업로드 → Gemini 분석으로 향상 프롬프트 생성 OR Pro 이미지 모델로 바로 렌더링.
 // 분석 호출 전 ensureCanGenerate("analysis"), 렌더 호출 전 ensureCanGenerate("image") (프로젝트 규약).
+// 업로드 이미지의 크기·위치 변형은 제거 — 원본을 그대로 모델에 전달해 비율 어긋남을 방지.
 import { useRef, useState } from "react";
-import { Upload, Sparkles, Copy, Check, RotateCcw, Wand2, Download, Move } from "lucide-react";
+import { Upload, Sparkles, Copy, Check, RotateCcw, Wand2, Download, Plus } from "lucide-react";
 import { useUsageGate } from "../../../components/UsageGate";
 import { analyzeForQuality, renderEnhanced } from "../services/qualityEnhancer";
 
@@ -10,33 +11,9 @@ const TOOLS = [
   { key: "gpt", label: "ChatGPT", sub: "GPT-4o 이미지 편집", color: "#10b981" },
 ];
 
-// 변환(스케일·위치) 적용본을 원본 해상도 캔버스로 평탄화 → dataURL.
-function flatten(dataUrl, frameW, scale, pos) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const nW = img.naturalWidth, nH = img.naturalHeight;
-      if (scale === 1 && pos.x === 0 && pos.y === 0) { resolve(dataUrl); return; }
-      const ratio = nW / (frameW || nW);
-      const canvas = document.createElement("canvas");
-      canvas.width = nW; canvas.height = nH;
-      const ctx = canvas.getContext("2d");
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, nW, nH);
-      const dW = nW * scale, dH = nH * scale;
-      ctx.drawImage(img, (nW - dW) / 2 + pos.x * ratio, (nH - dH) / 2 + pos.y * ratio, dW, dH);
-      resolve(canvas.toDataURL("image/jpeg", 0.92));
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
-}
-
 export default function QualityEnhancer({ T, accent }) {
   const { ensureCanGenerate, modal } = useUsageGate();
   const [dataUrl, setDataUrl] = useState(null);
-  const [scale, setScale] = useState(1);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
   const [aspect, setAspect] = useState(16 / 9);
 
   const [tool, setTool] = useState(null);
@@ -46,11 +23,10 @@ export default function QualityEnhancer({ T, accent }) {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState(0);
   const [dragOver, setDragOver] = useState(false);
-  const [dragging, setDragging] = useState(false);
+  // 사용자가 추가로 원하는 효과/지시 — 분석/렌더 양쪽 호출에 함께 전달.
+  const [extraInstructions, setExtraInstructions] = useState("");
 
   const fileRef = useRef(null);
-  const frameRef = useRef(null);
-  const dragRef = useRef(null);
 
   const onFile = (file) => {
     if (!file || !file.type.startsWith("image/")) return;
@@ -60,7 +36,7 @@ export default function QualityEnhancer({ T, accent }) {
       const probe = new Image();
       probe.onload = () => setAspect(probe.naturalWidth / probe.naturalHeight || 16 / 9);
       probe.src = url;
-      setDataUrl(url); setScale(1); setPos({ x: 0, y: 0 });
+      setDataUrl(url);
       setResult(null); setRenderedUrl(null); setError("");
     };
     reader.readAsDataURL(file);
@@ -68,19 +44,11 @@ export default function QualityEnhancer({ T, accent }) {
 
   const reset = () => {
     setDataUrl(null); setResult(null); setRenderedUrl(null); setError("");
-    setScale(1); setPos({ x: 0, y: 0 });
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  // 드래그 팬
-  const onDown = (e) => { dragRef.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y }; setDragging(true); };
-  const onMove = (e) => {
-    if (!dragRef.current) return;
-    setPos({ x: dragRef.current.ox + (e.clientX - dragRef.current.sx), y: dragRef.current.oy + (e.clientY - dragRef.current.sy) });
-  };
-  const onUp = () => { dragRef.current = null; setDragging(false); };
-
-  const getInput = () => flatten(dataUrl, frameRef.current?.clientWidth || 0, scale, pos);
+  // 입력은 업로드된 원본 그대로 — 비율/내용 손상 없이 모델에 전달.
+  const getInput = () => Promise.resolve(dataUrl);
 
   const runPrompt = async () => {
     if (!dataUrl || !tool || loading) return;
@@ -89,7 +57,7 @@ export default function QualityEnhancer({ T, accent }) {
     setLoading("prompt"); setResult(null); setRenderedUrl(null);
     try {
       const input = await getInput();
-      const r = await analyzeForQuality(input, tool);
+      const r = await analyzeForQuality(input, tool, extraInstructions);
       setResult(r); setActiveTab(0);
     } catch (e) { setError(e?.message || "분석 중 오류가 발생했습니다."); }
     finally { setLoading(""); }
@@ -102,7 +70,7 @@ export default function QualityEnhancer({ T, accent }) {
     setLoading("render"); setRenderedUrl(null); setResult(null);
     try {
       const input = await getInput();
-      const url = await renderEnhanced(input);
+      const url = await renderEnhanced(input, undefined, extraInstructions);
       setRenderedUrl(url);
     } catch (e) { setError(e?.message || "렌더링 중 오류가 발생했습니다."); }
     finally { setLoading(""); }
@@ -127,41 +95,23 @@ export default function QualityEnhancer({ T, accent }) {
         </p>
       </div>
 
-      {/* 업로드 / 변환 프레임 */}
+      {/* 업로드 미리보기 — 원본 그대로 표시. 크기·위치 조절 UI 제거 (비율 어긋남 방지). */}
       {dataUrl ? (
         <div style={{ marginBottom: 18 }}>
-          <div
-            ref={frameRef}
-            onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
-            style={{
-              position: "relative", width: "100%", aspectRatio: String(aspect),
-              maxHeight: 360, borderRadius: 12, border: `1px solid ${T.border}`,
-              background: "#0c0c12", overflow: "hidden", cursor: dragging ? "grabbing" : "grab",
-            }}
-          >
+          <div style={{
+            position: "relative", width: "100%", aspectRatio: String(aspect),
+            maxHeight: 360, borderRadius: 12, border: `1px solid ${T.border}`,
+            background: "#0c0c12", overflow: "hidden",
+          }}>
             <img src={dataUrl} alt="preview" draggable={false} style={{
               position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain",
-              transform: `translate(${pos.x}px, ${pos.y}px) scale(${scale})`, transformOrigin: "center",
               pointerEvents: "none", userSelect: "none",
             }} />
-            <div style={{ position: "absolute", top: 8, left: 8, display: "flex", alignItems: "center", gap: 5, padding: "4px 8px", borderRadius: 6, background: "rgba(0,0,0,0.45)", color: "#fff", fontSize: 11, pointerEvents: "none" }}>
-              <Move size={12} /> 드래그로 위치 이동
-            </div>
             <button onClick={reset} style={{
               position: "absolute", top: 8, right: 8, padding: "6px 12px", borderRadius: 8,
               background: "rgba(0,0,0,0.7)", border: `1px solid ${T.border}`, color: T.text, fontSize: 12, cursor: "pointer",
               display: "flex", alignItems: "center", gap: 6,
             }}><RotateCcw size={12} /> 다시 선택</button>
-          </div>
-          {/* 크기 / 위치 조절 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-            <span style={{ fontSize: 12, color: T.textMuted, minWidth: 80 }}>크기 · {Math.round(scale * 100)}%</span>
-            <input type="range" min={0.5} max={3} step={0.02} value={scale}
-              onChange={(e) => setScale(Number(e.target.value))} style={{ flex: 1, accentColor: accent }} />
-            <button onClick={() => { setScale(1); setPos({ x: 0, y: 0 }); }} style={{
-              padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.border}`, background: "transparent",
-              color: T.textMuted, fontSize: 12, cursor: "pointer",
-            }}>리셋</button>
           </div>
         </div>
       ) : (
@@ -203,6 +153,39 @@ export default function QualityEnhancer({ T, accent }) {
             </button>
           );
         })}
+      </div>
+
+      {/* 사용자 추가 지시 — 분석/렌더 양쪽에 동일 텍스트가 추가 요청으로 합쳐짐.
+          단, [절대 유지]·[얼굴 변형 금지] 등 핵심 정책과 충돌 시 정책이 우선. */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", color: T.textMuted, textTransform: "uppercase", display: "flex", alignItems: "center", gap: 6 }}>
+            <Plus size={12} /> 추가 효과 / 지시 (선택)
+          </div>
+          {extraInstructions && (
+            <button onClick={() => setExtraInstructions("")} style={{ fontSize: 11, color: T.textDim, background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>
+              지우기
+            </button>
+          )}
+        </div>
+        <textarea
+          value={extraInstructions}
+          onChange={(e) => setExtraInstructions(e.target.value)}
+          placeholder={"예) 배경에 차가운 푸른 안개를 살짝 깔아주세요\n예) 타이틀에 메탈릭 광택과 림라이트를 더해 배경 톤에 어울리게 (형태는 그대로)\n예) 캐릭터 갑옷의 금속 반사를 더 강하게"}
+          rows={3}
+          style={{
+            width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${T.border}`,
+            background: T.surface, color: T.text, fontSize: 13, lineHeight: 1.5, resize: "vertical",
+            fontFamily: "inherit", outline: "none", boxSizing: "border-box",
+          }}
+        />
+        <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>
+          * 추가 지시 안에 ★<b>얼굴 인상</b>(생김새/표정/연령) / 타이틀 <b>형태</b>(글자·자형·실루엣) /
+          <b>구도·레이아웃·색상 계열</b> / <b>가장자리 그라데이션 채움</b>★ 변경 요청이 있어도
+          <b>자동으로 무시되고 핵심 정책이 무조건 우선</b>합니다.
+          타이틀 <b>질감/마감</b>(메탈릭·반사·글로우·림라이트 등)은 배경과 어울리게 조정 가능하며,
+          타이틀은 항상 <b>시각적 HERO</b>(1차 focal point)로 가장 돋보이게 강조됩니다.
+        </div>
       </div>
 
       {/* 액션 — 프롬프트 생성 / 바로 렌더링 */}

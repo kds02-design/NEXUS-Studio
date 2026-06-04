@@ -125,30 +125,28 @@ const usageRef = (uid, dayKey) => doc(db, "users", uid, "usage", dayKey);
 export const creditsRef = (uid, wk = weekKey()) => doc(db, "users", uid, "credits", wk);
 const inviteRef = (code) => doc(db, "inviteCodes", code);
 
-// Decide initial role/status/grade based on email + verification.
-//   1) ADMIN_EMAILS                                                  → role=admin, grade=expert, approved
-//   2) Google OAuth (providerData.providerId === 'google.com')        → 이메일 검증된 것으로 간주
-//   3) @ncsoft.com 회사 도메인 OR local에 'ncsoft' 토큰 + 이메일 검증완료 → grade=pro, approved
-//   4) ncsoft 도메인이지만 이메일 미검증                                → grade=general, pending (검증 후 승급)
-//   5) 그 외 외부 이메일                                              → grade=general, pending (관리자 승인 대기)
+// Decide initial role/status/grade based on email.
+//   1) ADMIN_EMAILS                                  → role=admin, grade=expert, approved
+//   2) @ncsoft.com 또는 local 'ncsoft' 토큰          → grade=pro, approved
+//   3) 그 외 외부 이메일                             → grade=general, approved (인덱스만 노출, 서브앱은 게이트로 차단)
+// 모든 신규 가입자는 즉시 approved 로 진입. 서브앱 접근은 grade 로 게이트.
+// 인증 시스템 제거: 이메일 검증/관리자 승인 단계 모두 폐기.
+export function isNcsoftDomain(email) {
+  const domain = String(email || "").toLowerCase().split("@")[1] || "";
+  return PRO_DOMAINS.includes(domain);
+}
+
 function inferAccessFromEmail(emailOrUser) {
   // 하위호환 — 기존 호출부가 email 문자열만 넘기는 경우도 지원.
-  const user = typeof emailOrUser === "string" ? { email: emailOrUser, emailVerified: false, providerData: [] } : (emailOrUser || {});
+  const user = typeof emailOrUser === "string" ? { email: emailOrUser } : (emailOrUser || {});
   const e = String(user.email || "").toLowerCase();
   const domain = e.split("@")[1] || "";
   const isAdmin = ADMIN_EMAILS.includes(e);
-  const isProDomain = PRO_DOMAINS.includes(domain);
-  const isProLocal = isNcsoftLocal(e);
-  const isPro = isProDomain || isProLocal;
-  // Google OAuth 로 들어왔으면 Google 이 이미 이메일 소유를 확인했음.
-  const isGoogleProvider = Array.isArray(user.providerData) && user.providerData.some(p => p?.providerId === "google.com");
-  const isVerified = !!user.emailVerified || isGoogleProvider;
-  // ncsoft 도메인이라도 이메일 미검증이면 pro 부여하지 않음 (가짜 도메인 가입 방지).
-  const grantPro = isPro && isVerified;
+  const grantPro = PRO_DOMAINS.includes(domain) || isNcsoftLocal(e);
   return {
     role: isAdmin ? "admin" : "user",
     grade: isAdmin ? GRADES.expert : (grantPro ? GRADES.pro : GRADES.general),
-    status: (isAdmin || grantPro) ? STATUS.approved : STATUS.pending,
+    status: STATUS.approved,
   };
 }
 
@@ -166,11 +164,15 @@ export async function ensureUserProfile(user) {
     if (!data.grade) patch.grade = inferred.grade;
     if (!data.role) patch.role = inferred.role;
     if (!data.status) patch.status = inferred.status;
-    // 이메일 검증 완료 직후 재진입 — 도메인 자격 있는 사용자(ncsoft)면 자동 승급.
-    // 단, 관리자가 명시적으로 다른 grade 를 부여(pro_plus/expert)했거나, 다른 사유로 rejected 한 경우엔 건드리지 않음.
-    if (inferred.grade === GRADES.pro && data.grade === GRADES.general && data.status === STATUS.pending) {
-      patch.grade = GRADES.pro;
+    // 인증 시스템 폐기 마이그레이션 — 기존 status=pending 은 모두 approved 로 승격.
+    // 외부 메일(general)은 어차피 서브앱 게이트로 차단되므로 status 차이가 의미 없음.
+    // rejected 는 관리자가 명시적으로 막은 케이스라 유지.
+    if (data.status === STATUS.pending) {
       patch.status = STATUS.approved;
+    }
+    // ncsoft 도메인 자격 보유 사용자의 grade 백필 — 과거에 general 로 박혀 있던 doc 도 pro 로 승급.
+    if (inferred.grade === GRADES.pro && data.grade === GRADES.general) {
+      patch.grade = GRADES.pro;
     }
     // Always promote known admin emails (idempotent safety).
     if (ADMIN_EMAILS.includes(String(data.email || user.email || "").toLowerCase())) {

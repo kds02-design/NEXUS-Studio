@@ -6,6 +6,8 @@ import {
   BookOpen, Stars,
 } from 'lucide-react';
 import ForgePresetPanel from './ForgePresetPanel';
+import ForgeVariationGrid from './ForgeVariationGrid';
+import ForgeAtlasGrid from './ForgeAtlasGrid';
 
 export default function ForgeResultPanel({ forge }) {
   const {
@@ -26,6 +28,14 @@ export default function ForgeResultPanel({ forge }) {
     // overlay flags
     isAnalyzingStyle, isExpandingIntent, isKeywordSetting,
   } = forge;
+
+  // 변형 / 아틀라스 모드 — 별도 그리드 패널로 위임. Creation 모드의 PresetPanel/Prompt Output 와 자원 공유 없음.
+  if (currentView === 'micro-edit') {
+    return <ForgeVariationGrid forge={forge} />;
+  }
+  if (currentView === 'atlas') {
+    return <ForgeAtlasGrid forge={forge} />;
+  }
 
   return (
     <div className="flex-1 flex flex-col bg-[#050507] overflow-y-auto custom-scrollbar relative">

@@ -28,7 +28,8 @@ export function useFilter({ prompts, searchTerm, category, sortOption, favoriteI
       const term = searchTerm.toLowerCase();
       const matchSearch = [p.title, p.content, p.description, p.aiKeywords, ...(p.stepPrompts || []), ...(p.stepKeywords || []), ...(p.stepDescriptions || [])].some(s => (s || '').toLowerCase().includes(term));
       const matchCategory =
-        category === 'all' ? true :
+        // 전체 보기 — 공개(public) 항목만 표시. 본인 비공개도 여기선 제외 (내 폴더 → 내 비공개 에서 확인).
+        category === 'all' ? p.visibility !== 'private' :
         category === '즐겨찾기' ? favoriteIds.has(p.id) :
         category === 'my_private' ? (isMine(p) && p.visibility === 'private') :
         folderItems ? folderItems.has(p.id) :

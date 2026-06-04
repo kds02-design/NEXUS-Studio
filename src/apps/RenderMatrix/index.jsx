@@ -107,9 +107,10 @@ export default function RenderMatrixApp() {
       setRenderError('Imagen 렌더링은 Pro 등급 이상만 사용할 수 있습니다.');
       return;
     }
-    // 참조 이미지 필수 — 기준 시안이 있어야 image-to-image 렌더링이 가능.
-    if (!rp.referenceImage) {
-      const msg = '참조 이미지를 먼저 등록해주세요. (좌측 상단 "기본 이미지" 영역)';
+    // 기본 이미지 필수 — 사이드바 레퍼런스(역분석용) 와 분리된 별도 입력.
+    // 우측 상단 "기본 이미지" 패널에 직접 업로드된 시안만 image-to-image 입력으로 사용한다.
+    if (!rp.baseImage) {
+      const msg = '기본 이미지를 먼저 등록해주세요. (우측 상단 "기본 이미지" 영역에 직접 업로드)';
       setRenderError(msg);
       rp.showToast?.(msg);
       return;
@@ -124,11 +125,11 @@ export default function RenderMatrixApp() {
     setRenderError(null);
     setRenderedImage(null);
     try {
-      // 기본 이미지(referenceImage)가 dataURL 로 들어있으면 함께 전달 → image-to-image 렌더링.
+      // 기본 이미지(baseImage)가 dataURL 로 들어있으면 함께 전달 → image-to-image 렌더링.
       const result = await renderWithImagen(
         promptText,
         selectedModel,
-        rp.referenceImage,
+        rp.baseImage,
       );
       setRenderedImage(result);
       // 렌더 완료 즉시 PromptArc 내 폴더에 자동 등록 — 사용자 클릭 없이 백그라운드 진행.
@@ -141,7 +142,7 @@ export default function RenderMatrixApp() {
     } finally {
       setRendering(false);
     }
-  }, [canRender, selectedModel, rp.referenceImage, user, saveRenderToPromptArc]);
+  }, [canRender, selectedModel, rp.baseImage, user, saveRenderToPromptArc]);
 
   const handleDownloadRendered = useCallback(() => {
     if (!renderedImage?.dataUrl) return;
@@ -291,8 +292,8 @@ export default function RenderMatrixApp() {
           vfxPassMode={rp.vfxPassMode} editVfxPassMode={rp.editVfxPassMode}
           auditIssues={rp.auditIssues}
           qualityScores={rp.qualityScores}
-          referenceImage={rp.referenceImage}
-          setReferenceImage={rp.setReferenceImage}
+          baseImage={rp.baseImage}
+          setBaseImage={rp.setBaseImage}
           activeTroubleshoots={rp.activeTroubleshoots}
           onApplyTroubleshoot={applyAction}
           aiModel={rp.aiModel} setAiModel={rp.setAiModel}

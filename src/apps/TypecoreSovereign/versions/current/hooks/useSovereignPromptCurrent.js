@@ -852,7 +852,7 @@ Format: ONLY English, strict structural commands.`;
     const slantList = staticOptions.slantAngles;
     const destList = staticOptions.deformationDamages;
 
-    const weightEn = getOptionEn(weightList, stemWeight); const kerningEn = getOptionEn(kerningList, kerning); const terminalEn = getOptionEn(terminalList, terminalStyle); const sharpnessEn = getOptionEn(sharpnessList, strokeSharpness); const textureEn = getOptionEn(textureList, strokeTexture); const widthEn = getOptionEn(staticOptions.widths, charWidth); const proportionEn = getOptionEn(staticOptions.proportions, charProportion); const cornerList = [...staticOptions.cornerStyles, ...(dynamicOptions.cornerStyles || [])]; const cornerEn = getOptionEn(cornerList, cornerStyle); const kineticEn = getOptionEn(kineticList, kineticVelocity); const slantEn = getOptionEn(slantList, slantAngle); const destructionEn = getOptionEn(destList, deformationDamage); const occupancyEn = getOptionEn(staticOptions.occupancies, occupancy); const slicingEn = getOptionEn(staticOptions.slicingIntensities, slicingIntensity); const subSizeEn = getOptionEn(staticOptions.subTitleSizes, subTitleSize);
+    const weightEn = getOptionEn(weightList, stemWeight); const kerningEn = getOptionEn(kerningList, kerning); const terminalEn = getOptionEn(terminalList, terminalStyle); const sharpnessEn = getOptionEn(sharpnessList, strokeSharpness); const textureEn = getOptionEn(textureList, strokeTexture); const widthEn = getOptionEn(staticOptions.widths, charWidth); const proportionEn = getOptionEn(staticOptions.proportions, charProportion); const cornerList = [...staticOptions.cornerStyles, ...(dynamicOptions.cornerStyles || [])]; const cornerEn = getOptionEn(cornerList, cornerStyle); const kineticEn = getOptionEn(kineticList, kineticVelocity); const slantEn = getOptionEn(slantList, slantAngle); const destructionEn = getOptionEn(destList, deformationDamage); let occupancyEn = getOptionEn(staticOptions.occupancies, occupancy); const slicingEn = getOptionEn(staticOptions.slicingIntensities, slicingIntensity); const subSizeEn = getOptionEn(staticOptions.subTitleSizes, subTitleSize);
     const extensionEn = getOptionEn([...staticOptions.strokeExtensions, ...(dynamicOptions.strokeExtensions || [])], strokeExtension);
     const letterConnEn = getOptionEn([...staticOptions.letterConnections, ...(dynamicOptions.letterConnections || [])], letterConnection);
     const internalSpaceEn = getOptionEn([...staticOptions.internalSpaces, ...(dynamicOptions.internalSpaces || [])], internalSpace);
@@ -876,12 +876,14 @@ Format: ONLY English, strict structural commands.`;
     else if (layoutType === "SubTitle") layoutEn = `Hierarchical composition. Explicitly smaller subtitle on top (${subSizeEn}), Main title below.`;
     else if (layoutType === "Center") layoutEn = "Centralized balanced composition.";
 
+    // aspect ratio 토큰은 모델 파라미터(imageRatio)로 잡히는 게 우선이므로 무가중치 hint 만.
+    // 이전엔 1.4~1.5 weight 로 본문에 박혀 다른 핵심 토큰의 영향력을 묽혔음(weight inflation 주범).
     let aspectRatioEn = "";
-    if (aspectRatio === "1:1") aspectRatioEn = "(perfectly 1:1 square canvas resolution:1.5), symmetric square frame, ";
-    else if (aspectRatio === "16:9") aspectRatioEn = "(16:9 widescreen canvas format:1.4), horizontal wide framing, ";
-    else if (aspectRatio === "9:16") aspectRatioEn = "(9:16 vertical portrait canvas format:1.5), tall vertical framing, ";
-    else if (aspectRatio === "2.76:1") aspectRatioEn = "(ultra-wide 2.76:1 cinematic panorama canvas:1.5), extreme horizontal framing, ";
-    else if (aspectRatio === "2.39:1") aspectRatioEn = "(ultra-wide 2.39:1 cinemascope panorama canvas:1.5), extreme horizontal framing, ";
+    if (aspectRatio === "1:1") aspectRatioEn = "symmetric square framing, ";
+    else if (aspectRatio === "16:9") aspectRatioEn = "horizontal widescreen framing, ";
+    else if (aspectRatio === "9:16") aspectRatioEn = "tall vertical framing, ";
+    else if (aspectRatio === "2.76:1") aspectRatioEn = "ultra-wide cinematic panorama framing, ";
+    else if (aspectRatio === "2.39:1") aspectRatioEn = "ultra-wide cinemascope panorama framing, ";
 
     const activeCoreData = coreArchetypes.find(p => p.id === coreArchetype) || coreArchetypes[0];
     // userAuraEn 우선순위: 영문 번역 캐시 → 원문(영어 입력 fallback) → 기본 문구.
@@ -970,6 +972,12 @@ Format: ONLY English, strict structural commands.`;
     const hasTexture = strokeTexture !== 'Tex_Clean';
     const hasDamage  = deformationDamage !== 'Damage_None';
     const hasSlant   = slantAngle !== 'Slant_0';
+    // 세로장평/세로장형 비율 — guard_layout 의 "NO tall letters / vertical stretching" 과 직접 모순.
+    const hasCondensed = charProportion === 'P_Condensed';
+    // 짧은 문자열(2자 이하) — "40-50% canvas width" 같은 좁은 점유율은 글자 하나가 비정상 확대됨.
+    //   stripped of whitespace/newline so "AB CD" 도 4자로 인식.
+    const stripped = (inputText || '').replace(/\s|\n/g, '');
+    const isShortText = stripped.length > 0 && stripped.length <= 2;
     // 멀티-어절 (공백 포함) 텍스트 — 모델이 자연어 공백 그대로 두면 어절 사이가 벌어져 통일감 깨짐.
     const hasWordSpace = /\s/.test((inputText || '').trim());
 
@@ -997,7 +1005,24 @@ Format: ONLY English, strict structural commands.`;
     if (hasSlicing || hasDamage) guardConflictPatterns.push(/flawless\s+silhouette\s+boundary/i);
     if (hasTexture || hasDamage) guardConflictPatterns.push(/perfectly\s+smooth/i, /pristine\s+vector\s+surface/i);
     if (hasSlant)                guardConflictPatterns.push(/strictly\s+normal\s+horizontal\s+text\s+proportions/i);
+    // 세로장평 비율(P_Condensed) 선택 시 guard_layout 의 "horizontal proportions / baseline" 도 모순.
+    //   (의도적으로 세로로 길게 만들고 싶은데 normal horizontal 을 강제하면 모델이 어정쩡한 표준으로 회귀.)
+    if (hasCondensed) guardConflictPatterns.push(/strictly\s+normal\s+horizontal\s+text\s+proportions/i, /perfect\s+text\s+baseline/i);
     activeGuardsPositive = activeGuardsPositive.filter(t => !guardConflictPatterns.some(p => p.test(t)));
+
+    // Negative 쪽 — guard_layout 의 "NO tall letters / NO vertical stretching" 은 P_Condensed 와 정면 충돌.
+    //   세로장평을 의도한 경우엔 두 토큰만 빼고 다른 가드(baseline / horizontal proportions) 는 위에서 이미 약화.
+    if (hasCondensed) {
+      activeGuardsNegative = activeGuardsNegative.filter(t =>
+        !/tall\s+letters/i.test(t) && !/vertical\s+stretching/i.test(t)
+      );
+    }
+
+    // 짧은 텍스트(1~2자) + "40% 억제" 점유율 → 글자 하나당 매우 좁은 폭으로 강제돼 글자가 기형으로 확대.
+    //   "60-72%" 로 자동 완화. 사용자가 명시적으로 "80% 최대" 등을 골랐으면 그대로 유지.
+    if (isShortText && occupancy === '40%') {
+      occupancyEn = "(bold typography centered with comfortable negative space:1.3), (text occupying 60-72% of canvas width:1.3), balanced negative space margins";
+    }
 
     // persona.forbidden 중 사용자 선택과 직접 충돌하는 항목 제거 후 가중치 변환.
     //   - "broken elements / fragile" : 사선절단·손상이 깨진 요소를 의도적으로 만드는데 negative 로 들어가면 모순.
@@ -1042,7 +1067,10 @@ Format: ONLY English, strict structural commands.`;
     // ─────────────────────────────────────────────────────────────────
     const scores = getValidationScores();
     const preservationWeight = scores.legibility < 70 ? "1.7" : "1.5";
-    const integrityTag = scores.shapeIntegrity < 60
+    // integrity lock — refine 모드의 "pristine geometric precision" 과 의미 중복이라 동시 적용 시
+    // weight inflation 유발. refine 모드 활성일 땐 lock 을 묶지 않음(refine 의 1.3 으로 충분).
+    const isRefineMode = isEnhanceModeEnabled && enhanceMode === 'refine';
+    const integrityTag = (scores.shapeIntegrity < 60 && !isRefineMode)
       ? "(maximum shape integrity lock:1.8), "
       : "";
     const auraBlock = userAuraEn !== "Standard deployment"
@@ -1051,7 +1079,9 @@ Format: ONLY English, strict structural commands.`;
     let modeSpecificBlock = "";
     if (isEnhanceModeEnabled) {
       if (enhanceMode === 'refine') {
-        modeSpecificBlock = "(pristine geometric precision:1.3), (optical balance:1.2), subtle serif refinement, minor cut sharpening, ";
+        // 변경: "subtle serif refinement" 제거 — guard 의 "NO classical serifs" 와 정면 충돌.
+        //   refine 의 본의는 "기하 정밀도·시각 보정" 이지 세리프 추가가 아님.
+        modeSpecificBlock = "(pristine geometric precision:1.3), (optical balance:1.2), minor cut sharpening, ";
       } else if (enhanceMode === 'variation') {
         modeSpecificBlock = "(stroke proportion variation:1.3), (counterform reinterpretation:1.2), partial letterform merging, dynamic weight contrast, ";
       } else if (enhanceMode === 'deconstruct') {

@@ -59,10 +59,9 @@ const handleCopy = (text) => {
 
 export default function App() {
   const { user, isAdmin } = useAuth();
-  const { payload, clearPayload, navigate } = useGlobal();
-  // BannerCodex 는 다른 NEXUS 앱과 톤을 맞춰 항상 다크 테마로 표시.
-  // 글로벌 테마와 무관하게 첫 진입 흰 화면을 막기 위해 isLightMode 를 false 로 고정.
-  const isLightMode = false;
+  const { payload, clearPayload, navigate, isLight } = useGlobal();
+  // 글로벌 테마(useGlobal().isLight) 를 그대로 반영. 라이트 분기는 컴포넌트 트리 전반에 이미 존재.
+  const isLightMode = !!isLight;
   const consumedPayloadRef = useRef(null);
   // AssetLibrary → 출처로 이동 시 returnToAssetId 가 있으면 저장.
   // 모달 닫기 때 이 정보로 다시 asset-library 로 돌아가서 detail 자동 오픈.

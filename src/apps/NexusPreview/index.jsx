@@ -5,8 +5,9 @@
 //   타이틀·검정배경제거·공통(전체 적용)은 상단 공유. 프리뷰 전용 콘텐츠 가이드 라인 지원.
 // 화면 프리뷰는 DOM(transform + cqh), 다운로드는 canvas — 같은 비율 수식으로 "본 대로 출력".
 import { useEffect, useRef, useState } from "react";
-import { Download, Image as ImageIcon, Layers, Lock, Unlock, Eraser, ChevronDown } from "lucide-react";
+import { Download, Image as ImageIcon, Layers, Lock, Unlock, Eraser, ChevronDown, Save, FolderOpen, Loader2 } from "lucide-react";
 import { useGlobal, useTheme } from "../../context/GlobalContext";
+import { useAuth } from "../../context/AuthContext";
 import { APP_MAP } from "../../config/apps";
 import { subscribeToGameLogos } from "../../lib/gameLogos";
 import {
@@ -14,6 +15,8 @@ import {
   scrimToCss, bottomFadeToCss, vignetteToCss, radialDimToCss, SUB_FONT_OPTIONS,
 } from "./constants/platformTemplates";
 import { downloadPlatformPng, knockoutBlack } from "./services/compositor";
+import { saveWork, workDocToSnapshot } from "./services/works";
+import WorksPanel from "./components/WorksPanel";
 import QualityEnhancer from "./components/QualityEnhancer";
 
 const ACCENT = APP_MAP["nexus-preview"]?.color || "#22B8CF";
@@ -51,6 +54,7 @@ function readImageFile(file, cb) {
 export default function NexusPreview() {
   const T = useTheme();
   const { payload, clearPayload } = useGlobal();
+  const { user } = useAuth();
 
   const [mode, setMode] = useState("placement");
   const [category, setCategory] = useState("promo");
@@ -86,6 +90,11 @@ export default function NexusPreview() {
   const [titleDragOver, setTitleDragOver] = useState(false);
   const [commonCopy, setCommonCopy] = useState("");
   const [commonDate, setCommonDate] = useState("");
+  // 작업목록
+  const [worksPanelOpen, setWorksPanelOpen] = useState(false);
+  const [savingWork, setSavingWork] = useState(false);
+  const [toast, setToast] = useState(null); // { msg, type:'info'|'error' }
+  const showToast = (msg, type = 'info') => { setToast({ msg, type }); setTimeout(() => setToast(null), 2500); };
 
   const titleInputRef = useRef(null);
   const globalBgInputRef = useRef(null);
@@ -186,6 +195,53 @@ export default function NexusPreview() {
     finally { setBusy(false); }
   };
 
+  // 현재 시안(설정 + 이미지) 을 작업목록에 저장 — 이미지는 Cloudinary 로 업로드 후 URL 만 Firestore 에.
+  const handleSaveWork = async () => {
+    if (savingWork) return;
+    if (!user?.uid) { showToast("로그인이 필요합니다.", "error"); return; }
+    const name = prompt("작업 이름을 입력하세요 (예: '신작 타이틀 A — 시안 1')", `시안 ${new Date().toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`);
+    if (name === null) return;
+    setSavingWork(true);
+    try {
+      await saveWork(user.uid, {
+        name, category, mode,
+        globalScale, knockout, knockoutThreshold,
+        commonCopy, commonDate,
+        titleSrc, settings,
+      });
+      showToast("✅ 작업목록에 저장되었습니다.");
+    } catch (e) {
+      console.error("[NexusPreview] saveWork failed", e);
+      showToast("저장 실패: " + (e.message || e.code || e), "error");
+    } finally { setSavingWork(false); }
+  };
+
+  // 작업목록에서 항목 클릭 → 현재 상태에 통째로 덮어쓰기 (이미지 URL 그대로 표시).
+  const handleRestoreWork = (workDoc) => {
+    const snap = workDocToSnapshot(workDoc);
+    if (!snap) return;
+    setMode(snap.mode || "placement");
+    setCategory(snap.category || "promo");
+    setGlobalScale(snap.globalScale ?? DEFAULT_SCALE);
+    setKnockout(!!snap.knockout);
+    setKnockoutThreshold(Number(snap.knockoutThreshold) || 40);
+    setCommonCopy(snap.commonCopy || "");
+    setCommonDate(snap.commonDate || "");
+    setTitleSrc(snap.titleSrc || null);
+    setProcessedTitle(null); // titleSrc 가 바뀌면 effect 가 재처리
+    // settings — 저장된 플랫폼만 덮어쓰고 누락된 것은 현재값 유지(스키마 진화 안전망).
+    setSettings(prev => {
+      const next = { ...prev };
+      for (const [pid, s] of Object.entries(snap.settings || {})) {
+        if (next[pid]) next[pid] = { ...next[pid], ...s };
+      }
+      // 첫 카테고리 카드를 활성으로 — 복원 후에도 좌측 컨트롤이 자연스럽게 활성 카드와 동기화.
+      return next;
+    });
+    setActiveId(idsOfCategory(snap.category || "promo")[0]);
+    showToast(`'${workDoc.name}' 불러옴`);
+  };
+
   return (
     <div style={{
       display: "flex", height: "100%", background: T.bg, color: T.text,
@@ -284,7 +340,7 @@ export default function NexusPreview() {
 
       {/* ── 메인 영역 ────────────────────────────────────── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* 상위 계층 모드 스위치 */}
+        {/* 상위 계층 모드 스위치 + 작업목록 액션 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 28px 0", flexShrink: 0 }}>
           {MODE_TABS.map(m => (
             <button key={m.key} onClick={() => setMode(m.key)} style={{
@@ -294,6 +350,34 @@ export default function NexusPreview() {
               background: mode === m.key ? ACCENT : "transparent", color: mode === m.key ? "#fff" : T.textMuted,
             }}>{m.label}</button>
           ))}
+          {/* 우측 끝 — 작업 저장 / 작업목록 */}
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={handleSaveWork}
+            disabled={savingWork || !user?.uid}
+            title={user?.uid ? "현재 시안(설정·이미지)을 작업목록에 저장" : "로그인하면 작업목록에 저장할 수 있습니다"}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+              border: `1px solid ${T.border}`, background: T.card,
+              color: user?.uid ? T.text : T.textDim,
+              cursor: savingWork || !user?.uid ? "not-allowed" : "pointer",
+              opacity: savingWork ? 0.6 : 1,
+            }}
+          >
+            {savingWork ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} 저장
+          </button>
+          <button
+            onClick={() => setWorksPanelOpen(true)}
+            title="저장된 작업 시안 열기"
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+              border: `1px solid ${ACCENT}55`, background: `${ACCENT}14`, color: ACCENT, cursor: "pointer",
+            }}
+          >
+            <FolderOpen size={13} /> 작업목록
+          </button>
         </div>
 
         {/* 카테고리 탭 */}
@@ -329,6 +413,26 @@ export default function NexusPreview() {
           )}
         </div>
       </div>
+
+      {/* 작업목록 모달 */}
+      <WorksPanel
+        open={worksPanelOpen}
+        onClose={() => setWorksPanelOpen(false)}
+        uid={user?.uid || null}
+        T={T}
+        onRestore={handleRestoreWork}
+      />
+
+      {/* 토스트 — 저장/복원 알림 */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 28, left: "50%", transform: "translateX(-50%)",
+          padding: "10px 18px", borderRadius: 999, zIndex: 10000,
+          background: toast.type === "error" ? "rgba(244,63,94,0.95)" : "rgba(34,184,207,0.95)",
+          color: "#fff", fontSize: 12, fontWeight: 700,
+          boxShadow: "0 12px 28px rgba(0,0,0,0.4)", pointerEvents: "none",
+        }}>{toast.msg}</div>
+      )}
     </div>
   );
 }

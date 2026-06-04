@@ -1,6 +1,7 @@
 // 에셋 자동 분석 — 업로드된 PNG 원본을 보고 title + tags 추론.
 // PromptArc / PromptAudit 와 동일한 단순 fetch 패턴.
 import { GEMINI_API_KEY } from "../../../lib/gemini";
+import { ASSET_THEME_IDS } from "../constants/themes";
 
 const ANALYSIS_SCHEMA = {
   type: "OBJECT",
@@ -88,4 +89,73 @@ export async function analyzeAssetImage(dataUrl, { apiKey } = {}) {
   const cat = ALLOWED_CATEGORIES.includes(parsed.suggested_category)
     ? parsed.suggested_category : null;
   return { title, tags, suggestedCategory: cat };
+}
+
+// 컬러톤 테마 1개 추정 — 다크판타지 비중이 압도적이라 4톤으로 단순화.
+// 추출 직후 백그라운드 호출. 실패/타임아웃이면 null 반환 (저장 안 함).
+const THEME_PROMPT = `이 이미지는 게임 UI 또는 마케팅 배너에서 잘라낸 단일 에셋이야. 전체적인 컬러톤을 다음 4개 중 하나로만 분류해줘:
+
+- "brown": 따뜻한 갈색·세피아·우드톤이 지배적
+- "darkbrown": 진한 갈색·검정·다크판타지 어두운 톤
+- "blue": 푸른색·청록·차가운 톤 지배적
+- "light": 밝은·하얀·파스텔·골드 같은 밝은 톤 지배적
+
+규칙:
+- 4개 중 정확히 하나의 영어 키만 응답
+- 애매하면 가장 면적이 큰 색으로 결정
+- 다크판타지 게임 에셋이 많으니 "darkbrown" 빈도가 높을 수 있음`;
+
+const THEME_SCHEMA = {
+  type: "OBJECT",
+  properties: { theme: { type: "STRING" } },
+  required: ["theme"],
+};
+
+export async function inferAssetTheme(dataUrl, { apiKey, timeoutMs = 15000 } = {}) {
+  const key = apiKey || GEMINI_API_KEY;
+  if (!key) return null;
+  const base64 = toBase64(dataUrl);
+  if (!base64) return null;
+
+  const body = {
+    contents: [{
+      parts: [
+        { text: THEME_PROMPT },
+        { inlineData: { mimeType: inferMime(dataUrl), data: base64 } },
+      ],
+    }],
+    generationConfig: {
+      temperature: 0.1,
+      responseMimeType: "application/json",
+      responseSchema: THEME_SCHEMA,
+    },
+    safetySettings: [
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+    ],
+  };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => { try { controller.abort(); } catch {} }, timeoutMs);
+  try {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: controller.signal }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!raw) return null;
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { return null; }
+    const t = String(parsed.theme || "").trim().toLowerCase();
+    return ASSET_THEME_IDS.includes(t) ? t : null;
+  } catch (e) {
+    console.warn("[AssetLibrary] inferAssetTheme failed", e?.message || e);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }

@@ -2,7 +2,7 @@
 // 다른 앱에서 영역 선택으로 잘라낸 이미지(타이틀/버튼/박스/아이템/아이콘)를 모아둠.
 // PromptArc 와 동일한 사이드바 + 카드 그리드 구조.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, X, Grip, LayoutGrid, Maximize2 } from "lucide-react";
+import { Search, X, Grip, LayoutGrid, Maximize2, ChevronDown, Sparkles } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobal } from "../../context/GlobalContext";
 import { useUsageGate } from "../../components/UsageGate";
@@ -10,9 +10,36 @@ import { subscribeAssets, deleteAsset, toggleAssetLike } from "./services/fireba
 import {
   ASSET_CATEGORY_LIST, getCategoryMeta, isTempAsset,
 } from "./constants/categories";
+import {
+  ASSET_THEME_LIST, getThemeMeta,
+  isAutoThemeEnabled, setAutoThemeEnabled,
+} from "./constants/themes";
 import AssetSidebar from "./components/AssetSidebar";
 import AssetCard from "./components/AssetCard";
 import AssetDetailModal from "./components/AssetDetailModal";
+
+// source.app 사람이 읽는 라벨. 알 수 없는 키는 그대로 노출.
+const SOURCE_APP_LABEL = {
+  "banner-codex": "Banner Codex",
+  "brand-web-review": "Brand Web Library",
+  "promotion-archive": "Promotion Archive",
+  "asset-library": "Asset Library",
+};
+const sourceAppLabel = (app) => SOURCE_APP_LABEL[app] || app || "출처 미상";
+// 출처 그룹 키 — 같은 배너/프로모션에서 나온 에셋들을 묶는다.
+// app 만 있고 bannerId 가 없는 옛 데이터는 app 단위로만 묶임.
+const sourceGroupKey = (a) => {
+  const app = a?.source?.app;
+  const bid = a?.source?.bannerId;
+  if (!app) return null;
+  return bid ? `${app}:${bid}` : `${app}:`;
+};
+const sourceGroupLabel = (a) => {
+  const app = a?.source?.app;
+  const title = a?.source?.bannerTitle;
+  if (title) return title;
+  return sourceAppLabel(app);
+};
 
 // 현재 카테고리(또는 가상 필터) → 헤더 타이틀.
 function headerTitleFor(category) {
@@ -37,6 +64,16 @@ export default function AssetLibraryApp() {
   // 그리드 크기 — BannerCodex 동일 3단계.
   const [gridSize, setGridSize] = useState('medium');
   const gridMinPx = gridSize === 'small' ? 140 : gridSize === 'large' ? 320 : 220;
+  // 출처(source group) / 테마(theme) 다중 선택 필터. 빈 Set = 필터 OFF.
+  const [sourceFilter, setSourceFilter] = useState(() => new Set());
+  const [themeFilter, setThemeFilter] = useState(() => new Set());
+  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
+  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  // AI 자동 추정 토글 — localStorage 영속화.
+  const [autoTheme, setAutoTheme] = useState(() => isAutoThemeEnabled());
+  const toggleAutoTheme = useCallback(() => {
+    setAutoTheme((v) => { setAutoThemeEnabled(!v); return !v; });
+  }, []);
 
   // 토스트
   const showToast = useCallback((msg, type = "info") => {
@@ -85,13 +122,23 @@ export default function AssetLibraryApp() {
     }
   }, []);
 
-  // 필터링
+  // 필터링 — 카테고리 AND 출처(OR) AND 테마(OR) AND 검색.
+  // 테마 필터 적용 시 theme 가 null/undefined 인 에셋은 제외 (기존 에셋이 노이즈처럼 끼지 않도록).
   const filtered = useMemo(() => {
     let list = assets;
     if (category === "favorites") list = list.filter((a) => a.liked);
     else if (category === "temp") list = list.filter((a) => isTempAsset(a));
     else if (category === "uploaded") list = list.filter((a) => !isTempAsset(a));
     else if (category !== "all") list = list.filter((a) => a.category === category);
+    if (sourceFilter.size > 0) {
+      list = list.filter((a) => {
+        const k = sourceGroupKey(a);
+        return k && sourceFilter.has(k);
+      });
+    }
+    if (themeFilter.size > 0) {
+      list = list.filter((a) => a.theme && themeFilter.has(a.theme));
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       list = list.filter((a) =>
@@ -101,7 +148,7 @@ export default function AssetLibraryApp() {
       );
     }
     return list;
-  }, [assets, category, searchQuery]);
+  }, [assets, category, sourceFilter, themeFilter, searchQuery]);
 
   // 카테고리별 카운트
   const countByCat = useMemo(() => {
@@ -109,6 +156,50 @@ export default function AssetLibraryApp() {
     for (const a of assets) m[a.category] = (m[a.category] || 0) + 1;
     return m;
   }, [assets]);
+
+  // 출처 그룹 목록 + 카운트 — 사이드바 카테고리 필터 적용 전 전체 기준으로 산출.
+  // 그래야 카테고리 좁혀도 같은 출처에서 다른 에셋이 있는지 보이는 효과.
+  const sourceGroups = useMemo(() => {
+    const m = new Map(); // key -> { key, label, app, count }
+    for (const a of assets) {
+      const k = sourceGroupKey(a);
+      if (!k) continue;
+      if (m.has(k)) {
+        m.get(k).count += 1;
+      } else {
+        m.set(k, { key: k, label: sourceGroupLabel(a), app: a.source?.app || "", count: 1 });
+      }
+    }
+    // 라벨 사전순 정렬. 빈도 높은 게 위로 가는 게 자연스럽지만 칩이 흔들리는 게 더 거슬릴 수 있어 라벨순 유지.
+    return Array.from(m.values()).sort((x, y) => x.label.localeCompare(y.label, "ko"));
+  }, [assets]);
+
+  // 테마별 카운트
+  const countByTheme = useMemo(() => {
+    const m = {};
+    for (const a of assets) if (a.theme) m[a.theme] = (m[a.theme] || 0) + 1;
+    return m;
+  }, [assets]);
+
+  const toggleSource = useCallback((key) => {
+    setSourceFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
+  const toggleTheme = useCallback((id) => {
+    setThemeFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearAllFilters = useCallback(() => {
+    setSourceFilter(new Set());
+    setThemeFilter(new Set());
+  }, []);
+  const hasAnyFilter = sourceFilter.size > 0 || themeFilter.size > 0;
 
   const handleDelete = async (asset) => {
     if (!confirm("이 에셋을 삭제하시겠습니까?")) return;
@@ -201,6 +292,177 @@ export default function AssetLibraryApp() {
             </div>
           </div>
         </header>
+
+        {/* Filter chips — 출처 / 테마 다중 필터 + AI 자동 추정 토글 */}
+        <div className="px-4 md:px-6 py-2 border-b border-white/5 flex items-center gap-2 flex-wrap shrink-0">
+          {/* 출처 드롭다운 */}
+          <div className="relative">
+            <button
+              onClick={() => { setSourceMenuOpen((v) => !v); setThemeMenuOpen(false); }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                sourceFilter.size > 0
+                  ? "bg-white/10 border-white/20 text-white"
+                  : "bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200 hover:border-white/15"
+              }`}
+            >
+              출처
+              {sourceFilter.size > 0 && (
+                <span className="text-[9px] px-1 rounded bg-white/20 text-white">{sourceFilter.size}</span>
+              )}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {sourceMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-[40]" onClick={() => setSourceMenuOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 z-[50] min-w-[240px] max-h-[320px] overflow-y-auto bg-[#1A1A1A] border border-white/10 rounded-lg shadow-2xl py-1">
+                  {sourceGroups.length === 0 ? (
+                    <div className="px-3 py-3 text-[11px] text-zinc-500">출처 정보가 있는 에셋이 없어요</div>
+                  ) : (
+                    sourceGroups.map((g) => {
+                      const active = sourceFilter.has(g.key);
+                      return (
+                        <button
+                          key={g.key}
+                          onClick={() => toggleSource(g.key)}
+                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-left transition-colors ${
+                            active ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5"
+                          }`}
+                        >
+                          <span
+                            className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
+                              active ? "bg-white/80 border-white/80 text-black" : "border-white/30"
+                            }`}
+                          >
+                            {active && <span className="text-[8px] leading-none">✓</span>}
+                          </span>
+                          <span className="flex-1 truncate">{g.label}</span>
+                          <span className="text-[9px] text-zinc-500 shrink-0">[{sourceAppLabel(g.app).split(" ")[0]}]</span>
+                          <span className="text-[9px] text-zinc-500 tabular-nums shrink-0">{g.count}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 테마 드롭다운 */}
+          <div className="relative">
+            <button
+              onClick={() => { setThemeMenuOpen((v) => !v); setSourceMenuOpen(false); }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
+                themeFilter.size > 0
+                  ? "bg-white/10 border-white/20 text-white"
+                  : "bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200 hover:border-white/15"
+              }`}
+            >
+              테마
+              {themeFilter.size > 0 && (
+                <span className="text-[9px] px-1 rounded bg-white/20 text-white">{themeFilter.size}</span>
+              )}
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {themeMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-[40]" onClick={() => setThemeMenuOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 z-[50] min-w-[180px] bg-[#1A1A1A] border border-white/10 rounded-lg shadow-2xl py-1">
+                  {ASSET_THEME_LIST.map((t) => {
+                    const active = themeFilter.has(t.id);
+                    const cnt = countByTheme[t.id] || 0;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={() => toggleTheme(t.id)}
+                        className={`flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-left transition-colors ${
+                          active ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5"
+                        }`}
+                      >
+                        <span
+                          className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
+                            active ? "bg-white/80 border-white/80 text-black" : "border-white/30"
+                          }`}
+                        >
+                          {active && <span className="text-[8px] leading-none">✓</span>}
+                        </span>
+                        <span
+                          className="w-3 h-3 rounded-full border border-white/20 shrink-0"
+                          style={{ background: t.swatch }}
+                        />
+                        <span className="flex-1">{t.name}</span>
+                        <span className="text-[9px] text-zinc-500 tabular-nums shrink-0">{cnt}</span>
+                      </button>
+                    );
+                  })}
+                  <div className="my-1 border-t border-white/5" />
+                  <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:bg-white/5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={autoTheme}
+                      onChange={toggleAutoTheme}
+                      className="accent-white/80"
+                    />
+                    <Sparkles className="w-3 h-3" />
+                    <span className="flex-1">새 에셋 자동 추정</span>
+                  </label>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 선택된 출처 칩 */}
+          {Array.from(sourceFilter).map((key) => {
+            const g = sourceGroups.find((x) => x.key === key);
+            const label = g?.label || key;
+            return (
+              <span
+                key={`src-${key}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] bg-white/10 text-zinc-200 border border-white/10"
+              >
+                <span className="text-zinc-500">출처:</span>
+                <span className="truncate max-w-[160px]">{label}</span>
+                <button
+                  onClick={() => toggleSource(key)}
+                  className="ml-0.5 text-zinc-500 hover:text-white"
+                  title="필터 해제"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            );
+          })}
+
+          {/* 선택된 테마 칩 */}
+          {Array.from(themeFilter).map((id) => {
+            const meta = getThemeMeta(id);
+            if (!meta) return null;
+            return (
+              <span
+                key={`th-${id}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] bg-white/10 text-zinc-200 border border-white/10"
+              >
+                <span className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ background: meta.swatch }} />
+                {meta.name}
+                <button
+                  onClick={() => toggleTheme(id)}
+                  className="ml-0.5 text-zinc-500 hover:text-white"
+                  title="필터 해제"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </span>
+            );
+          })}
+
+          {hasAnyFilter && (
+            <button
+              onClick={clearAllFilters}
+              className="ml-1 text-[10px] text-zinc-500 hover:text-white underline-offset-2 hover:underline"
+            >
+              필터 초기화
+            </button>
+          )}
+        </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">

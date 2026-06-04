@@ -6,6 +6,7 @@ import {
 import CodexEvalPanel, { getFinalScore100 } from './CodexEvalPanel';
 import RegionPicker from '../../AssetLibrary/components/RegionPicker';
 import { addAnchor, CRITERIA_TYPES } from '../../../lib/evaluationCriteria';
+import { MODAL_LIGHT_OVERRIDE_CSS } from '../../../lib/modalLightOverrideCSS';
 
 const safeRender = (v, fb = '') => {
   if (v == null) return fb;
@@ -64,13 +65,16 @@ const CodexDetailModal = ({
   return (
     <div className="fixed top-[52px] left-0 right-0 bottom-0 z-[2000] flex items-center justify-center p-3 sm:p-5 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200"
       onClick={() => wantsConfirmClose(() => { onClose(); setIsEditingPreview(false); })}>
+      <style>{MODAL_LIGHT_OVERRIDE_CSS}</style>
       <button onClick={(e) => { e.stopPropagation(); wantsConfirmClose(() => { onClose(); setIsEditingPreview(false); }); }}
         className={`absolute top-3 right-3 sm:top-5 sm:right-5 p-2.5 rounded-full transition-colors z-[600] border ${isLightMode ? 'bg-white border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-900 shadow-sm' : 'bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white shadow-lg'}`}>
         <X className="w-5 h-5" />
       </button>
-      <div className={`w-full max-w-[1340px] flex rounded-[20px] overflow-hidden shadow-2xl relative ${isLightMode ? 'bg-white border border-slate-200' : 'bg-[#0c0c0e] border border-white/10'}`}
+      <div
+        data-modal-theme={isLightMode ? 'light' : 'dark'}
+        className={`w-full max-w-[1340px] flex rounded-[20px] overflow-hidden shadow-2xl relative ${isLightMode ? 'bg-white border border-slate-200' : 'bg-[#0c0c0e] border border-white/10'}`}
         style={{ height: 'min(calc(100vh - 76px), 700px)' }} onClick={(e) => e.stopPropagation()}>
-        <div className="flex-1 relative overflow-hidden flex flex-col items-center justify-center bg-black py-16"
+        <div className={`flex-1 relative overflow-hidden flex flex-col items-center justify-center py-16 ${isLightMode ? 'bg-[#F5F5F5]' : 'bg-black'}`}
           onWheel={dragHandlers.onWheel} onMouseDown={dragHandlers.onMouseDown} onMouseMove={dragHandlers.onMouseMove}
           onMouseUp={dragHandlers.onMouseUp} onMouseLeave={dragHandlers.onMouseLeave}>
           <div className="absolute top-6 left-6 z-[510] flex gap-1.5">

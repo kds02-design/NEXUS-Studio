@@ -174,19 +174,37 @@ export const compileNanoBanana = (ir, state) => {
     return `${posTags}\n\nNegative prompt: ${negTags}`;
   }
   const fvm = frontVolumeModifierFor(ir.surface_morphology.reliefId);
-  const projectionDesc = ir.camera_and_depth.isMinimal ? `It is presented as a solid structural body with minimal side thickness. Absolutely no rear extrusion, BUT ${fvm}.` : "It is presented with 3D depth and extrusion.";
-  const prose = `An epic cinematic typography graphic rendered in a ${ir._meta.persona?.name?.split(' ')[1] || 'custom'} style. ${ir.subject.scale}. ${ir.camera_and_depth.lens}. The text is crafted from ${ir.material_stack.base} featuring ${ir.material_stack.internal_texture}. ${projectionDesc}`;
+  // 2D 평면 모드 — frontRelief=Flat + projectionDepth=None 이면 입체 묘사 전부 차단.
+  // 카멜레온(레퍼런스 복사) 모드에서 2D 그래픽 레퍼런스가 와도 결과가 무조건 3D 입체로 가는 문제 해결.
+  const isFlat2D = ir.surface_morphology.reliefId === "Flat" && ir.camera_and_depth.isMinimal;
+  const projectionDesc = isFlat2D
+    ? `It is a strictly flat 2D graphic with NO 3D extrusion, NO bevel, NO side thickness, NO depth. The letters lie flat on the canvas like a screen-print, poster art, or distressed paint graphic. All character is in the surface treatment (paint, grunge, distressed texture) — not in carved geometry.`
+    : ir.camera_and_depth.isMinimal
+      ? `It is presented as a solid structural body with minimal side thickness. Absolutely no rear extrusion, BUT ${fvm}.`
+      : "It is presented with 3D depth and extrusion.";
+  const proseLead = isFlat2D
+    ? `A flat 2D typography graphic rendered in a ${ir._meta.persona?.name?.split(' ')[1] || 'custom'} style.`
+    : `An epic cinematic typography graphic rendered in a ${ir._meta.persona?.name?.split(' ')[1] || 'custom'} style.`;
+  const prose = `${proseLead} ${ir.subject.scale}. ${ir.camera_and_depth.lens}. The text is crafted from ${ir.material_stack.base} featuring ${ir.material_stack.internal_texture}. ${projectionDesc}`;
   const posTags = [
     prose,
     "masterpiece, best quality, ultra highres, insanely detailed, 8k resolution",
-    "isolated standalone typography graphic, individual independent 3D letters, clear cutout text shape against background, highly legible",
+    isFlat2D
+      ? "isolated standalone flat 2D typography graphic, individual flat letters with NO thickness, clear cutout text shape against background, highly legible, strict 2D planar composition, sticker-flat silhouette"
+      : "isolated standalone typography graphic, individual independent 3D letters, clear cutout text shape against background, highly legible",
     "infinite depth of field, entirely in focus, edge-to-edge sharp focus, zero background blur, crisp and clear entire frame",
-    "deep shadowed side walls, dark unlit extrusion, heavy ambient occlusion on thickness",
+    // 입체감 강제 태그는 3D 모드에서만.
+    isFlat2D ? "" : "deep shadowed side walls, dark unlit extrusion, heavy ambient occlusion on thickness",
+    // 2D 평면 강조 태그 — distressed/screen-print 표현 강제.
+    isFlat2D ? "flat 2D screen-print aesthetic, distressed grunge surface treatment, poster art style, painterly texture inside flat shapes, zero rear extrusion, zero side wall, zero bevel, zero embossing, pure flat silhouette letters" : "",
     ir.subject.fidelity_enforcement.replace("CRITICAL: ", ""),
     ir._meta.persona?.mj_tags?.split(" --no ")[0] || "",
-    ir.environment.background, ir.environment.engine, ir.subject.intent,
+    ir.environment.background,
+    // engine 은 3D 모드에서만. 2D 모드는 graphic design 으로.
+    isFlat2D ? "2D graphic design, illustration, poster art, NOT a 3D render engine" : ir.environment.engine,
+    ir.subject.intent,
   ];
-  if (ir.edge_and_lighting.shadow) posTags.push("grounded with realistic drop shadow, soft cast shadow on backdrop, deep contact shadow anchoring the text");
+  if (ir.edge_and_lighting.shadow && !isFlat2D) posTags.push("grounded with realistic drop shadow, soft cast shadow on backdrop, deep contact shadow anchoring the text");
   const negTags = [
     "(worst quality, low quality:1.4), text mutation, extra letters, hallucinated text, floating decal",
     "(runes, hieroglyphs, symbols, written text on surface, watermark, gibberish:1.6), (merged letters, illegible blob, melted together, fused typography:1.5)",
@@ -223,7 +241,11 @@ export const compileNanoBanana = (ir, state) => {
     posTags.push("exactly mimic the lighting and material of the reference, 1:1 precise style copy, highly faithful replication");
   }
   const isCasualRelief = CASUAL_RELIEFS.includes(ir.surface_morphology.reliefId);
-  if (!isCasualRelief) {
+  // 2D 평면 모드에서는 hard-surface/금속 구조 강조를 빼고 평면 페인트 가정으로 대체.
+  if (isFlat2D) {
+    posTags.push("flat painted shapes, distressed brush-stroke surface, grunge ink texture inside the flat silhouette, no carved geometry");
+    negTags.push("(rigid hard-surface:1.7), (precise metallic structure:1.7), (plastic, toy, balloon, inflatable, bubble text:1.4)");
+  } else if (!isCasualRelief) {
     posTags.push("rigid hard-surface, sharp geometric corners, precise metallic structure");
     negTags.push("(plastic, toy, balloon, inflatable, bubble text, play-doh, soft rounded edges, marshmallow, squishy, 3d render style:1.6), (soft rounded bevels, blunt corners, smooth edges:1.5)");
     negTags.push("(filigree, floral patterns, decorative ornaments, ornate engravings:1.5)");
@@ -243,13 +265,36 @@ export const compileNanoBanana = (ir, state) => {
     posTags.push("clean legible typography, simplified readable shapes");
     negTags.push("(excessive noise, cluttered details, unreadable, chaotic textures:1.5)");
   }
-  posTags.push("highly saturated, punchy vibrant colors, cinematic color grading, rich deep colors");
-  negTags.push("(washed out:1.5), (desaturated:1.5), (dull colors:1.5), faded, grayscale, (dark, underexposed, gloomy:1.5)");
-  posTags.push("dramatic directional lighting, clearly lit front face, side thickness falls into deep shadow, preserve clean silhouette edges, flawless silhouette boundary, surface detail must not distort the outer contour, damage stays inside the front face only, clean and readable typography, rich luminous midtones, elegant material finish, crisp specular highlights on edges, high-end PBR shading, strong material contrast");
+  // 카멜레온(1:1 복사) 모드에서는 채도 강제 push 가 레퍼런스 색감과 충돌 — 단색 레퍼런스가 무지개로 변함.
+  // 카멜레온일 때는 레퍼런스 팔레트 보존을 우선시. 그 외에는 기존 강한 색감 push.
+  const isChameleon = ir._meta.persona?.id === "Chameleon";
+  if (isChameleon) {
+    posTags.push("preserve the exact color palette from the reference image, maintain the reference's exact hue and saturation, 1:1 color matching, single-tone color fidelity if the reference is monochrome");
+    negTags.push("(multi-color rainbow palette:2.0), (polychrome:2.0), (rainbow colors:1.9), (multi-hue gradient:1.8), (over-saturation:1.6), (color shifting:1.6), (introducing new colors not in the reference:1.8)");
+  } else {
+    posTags.push("highly saturated, punchy vibrant colors, rich deep colors");
+    if (!isFlat2D) posTags.push("cinematic color grading");
+    negTags.push("(washed out:1.5), (desaturated:1.5), (dull colors:1.5), faded, grayscale, (dark, underexposed, gloomy:1.5)");
+  }
+  // 입체 라이팅/PBR 묘사는 3D 모드에서만. 2D 모드는 그래픽 디자인용 균일 라이팅으로.
+  if (isFlat2D) {
+    posTags.push("uniform graphic lighting suitable for flat 2D poster, even illumination across the flat silhouette, NO volumetric lighting, NO specular highlights on side walls (there are no side walls), preserve clean silhouette edges, flawless silhouette boundary, surface treatment lives only inside the flat shape, clean and readable typography");
+  } else {
+    posTags.push("dramatic directional lighting, clearly lit front face, side thickness falls into deep shadow, preserve clean silhouette edges, flawless silhouette boundary, surface detail must not distort the outer contour, damage stays inside the front face only, clean and readable typography, rich luminous midtones, elegant material finish, crisp specular highlights on edges, high-end PBR shading, strong material contrast");
+  }
   posTags.push(ir.surface_morphology.relief, ir.surface_morphology.wear !== "factory-new flawless state" ? ir.surface_morphology.wear : "");
-  posTags.push(ir.edge_and_lighting.rim_light, ir.edge_and_lighting.glint, "texture physically embedded into material");
+  // rim_light/glint 와 "texture physically embedded into material" 은 3D 가정 — 2D 모드에서는 제외.
+  if (isFlat2D) {
+    posTags.push("painterly grunge texture printed onto the flat letter shape, distressed surface treatment");
+  } else {
+    posTags.push(ir.edge_and_lighting.rim_light, ir.edge_and_lighting.glint, "texture physically embedded into material");
+  }
   if (fxTag) posTags.push(fxTag);
   if (state.surfaceDetail === "Clean") negTags.push("scratches, grunge, noise, dents, dust, imperfections, distressed surface");
+  // 2D 평면 모드에서 3D 입체 신호를 강제로 차단 — 카멜레온 복사 모드의 평면 레퍼런스가 입체로 가는 것 방지.
+  if (isFlat2D) {
+    negTags.push("(3D extrusion:2.0), (rear extrusion:2.0), (side walls:2.0), (thickness:2.0), (depth:1.9), (bevel:2.0), (embossing:1.9), (chiseled:1.9), (carved:1.9), (relief:1.9), (sculpted volume:1.9), (3D render:1.7), (cinematic 3D:1.7), (AAA game logo:1.7), (PBR shading:1.7), (rim light wrapping around volume:1.5), (drop shadow:1.7), (cast shadow:1.7), (ambient occlusion:1.7), (specular highlight on side walls:1.8)");
+  }
   return `${posTags.filter(Boolean).map(t => t.trim()).join(", ")}\n\nNegative prompt: ${negTags.filter(Boolean).map(t => t.trim()).join(", ")}`;
 };
 
@@ -294,12 +339,19 @@ export const compileChatGPT = (ir, state) => {
   if (state.surfaceDetail === "Clean") materialRule += " Ensure the surface is perfectly smooth and clean, absolutely NO scratches or grunge.";
   if (state.surfaceDetail === "High") materialRule += " Add intense micro-details, fine hairline scratches, and rich tactile texture.";
   if (state.typographyScale === "Dense") materialRule += " VERY IMPORTANT: Because the text is dense/complex, prioritize legibility. Reduce excessive noise or overly deep fractures that might make the letters unreadable. Keep the boundaries crisp.";
+  // 2D 평면 모드 가드 — frontRelief=Flat + projectionDepth=None.
+  const isFlat2D = ir.surface_morphology.reliefId === "Flat" && ir.camera_and_depth.isMinimal;
+  if (isFlat2D) {
+    depthStr = `CRITICAL ABSOLUTE RULE: This is a FLAT 2D graphic. The letters lie completely flat on the canvas. There is NO 3D extrusion, NO rear depth, NO side walls, NO bevel, NO embossing, NO carved relief. All character must exist in the surface treatment (paint, grunge, distressed texture, screen-print) — not in geometry. Treat it like poster art, a movie title card, or a screen-printed graphic. The camera is perfectly straight-on, dead center.`;
+    materialRule += " CRITICAL 2D OVERRIDE: This reference is flat 2D, NOT a 3D rendered object. The material must read as surface paint/grunge/distressed ink on a flat shape, NOT as PBR shaded geometry. DO NOT add rim lights wrapping around volume, DO NOT add specular highlights on side walls (there are no side walls), DO NOT add cast shadows that imply depth. Lighting must be uniform and graphic, NOT volumetric.";
+  }
   return `Create an epic masterpiece image based on the following exact specifications.
 
 ### 1. Core Directives
-- **Type**: Isolated standalone typography graphic. ${ir.subject.scale}.
+- **Type**: ${isFlat2D ? 'Isolated standalone FLAT 2D typography graphic with NO 3D depth, NO extrusion, NO bevel.' : 'Isolated standalone typography graphic.'} ${ir.subject.scale}.
 - **Vibe**: ${ir._meta.persona?.discipline || 'custom'}
 - **Constraint**: ${ir.subject.fidelity_enforcement}
+${isFlat2D ? '- **Dimensional Read**: STRICTLY 2D FLAT. This is graphic art, not a rendered 3D object.' : ''}
 
 ### 2. Camera & Depth
 - **Perspective**: ${depthStr}${lensDirective}
@@ -308,20 +360,24 @@ export const compileChatGPT = (ir, state) => {
 ### 3. Layered Material Stack
 - **Base Material**: ${ir.material_stack.base} (${ir.surface_morphology.wear})
 - **Internal Texture**: ${ir.material_stack.internal_texture}
-- **Color Grading**: Highly saturated, punchy vibrant colors, rich deep colors. Never washed out or dull.
+- **Color Grading**: ${ir._meta?.persona?.id === "Chameleon"
+    ? 'CRITICAL: Preserve the EXACT color palette from the reference image. Match the reference hue and saturation 1:1. If the reference is monochrome (single hue), the output MUST also be monochrome. DO NOT introduce new colors. DO NOT create a rainbow / multi-color / polychrome palette. NO over-saturation.'
+    : 'Highly saturated, punchy vibrant colors, rich deep colors. Never washed out or dull.'}
 - **Rule**: ${materialRule}
 
 ### 4. Lighting & VFX
-- **Lighting**: Dramatic directional lighting. Clearly lit front face, but any side thickness MUST fall into deep dark shadow. Avoid overlit side planes. ${ir.edge_and_lighting.glint}. Add ${ir.edge_and_lighting.rim_light}. ${ir.edge_and_lighting.rimColorId === "None" ? "CRITICAL: Do not add any glowing underlight or bottom light." : ""} Ensure perfect exposure on the front, deep controlled shadows on the sides, clean high-value highlights, strong material contrast. Avoid unnatural or uniform glowing borders.
-- **Optical Integration**: Edge highlights and rim lights MUST be physically integrated into the surface edges only. Strictly NO floating glow, detached halos, or separated stroke lines. Do NOT overexpose the side extrusions.
+- **Lighting**: ${isFlat2D
+    ? `Uniform graphic lighting suitable for a flat 2D poster. NO volumetric lighting, NO rim lights wrapping around 3D forms, NO specular highlights on side walls. Keep everything inside the 2D plane.`
+    : `Dramatic directional lighting. Clearly lit front face, but any side thickness MUST fall into deep dark shadow. Avoid overlit side planes. ${ir.edge_and_lighting.glint}. Add ${ir.edge_and_lighting.rim_light}. ${ir.edge_and_lighting.rimColorId === "None" ? "CRITICAL: Do not add any glowing underlight or bottom light." : ""} Ensure perfect exposure on the front, deep controlled shadows on the sides, clean high-value highlights, strong material contrast. Avoid unnatural or uniform glowing borders.`}
+- **Optical Integration**: ${isFlat2D ? 'Pure flat graphic — no optical depth cues.' : 'Edge highlights and rim lights MUST be physically integrated into the surface edges only. Strictly NO floating glow, detached halos, or separated stroke lines. Do NOT overexpose the side extrusions.'}
 - **Edge/Outline**: ${ir.edge_and_lighting.outline}
 - **Surrounding VFX**: ${ir.fx.core !== "no surrounding FX" ? `${ir.fx.intensity} ${ir.fx.core}. Origin: ${ir.fx.origin}.` : "No surrounding FX."} ${ir.fx.containment_rule}
 ${state.currentView === 'editor' && !state.enableVfx ? "- **VFX RULE**: Ensure absolutely ZERO particles, zero dust, zero smoke, and zero lens flares. Keep the background completely clean." : ""}
 
 ### 5. Environment
 - **Canvas**: Maintain ${ir.environment.background}. CRITICAL: The text must be an isolated, standalone graphic. Do NOT engrave the text onto a solid metal wall, plaque, or background plate. The background must remain a separate, simple canvas behind the text cutout.
-- **Shadow**: ${ir.edge_and_lighting.shadow ? "MUST include grounded realistic drop shadow and cast shadows on the background canvas." : "ABSOLUTELY ZERO drop shadows. No cast shadows. The text must appear to be floating."}
-- **Render Engine**: ${ir.environment.engine}
+- **Shadow**: ${isFlat2D ? 'ABSOLUTELY ZERO 3D drop shadows. NO cast shadows that imply depth. The graphic exists in a pure 2D plane.' : (ir.edge_and_lighting.shadow ? 'MUST include grounded realistic drop shadow and cast shadows on the background canvas.' : 'ABSOLUTELY ZERO drop shadows. No cast shadows. The text must appear to be floating.')}
+- **Render Engine**: ${isFlat2D ? '2D graphic design / illustration (NOT a 3D render engine).' : ir.environment.engine}
 ${ir.subject.intent ? `\n### 6. Special Intent\n- ${ir.subject.intent}` : ''}`;
 };
 
@@ -335,12 +391,22 @@ export const compileMidjourney = (ir, state) => {
     const mjNegatives = "--no rim light, edge light, edge highlight, 3d, bevel, thickness, extrusion, metallic, reflections, lit text, text texture, outline, border, floating effects, background clutter, text mutation ";
     return `/imagine prompt: ${subject}, completely unlit black hole material, zero reflections, zero highlights, ${lightingFx} ${intent} ${mjNegatives}--style raw --v 6.1`.replace(/\s+/g, ' ').replace(/, ,/g, ',');
   }
-  let subject = `cinematic legendary logo, isolated standalone typography graphic, clear cutout text shape against background, individual independent 3D letters, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.subject.scale}, ${ir.camera_and_depth.lens}, ${ir.subject.fidelity_enforcement}, ${ir.camera_and_depth.isMinimal ? "solid structural body with minimal side thickness, zero deep rear extrusion" : ir.camera_and_depth.projection}, ${ir.surface_morphology.relief}`;
+  // 2D 평면 가드 — frontRelief=Flat + projectionDepth=None.
+  const isFlat2D = ir.surface_morphology.reliefId === "Flat" && ir.camera_and_depth.isMinimal;
+  let subject = isFlat2D
+    ? `flat 2D typography graphic poster, screen-print aesthetic, isolated standalone graphic, clear cutout text shape against background, individual flat letters with NO thickness, NO 3D extrusion, NO bevel, NO embossing, distressed grunge surface treatment, painterly texture inside flat shapes, sticker-flat silhouette, strict 2D planar composition, highly legible, ${ir.subject.scale}, ${ir.camera_and_depth.lens}, ${ir.subject.fidelity_enforcement}, ${ir.surface_morphology.relief}`
+    : `cinematic legendary logo, isolated standalone typography graphic, clear cutout text shape against background, individual independent 3D letters, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.subject.scale}, ${ir.camera_and_depth.lens}, ${ir.subject.fidelity_enforcement}, ${ir.camera_and_depth.isMinimal ? "solid structural body with minimal side thickness, zero deep rear extrusion" : ir.camera_and_depth.projection}, ${ir.surface_morphology.relief}`;
   let detailTag = "";
   if (state.surfaceDetail === "Clean") detailTag = "perfectly smooth flawless clean surface, ";
   else if (state.surfaceDetail === "High") detailTag = "intense micro-details, fine hairline scratches, rich surface noise, ";
-  const materialMood = `${ir._meta.persona?.discipline || ''}, ${ir._meta.persona?.mj_tags || ''}, highly saturated, punchy vibrant colors, ${detailTag}${ir.material_stack.base} material with ${ir.material_stack.internal_texture}, ${ir.surface_morphology.wear} surface`;
-  let lightingFx = `${fxPhrase}, dramatic directional lighting, clearly lit front face, dark shadowed side walls, deep ambient occlusion on extrusion, ${ir.edge_and_lighting.outline}, ${ir.edge_and_lighting.rim_light}, physically attached specular highlights, ${ir.edge_and_lighting.glint}, deep controlled shadows, clean high-value highlights, strong material contrast, ${ir.environment.background}`.replace(/^,\s*/, '');
+  // 카멜레온은 레퍼런스 색을 그대로 복사해야 하므로 채도 강제 push 제외.
+  const colorMood = ir._meta.persona?.id === "Chameleon"
+    ? "preserve exact reference color palette, 1:1 color matching, monochrome if reference is monochrome, no rainbow, no polychrome, no over-saturation"
+    : "highly saturated, punchy vibrant colors";
+  const materialMood = `${ir._meta.persona?.discipline || ''}, ${ir._meta.persona?.mj_tags || ''}, ${colorMood}, ${detailTag}${ir.material_stack.base} material with ${ir.material_stack.internal_texture}, ${ir.surface_morphology.wear} surface`;
+  let lightingFx = isFlat2D
+    ? `${fxPhrase}, uniform graphic lighting for flat 2D poster, no volumetric lighting, no rim wrapping around 3D volume, ${ir.edge_and_lighting.outline}, ${ir.environment.background}`.replace(/^,\s*/, '')
+    : `${fxPhrase}, dramatic directional lighting, clearly lit front face, dark shadowed side walls, deep ambient occlusion on extrusion, ${ir.edge_and_lighting.outline}, ${ir.edge_and_lighting.rim_light}, physically attached specular highlights, ${ir.edge_and_lighting.glint}, deep controlled shadows, clean high-value highlights, strong material contrast, ${ir.environment.background}`.replace(/^,\s*/, '');
   if (ir.edge_and_lighting.shadow) lightingFx += ", grounded with realistic drop shadow, soft cast shadow on backdrop, deep contact shadow anchoring the text";
   let mjNegatives = "--no background plate, plaque, signboard, engraved on a wall, solid metal block background, stone slab, monolith, carved into stone, text etched into wall, floating effects, background clutter, text mutation, extra letters, altered silhouette, random text, runes, hieroglyphs, symbols, written text on surface, watermark, gibberish, merged letters, illegible blob, melted together, uniform stroke, photoshop bevel and emboss, cheap v-carve, wordart, disconnected rim light, floating edge light, artificial halo, separated highlight, dull gray midtones, framed, box around text, shield, emblem, baseplate, flat paper cutout, flat 2d sticker, inner shadow layer style, inner stroke, fake 2d deboss, flat paper with bevel, washed out, desaturated, faded, unnatural outline, glowing border, depth of field, bokeh, background blur, lens blur, out of focus, soft focus, blurred foreground, blurry edges, smudged, melted shape, illegible, transparent text blending into background, excessive glow destroying shape, loss of silhouette, bright side walls, overlit extrusion, glowing thickness, washed out sides, circular brushing, radial metal grain, anisotropic reflection, curved scratches, ";
   if (ir.edge_and_lighting.rimColorId === "None") mjNegatives += "bottom light, underglow, colored rim light, bright glow from below, ";
@@ -375,8 +441,17 @@ export const compileMidjourney = (ir, state) => {
   if (["MicroBevel", "HairlineBevel", "Flat"].includes(ir.surface_morphology.reliefId)) {
     mjNegatives += "deeply carved, heavy embossing, intense 3d front, deep valleys, deep chiseled ";
   }
+  // 2D 평면 가드 — 3D 입체 신호를 강하게 차단.
+  if (isFlat2D) {
+    mjNegatives += "3D extrusion, rear extrusion, side walls, thickness, depth, bevel, embossing, chiseled, carved, relief, sculpted volume, 3D render, cinematic 3D, AAA game logo, PBR shading, rim light wrapping around volume, specular highlights on side walls, ambient occlusion, drop shadow implying depth, ";
+  }
+  // 카멜레온 — 무지개/폴리크롬 차단으로 단색 레퍼런스 보존.
+  if (ir._meta.persona?.id === "Chameleon") {
+    mjNegatives += "multi-color rainbow palette, polychrome, multi-hue gradient, rainbow colors, color shifting, over-saturation, introducing new colors not in the reference, ";
+  }
   const srefHint = ir._meta.persona?.id === "Chameleon" ? " --sref [INSERT_YOUR_REFERENCE_IMAGE_URL_HERE] --sw 1000" : "";
-  return `/imagine prompt: ${subject}, ${materialMood}, ${lightingFx}, ${ir.environment.engine}, perfectly exposed, vivid, highly detailed${intent} ${mjNegatives}--style raw --v 6.1${srefHint}`.replace(/\s+/g, ' ').replace(/, ,/g, ',');
+  const engineTag = isFlat2D ? "2D graphic design, illustration" : ir.environment.engine;
+  return `/imagine prompt: ${subject}, ${materialMood}, ${lightingFx}, ${engineTag}, perfectly exposed, vivid, highly detailed${intent} ${mjNegatives}--style raw --v 6.1${srefHint}`.replace(/\s+/g, ' ').replace(/, ,/g, ',');
 };
 
 // ============================================================
@@ -514,7 +589,9 @@ ${styleTransferRule ? `- **Style Transfer**: ${styleTransferRule}` : ""}
 - **Material Integration**: ${ir.constraints.material_integration} Must look highly organic, authentic, and photorealistic (PBR). STRICTLY AVOID tacky CGI look. Ensure extreme sharpness and intricate micro-details on the facets. STRICTLY FORBIDDEN: Do NOT use cheap photoshop bevel and emboss effects, and avoid uniform V-shaped carving.${antiToyRule} Ensure straight linear brushed lines, NO circular brushing.
 - **Anti-Engraving (CRITICAL)**: ${ir.constraints.anti_engraving} The object MUST remain as independent cutout elements, exactly like the source image. It must NEVER turn into a solid block, monolith, or a wall with shapes etched into it.
 - **Optical Integration**: Edge highlights and rim lights MUST be physically integrated into the surface. Strictly NO floating glow, detached halos, or separated stroke lines. Ensure a clearly lit and well-exposed subject. Deep controlled shadows, clean high-value highlights, strong material contrast. Avoid unnatural or uniform glowing borders.
-- **Color Grading**: Highly saturated, punchy vibrant colors, rich deep colors. Never washed out or dull.
+- **Color Grading**: ${ir._meta?.persona?.id === "Chameleon"
+    ? 'CRITICAL: Preserve the EXACT color palette from the reference image. Match the reference hue and saturation 1:1. If the reference is monochrome (single hue), the output MUST also be monochrome. DO NOT introduce new colors. DO NOT create a rainbow / multi-color / polychrome palette. NO over-saturation.'
+    : 'Highly saturated, punchy vibrant colors, rich deep colors. Never washed out or dull.'}
 - **FX Containment**: ${ir.constraints.fx_containment}
 - **Depth/Extrusion**: ${extrConstraint}${lensDirective} Ensure side planes (thickness) fall into deep shadow and do NOT glow brightly.
 

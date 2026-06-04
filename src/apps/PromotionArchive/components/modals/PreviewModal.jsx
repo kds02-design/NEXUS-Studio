@@ -4,9 +4,11 @@ import {
   ZoomIn, ZoomOut, Layers, Edit3, Scissors,
   Signal, Wifi, Battery, Link as LinkIcon, Sparkles, Frame,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Star, Trash2, Repeat,
+  MoveLeft, MoveRight, ArrowDownAZ,
 } from "lucide-react";
 import { getWebFinalScore100, hasWebEvaluation } from '../../constants/webEvalCriteria';
 import RegionPicker from '../../../AssetLibrary/components/RegionPicker';
+import { MODAL_LIGHT_OVERRIDE_CSS } from '../../../../lib/modalLightOverrideCSS';
 
 const YEAR_LIST = [2026, 2025, 2024, 2023];
 
@@ -37,6 +39,7 @@ function reducer(state, action) {
 }
 
 const PreviewModal = ({
+  isLight = false,
   isOpen, onClose, banner, editedBanner, onEditChange,
   onSave, hasChanges, onToggleLike, collectionIds, onToggleCollection, availableGames,
   onOpenAnalysis, gameLogos = {}, isAdminMode: _isAdminMode = false,
@@ -47,6 +50,8 @@ const PreviewModal = ({
   onSetSubPage,     // (pageId) => void — 그리드 카드의 서브로 지정
   onDeletePage,     // (pageId) => void — 페이지 삭제
   onReplacePage,    // (pageId, file: File) => void — 페이지 이미지 교체
+  onMovePage,       // (pageId, 'prev'|'next') => void — 같은 device 내 한 칸 이동
+  onAutoSortPages,  // () => void — 카드의 모든 페이지를 파일명 유추로 일괄 정렬
 }) => {
   const [state, dispatch] = useReducer(reducer, initialState);
   const scrollRef = useRef(null);
@@ -311,6 +316,7 @@ const PreviewModal = ({
           0%,100% { opacity: 1; transform: scale(1); }
           50% { opacity: 0.7; transform: scale(1.015); }
         }
+        ${MODAL_LIGHT_OVERRIDE_CSS}
       `}</style>
 
       <button
@@ -319,7 +325,9 @@ const PreviewModal = ({
         className={`absolute top-6 right-6 sm:top-8 sm:right-8 flex items-center gap-2 rounded-full transition-colors z-[2010] border shadow-lg ${
           returnTo
             ? 'pl-3 pr-3.5 py-2 bg-[#d8b17e]/15 border-[#d8b17e]/50 text-[#d8b17e] hover:bg-[#d8b17e]/25'
-            : 'p-2.5 bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+            : (isLight
+                ? 'p-2.5 bg-white border-black/10 text-zinc-600 hover:bg-zinc-100 hover:text-[#1A1A1A]'
+                : 'p-2.5 bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white')
         }`}
       >
         {returnTo && <ChevronLeft className="w-4 h-4" />}
@@ -328,12 +336,15 @@ const PreviewModal = ({
       </button>
 
       <div
-        className="w-full max-w-[1720px] flex rounded-[24px] overflow-hidden shadow-2xl relative bg-[#0c0c0e] border border-white/10"
+        data-modal-theme={isLight ? 'light' : 'dark'}
+        className={`w-full max-w-[1720px] flex rounded-[24px] overflow-hidden shadow-2xl relative bg-[#0c0c0e] border ${isLight ? 'border-black/10' : 'border-white/10'}`}
         style={{ height: '88vh', maxHeight: '920px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 좌측 뷰어 */}
-        <div className="flex-1 relative flex flex-col h-full overflow-hidden bg-black">
+        {/* 좌측 뷰어 — 라이트 모드에서는 캔버스만 light 로 전환.
+            플로팅 글래스 컨트롤(bg-black/40 + text-white) 과 device 베젤(bg-black, bg-[#202124]) 은
+            이미지 viewing UX 보전 위해 다크 유지. */}
+        <div className={`flex-1 relative flex flex-col h-full overflow-hidden ${isLight ? 'bg-[#F5F5F5]' : 'bg-black'}`}>
           {/* 상단 컨트롤 바 — 좌(액션) / 중앙 absolute(프레임 + 데스크톱/모바일 탭) 레이아웃.
               justify-between 으로 우측에 붙던 탭을 absolute 중앙으로 옮겨 좌측 버튼 폭과 무관하게 정중앙 고정. */}
           <div className="w-full px-4 pt-4 pb-2 flex items-start z-50 relative gap-3">
@@ -389,7 +400,7 @@ const PreviewModal = ({
                   </button>
                 )}
               </div>
-              <div className="inline-flex items-center rounded-full bg-white/[0.06] backdrop-blur-xl border border-white/10 p-1">
+              <div className={`inline-flex items-center rounded-full backdrop-blur-xl border p-1 ${isLight ? 'bg-black/[0.06] border-black/10' : 'bg-white/[0.06] border-white/10'}`}>
                 {[
                   { id: 'pc', label: '데스크톱', Icon: Monitor },
                   { id: 'mobile', label: '모바일', Icon: Smartphone },
@@ -401,8 +412,8 @@ const PreviewModal = ({
                       onClick={() => dispatch({ type: 'SET_TAB', tab: id })}
                       className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-medium transition-all ${
                         isActive
-                          ? 'bg-white/15 text-white shadow-sm'
-                          : 'text-zinc-400 hover:text-zinc-200'
+                          ? (isLight ? 'bg-black/[0.08] text-[#1A1A1A] shadow-sm' : 'bg-white/15 text-white shadow-sm')
+                          : (isLight ? 'text-zinc-600 hover:text-[#1A1A1A]' : 'text-zinc-400 hover:text-zinc-200')
                       }`}
                     >
                       <Icon size={13} />
@@ -519,6 +530,38 @@ const PreviewModal = ({
                           className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-rose-400 hover:bg-rose-500/15 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {/* 순서 변경 — 같은 device 내에서 한 칸 앞/뒤. 2장 이상일 때만 노출. */}
+                      {onMovePage && list.length > 1 && (
+                        <>
+                          <div className="w-px h-5 bg-white/15" />
+                          <button
+                            onClick={() => onMovePage(currentPage.id, 'prev')}
+                            disabled={idx <= 0}
+                            title="이 페이지를 한 칸 앞으로"
+                            className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <MoveLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onMovePage(currentPage.id, 'next')}
+                            disabled={idx >= list.length - 1}
+                            title="이 페이지를 한 칸 뒤로"
+                            className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-white hover:bg-white/10 disabled:opacity-25 disabled:cursor-not-allowed transition-colors"
+                          >
+                            <MoveRight className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+                      {/* 파일명 자동 정렬 — 카드 전체 페이지에 main → 01 → 02 … 적용. */}
+                      {onAutoSortPages && list.length > 1 && (
+                        <button
+                          onClick={onAutoSortPages}
+                          title="파일명으로 자동 정렬 (main → 01 → 02 …)"
+                          className="w-7 h-7 flex items-center justify-center rounded-full text-white/70 hover:text-[#d8b17e] hover:bg-white/10 transition-colors"
+                        >
+                          <ArrowDownAZ className="w-3.5 h-3.5" />
                         </button>
                       )}
                       {list.length > 1 && <div className="w-px h-5 bg-white/15" />}
@@ -857,8 +900,14 @@ const PreviewModal = ({
           </div>
         </div>
 
-        {/* 우측 사이드바 — BannerCodex CodexDetailModal 패턴 */}
-        <aside className="w-[340px] shrink-0 flex flex-col h-full shadow-2xl bg-[#111111] border-l border-white/5 relative">
+        {/* 우측 사이드바 — BannerCodex CodexDetailModal 패턴.
+            상위 패널의 data-pa-theme 가 켜지면 자식들의 zinc/white 클래스가 CSS 오버라이드로 자동 변환.
+            aside 자기 자신의 bg/border 는 직접 conditional 로 스왑(자기 자신 매칭 보강). */}
+        <aside
+          className={`w-[340px] shrink-0 flex flex-col h-full shadow-2xl relative border-l ${
+            isLight ? 'bg-[#FAFAFA] border-black/[0.06]' : 'bg-[#111111] border-white/5'
+          }`}
+        >
           <div className="flex-1 overflow-y-auto scrollbar-hide p-6 pt-7 pb-20">
 
             {/* 헤더 — 게임 로고 + 제목 + (날짜는 제목 아래 한 곳에서만) */}

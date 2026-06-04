@@ -5,6 +5,7 @@ import {
 import { db, appId } from '../../lib/firebase';
 import { uploadBase64 } from '../../lib/storage';
 import { subscribeToGameLogos } from '../../lib/gameLogos';
+import { sortPagesByName } from '../../lib/pageNameSort';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
 import { processAndCropImage } from './utils/imageProcessor';
@@ -1139,6 +1140,60 @@ function App() {
         }
     }, [selectedBanner]);
 
+    // 브랜드웹 카드 — 페이지 순서 변경 공통 writer.
+    // mainPageId/subPageId 가 명시 지정돼 있으면 full_image/preview/mobile_image 는 유지(사용자 의도 존중).
+    // 미지정이면 새 첫 PC / 첫 Mobile 의 url 로 대표 이미지 동기화.
+    const writePagesReorder = useCallback(async (nextPages) => {
+        if (!selectedBanner || !Array.isArray(nextPages)) return;
+        const ordered = nextPages.map((p, i) => ({ ...p, order: i }));
+        const updateData = { pages: ordered };
+        if (!selectedBanner.mainPageId) {
+            const firstPc = ordered.find(p => p?.device === 'pc');
+            if (firstPc?.url) { updateData.full_image = firstPc.url; updateData.preview = firstPc.url; }
+        }
+        if (!selectedBanner.subPageId) {
+            const firstMobile = ordered.find(p => p?.device === 'mobile');
+            if (firstMobile?.url) updateData.mobile_image = firstMobile.url;
+        }
+        try {
+            await updateDoc(promoDocRef(selectedBanner.id), updateData);
+            const updated = { ...selectedBanner, ...updateData };
+            setSelectedBanner(updated);
+            setEditedBanner(updated);
+        } catch (e) {
+            console.error('[PromotionArchive] reorder pages failed', e);
+            alert(`정렬 실패: ${e.message || e.code}`);
+        }
+    }, [selectedBanner]);
+
+    // 자동 정렬 — 파일명 유추 (main → 01 → 02 …) 로 device 별 정렬.
+    const handleAutoSortPagesInBanner = useCallback(() => {
+        if (!selectedBanner || selectedBanner.assetType !== '브랜드웹') return;
+        const pages = Array.isArray(selectedBanner.pages) ? selectedBanner.pages : [];
+        if (pages.length === 0) return;
+        if (!confirm('이 카드의 페이지들을 파일명 기준으로 자동 정렬할까요?\n\n순서: main / index / home → 01 → 02 → …')) return;
+        return writePagesReorder(sortPagesByName(pages));
+    }, [selectedBanner, writePagesReorder]);
+
+    // 수동 이동 — 같은 device 안에서 한 칸 앞/뒤로 swap.
+    const handleMovePageInBanner = useCallback((pageId, direction) => {
+        if (!selectedBanner || selectedBanner.assetType !== '브랜드웹') return;
+        const pages = Array.isArray(selectedBanner.pages) ? selectedBanner.pages : [];
+        const targetIdx = pages.findIndex(p => p?.id === pageId);
+        if (targetIdx < 0) return;
+        const target = pages[targetIdx];
+        // 같은 device 인덱스 목록에서 이웃과 swap.
+        const deviceIdxs = pages.map((p, i) => (p?.device === target.device ? i : -1)).filter(i => i >= 0);
+        const myPos = deviceIdxs.findIndex(i => i === targetIdx);
+        const neighborPos = direction === 'prev' ? myPos - 1 : myPos + 1;
+        if (neighborPos < 0 || neighborPos >= deviceIdxs.length) return;
+        const a = deviceIdxs[myPos];
+        const b = deviceIdxs[neighborPos];
+        const next = [...pages];
+        [next[a], next[b]] = [next[b], next[a]];
+        return writePagesReorder(next);
+    }, [selectedBanner, writePagesReorder]);
+
     // 브랜드웹 카드에 모바일 페이지(이미지)를 별도 업로드 — Cloudinary 업로드 후 pages[] 에 추가 + mobile_image 갱신.
     // 같은 카드의 PC 페이지는 그대로 유지. 한 번에 여러 장 업로드 가능.
     const handleAddMobilePagesToBanner = useCallback(async (files) => {
@@ -1217,7 +1272,7 @@ function App() {
     return (
         <div
             data-pa-theme={isLight ? 'light' : 'dark'}
-            className={`flex h-full font-sans selection:bg-[#d8b17e]/30 overflow-hidden ${isLight ? 'bg-[#F5F5F5] text-[#1A1A1A]' : 'bg-[#0c0c0e] text-zinc-300'}`}
+            className={`flex flex-col h-full font-sans selection:bg-[#d8b17e]/30 overflow-hidden ${isLight ? 'bg-[#F5F5F5] text-[#1A1A1A]' : 'bg-[#0c0c0e] text-zinc-300'}`}
         >
             {/* 라이트 모드 오버라이드 — 하드코딩된 다크 컬러 surface 를 light 토큰으로 매핑 */}
             <style>{`
@@ -1248,55 +1303,59 @@ function App() {
               [data-pa-theme="light"] .hover\\:bg-white\\/10:hover { background-color: rgba(0,0,0,0.07) !important; }
               [data-pa-theme="light"] .hover\\:text-white:hover { color: #1A1A1A !important; }
             `}</style>
-            <Sidebar
-                isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen}
-                isDesktopSidebarOpen={isDesktopSidebarOpen} setIsDesktopSidebarOpen={setIsDesktopSidebarOpen}
-                handleSidebarClick={handleSidebarClick}
-                activeCategory={activeCategory} handleGameClick={handleGameClick}
+            {/* Header — root 직속 풀폭. Sidebar 라운드 카드 위쪽까지 좌측 끝으로 이어짐. */}
+            <Header
+                isLight={isLight}
+                setIsSidebarOpen={setIsSidebarOpen}
+                isDesktopSidebarOpen={isDesktopSidebarOpen}
+                // search
+                searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+                isAiSearchMode={isAiSearchMode} setIsAiSearchMode={setIsAiSearchMode}
+                isAiQuerying={isAiQuerying} handleAiSearch={() => { }} setAiSearchKeywords={setAiSearchKeywords}
+                aiSearchKeywords={aiSearchKeywords}
+                // context
                 isCollectionMode={isCollectionMode} setIsCollectionMode={setIsCollectionMode}
-                collectionIds={collectionIds} availableGames={availableGames}
-                pinnedGames={pinnedGames} togglePinGame={togglePinGame} recentGames={recentGames}
-                isAllGamesModalOpen={isAllGamesModalOpen} setIsAllGamesModalOpen={setIsAllGamesModalOpen}
-                expandedGames={expandedGames} setExpandedGames={setExpandedGames}
-                activeYear={activeFilters.year === 'all' ? null : Number(activeFilters.year)}
-                handleYearClick={(g, y) => { setActiveCategory(g); setActiveFilters(p => ({ ...p, year: String(y) })); setCurrentView('grid'); }}
-                isSettingsOpen={isSettingsOpen} setIsSettingsOpen={setIsSettingsOpen} settingsRef={settingsRef}
-                handleFolderUpload={handleFileUpload} handleFileUpload={handleFileUpload}
-                handleSaveLibrary={handleSaveLibrary} handleLoadLibrary={handleLoadLibrary}
-                banners={allBanners}
-                isAdminMode={isAdminMode} setIsAdminMode={setIsAdminMode}
+                activeCategory={activeCategory}
+                filteredBanners={filteredBanners} banners={allBanners}
+                // admin selection
+                isAdminMode={isAdminMode}
+                selectedIds={selectedItems}
+                handleSelectAll={() => setSelectedItems(selectedItems.length === filteredBanners.length ? [] : filteredBanners.map(b => b.id))}
+                // filters
+                isFilterOpen={isFilterOpen} setIsFilterOpen={setIsFilterOpen}
+                activeFilters={activeFilters} setActiveFilters={setActiveFilters}
+                availableYears={[2026, 2025, 2024, 2023]} filterRef={filterRef}
+                isAdvancedFilterOpen={isAdvancedFilterOpen} setIsAdvancedFilterOpen={setIsAdvancedFilterOpen}
+                topTags={topTags} availableGames={availableGames} pinnedGames={pinnedGames}
+                // sort
+                isSortMenuOpen={isSortMenuOpen} setIsSortMenuOpen={setIsSortMenuOpen}
+                sortOrder={sortOrder} setSortOrder={setSortOrder} sortRef={sortRef}
+                // grid
+                gridSize={gridSize} setGridSize={setGridSize}
             />
 
-            <div className="flex-1 flex flex-col min-w-0 transition-all duration-300">
-                <Header
-                    setIsSidebarOpen={setIsSidebarOpen}
-                    // search
-                    searchQuery={searchQuery} setSearchQuery={setSearchQuery}
-                    isAiSearchMode={isAiSearchMode} setIsAiSearchMode={setIsAiSearchMode}
-                    isAiQuerying={isAiQuerying} handleAiSearch={() => { }} setAiSearchKeywords={setAiSearchKeywords}
-                    aiSearchKeywords={aiSearchKeywords}
-                    // context
+            {/* Header 아래 가로 컨테이너 — 좌측 Sidebar(라운드 카드) + 우측 main */}
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+                <Sidebar
+                    isSidebarOpen={isSidebarOpen} setIsSidebarOpen={setIsSidebarOpen}
+                    isDesktopSidebarOpen={isDesktopSidebarOpen} setIsDesktopSidebarOpen={setIsDesktopSidebarOpen}
+                    handleSidebarClick={handleSidebarClick}
+                    activeCategory={activeCategory} handleGameClick={handleGameClick}
                     isCollectionMode={isCollectionMode} setIsCollectionMode={setIsCollectionMode}
-                    activeCategory={activeCategory}
-                    filteredBanners={filteredBanners} banners={allBanners}
-                    // admin selection
-                    isAdminMode={isAdminMode}
-                    selectedIds={selectedItems}
-                    handleSelectAll={() => setSelectedItems(selectedItems.length === filteredBanners.length ? [] : filteredBanners.map(b => b.id))}
-                    // filters
-                    isFilterOpen={isFilterOpen} setIsFilterOpen={setIsFilterOpen}
-                    activeFilters={activeFilters} setActiveFilters={setActiveFilters}
-                    availableYears={[2026, 2025, 2024, 2023]} filterRef={filterRef}
-                    isAdvancedFilterOpen={isAdvancedFilterOpen} setIsAdvancedFilterOpen={setIsAdvancedFilterOpen}
-                    topTags={topTags} availableGames={availableGames} pinnedGames={pinnedGames}
-                    // sort
-                    isSortMenuOpen={isSortMenuOpen} setIsSortMenuOpen={setIsSortMenuOpen}
-                    sortOrder={sortOrder} setSortOrder={setSortOrder} sortRef={sortRef}
-                    // grid
-                    gridSize={gridSize} setGridSize={setGridSize}
+                    collectionIds={collectionIds} availableGames={availableGames}
+                    pinnedGames={pinnedGames} togglePinGame={togglePinGame} recentGames={recentGames}
+                    isAllGamesModalOpen={isAllGamesModalOpen} setIsAllGamesModalOpen={setIsAllGamesModalOpen}
+                    expandedGames={expandedGames} setExpandedGames={setExpandedGames}
+                    activeYear={activeFilters.year === 'all' ? null : Number(activeFilters.year)}
+                    handleYearClick={(g, y) => { setActiveCategory(g); setActiveFilters(p => ({ ...p, year: String(y) })); setCurrentView('grid'); }}
+                    isSettingsOpen={isSettingsOpen} setIsSettingsOpen={setIsSettingsOpen} settingsRef={settingsRef}
+                    handleFolderUpload={handleFileUpload} handleFileUpload={handleFileUpload}
+                    handleSaveLibrary={handleSaveLibrary} handleLoadLibrary={handleLoadLibrary}
+                    banners={allBanners}
+                    isAdminMode={isAdminMode} setIsAdminMode={setIsAdminMode}
                 />
 
-                <main className="flex-1 overflow-y-auto px-4 md:px-8 pb-8 pt-4 relative scrollbar-hide">
+                <main className="flex-1 min-w-0 overflow-y-auto px-4 md:px-8 pb-8 pt-4 relative scrollbar-hide">
                     {currentView === 'dashboard' ? (
                         <AnalysisDashboard banners={filteredBanners} onOpenPreview={handleOpenPreview} />
                     ) : (
@@ -1339,6 +1398,7 @@ function App() {
 
                 {isPreviewOpen && (
                     <PreviewModal
+                        isLight={isLight}
                         isOpen={isPreviewOpen}
                         onClose={closePreview}
                         jumpHighlight={jumpHighlight}
@@ -1349,6 +1409,8 @@ function App() {
                         onSetSubPage={handleSetSubPage}
                         onDeletePage={handleDeletePageFromBanner}
                         onReplacePage={handleReplacePageInBanner}
+                        onMovePage={handleMovePageInBanner}
+                        onAutoSortPages={handleAutoSortPagesInBanner}
                         banner={selectedBanner}
                         editedBanner={editedBanner}
                         onEditChange={(field, value) => { setEditedBanner(prev => ({ ...prev, [field]: value })); setHasChanges(true); }}

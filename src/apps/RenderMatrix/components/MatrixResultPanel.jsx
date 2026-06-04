@@ -22,8 +22,9 @@ export default function MatrixResultPanel({
   onRender, rendering, renderedImage, renderError,
   onDownloadRendered, onSaveToPromptArc, savingToArc, isLoggedIn,
   canRender, grade,
-  // 기본 이미지 (reference)
-  referenceImage, setReferenceImage,
+  // 기본 이미지 — image-to-image 렌더링의 실제 입력.
+  // 사이드바 "Image Analyzer" 의 referenceImage 와 분리된 별도 state (baseImage).
+  baseImage, setBaseImage,
   // 모델 선택
   imagenModels = [], selectedModel, setSelectedModel,
 }) {
@@ -32,14 +33,14 @@ export default function MatrixResultPanel({
   const hasOutput = !!promptText;
   const quickList = currentView === 'editor' ? QUICK_ADJUSTMENTS : EDIT_BUDGETS;
 
-  // 기본 이미지 업로드 — 드래그앤드롭 + 클릭. dataUrl 로 변환해서 setReferenceImage.
+  // 기본 이미지 업로드 — 드래그앤드롭 + 클릭. dataUrl 로 변환해서 setBaseImage.
   const refFileInputRef = useRef(null);
   const [isDraggingRefBox, setIsDraggingRefBox] = useState(false);
   const handleRefFiles = (files) => {
     const f = (files && files[0]) || null;
     if (!f || !f.type?.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onload = (e) => { setReferenceImage?.(String(e.target.result)); };
+    reader.onload = (e) => { setBaseImage?.(String(e.target.result)); };
     reader.readAsDataURL(f);
   };
 
@@ -70,12 +71,12 @@ export default function MatrixResultPanel({
             )}
           </div>
           <div className="flex-1 px-5 pb-5 min-h-0">
-            {referenceImage ? (
+            {baseImage ? (
               <div className="relative w-full h-full group">
-                <img src={referenceImage} alt="reference"
+                <img src={baseImage} alt="reference"
                   className="w-full h-full object-contain rounded-xl border border-zinc-800 bg-black/40" />
                 <button
-                  onClick={(e) => { e.stopPropagation(); setReferenceImage?.(null); }}
+                  onClick={(e) => { e.stopPropagation(); setBaseImage?.(null); }}
                   title="이미지 제거"
                   className="absolute top-2 right-2 p-1.5 rounded-md bg-black/70 hover:bg-rose-500/80 text-white opacity-0 group-hover:opacity-100 transition-opacity"
                 >
@@ -225,11 +226,11 @@ export default function MatrixResultPanel({
             {/* 1차 액션 — 렌더링만 컬러 강조. 참조 이미지 없으면 차단. */}
             <button
               onClick={() => onRender?.(promptText)}
-              disabled={rendering || !canRender || !hasOutput || !onRender || !referenceImage}
+              disabled={rendering || !canRender || !hasOutput || !onRender || !baseImage}
               title={
                 !canRender ? `Pro 등급부터 사용할 수 있습니다 (현재: ${grade || 'general'})`
                 : !hasOutput ? '먼저 프롬프트를 생성하세요'
-                : !referenceImage ? '좌측 상단 "기본 이미지"에 참조 이미지를 등록하세요'
+                : !baseImage ? '좌측 상단 "기본 이미지"에 참조 이미지를 등록하세요'
                 : undefined
               }
               className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-all active:scale-95 whitespace-nowrap bg-[#00CEC9] hover:bg-[#00CEC9]/90 text-black disabled:opacity-40 disabled:cursor-not-allowed"
@@ -238,7 +239,7 @@ export default function MatrixResultPanel({
                 <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 생성 중…</>
               ) : !canRender ? (
                 <><ImageIcon className="w-3.5 h-3.5" /> Pro 전용</>
-              ) : !referenceImage ? (
+              ) : !baseImage ? (
                 <><AlertCircle className="w-3.5 h-3.5" /> 참조 이미지 필요</>
               ) : (
                 <><ImageIcon className="w-3.5 h-3.5" /> 렌더링</>
@@ -303,7 +304,7 @@ export default function MatrixResultPanel({
                 <p className="text-[12px] font-semibold leading-relaxed">
                   {!hasOutput
                     ? '좌측에서 프롬프트를 생성/최적화하세요'
-                    : !referenceImage
+                    : !baseImage
                       ? '좌측 상단 "기본 이미지"에 참조 이미지를 등록하세요'
                       : rendering
                         ? '이미지 생성 중입니다'

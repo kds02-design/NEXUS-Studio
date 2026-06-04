@@ -22,6 +22,7 @@ import DashboardHero from "./DashboardHero";
 import DashboardRecentPrompts from "./DashboardRecentPrompts";
 import IndexSearchBar from "./IndexSearchBar";
 import CommandPalette from "./CommandPalette";
+import LoginScreen from "./LoginScreen";
 import PromptArcApp from "../apps/PromptArc";
 import TypecoreSovereignApp from "../apps/TypecoreSovereign";
 import TypecoreBreezeApp from "../apps/TypecoreBreeze";
@@ -70,7 +71,7 @@ function computeIndexTopbarStyle(scrollY, T, isLight) {
 function Topbar({ scrollY = 0, onOpenPalette }) {
   const { currentApp, setCurrentApp, isLight } = useGlobal();
   const T = useTheme();
-  const { user, profile, grade } = useAuth();
+  const { user, profile, grade, openLoginModal } = useAuth();
   const { remaining, cap, used } = useWeeklyCredits();
   const [profileOpen, setProfileOpen] = useState(false);
   const app = currentApp ? APP_MAP[currentApp] : null;
@@ -119,7 +120,7 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
           title="홈으로 (Ctrl/⌘+클릭 → 새 창)"
           style={{ display:"inline-flex", alignItems:"center", gap:8, cursor:"pointer", userSelect:"none" }}
         >
-          <NexusLogo height={18} />
+          <NexusLogo height={18} color={T.text} />
           <span style={{ display:"inline-flex", alignItems:"baseline", gap:6, fontFamily:"'Teko', sans-serif", fontSize:22, lineHeight:1, letterSpacing:"0.5px", whiteSpace:"nowrap", transform:"translateY(2px)" }}>
             <span style={{ color: T.text, fontWeight:600 }}>NEXUS</span>
             <span style={{ color: T.text, fontWeight:600 }}>STUDIO</span>
@@ -191,7 +192,7 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
             </div>
           );
         })()}
-        {user && (
+        {user ? (
           <button
             onClick={() => setProfileOpen((v) => !v)}
             title="프로필 메뉴"
@@ -200,6 +201,21 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
               borderRadius:"50%", outline: "none",
             }}>
             <UserAvatar profile={profile} user={user} size={30} title={user.email || user.displayName || ""} />
+          </button>
+        ) : (
+          <button
+            onClick={openLoginModal}
+            title="로그인 / 회원가입"
+            style={{
+              padding:"6px 14px", border:0,
+              background: isIndex ? "rgba(255,255,255,0.92)" : T.accent,
+              color: isIndex ? "#0a0a0f" : "#fff",
+              borderRadius:999, fontSize:11, fontWeight:700, letterSpacing:"0.06em",
+              cursor:"pointer", fontFamily:"inherit",
+              textTransform:"uppercase",
+            }}
+          >
+            로그인
           </button>
         )}
       </div>
@@ -465,6 +481,14 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
     // initialScrollTop 은 mount 시점 값만 쓴다 — 의도적 deps 빈 배열
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // 그룹별 액센트 — 인덱스 섹션을 시각적으로 구분.
+  // explore=Cyan(탐색/관찰), generate=Violet(AI 생성), production=Amber(출력/제작).
+  // admin 은 별도 미니멀 처리(아래 분기).
+  const GROUP_ACCENTS = {
+    explore:    "#22B8CF",
+    generate:   "#A29BFE",
+    production: "#FDCB6E",
+  };
   const groups = [
     { key:"explore",    label:"허브 / 평가" },
     { key:"generate",   label:"프롬프트 생성" },
@@ -472,8 +496,6 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
     // 관리자 그룹은 isAdmin일 때만 렌더 (아래 filter)
     ...(isAdmin ? [{ key:"admin", label:"Admin", adminLabel: true }] : []),
   ];
-  // 라이트에서는 배경이 흰색이라 흰색 alpha 보더가 안 보임 → 검정 alpha 로 전환
-  const sectionBarColor = isLight ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.03)";
   return (
     <div ref={scrollRef} style={{ width:"100%", height:"100%", overflowY:"auto" }} onScroll={onScroll}>
       <DashboardHero />
@@ -485,13 +507,46 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
         // 관리자에게는 보이되 '숨김' 표시 + 토글 가능.
         const apps = APP_REGISTRY.filter(a => a.group === g.key && (!isAppHidden(a, overrides) || isAdmin));
         if (!apps.length) return null;
-        // 섹션 타이틀 앞 세로 바 — 거의 보이지 않을 정도로 극단적으로 미세하게.
-        const labelStyle = g.adminLabel
-          ? { fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: T.accent, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(108,92,231,0.15)", paddingLeft:10 }
-          : { fontSize:10, fontWeight:600, letterSpacing:"0.14em", color:T.textDim, textTransform:"uppercase", marginBottom:14, borderLeft:`2px solid ${sectionBarColor}`, paddingLeft:10 };
+        // Admin 그룹은 패널 wrapper 없이 기존 미니멀 톤 유지.
+        if (g.adminLabel) {
+          return (
+            <div key={g.key} style={{ marginBottom:40 }}>
+              <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: T.accent, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(108,92,231,0.15)", paddingLeft:10 }}>{g.label}</div>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
+                {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} onOpen={(e) => {
+                  if (e?.ctrlKey || e?.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
+                  navigate(app.id);
+                }} />)}
+              </div>
+            </div>
+          );
+        }
+        // 일반 그룹 — 액센트 컬러로 tinted panel + 컬러 dot + 컬러 라벨.
+        // tint alpha: 라이트(흰 배경)에서는 약간 진하게, 다크에서는 옅게 — 두 모드 모두 자연스럽게.
+        const accent = GROUP_ACCENTS[g.key] || T.accent;
+        const panelBg = isLight ? `${accent}10` : `${accent}0a`; // ~6% / ~4%
+        const panelBorder = `${accent}26`; // ~15%
         return (
-          <div key={g.key} style={{ marginBottom:40 }}>
-            <div style={labelStyle}>{g.label}</div>
+          <div key={g.key} style={{
+            marginBottom: 28,
+            background: panelBg,
+            border: `1px solid ${panelBorder}`,
+            borderRadius: 14,
+            padding: "18px 18px 18px",
+          }}>
+            <div style={{
+              fontSize:10, fontWeight:700, letterSpacing:"0.14em",
+              color: accent, textTransform:"uppercase",
+              marginBottom:14,
+              display:"flex", alignItems:"center", gap:8,
+            }}>
+              <span style={{
+                width:6, height:6, borderRadius:999, background: accent,
+                boxShadow:`0 0 8px ${accent}66`,
+                flexShrink:0,
+              }} />
+              {g.label}
+            </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
               {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} onOpen={(e) => {
                 if (e?.ctrlKey || e?.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
@@ -567,6 +622,7 @@ function VersionSubHeader({ versions, selectedVersion, onSelect }) {
 
 export default function Shell() {
   const { currentApp } = useGlobal();
+  const { loginModalOpen, closeLoginModal } = useAuth();
   const T = useTheme();
   const app = currentApp ? APP_MAP[currentApp] : null;
   const hasVersions = Array.isArray(app?.versions) && app.versions.length > 0;
@@ -638,6 +694,7 @@ export default function Shell() {
         {currentApp ? <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} /> : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={indexScrollYRef.current}/>}
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {loginModalOpen && <LoginScreen asModal onClose={closeLoginModal} />}
       <Notification/>
     </div>
   );

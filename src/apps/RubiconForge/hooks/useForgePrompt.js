@@ -14,6 +14,10 @@ import {
   analyzeStyleImage,
   generateLore as generateLoreApi,
 } from '../services/gemini';
+import { renderVariation, renderAtlasVariation } from '../services/variations';
+import {
+  VARIATION_MOODS, STYLE_BY_ID, defaultStyleIdsFor,
+} from '../constants/variations';
 
 export function useForgePrompt() {
   // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
@@ -66,6 +70,42 @@ export function useForgePrompt() {
   const [isChatting, setIsChatting] = useState(false);
   const [tempIntent, setTempIntent] = useState("");
   const chatScrollRef = useRef(null);
+
+  // 변형(베리에이션) 모드 — Micro-Edit 탭에서 사용.
+  //   sourceAsset: 원본 dataURL
+  //   backgroundRef: (선택) 배경 참고 dataURL — 어울리는 컬러/형태로 조정
+  //   selectedMoodId: 분위기 카테고리 (플랫/캐주얼/다크판타지/모던테크/럭셔리)
+  //   selectedStyleIds: 4개 — 카테고리 내 구체 스타일 4종 선택
+  //   variationResults: 4 슬롯 { styleId, theme, dataUrl?, error?, isLoading }
+  const [sourceAsset, setSourceAsset] = useState(null);
+  const [isDraggingSource, setIsDraggingSource] = useState(false);
+  const [backgroundRef, setBackgroundRef] = useState(null);
+  const [isDraggingBackground, setIsDraggingBackground] = useState(false);
+  const [selectedMoodId, setSelectedMoodId] = useState(VARIATION_MOODS[2].id); // 기본 다크 판타지
+  const [selectedStyleIds, setSelectedStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id));
+  const [variationResults, setVariationResults] = useState(() =>
+    defaultStyleIdsFor(VARIATION_MOODS[2].id).map(id => {
+      const s = STYLE_BY_ID[id];
+      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+    })
+  );
+  const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
+
+  // ─── 아틀라스(디자인 시스템) 모드 — 변형 모드와 동일 구조, 별도 state 유지 ─────────
+  // 단일 에셋 변형과 분리한 이유: 탭 전환 시 업로드/선택이 섞이면 혼란.
+  const [atlasSource, setAtlasSource] = useState(null);
+  const [isDraggingAtlasSource, setIsDraggingAtlasSource] = useState(false);
+  const [atlasBackgroundRef, setAtlasBackgroundRef] = useState(null);
+  const [isDraggingAtlasBackground, setIsDraggingAtlasBackground] = useState(false);
+  const [selectedAtlasMoodId, setSelectedAtlasMoodId] = useState(VARIATION_MOODS[2].id);
+  const [selectedAtlasStyleIds, setSelectedAtlasStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id));
+  const [atlasResults, setAtlasResults] = useState(() =>
+    defaultStyleIdsFor(VARIATION_MOODS[2].id).map(id => {
+      const s = STYLE_BY_ID[id];
+      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+    })
+  );
+  const [isGeneratingAtlas, setIsGeneratingAtlas] = useState(false);
 
   const handleAssetTypeChange = (type) => {
     setAssetType(type);
@@ -151,6 +191,219 @@ export function useForgePrompt() {
   const handleStyleDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingStyle(false); }, []);
   const handleStyleDrop = useCallback((e) => { e.preventDefault(); setIsDraggingStyle(false); handleStyleFile(e.dataTransfer.files[0]); }, []);
   const handleClearStyleImage = (e) => { e.stopPropagation(); e.preventDefault(); setStyleImage(null); };
+
+  // ─── 변형 모드: 원본 / 배경참고 업로드 ───────────────────────────────
+  const handleSourceFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setSourceAsset(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleSourceUpload = (e) => handleSourceFile(e.target.files[0]);
+  const handleSourceDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingSource(true); }, []);
+  const handleSourceDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingSource(false); }, []);
+  const handleSourceDrop = useCallback((e) => { e.preventDefault(); setIsDraggingSource(false); handleSourceFile(e.dataTransfer.files[0]); }, []);
+  const handleClearSource = () => {
+    setSourceAsset(null);
+    setVariationResults(prev => prev.map(s => ({ ...s, dataUrl: null, error: null, isLoading: false })));
+  };
+
+  const handleBackgroundFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setBackgroundRef(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleBackgroundUpload = (e) => handleBackgroundFile(e.target.files[0]);
+  const handleBackgroundDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingBackground(true); }, []);
+  const handleBackgroundDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingBackground(false); }, []);
+  const handleBackgroundDrop = useCallback((e) => { e.preventDefault(); setIsDraggingBackground(false); handleBackgroundFile(e.dataTransfer.files[0]); }, []);
+  const handleClearBackground = () => setBackgroundRef(null);
+
+  // ─── 변형 모드: 분위기 / 스타일 선택 ──────────────────────────────────
+  // 분위기 변경 → 그 카테고리 앞 4개로 자동 채움. 사용자는 이후 토글로 교체 가능.
+  const handleSelectMood = (moodId) => {
+    setSelectedMoodId(moodId);
+    const defaults = defaultStyleIdsFor(moodId);
+    setSelectedStyleIds(defaults);
+    setVariationResults(defaults.map(id => {
+      const s = STYLE_BY_ID[id];
+      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+    }));
+  };
+
+  // 스타일 칩 토글: 이미 선택 → 해제. 미선택 → 추가. 상한 없음 (카테고리 내 스타일 수만큼 가능).
+  const handleToggleStyle = (styleId) => {
+    const isSelected = selectedStyleIds.includes(styleId);
+    const next = isSelected
+      ? selectedStyleIds.filter(id => id !== styleId)
+      : [...selectedStyleIds, styleId];
+    setSelectedStyleIds(next);
+    setVariationResults(next.map(id => {
+      const s = STYLE_BY_ID[id];
+      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+    }));
+  };
+
+  // ─── 변형 모드: 4개 병렬 생성 ──────────────────────────────────────────
+  // 각 슬롯은 자기 결과가 도착하는 즉시 isLoading → false 로 전환되어 도착 순서대로 표시.
+  const handleGenerateVariations = async () => {
+    if (!sourceAsset) { setErrorMsg('원본 에셋 이미지를 먼저 업로드해주세요.'); return; }
+    if (selectedStyleIds.length === 0) { setErrorMsg('스타일을 1개 이상 선택해주세요.'); return; }
+    if (isGeneratingVariations) return;
+    setIsGeneratingVariations(true);
+    const styles = selectedStyleIds.map(id => STYLE_BY_ID[id]).filter(Boolean);
+    setVariationResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: true })));
+    await Promise.all(styles.map(async (style, idx) => {
+      const result = await renderVariation(sourceAsset, style.promptHint, {
+        backgroundRefDataUrl: backgroundRef,
+      });
+      setVariationResults(prev => {
+        const next = prev.slice();
+        next[idx] = {
+          styleId: style.id,
+          theme: style,
+          dataUrl: result.ok ? result.dataUrl : null,
+          error: result.ok ? null : (result.error || '생성 실패'),
+          prompt: result.prompt || null,
+          isLoading: false,
+        };
+        return next;
+      });
+    }));
+    setIsGeneratingVariations(false);
+  };
+
+  // 단일 슬롯 재시도 — 4장 중 하나만 실패하거나 마음에 안 들 때 그 슬롯만 다시 호출.
+  const handleRegenerateVariation = async (idx) => {
+    if (!sourceAsset) return;
+    const slot = variationResults[idx];
+    if (!slot || slot.isLoading) return;
+    setVariationResults(prev => {
+      const next = prev.slice();
+      next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
+      return next;
+    });
+    const result = await renderVariation(sourceAsset, slot.theme.promptHint, {
+      backgroundRefDataUrl: backgroundRef,
+    });
+    setVariationResults(prev => {
+      const next = prev.slice();
+      next[idx] = {
+        styleId: slot.styleId,
+        theme: slot.theme,
+        dataUrl: result.ok ? result.dataUrl : null,
+        error: result.ok ? null : (result.error || '생성 실패'),
+        prompt: result.prompt || null,
+        isLoading: false,
+      };
+      return next;
+    });
+  };
+
+  // ─── 아틀라스(디자인 시스템) 모드 핸들러 ──────────────────────────────────
+  // 단일 변형 핸들러 세트와 동일 구조 — 별도 state 만 사용하도록 분리.
+  const handleAtlasSourceFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setAtlasSource(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleAtlasSourceUpload = (e) => handleAtlasSourceFile(e.target.files[0]);
+  const handleAtlasSourceDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingAtlasSource(true); }, []);
+  const handleAtlasSourceDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingAtlasSource(false); }, []);
+  const handleAtlasSourceDrop = useCallback((e) => { e.preventDefault(); setIsDraggingAtlasSource(false); handleAtlasSourceFile(e.dataTransfer.files[0]); }, []);
+  const handleClearAtlasSource = () => {
+    setAtlasSource(null);
+    setAtlasResults(prev => prev.map(s => ({ ...s, dataUrl: null, error: null, prompt: null, isLoading: false })));
+  };
+
+  const handleAtlasBackgroundFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setAtlasBackgroundRef(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleAtlasBackgroundUpload = (e) => handleAtlasBackgroundFile(e.target.files[0]);
+  const handleAtlasBackgroundDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingAtlasBackground(true); }, []);
+  const handleAtlasBackgroundDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingAtlasBackground(false); }, []);
+  const handleAtlasBackgroundDrop = useCallback((e) => { e.preventDefault(); setIsDraggingAtlasBackground(false); handleAtlasBackgroundFile(e.dataTransfer.files[0]); }, []);
+  const handleClearAtlasBackground = () => setAtlasBackgroundRef(null);
+
+  const handleSelectAtlasMood = (moodId) => {
+    setSelectedAtlasMoodId(moodId);
+    const defaults = defaultStyleIdsFor(moodId);
+    setSelectedAtlasStyleIds(defaults);
+    setAtlasResults(defaults.map(id => {
+      const s = STYLE_BY_ID[id];
+      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+    }));
+  };
+
+  const handleToggleAtlasStyle = (styleId) => {
+    const isSelected = selectedAtlasStyleIds.includes(styleId);
+    const next = isSelected
+      ? selectedAtlasStyleIds.filter(id => id !== styleId)
+      : [...selectedAtlasStyleIds, styleId];
+    setSelectedAtlasStyleIds(next);
+    setAtlasResults(next.map(id => {
+      const s = STYLE_BY_ID[id];
+      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+    }));
+  };
+
+  const handleGenerateAtlas = async () => {
+    if (!atlasSource) { setErrorMsg('아틀라스 이미지를 먼저 업로드해주세요.'); return; }
+    if (selectedAtlasStyleIds.length === 0) { setErrorMsg('스타일을 1개 이상 선택해주세요.'); return; }
+    if (isGeneratingAtlas) return;
+    setIsGeneratingAtlas(true);
+    const styles = selectedAtlasStyleIds.map(id => STYLE_BY_ID[id]).filter(Boolean);
+    setAtlasResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: true })));
+    await Promise.all(styles.map(async (style, idx) => {
+      const result = await renderAtlasVariation(atlasSource, style.promptHint, {
+        backgroundRefDataUrl: atlasBackgroundRef,
+      });
+      setAtlasResults(prev => {
+        const next = prev.slice();
+        next[idx] = {
+          styleId: style.id,
+          theme: style,
+          dataUrl: result.ok ? result.dataUrl : null,
+          error: result.ok ? null : (result.error || '생성 실패'),
+          prompt: result.prompt || null,
+          isLoading: false,
+        };
+        return next;
+      });
+    }));
+    setIsGeneratingAtlas(false);
+  };
+
+  const handleRegenerateAtlas = async (idx) => {
+    if (!atlasSource) return;
+    const slot = atlasResults[idx];
+    if (!slot || slot.isLoading) return;
+    setAtlasResults(prev => {
+      const next = prev.slice();
+      next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
+      return next;
+    });
+    const result = await renderAtlasVariation(atlasSource, slot.theme.promptHint, {
+      backgroundRefDataUrl: atlasBackgroundRef,
+    });
+    setAtlasResults(prev => {
+      const next = prev.slice();
+      next[idx] = {
+        styleId: slot.styleId,
+        theme: slot.theme,
+        dataUrl: result.ok ? result.dataUrl : null,
+        error: result.ok ? null : (result.error || '생성 실패'),
+        prompt: result.prompt || null,
+        isLoading: false,
+      };
+      return next;
+    });
+  };
 
   const buildPrompts = useCallback((rawOnly = false, forceLang = null, ignoreOpt = false) => {
     const activeLang = forceLang || outputLang;
@@ -389,6 +642,24 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
   return {
     // theme/view
     theme, currentView, setCurrentView,
+    // variation (Micro-Edit) mode
+    sourceAsset, isDraggingSource,
+    handleSourceUpload, handleSourceDragOver, handleSourceDragLeave, handleSourceDrop, handleClearSource,
+    backgroundRef, isDraggingBackground,
+    handleBackgroundUpload, handleBackgroundDragOver, handleBackgroundDragLeave, handleBackgroundDrop, handleClearBackground,
+    selectedMoodId, selectedStyleIds,
+    handleSelectMood, handleToggleStyle,
+    variationResults, isGeneratingVariations,
+    handleGenerateVariations, handleRegenerateVariation,
+    // atlas (디자인 시스템) mode
+    atlasSource, isDraggingAtlasSource,
+    handleAtlasSourceUpload, handleAtlasSourceDragOver, handleAtlasSourceDragLeave, handleAtlasSourceDrop, handleClearAtlasSource,
+    atlasBackgroundRef, isDraggingAtlasBackground,
+    handleAtlasBackgroundUpload, handleAtlasBackgroundDragOver, handleAtlasBackgroundDragLeave, handleAtlasBackgroundDrop, handleClearAtlasBackground,
+    selectedAtlasMoodId, selectedAtlasStyleIds,
+    handleSelectAtlasMood, handleToggleAtlasStyle,
+    atlasResults, isGeneratingAtlas,
+    handleGenerateAtlas, handleRegenerateAtlas,
     // core options
     themeDna, setThemeDna, handleThemeDnaChange,
     assetType, setAssetType, handleAssetTypeChange,

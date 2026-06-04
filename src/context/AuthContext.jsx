@@ -5,8 +5,6 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
-  sendEmailVerification,
-  reload as reloadUser,
   deleteUser as fbDeleteUser,
 } from "firebase/auth";
 import { auth, googleProvider } from "../lib/firebase";
@@ -151,32 +149,8 @@ export function AuthProvider({ children }) {
   const signInEmail = useCallback((email, password) =>
     signInWithEmailAndPassword(auth, email, password), []);
 
-  const signUpEmail = useCallback(async (email, password) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    // 가입 직후 검증 메일 자동 발송. 실패해도 가입은 성공한 상태이므로 진행은 막지 않되,
-    // 원인 파악을 위해 error code/message 를 명확히 남김 (이전엔 warn 으로 묻혀 진단 불가했음).
-    try {
-      await sendEmailVerification(cred.user);
-      console.info("[Auth] verification email sent to", email);
-    } catch (e) {
-      console.error("[Auth] sendEmailVerification FAILED", { code: e.code, message: e.message, email });
-    }
-    return cred;
-  }, []);
-
-  // 검증 메일 재발송 — 현재 로그인된 사용자에게.
-  const resendVerificationEmail = useCallback(async () => {
-    if (!auth.currentUser) throw new Error("로그인이 필요합니다.");
-    await sendEmailVerification(auth.currentUser);
-  }, []);
-
-  // 검증 완료 확인 — user.reload() 후 emailVerified 재확인하고 profile 재발급.
-  const refreshEmailVerification = useCallback(async () => {
-    if (!auth.currentUser) return false;
-    await reloadUser(auth.currentUser);
-    setUser({ ...auth.currentUser });
-    return auth.currentUser.emailVerified;
-  }, []);
+  const signUpEmail = useCallback(async (email, password) =>
+    createUserWithEmailAndPassword(auth, email, password), []);
 
   const signInGoogle = useCallback(() =>
     signInWithPopup(auth, googleProvider), []);
@@ -199,31 +173,38 @@ export function AuthProvider({ children }) {
   const remaining = remainingToday(grade, usageToday);
 
   const isAdmin = (profile?.role === "admin") || (user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()));
-  const status = profile?.status || STATUS.pending;
-  // 프로필이 아직 안 들어온 상태에선 권한 판단을 보류 (false). 잘못된 PendingScreen 방지.
-  const isPending  = !!user && !isAdmin && profileLoaded && profile && status === STATUS.pending;
+  const status = profile?.status || STATUS.approved;
   const isRejected = !!user && !isAdmin && profileLoaded && profile && status === STATUS.rejected;
   // user가 있는데 profile이 아직이면 auth 자체는 로딩 중으로 본다.
   const isAuthLoading = loading || (!!user && !profileLoaded);
+  // 서브앱 접근 가능 여부 — 로그인 안 했거나 general 등급이면 인덱스만.
+  // 프로필 로딩 중에는 보수적으로 false (false → 인덱스만, 진입 시도 시 로그인 모달).
+  const canAccessSubApps = !!user && profileLoaded && grade !== GRADES.general && !isRejected;
+
+  // 로그인 모달 — 비로그인/일반 사용자가 서브앱 진입 시도 시 트리거.
+  // 닫기는 LoginScreen 성공 콜백 / X 버튼 / 배경 클릭으로만. (effect 자동닫기는 cascade 재렌더 유발)
+  const [loginModalOpen, setLoginModalOpen] = useState(false);
+  const openLoginModal = useCallback(() => setLoginModalOpen(true), []);
+  const closeLoginModal = useCallback(() => setLoginModalOpen(false), []);
 
   // Provider value 를 useMemo 로 안정화 — 매 렌더 새 객체 reference 가 모든 useAuth consumer 의
   // cascade 재렌더를 일으키는 것을 차단.
   const ctxValue = useMemo(() => ({
     user, profile, grade, loading, profileLoaded, isAuthLoading,
-    isAdmin, isPending, isRejected, status,
+    isAdmin, isRejected, status, canAccessSubApps,
     usageToday, dailyLimit: limit, remainingToday: remaining,
     signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,
     setPendingInviteCode, applyInviteCode,
     refreshProfile, tryConsumeUsage,
-    resendVerificationEmail, refreshEmailVerification,
+    loginModalOpen, openLoginModal, closeLoginModal,
   }), [
     user, profile, grade, loading, profileLoaded, isAuthLoading,
-    isAdmin, isPending, isRejected, status,
+    isAdmin, isRejected, status, canAccessSubApps,
     usageToday, limit, remaining,
     signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,
     setPendingInviteCode, applyInviteCode,
     refreshProfile, tryConsumeUsage,
-    resendVerificationEmail, refreshEmailVerification,
+    loginModalOpen, openLoginModal, closeLoginModal,
   ]);
 
   return (

@@ -84,8 +84,9 @@ export default function ArcSidebar({
         })}
       </nav>
       {/* 새 프롬프트 등록 — 사이드바 nav 와 분리해 라운드 버튼으로 강조.
-          펼침: pill(rounded-full) + 아이콘 + 텍스트. 접힘: 원형 버튼. */}
-      <div className={`shrink-0 ${isSidebarCollapsed ? 'flex justify-center py-2' : 'px-3 py-2'}`}>
+          펼침: pill(rounded-full) + 아이콘 + 텍스트. 접힘: 원형 버튼.
+          접힘 상태에선 아래 설정 버튼과의 갭을 최소화(pb-0) — 다크 사이드바 위 빈 검은 영역 노이즈 제거. */}
+      <div className={`shrink-0 ${isSidebarCollapsed ? 'flex justify-center pt-2 pb-0' : 'px-3 py-2'}`}>
         <button onClick={(e) => { e.stopPropagation(); onNewPrompt?.(); }}
           title="새 프롬프트 등록"
           className={`flex items-center justify-center gap-1.5 rounded-full font-bold transition-colors bg-[#6C5CE7]/15 text-[#6C5CE7] hover:bg-[#6C5CE7] hover:text-white ${isSidebarCollapsed ? 'w-9 h-9' : 'w-full h-9 px-3 text-xs border border-[#6C5CE7]/30'}`}
@@ -97,7 +98,7 @@ export default function ArcSidebar({
       {/* 설정 버튼 — 로그인한 모든 사용자에게 노출. 내부 옵션은 항목별로 권한 가드.
           (이전엔 isAdmin gate 였으나 사용자가 본인 권한을 확인하지 못해 안 보였다는 보고 → user gate 로 완화) */}
       {user && (
-        <div className="h-14 flex items-center justify-center relative" ref={settingsRef}>
+        <div className={`flex items-center justify-center relative ${isSidebarCollapsed ? 'h-11' : 'h-14'}`} ref={settingsRef}>
           <button
             onClick={(e) => { e.stopPropagation(); setIsSettingsOpen((v) => !v); }}
             className={`p-2 rounded-lg transition-colors ${isSettingsOpen ? 'text-slate-900 bg-black/10 dark:text-white dark:bg-white/10' : 'text-slate-500 hover:text-slate-900 hover:bg-black/5 dark:text-zinc-500 dark:hover:text-white dark:hover:bg-white/5'}`}

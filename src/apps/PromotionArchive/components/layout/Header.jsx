@@ -107,7 +107,9 @@ const GamePicker = ({ value, onChange, options, pinnedGames = [] }) => {
 };
 
 const Header = ({
+  isLight = false,
   setIsSidebarOpen,
+  isDesktopSidebarOpen = false,
   // search
   isAiSearchMode, setIsAiSearchMode, isAiQuerying,
   searchQuery, setSearchQuery, handleAiSearch, setAiSearchKeywords,
@@ -151,25 +153,30 @@ const Header = ({
         : (activeCategory === 'all' ? '전체 목록' : activeCategory);
 
   return (
-    <header className="h-14 bg-[#0c0c0e]/90 backdrop-blur-sm border-b border-white/5 flex flex-nowrap items-center px-4 md:px-6 gap-3 shrink-0 sticky top-0 z-40 whitespace-nowrap">
+    <header className={`h-14 flex flex-nowrap items-center px-4 md:px-8 gap-3 shrink-0 z-40 whitespace-nowrap border-b ${isLight ? 'bg-white border-black/5' : 'bg-[#141414] border-white/5'}`}>
+      {/* 좌측 spacer — 사이드바 카드(ml-3 + 폭) 너비만큼 비워 첫 그리드 카드와 "전체 목록" 좌측 정렬. */}
+      <div
+        aria-hidden
+        className={`hidden md:block shrink-0 transition-[width] duration-300 ease-in-out ${isDesktopSidebarOpen ? 'w-[202px]' : 'w-[76px]'}`}
+      />
       {/* 좌측: 모바일 메뉴 + 타이틀 */}
       <div className="flex items-center gap-2 md:gap-3 min-w-0">
         <button
           onClick={() => setIsSidebarOpen(true)}
-          className="md:hidden text-zinc-400 hover:text-white transition-colors shrink-0"
+          className={`md:hidden transition-colors shrink-0 ${isLight ? 'text-zinc-600 hover:text-[#1A1A1A]' : 'text-zinc-400 hover:text-white'}`}
         >
           <Menu className="w-6 h-6" strokeWidth={1.5} />
         </button>
         {isCollectionMode && (
           <button
             onClick={() => setIsCollectionMode(false)}
-            className="p-1 hover:bg-zinc-800 rounded-full transition-colors shrink-0"
+            className={`p-1 rounded-full transition-colors shrink-0 ${isLight ? 'hover:bg-black/5' : 'hover:bg-zinc-800'}`}
             title="뒤로"
           >
-            <ArrowLeft className="w-4 h-4 text-white" />
+            <ArrowLeft className={`w-4 h-4 ${isLight ? 'text-[#1A1A1A]' : 'text-white'}`} />
           </button>
         )}
-        <h2 className="text-sm md:text-base font-bold text-white flex items-center gap-2 min-w-0 truncate">
+        <h2 className={`text-sm md:text-base font-bold flex items-center gap-2 min-w-0 truncate ${isLight ? 'text-[#1A1A1A]' : 'text-white'}`}>
           {isCollectionMode && <Layers className="w-4 h-4 text-[#d8b17e] shrink-0" />}
           {isAiSearchMode && <Sparkles className="w-4 h-4 text-violet-400 shrink-0" />}
           <span className="truncate">{titleText}</span>
@@ -190,7 +197,9 @@ const Header = ({
                   className={`px-2.5 py-1 rounded-md text-[11px] font-medium border transition-all ${
                     active
                       ? 'bg-[#d8b17e]/15 border-[#d8b17e]/50 text-[#d8b17e]'
-                      : 'border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500'
+                      : (isLight
+                          ? 'border-zinc-300 text-zinc-600 hover:text-[#1A1A1A] hover:border-zinc-500'
+                          : 'border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500')
                   }`}
                 >
                   {opt.label}
@@ -216,7 +225,9 @@ const Header = ({
             className={`hidden md:flex items-center gap-1.5 px-2 py-1 ml-1 rounded-md text-[11px] font-medium border transition-all shrink-0 ${
               filteredBanners?.length > 0 && selectedIds.length >= filteredBanners.length
                 ? 'text-[#d8b17e] bg-[#d8b17e]/10 border-[#d8b17e]'
-                : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'
+                : (isLight
+                    ? 'text-zinc-600 border-zinc-300 hover:border-zinc-500'
+                    : 'text-zinc-400 border-zinc-700 hover:border-zinc-500')
             }`}
           >
             <CheckSquare className="w-3 h-3" /> 전체 선택
@@ -228,7 +239,7 @@ const Header = ({
       <div className="flex flex-nowrap items-center gap-2 ml-auto shrink-0">
         {/* 검색 */}
         <div className="relative group w-[180px] md:w-[220px] lg:w-[260px] shrink-0">
-          <div className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors z-10 ${isAiSearchMode ? 'text-violet-400' : 'text-zinc-500'}`}>
+          <div className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors z-10 ${isAiSearchMode ? 'text-violet-400' : (isLight ? 'text-zinc-400' : 'text-zinc-500')}`}>
             {isAiQuerying ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
             ) : isAiSearchMode ? (
@@ -240,10 +251,14 @@ const Header = ({
           <input
             type="text"
             placeholder={isAiSearchMode ? 'AI 검색...' : '검색...'}
-            className={`w-full pl-9 pr-16 py-1.5 bg-[#121212] border rounded-lg text-white text-xs transition-colors placeholder:text-zinc-600 focus:outline-none ${
+            className={`w-full pl-9 pr-16 py-1.5 border rounded-lg text-xs transition-colors focus:outline-none ${
+              isLight
+                ? 'bg-white text-[#1A1A1A] placeholder:text-zinc-400'
+                : 'bg-[#121212] text-white placeholder:text-zinc-600'
+            } ${
               isAiSearchMode
                 ? 'border-violet-500/50 focus:border-violet-500'
-                : 'border-white/10 focus:border-[#d8b17e]/50'
+                : (isLight ? 'border-black/10 focus:border-[#d8b17e]/60' : 'border-white/10 focus:border-[#d8b17e]/50')
             }`}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -253,14 +268,14 @@ const Header = ({
             {searchQuery && (
               <button
                 onClick={() => { setSearchQuery(''); setAiSearchKeywords([]); }}
-                className="text-zinc-500 hover:text-white transition-colors p-1"
+                className={`transition-colors p-1 ${isLight ? 'text-zinc-500 hover:text-[#1A1A1A]' : 'text-zinc-500 hover:text-white'}`}
               >
                 <X className="w-3 h-3" strokeWidth={1.5} />
               </button>
             )}
             <button
               onClick={() => { setIsAiSearchMode(!isAiSearchMode); setAiSearchKeywords([]); }}
-              className={`p-1 rounded transition-all ${isAiSearchMode ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+              className={`p-1 rounded transition-all ${isAiSearchMode ? 'bg-violet-500 text-white' : (isLight ? 'text-zinc-500 hover:text-[#1A1A1A]' : 'text-zinc-500 hover:text-zinc-300')}`}
               title={isAiSearchMode ? 'AI 검색 끄기' : 'AI 검색 켜기'}
             >
               <Sparkles className="w-3 h-3" />
@@ -271,25 +286,25 @@ const Header = ({
         {!isCollectionMode && (
           <>
             {/* 그리드 토글 그룹 (3-way) — BannerCodex 동일 패턴 */}
-            <div className="hidden md:flex items-center bg-white/5 rounded-lg p-0.5 shrink-0">
+            <div className={`hidden md:flex items-center rounded-lg p-0.5 shrink-0 ${isLight ? 'bg-black/5' : 'bg-white/5'}`}>
               <button
                 onClick={() => setGridSize('small')}
                 title="작게"
-                className={`p-1.5 rounded transition-colors ${gridSize === 'small' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
+                className={`p-1.5 rounded transition-colors ${gridSize === 'small' ? (isLight ? 'bg-white text-[#d8b17e] shadow-sm' : 'bg-[#1A1A1A] text-[#d8b17e]') : (isLight ? 'text-zinc-500 hover:text-[#1A1A1A]' : 'text-zinc-500 hover:text-zinc-300')}`}
               >
                 <Grip className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setGridSize('medium')}
                 title="보통"
-                className={`p-1.5 rounded transition-colors ${gridSize === 'medium' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
+                className={`p-1.5 rounded transition-colors ${gridSize === 'medium' ? (isLight ? 'bg-white text-[#d8b17e] shadow-sm' : 'bg-[#1A1A1A] text-[#d8b17e]') : (isLight ? 'text-zinc-500 hover:text-[#1A1A1A]' : 'text-zinc-500 hover:text-zinc-300')}`}
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setGridSize('large')}
                 title="크게"
-                className={`p-1.5 rounded transition-colors ${gridSize === 'large' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}
+                className={`p-1.5 rounded transition-colors ${gridSize === 'large' ? (isLight ? 'bg-white text-[#d8b17e] shadow-sm' : 'bg-[#1A1A1A] text-[#d8b17e]') : (isLight ? 'text-zinc-500 hover:text-[#1A1A1A]' : 'text-zinc-500 hover:text-zinc-300')}`}
               >
                 <Maximize2 className="w-3.5 h-3.5" />
               </button>
@@ -302,7 +317,9 @@ const Header = ({
                 className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg transition-colors ${
                   filterCount > 0
                     ? 'text-[#d8b17e] bg-[#d8b17e]/10 hover:bg-[#d8b17e]/15'
-                    : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                    : (isLight
+                        ? 'text-zinc-600 hover:text-[#1A1A1A] hover:bg-black/5'
+                        : 'text-zinc-400 hover:text-white hover:bg-white/5')
                 }`}
                 title="필터"
               >
@@ -459,7 +476,11 @@ const Header = ({
               <button
                 onClick={() => setIsSortMenuOpen(!isSortMenuOpen)}
                 className={`flex items-center gap-1 px-2 py-1.5 text-xs rounded-lg transition-colors ${
-                  isSortMenuOpen ? 'text-[#d8b17e] bg-[#d8b17e]/10' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  isSortMenuOpen
+                    ? 'text-[#d8b17e] bg-[#d8b17e]/10'
+                    : (isLight
+                        ? 'text-zinc-600 hover:text-[#1A1A1A] hover:bg-black/5'
+                        : 'text-zinc-400 hover:text-white hover:bg-white/5')
                 }`}
               >
                 <ArrowUpDown className="w-3 h-3" /> <span className="hidden md:inline">{sortLabel}</span>

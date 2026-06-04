@@ -21,7 +21,7 @@ const appToPath = (appId) => (appId ? `/${appId}` : "/");
 export function GlobalProvider({ children }) {
   // Auth 상태를 그대로 통과시켜 모든 앱이 useGlobal() 하나로 읽을 수 있게 한다.
   // (개별 앱은 자체 onAuthStateChanged / signInAnonymously 를 호출해선 안 됨.)
-  const { user, isAuthLoading } = useAuth();
+  const { user, isAuthLoading, canAccessSubApps, openLoginModal } = useAuth();
 
   // 초기 상태: 현재 URL에서 추론. 새로고침/직접 접근에서도 정상 동작.
   const [currentApp, setCurrentAppRaw] = useState(() =>
@@ -91,15 +91,36 @@ export function GlobalProvider({ children }) {
     try { window.history.pushState({ app: currentApp }, "", appToPath(currentApp)); } catch {}
   }, [currentApp]);
 
-  // 외부에서 호출하는 setCurrentApp — URL 동기화는 위 effect 가 처리.
+  // 서브앱 접근 게이트 — 비로그인/일반 등급 사용자는 인덱스로 차단 + 로그인 모달.
+  // null(인덱스로 이동)은 항상 허용.
   const setCurrentApp = useCallback((appId) => {
+    if (appId && !canAccessSubApps) {
+      openLoginModal();
+      return;
+    }
     setCurrentAppRaw(appId);
-  }, []);
+  }, [canAccessSubApps, openLoginModal]);
 
   const navigate = useCallback((targetId, incomingPayload = null) => {
+    if (targetId && !canAccessSubApps) {
+      openLoginModal();
+      return;
+    }
     if (incomingPayload) setPayload({ ...incomingPayload, target: targetId, timestamp: Date.now() });
-    setCurrentApp(targetId);
-  }, [setCurrentApp]);
+    setCurrentAppRaw(targetId);
+  }, [canAccessSubApps, openLoginModal]);
+
+  // 권한 없이 서브앱 URL 로 직접 들어왔거나 권한이 사라진(로그아웃 등) 경우 → 인덱스로 리다이렉트.
+  // 권한 판단이 끝난 뒤(isAuthLoading=false)에만 동작해서 로딩 중 깜빡임 방지.
+  // URL ↔ 권한 동기화는 외부 시스템 동기화라 effect 가 자연스러움.
+  useEffect(() => {
+    if (isAuthLoading) return;
+    if (currentApp && !canAccessSubApps) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setCurrentAppRaw(null);
+      openLoginModal();
+    }
+  }, [isAuthLoading, currentApp, canAccessSubApps, openLoginModal]);
 
   const clearPayload = useCallback(() => setPayload(emptyPayload()), []);
 

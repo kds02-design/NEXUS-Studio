@@ -7,6 +7,7 @@ import {
   setDoc, deleteDoc, query, getDocs, where, addDoc,
 } from "firebase/firestore";
 import { auth, db, appId } from "../../../lib/firebase";
+import { sortPagesByName } from "../../../lib/pageNameSort";
 
 export { db, appId, auth };
 
@@ -22,6 +23,7 @@ const toMs = (v) => {
   if (v && typeof v.toMillis === "function") return v.toMillis();
   return 0;
 };
+
 
 export function subscribeToProjects(uid, onData, onError) {
   if (!db || !uid) return () => {};
@@ -113,21 +115,24 @@ export async function registerProjectAsBrandWebBanner(uid, project, options = {}
   }
 
   // 모든 페이지(이미지)의 활성 버전 정리.
-  const pages = (project.images || [])
+  // order 는 파일명 정렬 적용 후에 재부여 — 업로드 순이 아니라 'main → 01 → 02 …' 순.
+  const rawPages = (project.images || [])
     .map((im, idx) => {
       const v = getActiveVersion(im);
       if (!v?.url) return null;
       return {
         id: im.id, name: im.name || `page_${idx + 1}`, device: im.device || "pc",
-        url: v.url, order: idx,
+        url: v.url,
         confirmedAt: v.confirmed ? Date.now() : null,
         noteCount: (v.notes || []).length,
       };
     })
     .filter(Boolean);
 
-  if (pages.length === 0) throw new Error("등록할 이미지가 없습니다");
+  if (rawPages.length === 0) throw new Error("등록할 이미지가 없습니다");
 
+  // device 별로 파일명 유추 정렬 → PC, Mobile, 기타 순으로 합치고 order 재부여.
+  const pages = sortPagesByName(rawPages);
   const pcPages = pages.filter(p => p.device === "pc");
   const mobilePages = pages.filter(p => p.device === "mobile");
   const firstPc = pcPages[0];

@@ -5,8 +5,10 @@ import {
   Link2, Search, Download,
 } from "lucide-react";
 import { APP_MAP } from "../../../config/apps";
+import { useGlobal } from "../../../context/GlobalContext";
 import { inferRelatedType } from "../constants/categories";
 import { PromptImage } from "./ArcCard";
+import { MODAL_LIGHT_OVERRIDE_CSS } from "../../../lib/modalLightOverrideCSS";
 
 const TYPE_BADGE_COLOR = {
   '2D': 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300',
@@ -29,6 +31,7 @@ export default function ArcDetailModal({
   showToast, currentUserId, isAdmin = false,
   allPrompts = [], onLinkRelated, onUnlinkRelated, onOpenRelated,
 }) {
+  const { isLight } = useGlobal();
   const images = prompt.images?.length ? prompt.images : (prompt.image ? [prompt.image] : []);
   const videoUrl = Array.isArray(prompt.videos) && typeof prompt.videos[0] === 'string' ? prompt.videos[0] : null;
   const mediaTabs = [
@@ -216,12 +219,21 @@ export default function ArcDetailModal({
 
   return (
     <div className="fixed top-[52px] left-0 right-0 bottom-0 z-[2000] flex items-center justify-center p-6 sm:p-10 bg-black/90 backdrop-blur-sm animate-in fade-in duration-200" onClick={onClose}>
-      <button onClick={onClose} className="absolute top-6 right-6 sm:top-8 sm:right-8 p-2.5 rounded-full transition-colors z-[2010] border bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white shadow-lg">
+      <style>{MODAL_LIGHT_OVERRIDE_CSS}</style>
+      <button onClick={onClose} className={`absolute top-6 right-6 sm:top-8 sm:right-8 p-2.5 rounded-full transition-colors z-[2010] border shadow-lg ${
+        isLight
+          ? 'bg-white border-black/10 text-zinc-600 hover:bg-zinc-100 hover:text-[#1A1A1A]'
+          : 'bg-[#1a1a1a] border-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+      }`}>
         <X className="w-5 h-5" />
       </button>
-      <div className="w-full max-w-5xl h-[90vh] bg-[#111] rounded-2xl border border-white/10 flex overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div
+        data-modal-theme={isLight ? 'light' : 'dark'}
+        className={`w-full max-w-5xl h-[90vh] rounded-2xl border flex overflow-hidden shadow-2xl ${isLight ? 'bg-[#FAFAFA] border-black/10' : 'bg-[#111] border-white/10'}`}
+        onClick={e => e.stopPropagation()}
+      >
         {/* Left: media */}
-        <div className="w-[60%] bg-[#050505] relative flex flex-col">
+        <div className={`w-[60%] relative flex flex-col ${isLight ? 'bg-[#F5F5F5]' : 'bg-[#050505]'}`}>
           {activeMedia?.type === 'image' && (
             <div className="absolute top-4 left-4 z-[20]">
               <button onClick={handleDownload}
