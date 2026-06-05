@@ -210,6 +210,19 @@ export const prepareImageForAI = async (imgSource, maxWidth = 1280, quality = 0.
 // 모든 평가는 공용 VITE_GEMINI_API_KEY 사용.
 // 평가 항목/가중치/라벨은 NexusAdmin 활성 버전(evaluationCriteria) 에서 동적 로드.
 // criteriaType 우선; 미지정 시 isBrandWeb 폴백(true → brandweb, 그 외 → promotion).
+// 에셋 경로에서 캠페인 폴더명만 추출 — 디자이너가 직접 명명한 가장 신뢰도 높은 title 단서.
+// 예: "\\ppc-file\1.리니지\2026\프로모션\20260429_보호 주문서\03.디자인\" → "보호 주문서"
+//     "...\이벤트\아덴의 격전\03.디자인" → "아덴의 격전"
+// 규칙: 마지막에 오는 "NN.이름" 류(03.디자인, 02.소스 등) 잘라낸 뒤, "YYYYMMDD_제목" 패턴이면 제목만 반환.
+export function extractCampaignFolderHint(path) {
+  if (!path) return '';
+  const parts = String(path).split(/[\\/]+/).filter(Boolean);
+  while (parts.length && /^\d+\.\S/.test(parts[parts.length - 1])) parts.pop();
+  const last = parts[parts.length - 1] || '';
+  const dated = last.match(/^\d{8}_(.+)$/);
+  return (dated ? dated[1] : last).trim();
+}
+
 export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', options = {}) => {
     const keyToUse = apiKey;
     const calibType = options.criteriaType
@@ -228,6 +241,17 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     const introFilled = introTemplate.replace('{{CRITERIA_LIST}}', criteriaListBlock);
     const ruleBlock = calib.rules && calib.rules.trim() ? `\n\n[채점 규칙]\n${calib.rules.trim()}\n` : '';
 
+    // 폴더명 단서 — 디자이너가 부여한 캠페인 폴더명. title 추출의 강력한 anchor.
+    const folderHint = options.folderHint ? String(options.folderHint).trim() : '';
+    const folderBlock = folderHint ? `\n\n[디자이너가 부여한 캠페인 폴더명]
+"${folderHint}"
+
+이 폴더명은 디자이너가 직접 작성한 캠페인의 공식 명칭에 가깝습니다. title 추출 시:
+- 이미지의 시각적 텍스트가 이 폴더명과 일치하거나 매우 유사하면 → 그 텍스트를 title로 채택.
+- 이미지의 가장 큰 텍스트와 폴더명이 명확히 다르면 → 이미지의 텍스트를 우선 (오타·신규 캠페인 가능성).
+- 단, 폴더명만 보고 만들지 마세요 — 이미지에 그 텍스트가 글자로 보일 때만 사용.
+` : '';
+
     // 기준점 앵커 — 썸네일 있는 앵커는 시각 few-shot 이미지로, 없는 앵커는 텍스트로 주입.
     const { anchors: pickedAnchors } = buildAnchorFewShot(calib.anchors || []);
     const preparedAnchors = pickedAnchors.length ? await prepareAnchorImages(pickedAnchors) : [];
@@ -236,7 +260,7 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     const textOnlyAnchors = (calib.anchors || []).filter(a => !a?.thumbnailUrl);
     const anchorBlock = `${fewShot.text || ''}${formatAnchorsForPrompt(textOnlyAnchors) || ''}`;
 
-    const prompt = `${introFilled}${ruleBlock}${anchorBlock}`
+    const prompt = `${introFilled}${ruleBlock}${anchorBlock}${folderBlock}`
         + (userComment ? `\n\n[사용자 피드백]\n${userComment}\n` : '');
 
     const imageParts = (Array.isArray(imagesBase64) ? imagesBase64 : [imagesBase64])

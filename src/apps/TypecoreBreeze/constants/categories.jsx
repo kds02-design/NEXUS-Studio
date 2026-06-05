@@ -55,15 +55,18 @@ export const directorPersonas = [
   { id: 'flourish_artist', category: 'calli', icon: <Edit2 className="w-4 h-4" />, shortTitle: "리본 스크립트 작가", subtitle: "화려한 꼬리와 연속적인 곡선미", role: "너는 글자와 글자가 유려하게 이어지는 곡선미를 극한으로 다루는 '리본 스크립트 작가'야.", keywords: "Elegant cursive script, decorative calligraphic flourishes, continuous ribbon flow, sophisticated swashes, graceful curves", tone: "[우아하고 화려한] 정교한 드로잉을 설명하듯 매끄럽고 우아한 문체를 사용하라.", instructionRule: "- Rule: Maximize elegant ligatures, decorative swashes on terminals, and continuous flowing ribbon-like connections between letters." }
 ];
 
+// 슬라이더 — 페르소나 무드를 가로지르지 않고 "현재 페르소나의 강도"만 조절.
+// 예전 'balanced' 모드는 '감성 & 우아함' + '캐주얼 & 리듬감' 두 키워드를 동시에 주입해
+// variety_director(예능 팝) 같은 페르소나와 정면 충돌했음. 이제는 강·중·약 강도 1축만.
 export const sliderDesc = {
-  leftLabel: "감성 & 우아함",
-  rightLabel: "캐주얼 & 리듬감",
-  leftDesc: "아날로그 감성과 부드러운 흐름",
-  rightDesc: "통통 튀는 바운스와 귀여움"
+  leftLabel: "절제",
+  rightLabel: "강렬",
+  leftDesc: "차분하고 절제된 표현",
+  rightDesc: "과감하고 강렬한 표현"
 };
 
 export const getSliderText = (val) => {
-  if (val < 35) return `[EXTREME FOCUS]: ${sliderDesc.leftDesc}`;
-  if (val > 65) return `[EXTREME FOCUS]: ${sliderDesc.rightDesc}`;
-  return `[BALANCED FOCUS]: '${sliderDesc.leftLabel}'과 '${sliderDesc.rightLabel}'의 조화로운 형태`;
+  if (val < 35) return `[INTENSITY]: Restrained, calm execution of the selected persona — gentle emphasis, minimal exaggeration.`;
+  if (val > 65) return `[INTENSITY]: Bold, exaggerated execution of the selected persona — maximum emphasis on its signature traits.`;
+  return `[INTENSITY]: Standard execution of the selected persona — its signature traits applied at full but not exaggerated.`;
 };

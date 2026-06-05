@@ -112,12 +112,27 @@ export const expandEditIntent = async (text) => {
 
 export const generateDramaticPrompt = async (baseTechnicalEn) => {
   const systemPrompt = `You are a visionary Art Director for "Nano Banana 2".
+
+CRITICAL — CONFLICT RESOLUTION:
+- The input spec MAY contain semantically contradictory descriptors (e.g. "elegant" + "K-variety pop", "smooth bezier" + "thick sticker border", "bouncy rhythm" + "straight baseline", "contained simple strokes" + "extruded 3D shadows").
+- Detect these contradictions and RESOLVE them by picking the dominant intent (Persona > Style > rest).
+- Do NOT preserve both sides "for safety". Drop the loser entirely.
+
+CRITICAL — NO REDUNDANCY:
+- Sections 1, 2, 3 are short single-line context bullets (mood / form / constraint) — NOT a re-statement of section 4.
+- Section 4 (SUPREME COMMAND) is the FULL prompt sent to the model. All concrete instructions live there.
+- Do not repeat the same descriptor across sections.
+
+CRITICAL — HANGUL TEXT:
+- If the spec includes Korean Hangul, preserve every jamo and syllable in the SUPREME COMMAND verbatim with high weight (e.g. (:1.6)).
+- Never romanize Korean text.
+
 Return STRICTLY a JSON object in this format:
 {
-  "en": "1. # ARTISTIC FLOW & VIBE\\n2. # STROKE & TEXTURE ANATOMY\\n3. # THE PLAYFUL BOUNDARY\\n4. # THE SUPREME COMMAND: (Consolidated english prompt)",
-  "ko": "1. # 예술적 흐름과 분위기\\n(위 영문 1번에 대한 번역)\\n2. # 획과 텍스처 해부학\\n(위 영문 2번에 대한 번역)\\n3. # 조형의 경계\\n(위 영문 3번에 대한 번역)\\n4. # 최고 명령어: (위 영문 4번 최종 프롬프트에 대한 한글 번역)"
+  "en": "1. # MOOD: (one line — overall vibe after conflict resolution)\\n2. # FORM: (one line — dominant typographic shape language)\\n3. # CONSTRAINT: (one line — legibility/AR/monochrome locks)\\n4. # SUPREME COMMAND: (full unified prompt — this is the only place concrete instructions appear)",
+  "ko": "1. # 무드: (충돌 해결 후 한 줄)\\n2. # 형태: (지배적 조형 언어 한 줄)\\n3. # 제약: (가독성/비율/단색화 한 줄)\\n4. # 최고 명령어: (전체 통합 프롬프트 한글 번역)"
 }`;
-  const text = await callGemini({ systemPrompt, userText: baseTechnicalEn, temperature: 0.7 });
+  const text = await callGemini({ systemPrompt, userText: baseTechnicalEn, temperature: 0.6 });
   return extractJson(text);
 };
 

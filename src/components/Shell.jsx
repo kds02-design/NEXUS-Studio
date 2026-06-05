@@ -42,6 +42,7 @@ import AssetLibraryApp from "../apps/AssetLibrary";
 import BannerCodexApp from "../apps/BannerCodex";
 import BannerCreatorApp from "../apps/BannerCreator";
 import NexusPreviewApp from "../apps/NexusPreview";
+import PromoSkinApp from "../apps/PromoSkin";
 import MaskForgeApp from "../apps/MaskForge";
 import VectorForgeApp from "../apps/VectorForge";
 import LumKeyApp from "../apps/LumKey";
@@ -577,6 +578,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "banner-codex":       return <BannerCodexApp />;
     case "banner-creator":     return <BannerCreatorApp />;
     case "nexus-preview":      return <NexusPreviewApp />;
+    case "promo-skin":         return <PromoSkinApp />;
     case "mask-forge":         return <MaskForgeApp />;
     case "vector-forge":       return <VectorForgeApp />;
     case "lumkey":             return <LumKeyApp />;

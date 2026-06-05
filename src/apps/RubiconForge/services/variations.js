@@ -93,126 +93,10 @@ ${themeHint}${getBgContextBlock(hasBackgroundRef, false)}${getRefinementBlock(re
 ${FINAL_REMINDER}`;
 };
 
-// ─── LAYER REPLACEMENT 블록 빌더 ──────────────────────────────────────────
-// replacements: [{ role, position, bbox, desc, refIndex }] — refIndex 는 reference image 의 1-based 순번
-// 모델에게 "이 reference 가 source 의 어느 영역을 교체하는지" 정확히 알려줌.
-const buildReplacementBlock = (replacements) => {
-  if (!Array.isArray(replacements) || replacements.length === 0) return '';
-  const lines = ['\n\nLAYER REPLACEMENT (additional reference images beyond the source):',
-    'Each replacement image is mapped to a SPECIFIC bounding box of the source. Apply each replacement strictly to its assigned bbox — do NOT swap targets, do NOT apply to other regions.',
-  ];
-  replacements.forEach((r, idx) => {
-    const action = r.role === 'background'
-      ? `Replace the source's background environment with reference image #${r.refIndex}. PRESERVE ALL foreground elements (characters, title, decorations, product boxes, badges, text) in their original positions, sizes, and identities. Only the background pixels behind those foreground elements change.`
-      : `Replace the source's ${r.role} at this bbox with reference image #${r.refIndex}. PRESERVE the new ${r.role}'s identity exactly — face, costume, hair, pose — every detail of the replacement reference. Only harmonize lighting and palette to match the source's overall mood. Do NOT redraw or reinterpret the replacement; fit it into the bbox at its existing proportions.`;
-    lines.push(`\nReplacement ${idx + 1} (reference image #${r.refIndex}):`);
-    lines.push(`- Target: ${r.role} at "${r.position || '미지정'}" position, bbox ${r.bbox || '미지정'}${r.desc ? ` (source had: ${r.desc})` : ''}`);
-    lines.push(`- Action: ${action}`);
-  });
-  lines.push('\nREPLACEMENT RULES (binding):');
-  lines.push('- Each replacement goes to its specified bbox ONLY. Do NOT swap content between bboxes.');
-  lines.push('- Regions of the source NOT listed above must remain pixel-identical (title, decorations, text, layout, sizing).');
-  lines.push('- If a replacement reference shows a different aspect than the source bbox, scale-fit it inside the bbox without distortion — center crop if needed.');
-  lines.push('- The replacement images are the AUTHORITATIVE visual for their slots; the source is only the layout master.');
-  return lines.join('\n');
-};
-
-// ─── 영역 분석 — Gemini Vision JSON 모드 ──────────────────────────────────
-// 원본 atlas 에서 캐릭터·배경 영역을 자동 감지. 사용자가 교체 슬롯을 매핑할 때 사용.
-const REGIONS_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    regions: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: {
-          id:       { type: 'NUMBER' },
-          role:     { type: 'STRING' },   // 'character' | 'background'
-          position: { type: 'STRING' },   // 한국어 라벨: 좌측 / 우측 / 중앙 / 상단 ...
-          bbox:     { type: 'STRING' },   // "x1,y1,x2,y2" 0~100 정수
-          desc:     { type: 'STRING' },   // 짧은 설명
-        },
-        required: ['id', 'role', 'position', 'bbox'],
-      },
-    },
-  },
-  required: ['regions'],
-};
-
-const REGIONS_PROMPT = `이 디자인 시스템(아틀라스) 이미지를 분석해서 모든 "캐릭터 일러스트" 와 "배경 환경" 영역을 식별하세요.
-
-각 영역에 대해 반환:
-- id: 1부터 순차적 번호
-- role: "character" 또는 "background"
-- position: 짧은 한국어 위치 라벨 (예: "좌측", "우측", "중앙", "상단", "하단")
-- bbox: 캔버스 비율 기준 바운딩 박스, 포맷 "x1,y1,x2,y2" — 각 0~100 정수, 왼쪽 위가 0,0
-- desc: 간단 설명 (예: "전사풍 남성 캐릭터", "성벽 환경")
-
-규칙:
-- 캐릭터가 0개면 character 항목 0개
-- 캐릭터가 여러 명이면 모두 식별 — 좌측/우측/중앙 위치로 구분
-- 배경은 보통 정확히 1개 (전체 캔버스를 차지하는 환경 이미지). 단색이거나 없는 경우는 생략 가능.
-- 타이틀 텍스트·상품 박스·뱃지·장식·UI 요소는 영역으로 추출하지 마세요 — 오직 캐릭터 일러스트와 배경 환경만.`;
-
-export async function analyzeAtlasRegions(sourceDataUrl) {
-  if (!sourceDataUrl) return { ok: false, error: '원본 이미지가 없습니다.', regions: [] };
-  const apiKey = (import.meta.env.VITE_GEMINI_API_KEY || '').trim();
-  if (!apiKey) return { ok: false, error: 'VITE_GEMINI_API_KEY 미설정', regions: [] };
-
-  const [meta, base64] = sourceDataUrl.split(',');
-  const mimeType = meta?.match(/data:([^;]+);/)?.[1] || 'image/jpeg';
-
-  const requestBody = {
-    contents: [{ parts: [
-      { text: REGIONS_PROMPT },
-      { inlineData: { mimeType, data: base64 } },
-    ] }],
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: 'application/json',
-      responseSchema: REGIONS_SCHEMA,
-    },
-    safetySettings: [
-      { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-    ],
-  };
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${apiKey}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(requestBody) }
-    );
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(`HTTP ${res.status} ${errData?.error?.message || res.statusText}`);
-    }
-    const data = await res.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error('응답 본문이 비어 있습니다.');
-    const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
-    const regions = (Array.isArray(parsed.regions) ? parsed.regions : []).map((r, i) => ({
-      id:       Number(r.id) || (i + 1),
-      role:     String(r.role || 'character'),
-      position: String(r.position || ''),
-      bbox:     String(r.bbox || ''),
-      desc:     String(r.desc || ''),
-    }));
-    return { ok: true, regions };
-  } catch (e) {
-    console.error('[analyzeAtlasRegions] failed', e);
-    return { ok: false, error: e?.message || '분석 실패', regions: [] };
-  }
-}
-
 // ─── 아틀라스(디자인 시스템) 변형 프롬프트 ───────────────────────────────────
 // atlasSpec: PromotionArchive 의 공통 템플릿 분석에서 추출한 마스터 명세(마크다운).
 // 있으면 ATLAS STRUCTURE SPEC 블록으로 주입 — 모델에게 보존해야 할 구조를 텍스트로도 명시.
-// replacements: 영역 교체 — [{ role, position, bbox, desc, refIndex }]
-export const buildAtlasVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, atlasSpec, replacements }) => {
+export const buildAtlasVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, atlasSpec }) => {
   const refLabel = hasBackgroundRef
     ? 'TWO reference images are provided. The FIRST is the source DESIGN SYSTEM ATLAS to retheme. The SECOND is the destination background environment.'
     : 'Reference image is provided as the first input — it is a complete DESIGN SYSTEM ATLAS.';
@@ -222,15 +106,13 @@ ${atlasSpec.trim()}
 
 Preserve every region, fixed copy, and dynamic placeholder slot listed above EXACTLY as specified. The output must comply with this spec.\n` : '';
 
-  const replacementBlock = buildReplacementBlock(replacements);
-
   return `${refLabel}
 
 The source image is a DESIGN SYSTEM ATLAS — a single canvas containing MULTIPLE distinct UI sub-assets (buttons, frames, panels, badges, dividers, corner decorations, titles, illustrations, etc.) arranged together in a fixed layout, similar to a sprite sheet or component kit for an entire page.
 
 ${OVERLAY_FRAMING}
-${specBlock}${replacementBlock}
-ATLAS PRESERVATION RULES (must remain IDENTICAL to the source — except where LAYER REPLACEMENT above explicitly applies):
+${specBlock}
+ATLAS PRESERVATION RULES (must remain IDENTICAL to the source):
 - Mentally inventory EVERY sub-asset visible in the source before applying any change. The output must contain the EXACT same inventory — same count, same kinds, same order, same positions
 - Atlas overall aspect ratio and canvas framing — do not crop, do not extend, do not change composition
 - Every sub-asset's individual silhouette, outline shape, outline thickness, and corner radius
@@ -299,30 +181,13 @@ export async function renderAtlasVariation(
 
   const modelId = options.modelId || DEFAULT_MODEL;
   const backgroundRef = options.backgroundRefDataUrl || null;
-  // refs 순서: [source, (선택)배경참고, ...replacements]
-  // replacements 각 항목은 dataUrl + role/position/bbox 메타. dataUrl 만 refs 에 push 하고
-  // 메타에 refIndex(1-based) 를 박아서 프롬프트에서 #N 으로 정확히 가리키게 한다.
-  const refs = [sourceDataUrl];
-  if (backgroundRef) refs.push(backgroundRef);
-  const replacementMetas = [];
-  for (const r of (options.replacements || [])) {
-    if (!r?.dataUrl) continue;
-    refs.push(r.dataUrl);
-    replacementMetas.push({
-      role:     r.role,
-      position: r.position,
-      bbox:     r.bbox,
-      desc:     r.desc,
-      refIndex: refs.length, // 1-based 인덱스 (source 가 #1)
-    });
-  }
+  const refs = backgroundRef ? [sourceDataUrl, backgroundRef] : [sourceDataUrl];
 
   const prompt = buildAtlasVariationPrompt({
     themeHint,
     hasBackgroundRef: !!backgroundRef,
     refinementLevel: options.refinementLevel,
     atlasSpec: options.atlasSpec,
-    replacements: replacementMetas,
   });
 
   try {

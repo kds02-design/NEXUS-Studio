@@ -5,7 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { X, Sparkles, Cpu, CheckCircle2, Loader2, AlertTriangle, SkipForward } from "lucide-react";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db as firestore, appId } from "../../../../lib/firebase";
-import { analyzeWebDesign, prepareImageForAI } from "../../services/gemini";
+import { analyzeWebDesign, prepareImageForAI, extractCampaignFolderHint } from "../../services/gemini";
 import { resolveWebCriteriaType } from "../../constants/webEvalCriteria";
 
 const CONCURRENCY = 3;
@@ -82,6 +82,7 @@ const AiAnalysisModal = ({ isOpen, onClose, selectedIds, onComplete }) => {
 
       const result = await analyzeWebDesign(validImages, banner.webUserComment || "", {
         criteriaType: resolveWebCriteriaType(banner),
+        folderHint: extractCampaignFolderHint(banner.path),
       });
       if (!result.ok) {
         addLog(`AI 실패: ${banner.title || id} — ${result.error}`);

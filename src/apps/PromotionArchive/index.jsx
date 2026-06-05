@@ -18,9 +18,11 @@ import ProcessingModal from './components/modals/ProcessingModal';
 import AnalysisDashboard from './components/dashboard/AnalysisDashboard';
 import AiAnalysisModal from './components/modals/AiAnalysisModal';
 import TemplateAnalysisModal from './components/modals/TemplateAnalysisModal';
+import TypeReportModal from './components/modals/TypeReportModal';
 import WebDesignEvalModal from './components/modals/WebDesignEvalModal';
 import ConfirmWorkspace from './components/modals/ConfirmWorkspace';
-import { analyzeWebDesign, prepareImageForAI } from './services/gemini';
+import { analyzeWebDesign, prepareImageForAI, loadActiveWebCriteria, extractCampaignFolderHint } from './services/gemini';
+import { CRITERIA_TYPES } from '../../lib/evaluationCriteria';
 import { resolveWebCriteriaType } from './constants/webEvalCriteria';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
@@ -402,6 +404,17 @@ function App() {
     const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
     const [isTemplateAnalysisOpen, setIsTemplateAnalysisOpen] = useState(false);
+    const [isTypeReportOpen, setIsTypeReportOpen] = useState(false);
+    // 종류별 리포트에서 사용할 promotion 평가 기준 — 첫 모달 오픈 시 lazy 로드.
+    const [promotionCriteria, setPromotionCriteria] = useState([]);
+    useEffect(() => {
+        if (!isTypeReportOpen || promotionCriteria.length > 0) return;
+        let cancelled = false;
+        loadActiveWebCriteria(CRITERIA_TYPES.promotion).then(calib => {
+            if (!cancelled) setPromotionCriteria(calib?.items || []);
+        }).catch(e => console.warn('[PromotionArchive] criteria load failed', e));
+        return () => { cancelled = true; };
+    }, [isTypeReportOpen, promotionCriteria.length]);
     const [isWebEvalOpen, setIsWebEvalOpen] = useState(false);
     const [evalTargetBanner, setEvalTargetBanner] = useState(null);
     const [isEvalRunning, setIsEvalRunning] = useState(false);
@@ -1399,6 +1412,17 @@ function App() {
                     />
                 )}
 
+                {/* 종류별 평가 리포트 — admin 전용, 항상 노출 (선택 무관). 좌하단 별도 floating. */}
+                {isAdminMode && (
+                    <button
+                        onClick={() => setIsTypeReportOpen(true)}
+                        title="종류별 평가 리포트 — 분석된 배너를 타이틀 기준으로 묶어 평가 통계 + Markdown 리포트 생성"
+                        className="fixed bottom-10 right-10 z-[100] flex items-center gap-2 px-4 py-3 rounded-2xl bg-[#202024] border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/60 text-[11px] font-bold shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-colors animate-in fade-in duration-300"
+                    >
+                        <span aria-hidden>📊</span> 종류별 리포트
+                    </button>
+                )}
+
                 {isPreviewOpen && (
                     <PreviewModal
                         isLight={isLight}
@@ -1499,6 +1523,7 @@ function App() {
 
                                 const result = await analyzeWebDesign(validImages, target.webUserComment || '', {
                                     criteriaType: resolveWebCriteriaType(target),
+                                    folderHint: extractCampaignFolderHint(target.path),
                                 });
                                 if (!result.ok) {
                                     alert(`AI 분석 실패: ${result.error}`);
@@ -1611,6 +1636,12 @@ function App() {
                     selectedBanners={allBanners.filter(b => selectedItems.includes(b.id))}
                     user={user}
                     navigate={navigate}
+                />
+                <TypeReportModal
+                    isOpen={isTypeReportOpen}
+                    onClose={() => setIsTypeReportOpen(false)}
+                    allBanners={allBanners}
+                    criteriaItems={promotionCriteria}
                 />
             </div>
         </div>

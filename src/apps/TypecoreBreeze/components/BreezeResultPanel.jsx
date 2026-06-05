@@ -1,9 +1,10 @@
 import {
-  PenTool, Shield, ChevronDown, Copy, CheckCircle2, Loader2, Sparkles, Star, Zap, RefreshCcw, ShieldAlert,
+  PenTool, Shield, ChevronDown, Copy, CheckCircle2, Loader2, Sparkles, Star, Zap, RefreshCcw, ShieldAlert, AlertTriangle,
 } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { aiOptimizationModels } from '../constants/categories.jsx';
 import { AiOutputBox, Tooltip } from './ui.jsx';
+import BreezeRenderArea from './BreezeRenderArea.jsx';
 
 // 우측 메인 영역 — Creation/Edit 두 뷰 모두 처리.
 export default function BreezeResultPanel() {
@@ -93,6 +94,8 @@ export default function BreezeResultPanel() {
               <img src={editUploadedImage} alt="Base" className="max-h-[400px] rounded border border-zinc-700" />
             </div>
           )}
+
+          <BreezeRenderArea />
         </div>
       </div>
     );
@@ -100,6 +103,7 @@ export default function BreezeResultPanel() {
 
   // ── Creation 메인 영역 ─────────────────────────────────────
   const p = getPrompts();
+  const conflicts = p.conflicts || [];
   const baseTechText = baseLangView === 'ko' ? p.baseTechnical.ko : p.baseTechnical.en;
   const lines = baseTechText.split('\n');
   const isLong = lines.length > 10;
@@ -115,6 +119,18 @@ export default function BreezeResultPanel() {
             <p className="text-[11px] text-zinc-500 mt-0.5">Define your core aesthetic and generate robust prompts for text-to-image models.</p>
           </div>
         </div>
+
+        {conflicts.length > 0 && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 px-4 py-3 flex items-start gap-2.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-[11px] font-bold text-amber-300 mb-1">옵션 충돌 자동 해결 ({conflicts.length}건)</p>
+              <ul className="text-[10px] text-amber-200/80 space-y-0.5 leading-relaxed">
+                {conflicts.map((c, i) => <li key={i}>· {c}</li>)}
+              </ul>
+            </div>
+          </div>
+        )}
 
         <div className="rounded-xl p-6 border bg-[#111111] border-zinc-800/80 shadow-xl relative">
           <div className="flex justify-between items-center mb-4">
@@ -181,6 +197,8 @@ export default function BreezeResultPanel() {
         </div>
 
         <AiOutputBox modelState={aiModel} viewModeState={nanoViewMode} setViewMode={setNanoViewMode} content={p.outputContent} isEdit={false} outdatedFlag={isOutdated} onCopy={copyToClipboard} copiedState={copiedBottom}/>
+
+        <BreezeRenderArea />
       </div>
     </div>
   );

@@ -16,6 +16,7 @@ import {
 import { useState } from 'react';
 import { staticOptions } from '../constants/categories';
 import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS } from '../constants/variations';
+import { IMAGEN_MODELS } from '../../../lib/imagenRender';
 import ForgeHeader from './ForgeHeader';
 
 // 1단 종류 카드용 아이콘 — 추상적인 SVG 글리프 대신 lucide 아이콘으로 한눈에 구분.
@@ -94,6 +95,7 @@ export default function ForgeSidebar({ forge }) {
     handleSelectMood, handleToggleStyle,
     isGeneratingVariations, handleGenerateVariations,
     refinementLevel, setRefinementLevel,
+    variationRenderModel, setVariationRenderModel,
     // 아틀라스 모드
     atlasSource, isDraggingAtlasSource,
     handleAtlasSourceUpload, handleAtlasSourceDragOver, handleAtlasSourceDragLeave, handleAtlasSourceDrop, handleClearAtlasSource,
@@ -103,10 +105,8 @@ export default function ForgeSidebar({ forge }) {
     handleSelectAtlasMood, handleToggleAtlasStyle,
     isGeneratingAtlas, handleGenerateAtlas,
     atlasRefinementLevel, setAtlasRefinementLevel,
+    atlasRenderModel, setAtlasRenderModel,
     atlasSpec, setAtlasSpec, atlasSpecTitle, setAtlasSpecTitle,
-    atlasRegions, atlasReplacements,
-    isAnalyzingRegions, regionAnalysisError,
-    handleAnalyzeAtlasRegions, handleRegionReplacementUpload, handleClearRegionReplacement,
   } = forge;
 
   // 마스터 명세 패널 — 펼침 상태. 명세가 있으면 사용자가 실제 모델로 전송되는 텍스트를 확인·편집 가능.
@@ -701,6 +701,32 @@ export default function ForgeSidebar({ forge }) {
             </div>
           </section>
 
+          {/* 렌더 모델 — 503 회피 / 품질 토글. 생성 직전에 보이게 배치. */}
+          <section>
+            <div className="flex items-baseline justify-between mb-2">
+              <h3 className="text-[12px] font-bold text-zinc-300">렌더 모델</h3>
+              <span className="text-[10px] text-zinc-500">503 시 다른 모델 시도</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {IMAGEN_MODELS.map(m => {
+                const active = variationRenderModel === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setVariationRenderModel(m.id)}
+                    disabled={isGeneratingVariations}
+                    title={m.desc}
+                    className={`px-2.5 py-2 rounded-lg border transition-colors text-left ${active ? 'bg-zinc-900 shadow' : 'bg-[#121212] border-zinc-800 hover:border-zinc-700'} disabled:opacity-40`}
+                    style={active ? { borderColor: m.color, boxShadow: `0 0 0 1px ${m.color}40` } : {}}
+                  >
+                    <div className={`text-[11px] font-bold ${active ? 'text-white' : 'text-zinc-300'}`}>{m.label}</div>
+                    <div className="text-[9px] text-zinc-500 truncate">{m.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
           {/* 5단 — 생성 CTA */}
           <section>
             <button
@@ -729,9 +755,9 @@ export default function ForgeSidebar({ forge }) {
               <SparkleIcon className="w-3.5 h-3.5" /> 디자인 시스템(아틀라스) 모드
             </div>
             <div className="text-[10px] text-zinc-400 mt-1 leading-relaxed break-keep-all">
-              버튼·박스·프레임이 한 시트에 정리된 페이지 전체 에셋을 업로드하세요. 그리드/장식 크기는 그대로,
-              <span className="text-zinc-200"> 모든 서브 에셋이 동일한 새 테마</span>를 공유하도록 일관 리테마합니다.
-              배경은 리얼 블랙 고정.
+              버튼·프레임·패널·뱃지가 한 시트에 정리된 <span className="text-zinc-200">디자인 시스템 아틀라스</span>를 업로드하세요.
+              그리드/장식 크기는 그대로, 모든 서브 에셋이 동일한 새 테마를 공유하도록 일관 리테마합니다.
+              배경은 리얼 블랙 고정. 페이지 전체(캐릭터·일러스트 포함) 리테마는 결과가 불안정해 제외했습니다.
             </div>
           </div>
 
@@ -824,83 +850,6 @@ export default function ForgeSidebar({ forge }) {
               )}
             </div>
           </section>
-
-          {/* 1.5단 — 영역 분석 + 교체 슬롯 */}
-          {atlasSource && (
-            <section>
-              <div className="flex items-baseline justify-between mb-2">
-                <h3 className="text-[13px] font-bold text-zinc-200">영역 분석 · 교체 (선택)</h3>
-                {atlasRegions.length > 0 && (
-                  <span className="text-[10px] text-zinc-500">{atlasRegions.length}개 감지</span>
-                )}
-              </div>
-              <p className="text-[10px] text-zinc-500 mb-2 leading-relaxed break-keep-all">
-                원본에서 캐릭터·배경을 감지해 슬롯으로 보여줍니다. 원하는 슬롯에 새 이미지를 올리면 그 자리만 교체됩니다.
-              </p>
-              <button
-                onClick={handleAnalyzeAtlasRegions}
-                disabled={isAnalyzingRegions}
-                className="w-full px-3 py-2 rounded-lg border border-fuchsia-500/40 bg-fuchsia-500/10 text-fuchsia-300 hover:bg-fuchsia-500/20 text-[11px] font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-              >
-                {isAnalyzingRegions ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <SparkleIcon className="w-3.5 h-3.5" />}
-                {isAnalyzingRegions ? '분석 중...' : (atlasRegions.length > 0 ? '재분석' : '캐릭터·배경 영역 감지')}
-              </button>
-              {regionAnalysisError && (
-                <div className="mt-2 text-[10px] text-rose-400">{regionAnalysisError}</div>
-              )}
-              {atlasRegions.length > 0 && (
-                <div className="mt-3 space-y-2">
-                  {atlasRegions.map(r => {
-                    const replacement = atlasReplacements[r.id];
-                    const isCharacter = r.role === 'character';
-                    const roleLabel = isCharacter ? '캐릭터' : (r.role === 'background' ? '배경' : r.role);
-                    const accent = isCharacter ? '#a78bfa' : '#76cee0';
-                    return (
-                      <div key={r.id} className="rounded-lg border border-zinc-800 bg-[#0F0F12] p-2.5">
-                        <div className="flex items-center justify-between gap-2 mb-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: accent }} />
-                            <span className="text-[11px] font-bold text-zinc-200 truncate">
-                              {roleLabel}{isCharacter ? ` ${r.id}` : ''}{r.position ? ` — ${r.position}` : ''}
-                            </span>
-                          </div>
-                          {r.bbox && <span className="text-[9px] font-mono text-zinc-500 shrink-0">{r.bbox}</span>}
-                        </div>
-                        {r.desc && <div className="text-[10px] text-zinc-500 mb-2 leading-snug">{r.desc}</div>}
-                        <div className="relative h-16 rounded-md border border-dashed border-zinc-700/60 bg-[#111111] hover:border-zinc-500 transition-all flex items-center justify-center overflow-hidden">
-                          {replacement ? (
-                            <>
-                              <img src={replacement} alt={`replacement ${r.id}`} className="max-w-full max-h-full object-contain" />
-                              <button
-                                onClick={() => handleClearRegionReplacement(r.id)}
-                                className="absolute top-1 right-1 bg-black/70 hover:bg-red-500 text-white p-0.5 rounded-md transition-colors"
-                                title="교체 이미지 제거"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <div className="flex flex-col items-center gap-1 text-zinc-500">
-                                <UploadCloud className="w-3.5 h-3.5 opacity-60" />
-                                <span className="text-[9px]">교체 이미지 업로드</span>
-                              </div>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => handleRegionReplacementUpload(r.id, e)}
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                              />
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
-          )}
 
           {/* 2단 — 분위기 카테고리 */}
           <section>
@@ -1026,6 +975,32 @@ export default function ForgeSidebar({ forge }) {
                   />
                 </>
               )}
+            </div>
+          </section>
+
+          {/* 렌더 모델 — 503 회피 / 품질 토글 */}
+          <section>
+            <div className="flex items-baseline justify-between mb-2">
+              <h3 className="text-[12px] font-bold text-zinc-300">렌더 모델</h3>
+              <span className="text-[10px] text-zinc-500">503 시 다른 모델 시도</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {IMAGEN_MODELS.map(m => {
+                const active = atlasRenderModel === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setAtlasRenderModel(m.id)}
+                    disabled={isGeneratingAtlas}
+                    title={m.desc}
+                    className={`px-2.5 py-2 rounded-lg border transition-colors text-left ${active ? 'bg-zinc-900 shadow' : 'bg-[#121212] border-zinc-800 hover:border-zinc-700'} disabled:opacity-40`}
+                    style={active ? { borderColor: m.color, boxShadow: `0 0 0 1px ${m.color}40` } : {}}
+                  >
+                    <div className={`text-[11px] font-bold ${active ? 'text-white' : 'text-zinc-300'}`}>{m.label}</div>
+                    <div className="text-[9px] text-zinc-500 truncate">{m.desc}</div>
+                  </button>
+                );
+              })}
             </div>
           </section>
 

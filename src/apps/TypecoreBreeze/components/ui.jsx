@@ -1,5 +1,59 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Copy, CheckCircle2, Star, Terminal } from 'lucide-react';
+import { ChevronDown, Copy, CheckCircle2, Star, Terminal, ChevronRight } from 'lucide-react';
+
+// 칩 그룹 — dropdown 보다 시각적 스캔이 빠름. 옵션 5개 이하일 때 권장.
+// data: [{id, name, en?}]. accent: 활성 chip 의 보더/링 컬러.
+export const ChipGroup = ({ label, hint, data = [], value, onChange, columns = 3, accent = '#7C3AED' }) => {
+  if (!Array.isArray(data) || data.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      {(label || hint) && (
+        <div className="flex items-center justify-between px-0.5">
+          {label && <p className="text-[11px] font-bold text-zinc-300">{label}</p>}
+          {hint && <p className="text-[10px] text-zinc-500">{hint}</p>}
+        </div>
+      )}
+      <div className={`grid gap-1.5`} style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}>
+        {data.map((opt) => {
+          const active = value === opt.id;
+          // 표시명 — 괄호 앞 한글만 우선 추출 (예: "30% (극강의 여백)" → "30%").
+          const short = (opt.name || opt.id).split(/[(（]/)[0].trim();
+          return (
+            <button
+              key={opt.id}
+              onClick={() => onChange(opt.id)}
+              title={opt.name}
+              className={`px-2 py-2 rounded-lg border text-[11px] font-bold leading-tight transition-colors ${active ? 'bg-zinc-900 text-white' : 'bg-[#0F0F0F] border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'}`}
+              style={active ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}40` } : {}}
+            >
+              {short}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// 접을 수 있는 그룹 — 깊은 옵션을 카테고리별로 묶을 때 사용.
+export const Collapsible = ({ title, icon, defaultOpen = false, children, accent = '#7C3AED' }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-[#111111] overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-[#161616] transition-colors"
+      >
+        <div className="flex items-center gap-2 text-zinc-300">
+          {icon}
+          <span className="text-[11px] font-bold">{title}</span>
+        </div>
+        <ChevronRight className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${open ? 'rotate-90' : ''}`} style={open ? { color: accent } : {}} />
+      </button>
+      {open && <div className="px-3 pb-3 pt-1 space-y-3 border-t border-zinc-800/60">{children}</div>}
+    </div>
+  );
+};
 
 export const Tooltip = ({ children, text, position = 'top' }) => (
   <div className="relative group flex items-center justify-center">

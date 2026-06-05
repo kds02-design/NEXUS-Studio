@@ -1,13 +1,20 @@
 import { createContext, useContext, useState, useRef, useEffect } from 'react';
 import { useUsageGate } from '../../../components/UsageGate';
+import { useAuth } from '../../../context/AuthContext';
+import { useGlobal } from '../../../context/GlobalContext';
+import { IMAGEN_MODELS } from '../../../lib/imagenRender';
 import { createHandlers } from './breezeHandlers.js';
 import { createAiHandlers } from './breezeAiHandlers.js';
+import { createRenderHandlers } from './breezeRenderHandlers.js';
 
 const BreezeContext = createContext(null);
 export const useBreeze = () => useContext(BreezeContext);
 
 export const BreezeProvider = ({ children }) => {
   const { ensureCanGenerate, modal: usageModal } = useUsageGate();
+  const { user, grade } = useAuth();
+  const { navigate } = useGlobal();
+  const canRender = grade === 'pro' || grade === 'pro_plus' || grade === 'expert';
 
   // ─── UI shell ──────────────────────────────────────────────
   const [theme, setTheme] = useState("dark");
@@ -119,6 +126,22 @@ export const BreezeProvider = ({ children }) => {
   const [currentTunedEditAura, setCurrentTunedEditAura] = useState("");
   const editTuningChatRef = useRef(null);
 
+  // ─── Imagen 렌더링 (Sovereign current 와 동일 흐름) ─────────
+  const [rendering, setRendering] = useState(false);
+  const [renderedImage, setRenderedImage] = useState(null);
+  const [renderError, setRenderError] = useState(null);
+  const [savingToArc, setSavingToArc] = useState(false);
+  const [savedToArcId, setSavedToArcId] = useState(null);
+  const [savedCloudinaryUrl, setSavedCloudinaryUrl] = useState(null);
+  const [selectedImagenModel, setSelectedImagenModel] = useState(IMAGEN_MODELS[0].id);
+  const [sendingToRenderMatrix, setSendingToRenderMatrix] = useState(false);
+
+  // 새 렌더 결과가 들어오면 PromptArc 저장 상태 초기화.
+  useEffect(() => {
+    setSavedToArcId(null);
+    setSavedCloudinaryUrl(null);
+  }, [renderedImage]);
+
   // ─── App-level effects ────────────────────────────────────
   useEffect(() => {
     setIsOutdated(true); setVerificationLog("");
@@ -167,13 +190,25 @@ export const BreezeProvider = ({ children }) => {
     setIsOutdated, setIsEditOutdated,
     setIsTuningModalOpen, setTuningChatHistory, setTuningInputValue, setIsTuningLoading, setCurrentTunedAura,
     setIsEditTuningModalOpen, setEditTuningChatHistory, setEditTuningInputValue, setIsEditTuningLoading, setCurrentTunedEditAura,
+
+    // Imagen 렌더링
+    rendering, renderedImage, renderError, savingToArc, savedToArcId, savedCloudinaryUrl,
+    selectedImagenModel, sendingToRenderMatrix, canRender, grade,
+    setRendering, setRenderedImage, setRenderError, setSavingToArc, setSavedToArcId, setSavedCloudinaryUrl,
+    setSelectedImagenModel, setSendingToRenderMatrix,
   };
 
   const handlers = createHandlers(stateBag);
   const aiHandlers = createAiHandlers(stateBag, { upsertDynamic: handlers.upsertDynamic });
+  const renderHandlers = createRenderHandlers(stateBag, {
+    user, navigate, IMAGEN_MODELS,
+    isEditView: () => currentView === 'edit',
+    getPrompts: aiHandlers.getPrompts,
+    getEditPrompts: aiHandlers.getEditPrompts,
+  });
 
   return (
-    <BreezeContext.Provider value={{ ...stateBag, ...handlers, ...aiHandlers, usageModal }}>
+    <BreezeContext.Provider value={{ ...stateBag, ...handlers, ...aiHandlers, ...renderHandlers, IMAGEN_MODELS, isLoggedIn: !!user?.uid, usageModal }}>
       {children}
     </BreezeContext.Provider>
   );
