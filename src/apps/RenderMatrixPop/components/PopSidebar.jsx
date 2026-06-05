@@ -34,8 +34,9 @@ export default function PopSidebar({
   };
 
   return (
-    <aside className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl overflow-y-auto custom-scrollbar relative z-10">
-      <div className="p-6 space-y-6">
+    // 2-layer scroll — aside 가 height 컨테이너, 내부 div 가 실제 스크롤 영역.
+    <aside className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl min-h-0 relative z-10">
+      <div className="flex-1 overflow-y-auto pl-6 pr-3 py-6 space-y-5 custom-scrollbar">
         <div className="flex bg-[#121214] p-1.5 rounded-xl border border-zinc-800/80 shadow-inner">
           <button onClick={() => onSwitchView('editor', 'NanoBanana')} className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold transition-all ${state.currentView === 'editor' ? 'bg-[#27272A] text-white shadow-sm border border-zinc-700/50' : 'text-zinc-500 hover:text-zinc-300'}`}>
             <PenTool className="w-3.5 h-3.5 shrink-0" /> Creation
@@ -51,7 +52,7 @@ export default function PopSidebar({
             <div className="space-y-3 p-4 bg-emerald-950/20 border border-emerald-500/20 rounded-xl relative">
               <div className="flex items-center gap-2 text-emerald-400 mb-3">
                 <ScanLine className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Reverse Engineering Tools</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">① 시안 분석 (선택) · Reverse Engineering</span>
               </div>
               <div className="space-y-1">
                 <p className="text-[9px] text-zinc-500 font-bold px-1 mb-1">IMAGE ANALYZER (이미지 역분석)</p>
@@ -101,7 +102,7 @@ export default function PopSidebar({
               </div>
               <div className="flex items-center gap-2 text-purple-400 mb-2 relative z-10">
                 <Users className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Director Persona</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">② 디렉터 (스타일 분위기)</span>
               </div>
               <div className="relative z-10">
                 <DropdownControl data={DIRECTOR_PERSONAS.map(p => ({ id: p.id, name: p.name }))}
@@ -127,7 +128,7 @@ export default function PopSidebar({
             <div className={`space-y-3 p-4 bg-indigo-950/20 border border-indigo-500/20 rounded-xl transition-opacity ${state.vfxPassMode ? 'opacity-30 pointer-events-none' : ''}`}>
               <div className="flex items-center gap-2 text-indigo-400 mb-2">
                 <Box className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Morphology (조형 제어)</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">③ 조형 (구조 · 부조 · 깊이)</span>
               </div>
               <DropdownControl label="Scale (글씨 구조)" data={appOptions.typographyScales} value={state.typographyScale} onChange={handleChange(setters.setTypographyScale)} dynamicNames={appOptions.typographyScales} />
               <DropdownControl label="Camera Lens (원근감)" data={appOptions.cameraLenses} value={state.cameraLens} onChange={handleChange(setters.setCameraLens)} dynamicNames={appOptions.cameraLenses} />
@@ -145,7 +146,7 @@ export default function PopSidebar({
             <div className={`space-y-3 p-4 bg-amber-950/20 border border-amber-500/20 rounded-xl mt-4 transition-opacity ${state.vfxPassMode ? 'opacity-30 pointer-events-none' : ''}`}>
               <div className="flex items-center gap-2 text-amber-400 mb-2">
                 <Sun className="w-4 h-4" />
-                <span className="text-[10px] font-black uppercase tracking-widest">Edge & Lighting</span>
+                <span className="text-[10px] font-black uppercase tracking-widest">④ 외곽 & 빛 (재질 · 림라이트 · 이펙트)</span>
               </div>
               <DropdownControl label="Outline Thickness" data={appOptions.rimThicknesses} value={state.rimThickness} onChange={handleChange(setters.setRimThickness)} />
               <div className="flex gap-2">
@@ -287,6 +288,8 @@ export default function PopSidebar({
             </div>
           </>
         )}
+        {/* 명시적 spacer — 마지막 박스 bottom border 가 잘려보이는 것 방지 */}
+        <div className="h-16 shrink-0" aria-hidden="true" />
       </div>
     </aside>
   );

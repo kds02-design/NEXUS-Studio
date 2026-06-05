@@ -17,6 +17,7 @@ import BatchEditModal from './components/modals/BatchEditModal';
 import ProcessingModal from './components/modals/ProcessingModal';
 import AnalysisDashboard from './components/dashboard/AnalysisDashboard';
 import AiAnalysisModal from './components/modals/AiAnalysisModal';
+import TemplateAnalysisModal from './components/modals/TemplateAnalysisModal';
 import WebDesignEvalModal from './components/modals/WebDesignEvalModal';
 import ConfirmWorkspace from './components/modals/ConfirmWorkspace';
 import { analyzeWebDesign, prepareImageForAI } from './services/gemini';
@@ -400,6 +401,7 @@ function App() {
 
     const [isBatchEditOpen, setIsBatchEditOpen] = useState(false);
     const [isAiModalOpen, setIsAiModalOpen] = useState(false);
+    const [isTemplateAnalysisOpen, setIsTemplateAnalysisOpen] = useState(false);
     const [isWebEvalOpen, setIsWebEvalOpen] = useState(false);
     const [evalTargetBanner, setEvalTargetBanner] = useState(null);
     const [isEvalRunning, setIsEvalRunning] = useState(false);
@@ -1392,6 +1394,7 @@ function App() {
                         onEditProperties={() => setIsBatchEditOpen(true)}
                         onDeselectAll={() => setSelectedItems([])}
                         onAiAnalysis={() => setIsAiModalOpen(true)}
+                        onTemplateAnalysis={() => setIsTemplateAnalysisOpen(true)}
                         onDelete={handleDelete}
                     />
                 )}
@@ -1601,6 +1604,14 @@ function App() {
                 <ProcessingModal isOpen={isProcessingModalOpen} message={processingMessage} progress={uploadProgress} />
                 <BatchEditModal isOpen={isBatchEditOpen} onClose={() => setIsBatchEditOpen(false)} selectedCount={selectedItems.length} availableGames={GAMES} onApply={handleBatchUpdate} />
                 <AiAnalysisModal isOpen={isAiModalOpen} onClose={() => setIsAiModalOpen(false)} selectedIds={selectedItems} onComplete={() => { setIsAiModalOpen(false); setSelectedItems([]); }} />
+                <TemplateAnalysisModal
+                    key={isTemplateAnalysisOpen ? `tpl-${selectedItems.length}-${selectedItems[0] || ''}` : 'tpl-closed'}
+                    isOpen={isTemplateAnalysisOpen}
+                    onClose={() => setIsTemplateAnalysisOpen(false)}
+                    selectedBanners={allBanners.filter(b => selectedItems.includes(b.id))}
+                    user={user}
+                    navigate={navigate}
+                />
             </div>
         </div>
     );

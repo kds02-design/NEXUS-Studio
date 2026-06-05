@@ -14,7 +14,8 @@ import {
   analyzeStyleImage,
   generateLore as generateLoreApi,
 } from '../services/gemini';
-import { renderVariation, renderAtlasVariation } from '../services/variations';
+import { renderVariation, renderAtlasVariation, analyzeAtlasRegions } from '../services/variations';
+import { renderWithImagen, IMAGEN_MODELS } from '../../../lib/imagenRender';
 import {
   VARIATION_MOODS, STYLE_BY_ID, defaultStyleIdsFor,
 } from '../constants/variations';
@@ -90,6 +91,8 @@ export function useForgePrompt() {
     })
   );
   const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
+  // 정제 강도 — 'source' (기본, 원본 밀도 유지) / 'refined' (60% 단순화) / 'minimal' (핵심만)
+  const [refinementLevel, setRefinementLevel] = useState('source');
 
   // ─── 아틀라스(디자인 시스템) 모드 — 변형 모드와 동일 구조, 별도 state 유지 ─────────
   // 단일 에셋 변형과 분리한 이유: 탭 전환 시 업로드/선택이 섞이면 혼란.
@@ -106,6 +109,26 @@ export function useForgePrompt() {
     })
   );
   const [isGeneratingAtlas, setIsGeneratingAtlas] = useState(false);
+  const [atlasRefinementLevel, setAtlasRefinementLevel] = useState('source');
+  // 마스터 템플릿에서 송신된 명세(마크다운). 있으면 atlas 프롬프트에 ATLAS STRUCTURE SPEC 으로 주입.
+  const [atlasSpec, setAtlasSpec] = useState('');
+  const [atlasSpecTitle, setAtlasSpecTitle] = useState('');
+
+  // 원본 영역 분석 (캐릭터·배경 자동 감지) + 교체 슬롯.
+  // atlasRegions: [{ id, role, position, bbox, desc }] — Gemini Vision 결과
+  // atlasReplacements: { [regionId]: dataUrl } — 사용자가 업로드한 교체 이미지
+  const [atlasRegions, setAtlasRegions] = useState([]);
+  const [atlasReplacements, setAtlasReplacements] = useState({});
+  const [isAnalyzingRegions, setIsAnalyzingRegions] = useState(false);
+  const [regionAnalysisError, setRegionAnalysisError] = useState('');
+
+  // 신규 생성(creation) 탭의 이미지 렌더링 — 컴파일된 영문 프롬프트를 Nano Banana 에 전송.
+  // creationRenderModel 은 IMAGEN_MODELS 의 id 중 하나. 기본 빠른 Flash.
+  const [creationRenderModel, setCreationRenderModel] = useState(IMAGEN_MODELS[0]?.id || 'gemini-3.1-flash-image-preview');
+  const [creationRenderResult, setCreationRenderResult] = useState(null); // { dataUrl, modelId }
+  const [creationRenderError, setCreationRenderError] = useState('');
+  const [isCreationRendering, setIsCreationRendering] = useState(false);
+
 
   const handleAssetTypeChange = (type) => {
     setAssetType(type);
@@ -257,6 +280,7 @@ export function useForgePrompt() {
     await Promise.all(styles.map(async (style, idx) => {
       const result = await renderVariation(sourceAsset, style.promptHint, {
         backgroundRefDataUrl: backgroundRef,
+        refinementLevel,
       });
       setVariationResults(prev => {
         const next = prev.slice();
@@ -286,6 +310,7 @@ export function useForgePrompt() {
     });
     const result = await renderVariation(sourceAsset, slot.theme.promptHint, {
       backgroundRefDataUrl: backgroundRef,
+      refinementLevel,
     });
     setVariationResults(prev => {
       const next = prev.slice();
@@ -316,6 +341,10 @@ export function useForgePrompt() {
   const handleClearAtlasSource = () => {
     setAtlasSource(null);
     setAtlasResults(prev => prev.map(s => ({ ...s, dataUrl: null, error: null, prompt: null, isLoading: false })));
+    // 원본이 바뀌면 영역 분석 + 교체 슬롯 무효 — 초기화.
+    setAtlasRegions([]);
+    setAtlasReplacements({});
+    setRegionAnalysisError('');
   };
 
   const handleAtlasBackgroundFile = (file) => {
@@ -362,6 +391,9 @@ export function useForgePrompt() {
     await Promise.all(styles.map(async (style, idx) => {
       const result = await renderAtlasVariation(atlasSource, style.promptHint, {
         backgroundRefDataUrl: atlasBackgroundRef,
+        refinementLevel: atlasRefinementLevel,
+        atlasSpec,
+        replacements: buildReplacementsForRender(),
       });
       setAtlasResults(prev => {
         const next = prev.slice();
@@ -390,6 +422,9 @@ export function useForgePrompt() {
     });
     const result = await renderAtlasVariation(atlasSource, slot.theme.promptHint, {
       backgroundRefDataUrl: atlasBackgroundRef,
+      refinementLevel: atlasRefinementLevel,
+      atlasSpec,
+      replacements: buildReplacementsForRender(),
     });
     setAtlasResults(prev => {
       const next = prev.slice();
@@ -403,6 +438,61 @@ export function useForgePrompt() {
       };
       return next;
     });
+  };
+
+  // ─── 영역 분석 + 교체 슬롯 ────────────────────────────────────────────────
+  const handleAnalyzeAtlasRegions = async () => {
+    if (!atlasSource) { setErrorMsg('먼저 원본을 업로드해주세요.'); return; }
+    if (isAnalyzingRegions) return;
+    setIsAnalyzingRegions(true);
+    setRegionAnalysisError('');
+    try {
+      const result = await analyzeAtlasRegions(atlasSource);
+      if (!result.ok) throw new Error(result.error || '분석 실패');
+      setAtlasRegions(result.regions);
+      // 영역 셋이 바뀌었으면 기존 교체 매핑 무효화 — 깨끗하게 시작.
+      setAtlasReplacements({});
+    } catch (e) {
+      setRegionAnalysisError(e?.message || '알 수 없는 오류');
+    } finally {
+      setIsAnalyzingRegions(false);
+    }
+  };
+
+  const _readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const handleRegionReplacementUpload = async (regionId, e) => {
+    const f = e.target.files?.[0];
+    if (!f || !f.type.startsWith('image/')) return;
+    const dataUrl = await _readFileAsDataUrl(f);
+    setAtlasReplacements(prev => ({ ...prev, [regionId]: dataUrl }));
+  };
+
+  const handleClearRegionReplacement = (regionId) => {
+    setAtlasReplacements(prev => {
+      const next = { ...prev };
+      delete next[regionId];
+      return next;
+    });
+  };
+
+  // renderAtlasVariation 에 넘길 replacements 배열 — atlasRegions × atlasReplacements 조합.
+  // dataUrl 이 있는 region 만 전달. 호출 시점에 빌드해서 일관된 ref 순서 보장.
+  const buildReplacementsForRender = () => {
+    return atlasRegions
+      .filter(r => atlasReplacements[r.id])
+      .map(r => ({
+        role:     r.role,
+        position: r.position,
+        bbox:     r.bbox,
+        desc:     r.desc,
+        dataUrl:  atlasReplacements[r.id],
+      }));
   };
 
   const buildPrompts = useCallback((rawOnly = false, forceLang = null, ignoreOpt = false) => {
@@ -633,6 +723,33 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     finally { setIsGeneratingLore(false); }
   };
 
+  // 신규 생성 모드 이미지 렌더 — 항상 EN 프롬프트 사용 (Gemini Image 는 영문 최적화).
+  // 사용자가 KR 뷰로 보고 있어도 모델에는 EN 이 가야 결과 품질 안정.
+  const handleCreationRender = async () => {
+    const promptForRender = buildPrompts(false, 'EN', false);
+    if (!promptForRender || !promptForRender.trim()) {
+      setCreationRenderError('프롬프트가 비어있습니다.');
+      return;
+    }
+    if (isCreationRendering) return;
+    setIsCreationRendering(true);
+    setCreationRenderError('');
+    setCreationRenderResult(null);
+    try {
+      const result = await renderWithImagen(promptForRender, creationRenderModel);
+      setCreationRenderResult({ dataUrl: result.dataUrl, modelId: result.modelId });
+    } catch (e) {
+      setCreationRenderError(e?.message || '이미지 생성 실패');
+    } finally {
+      setIsCreationRendering(false);
+    }
+  };
+
+  const handleClearCreationRender = () => {
+    setCreationRenderResult(null);
+    setCreationRenderError('');
+  };
+
   const isOptionDisabled = useCallback((key) => {
     if (themeDna === 'ModernFlatBrand') return ['dramaticTex', 'shapeDistortion'].includes(key);
     if (themeDna === 'SoftPastel3D') return ['dramaticTex', 'shapeDistortion'].includes(key);
@@ -651,6 +768,7 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     handleSelectMood, handleToggleStyle,
     variationResults, isGeneratingVariations,
     handleGenerateVariations, handleRegenerateVariation,
+    refinementLevel, setRefinementLevel,
     // atlas (디자인 시스템) mode
     atlasSource, isDraggingAtlasSource,
     handleAtlasSourceUpload, handleAtlasSourceDragOver, handleAtlasSourceDragLeave, handleAtlasSourceDrop, handleClearAtlasSource,
@@ -660,6 +778,13 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     handleSelectAtlasMood, handleToggleAtlasStyle,
     atlasResults, isGeneratingAtlas,
     handleGenerateAtlas, handleRegenerateAtlas,
+    atlasRefinementLevel, setAtlasRefinementLevel,
+    atlasSpec, setAtlasSpec, atlasSpecTitle, setAtlasSpecTitle,
+    setAtlasSource,
+    // 영역 분석 + 교체
+    atlasRegions, atlasReplacements,
+    isAnalyzingRegions, regionAnalysisError,
+    handleAnalyzeAtlasRegions, handleRegionReplacementUpload, handleClearRegionReplacement,
     // core options
     themeDna, setThemeDna, handleThemeDnaChange,
     assetType, setAssetType, handleAssetTypeChange,
@@ -715,6 +840,10 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     analyzeStyle,
     handleFixValidation,
     handleGenerateLore,
+    // creation 모드 이미지 렌더
+    creationRenderModel, setCreationRenderModel,
+    creationRenderResult, creationRenderError, isCreationRendering,
+    handleCreationRender, handleClearCreationRender,
     isOptionDisabled,
   };
 }

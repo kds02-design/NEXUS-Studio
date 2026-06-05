@@ -54,9 +54,10 @@ export default function MatrixSidebar({
   };
 
   return (
-    <aside className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl overflow-y-auto custom-scrollbar relative z-10">
+    // 2-layer scroll — aside 가 height 컨테이너, 내부 div 가 실제 스크롤 영역.
+    <aside className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl min-h-0 relative z-10">
       <SectionGroupAccent value="#00CEC9">
-      <div className="p-6 flex flex-col gap-6">
+      <div className="flex-1 overflow-y-auto pl-6 pr-3 py-6 flex flex-col gap-5 custom-scrollbar">
         {/* view tabs */}
         <div className="flex bg-[#121214] p-1.5 rounded-xl border border-zinc-800/80 shadow-inner">
           <button onClick={() => onSwitchView('editor', 'NanoBanana')} className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-[11px] font-bold transition-all ${state.currentView === 'editor' ? 'bg-[#27272A] text-white shadow-sm border border-zinc-700/50' : 'text-zinc-500 hover:text-zinc-300'}`}>
@@ -69,8 +70,8 @@ export default function MatrixSidebar({
         </div>
 
         {state.currentView === "editor" && (
-          <div className="flex flex-col gap-7">
-            <SectionGroup index={1} label="Source" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
+          <div className="flex flex-col gap-5">
+            <SectionGroup index={1} label="① 시안 (입력 텍스트 · 이미지 · 의도)" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
             <div className="space-y-3">
               {incomingFromArc && (
                 <div className="mb-3 px-3 py-2.5 rounded-lg border border-[#6C5CE7]/40 bg-[#6C5CE7]/10 flex items-start gap-2 animate-in fade-in slide-in-from-top-2">
@@ -150,7 +151,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={2} label="Director" dotColor="#A29BFE" open={currentOpen === 'director'} onToggle={toggleSection('director')}>
+            <SectionGroup index={2} label="② 디렉터 (스타일 분위기)" dotColor="#A29BFE" open={currentOpen === 'director'} onToggle={toggleSection('director')}>
             <div className="space-y-1.5">
               <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider flex items-center gap-1.5">
                 <Users className="w-3 h-3" /> Director Persona
@@ -175,7 +176,7 @@ export default function MatrixSidebar({
             />
             </SectionGroup>
 
-            <SectionGroup index={3} label="Form" dotColor="#818cf8" open={currentOpen === 'form'} onToggle={toggleSection('form')}>
+            <SectionGroup index={3} label="③ 형태 (구조 · 구도)" dotColor="#818cf8" open={currentOpen === 'form'} onToggle={toggleSection('form')}>
             <div className={`space-y-3 transition-opacity ${state.vfxPassMode ? 'opacity-30 pointer-events-none' : ''}`}>
               <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider flex items-center gap-1.5">
                 <Box className="w-3 h-3" /> Morphology · 조형 제어
@@ -187,7 +188,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={4} label="Material" dotColor="#FDCB6E" open={currentOpen === 'material'} onToggle={toggleSection('material')}>
+            <SectionGroup index={4} label="④ 재질 (베이스 · 질감 · 외곽)" dotColor="#FDCB6E" open={currentOpen === 'material'} onToggle={toggleSection('material')}>
             <div className={`space-y-3 transition-opacity ${state.vfxPassMode ? 'opacity-30 pointer-events-none' : ''}`}>
               <DropdownControl label="Base Material (베이스 재질)" data={appOptions.materials} value={state.material} onChange={handleChange(setters.setMaterial)} dynamicNames={appOptions.materials} recommendedId={arcRecommended?.material} />
               <DropdownControl label="Surface Detail (미세 질감 밀도)" icon={<ScanLine className="w-4 h-4" />} data={appOptions.surfaceDetails} value={state.surfaceDetail} onChange={handleChange(setters.setSurfaceDetail)} dynamicNames={appOptions.surfaceDetails} recommendedId={arcRecommended?.surfaceDetail} />
@@ -208,7 +209,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={5} label="VFX & Render" dotColor="#FD79A8" open={currentOpen === 'vfx'} onToggle={toggleSection('vfx')} className="mb-6">
+            <SectionGroup index={5} label="⑤ 이펙트 & 렌더 (고급)" dotColor="#FD79A8" open={currentOpen === 'vfx'} onToggle={toggleSection('vfx')} className="mb-6">
             {/* VFX / Background / Engine */}
             <div className="space-y-3">
               <ToggleControl label="시안 연출 모드 (이펙트 & 배경)" desc="질감 있는 다크 캔버스를 깔고 특수 효과를 발동시킵니다." enabled={state.enableVfx} onChange={() => {
@@ -233,8 +234,8 @@ export default function MatrixSidebar({
         )}
 
         {state.currentView === "edit" && (
-          <div className="flex flex-col gap-7">
-            <SectionGroup index={1} label="Target" dotColor="#10b981" open={currentOpen === 'target'} onToggle={toggleSection('target')}>
+          <div className="flex flex-col gap-5">
+            <SectionGroup index={1} label="① 대상 (편집할 이미지 · 모드)" dotColor="#10b981" open={currentOpen === 'target'} onToggle={toggleSection('target')}>
             <div className="space-y-3">
               <div onClick={() => handleChange(setters.setEditVfxPassMode)(!state.editVfxPassMode)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all shadow-md group ${state.editVfxPassMode ? 'bg-blue-600/20 border-blue-500/50' : 'bg-black/30 border-zinc-700/50 hover:bg-black/50 hover:border-zinc-500'}`}>
@@ -265,7 +266,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={2} label="Director" dotColor="#A29BFE" open={currentOpen === 'director'} onToggle={toggleSection('director')}>
+            <SectionGroup index={2} label="② 디렉터 (스타일 분위기)" dotColor="#A29BFE" open={currentOpen === 'director'} onToggle={toggleSection('director')}>
             <CustomDirectiveBox
               value={state.editIntent} onChange={(v) => handleChange(setters.setEditIntent)(v)}
               placeholder="원하는 분위기를 자유롭게 입력..."
@@ -277,7 +278,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={3} label="Scope" dotColor="#818cf8" open={currentOpen === 'scope'} onToggle={toggleSection('scope')}>
+            <SectionGroup index={3} label="③ 편집 범위 (재질 · 빛 · 이펙트)" dotColor="#818cf8" open={currentOpen === 'scope'} onToggle={toggleSection('scope')}>
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-zinc-400 mb-2">
                 <Layers className="w-4 h-4 shrink-0" />
@@ -319,7 +320,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={4} label="Constraints" dotColor="#FD79A8" open={currentOpen === 'constraints'} onToggle={toggleSection('constraints')} className="mb-6">
+            <SectionGroup index={4} label="④ 제약 (배경 · 깊이 · 고급)" dotColor="#FD79A8" open={currentOpen === 'constraints'} onToggle={toggleSection('constraints')} className="mb-6">
             <div className="space-y-3">
               <DropdownControl label="Background Constraint" data={appOptions.backgrounds} value={state.editBg} onChange={handleChange(setters.setEditBg)} />
               <DropdownControl label="Depth Constraint" data={appOptions.projectionDepths} value={state.editRearExtrusion} onChange={handleChange(setters.setEditRearExtrusion)} disabled={state.editVfxPassMode} />
@@ -329,8 +330,8 @@ export default function MatrixSidebar({
         )}
 
         {state.currentView === "motion" && (
-          <div className="flex flex-col gap-7">
-            <SectionGroup index={1} label="Source" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
+          <div className="flex flex-col gap-5">
+            <SectionGroup index={1} label="① 시안 (입력 이미지)" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-zinc-400 mb-2">
                 <Target className="w-4 h-4 shrink-0" />
@@ -350,7 +351,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={2} label="Motion" dotColor="#00CEC9" open={currentOpen === 'motion'} onToggle={toggleSection('motion')} className="mb-6">
+            <SectionGroup index={2} label="② 모션 (카메라 · 다이내믹 · 의도)" dotColor="#00CEC9" open={currentOpen === 'motion'} onToggle={toggleSection('motion')} className="mb-6">
             <div className="space-y-3">
               <DropdownControl label="Camera Motion (카메라 무빙)" data={appOptions.cameraMotions} value={state.cameraMotion} onChange={handleChange(setters.setCameraMotion)} />
               <DropdownControl label="VFX Dynamics (이펙트 움직임)" data={appOptions.motionDynamics} value={state.vfxDynamics} onChange={handleChange(setters.setVfxDynamics)} />
@@ -367,6 +368,8 @@ export default function MatrixSidebar({
             </SectionGroup>
           </div>
         )}
+        {/* 명시적 spacer — 마지막 박스 bottom border 가 잘려보이는 것 방지 */}
+        <div className="h-16 shrink-0" aria-hidden="true" />
       </div>
       </SectionGroupAccent>
     </aside>

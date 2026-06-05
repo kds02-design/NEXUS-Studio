@@ -12,6 +12,15 @@ const GROUPS = [
   { key: "admin",      label: "관리자" },
 ];
 
+// 그룹별 액센트 — 인덱스 대시보드(Shell.jsx GROUP_ACCENTS)와 동일 값.
+// 햄버거 메뉴에서도 그룹 단위로 색을 묶어 인덱스와 시각 연속성 유지.
+// admin 은 별도 액센트 없음 → 기존 미니멀 톤.
+const GROUP_ACCENTS = {
+  explore:    "#22B8CF",
+  generate:   "#A29BFE",
+  production: "#FDCB6E",
+};
+
 export default function AppNavPopover({ open, onClose }) {
   const { currentApp, setCurrentApp } = useGlobal();
   const { isAdmin } = useAuth();
@@ -111,14 +120,20 @@ export default function AppNavPopover({ open, onClose }) {
               && (!a.disabled || isAdmin)
             );
             if (!apps.length) return null;
+            const accent = GROUP_ACCENTS[g.key];
+            const headerColor = accent || THEME.textDim;
             return (
               <div key={g.key} style={{ marginTop: 8 }}>
-                <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.14em", color:THEME.textDim, textTransform:"uppercase", padding:"8px 18px 4px" }}>
-                  ─ {g.label} ─
+                <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: headerColor, textTransform:"uppercase", padding:"8px 18px 4px", display:"flex", alignItems:"center", gap:8 }}>
+                  {accent && <span style={{ width:6, height:6, borderRadius:999, background: accent, boxShadow:`0 0 8px ${accent}66`, flexShrink:0 }} />}
+                  {g.label}
                 </div>
                 {apps.map((a) => {
                   const active = currentApp === a.id;
                   const adminUnlocked = !!a.disabled && isAdmin;
+                  // 비활성 항목 아이콘 — 그룹 accent 로 통일. active 는 a.color 유지(Topbar 와 매칭).
+                  // admin 그룹(accent 없음)은 fallback 으로 a.color 사용.
+                  const iconColor = active ? a.color : (accent || a.color);
                   return (
                     <button key={a.id}
                       onClick={(e) => goApp(e, a.id)}
@@ -135,7 +150,7 @@ export default function AppNavPopover({ open, onClose }) {
                       onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }}
                       onMouseLeave={(e) => { if (!active) e.currentTarget.style.background = "transparent"; }}
                     >
-                      <span style={{ fontSize:18, color:a.color, width:22, textAlign:"center", flexShrink:0 }}>{a.icon}</span>
+                      <span style={{ fontSize:18, color: iconColor, width:22, textAlign:"center", flexShrink:0 }}>{a.icon}</span>
                       <span style={{ flex:1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{a.sub}</span>
                       {active && <span style={{ fontSize:9, color:a.color, letterSpacing:"0.1em" }}>NOW</span>}
                       {!active && adminUnlocked && (

@@ -258,7 +258,10 @@ const readSelectedVersion = (app) => {
   return app.defaultVersion || app.versions[app.versions.length - 1].key;
 };
 
-function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false }) {
+function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false, groupAccent = null }) {
+  // groupAccent 가 있으면 아이콘 칩은 그 컬러로 (인덱스에서 그룹 단위 식별).
+  // 없으면 기존 app.color (admin 그룹 / 다른 호출처 호환).
+  const chipColor = groupAccent || app.color;
   const T = useTheme();
   const { isLight } = useGlobal();
   const [hov, setHov] = useState(false);
@@ -326,12 +329,12 @@ function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false }) {
           <div style={{
             width:36, height:36, borderRadius:8, flexShrink:0,
             display:"flex", alignItems:"center", justifyContent:"center",
-            background: disabled ? T.hoverBg : `${app.color}1f`,
-            border: disabled ? `1px solid ${disabledBorder}` : `1px solid ${app.color}40`,
+            background: disabled ? T.hoverBg : `${chipColor}1f`,
+            border: disabled ? `1px solid ${disabledBorder}` : `1px solid ${chipColor}40`,
           }}>
             <span style={{
               fontSize:14, fontWeight:700, letterSpacing:"0.01em", lineHeight:1,
-              color: disabled ? T.textMuted : app.color,
+              color: disabled ? T.textMuted : chipColor,
               fontFamily:"'Noto Sans KR', sans-serif",
             }}>{app.abbr || cardAbbr(app.sub)}</span>
           </div>
@@ -461,7 +464,7 @@ function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false }) {
 }
 
 function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
-  const { navigate, isLight } = useGlobal();
+  const { navigate } = useGlobal();
   const { isAdmin } = useAuth();
   const overrides = useAppVisibility();
   const T = useTheme();
@@ -521,19 +524,11 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
             </div>
           );
         }
-        // 일반 그룹 — 액센트 컬러로 tinted panel + 컬러 dot + 컬러 라벨.
-        // tint alpha: 라이트(흰 배경)에서는 약간 진하게, 다크에서는 옅게 — 두 모드 모두 자연스럽게.
+        // 일반 그룹 — 패널 wrapper 없이 헤더(dot + 라벨) + 카드 그리드만.
+        // 그룹 식별은 카드의 아이콘 칩 컬러(groupAccent)로 — 한 그룹의 카드들이 같은 색 칩으로 줄지어 보임.
         const accent = GROUP_ACCENTS[g.key] || T.accent;
-        const panelBg = isLight ? `${accent}10` : `${accent}0a`; // ~6% / ~4%
-        const panelBorder = `${accent}26`; // ~15%
         return (
-          <div key={g.key} style={{
-            marginBottom: 28,
-            background: panelBg,
-            border: `1px solid ${panelBorder}`,
-            borderRadius: 14,
-            padding: "18px 18px 18px",
-          }}>
+          <div key={g.key} style={{ marginBottom: 40 }}>
             <div style={{
               fontSize:10, fontWeight:700, letterSpacing:"0.14em",
               color: accent, textTransform:"uppercase",
@@ -548,7 +543,7 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
               {g.label}
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
-              {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} onOpen={(e) => {
+              {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} groupAccent={accent} onOpen={(e) => {
                 if (e?.ctrlKey || e?.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
                 navigate(app.id);
               }} />)}

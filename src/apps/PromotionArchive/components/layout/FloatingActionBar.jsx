@@ -1,13 +1,14 @@
-import { Layers, Edit3, X, Sparkles, Trash2 } from 'lucide-react';
+import { Layers, Edit3, X, Sparkles, Trash2, FileSearch } from 'lucide-react';
 
 // 하단 중앙 floating bar — 다중 선택 시(selectedCount > 0)만 표시.
-// 메인 액션: 담기 / 속성 / 선택 취소 / AI 분석 / 삭제.
+// 메인 액션: 담기 / 속성 / 선택 취소 / AI 분석 / 템플릿 분석 / 삭제.
 const FloatingActionBar = ({
     selectedCount,
     onAddToCollection,
     onEditProperties,
     onDeselectAll,
     onAiAnalysis,
+    onTemplateAnalysis,
     onDelete,
 }) => {
     if (selectedCount <= 0) return null;
@@ -39,10 +40,21 @@ const FloatingActionBar = ({
                     </button>
                 </div>
 
-                {/* 3. AI 분석 버튼 */}
+                {/* 3. AI 분석 버튼 (단일 항목 평가 — 점수/태그/요약) */}
                 <button onClick={onAiAnalysis} className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 rounded-xl transition-all">
                     <Sparkles size={14} />
                     <span>AI 분석</span>
+                </button>
+
+                {/* 3b. 공통 템플릿 분석 — 2 건 이상에서만 활성 */}
+                <button
+                    onClick={onTemplateAnalysis}
+                    disabled={selectedCount < 2}
+                    title={selectedCount < 2 ? '2건 이상 선택 시 활성' : '선택한 페이지의 공통 템플릿 골격 추출'}
+                    className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold text-fuchsia-400 hover:text-fuchsia-300 hover:bg-fuchsia-500/10 rounded-xl transition-all disabled:text-zinc-600 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                >
+                    <FileSearch size={14} />
+                    <span>템플릿 분석</span>
                 </button>
 
                 <div className="w-[1px] h-4 bg-white/10 mx-1" />

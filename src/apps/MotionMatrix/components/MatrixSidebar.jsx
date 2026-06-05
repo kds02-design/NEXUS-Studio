@@ -118,10 +118,10 @@ function GenerateTab(p) {
   };
   return (
     <SectionGroupAccent value="#FDCB6E">
-    <div className="flex flex-col gap-7">
+    <div className="flex flex-col gap-5">
 
-      {/* ─── 01 ENGINE — 출력 모델 + 진행 방식 ─── */}
-      <SectionGroup index={1} label="Engine" dotColor="#FDCB6E" open={openSection === 'engine'} onToggle={toggleSection('engine')}>
+      {/* ─── ① 엔진 — 출력 모델 + 진행 방식 ─── */}
+      <SectionGroup index={1} label="① 엔진 (출력 모델 · 진행 방식)" dotColor="#FDCB6E" open={openSection === 'engine'} onToggle={toggleSection('engine')}>
         <div className="flex flex-col gap-2 relative z-[70]">
           <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider">Target AI Model</p>
           <DropdownControl label="" value={p.targetModel} options={TARGET_MODELS} onChange={p.setTargetModel} highlight={true} />
@@ -179,8 +179,8 @@ function GenerateTab(p) {
         )}
       </SectionGroup>
 
-      {/* ─── 02 AI DIRECTOR — 레퍼런스 이미지 + 연출 요구사항 ─── */}
-      <SectionGroup index={2} label="AI Director" dotColor="#A29BFE" open={openSection === 'director'} onToggle={toggleSection('director')}>
+      {/* ─── ② 시안 분석 — 레퍼런스 이미지 + 연출 요구사항 ─── */}
+      <SectionGroup index={2} label="② 시안 분석 (레퍼런스 · AI 해석)" dotColor="#A29BFE" open={openSection === 'director'} onToggle={toggleSection('director')}>
         <MatrixPromptForm
           image={p.image} setImage={p.setImage}
           isImageDragging={p.isImageDragging} setIsImageDragging={p.setIsImageDragging}
@@ -191,9 +191,9 @@ function GenerateTab(p) {
         />
       </SectionGroup>
 
-      {/* ─── 03 PRESETS — 빠른 템플릿 (Loop 모드 한정) ─── */}
+      {/* ─── ③ 프리셋 — 빠른 템플릿 (Loop 모드 한정) ─── */}
       {p.animationMode === 'loop' && (
-        <SectionGroup index={3} label="Presets" dotColor="#55EFC4" open={openSection === 'presets'} onToggle={toggleSection('presets')}>
+        <SectionGroup index={3} label="③ 프리셋 (빠른 템플릿)" dotColor="#55EFC4" open={openSection === 'presets'} onToggle={toggleSection('presets')}>
           <MatrixPresetPanel
             activePresetGroup={p.activePresetGroup} setActivePresetGroup={p.setActivePresetGroup}
             activePresetId={p.activePresetId} isPresetModified={p.isPresetModified}
@@ -204,8 +204,8 @@ function GenerateTab(p) {
         </SectionGroup>
       )}
 
-      {/* ─── 04 MATRIX — 세부 모션/시각 옵션 ─── */}
-      <SectionGroup index={p.animationMode === 'loop' ? 4 : 3} label="Matrix" dotColor="#00CEC9" open={openSection === 'matrix'} onToggle={toggleSection('matrix')} className="mb-10">
+      {/* ─── ④ 세부 옵션 — 모션·시각 매트릭스 (고급) ─── */}
+      <SectionGroup index={p.animationMode === 'loop' ? 4 : 3} label="④ 세부 옵션 (고급)" dotColor="#00CEC9" open={openSection === 'matrix'} onToggle={toggleSection('matrix')} className="mb-10">
         <div className="flex flex-col gap-2 relative z-[30]">
           <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider">Flow & Rhythm</p>
           <div className="grid grid-cols-2 gap-3">
@@ -269,8 +269,10 @@ export default function MatrixSidebar(props) {
     { id: 'compositing', label: '영상 합성',     icon: <MonitorIcon /> },
   ];
   return (
-    <aside className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl overflow-y-auto custom-scrollbar relative z-10">
-      <div className="p-5 space-y-5">
+    // 2-layer scroll — aside 가 height 컨테이너, 내부 div 가 실제 스크롤 영역.
+    // 마지막 spacer 로 박스 bottom border 가 viewport 와 맞물려 잘리는 것 방지.
+    <aside className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl min-h-0 relative z-10">
+      <div className="flex-1 overflow-y-auto pl-5 pr-3 py-5 space-y-5 custom-scrollbar">
         {/* 뷰 탭 — RenderMatrix 패턴 통일 (사이드바 내부 상단) */}
         <div className="flex bg-[#121214] p-1.5 rounded-xl border border-zinc-800/80 shadow-inner">
           {TABS.map(t => {
@@ -307,6 +309,8 @@ export default function MatrixSidebar(props) {
             </button>
           </div>
         )}
+        {/* 명시적 spacer — 마지막 박스 bottom border 가 잘려보이는 것 방지 */}
+        <div className="h-16 shrink-0" aria-hidden="true" />
       </div>
     </aside>
   );

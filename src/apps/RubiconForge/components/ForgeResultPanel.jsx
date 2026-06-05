@@ -3,8 +3,9 @@
 
 import {
   Terminal, FileText, Loader2, Sparkle as SparkleIcon, Copy, Check,
-  BookOpen, Stars,
+  BookOpen, Stars, ImageIcon, Download, AlertCircle, RefreshCcw, X,
 } from 'lucide-react';
+import { IMAGEN_MODELS } from '../../../lib/imagenRender';
 import ForgePresetPanel from './ForgePresetPanel';
 import ForgeVariationGrid from './ForgeVariationGrid';
 import ForgeAtlasGrid from './ForgeAtlasGrid';
@@ -25,9 +26,21 @@ export default function ForgeResultPanel({ forge }) {
     isCopiedEnhanced,
     // lore
     lore, isGeneratingLore, handleGenerateLore,
+    // creation 모드 이미지 렌더
+    creationRenderModel, setCreationRenderModel,
+    creationRenderResult, creationRenderError, isCreationRendering,
+    handleCreationRender, handleClearCreationRender,
     // overlay flags
     isAnalyzingStyle, isExpandingIntent, isKeywordSetting,
   } = forge;
+
+  const handleDownloadCreationImage = () => {
+    if (!creationRenderResult?.dataUrl) return;
+    const a = document.createElement('a');
+    a.href = creationRenderResult.dataUrl;
+    a.download = `rubicon-creation-${Date.now()}.png`;
+    a.click();
+  };
 
   // 변형 / 아틀라스 모드 — 별도 그리드 패널로 위임. Creation 모드의 PresetPanel/Prompt Output 와 자원 공유 없음.
   if (currentView === 'micro-edit') {
@@ -117,6 +130,94 @@ export default function ForgeResultPanel({ forge }) {
                               </div>
                           )}
                       </div>
+                  </div>
+
+                  {/* 이미지 렌더 — 현재 컴파일된 영문 프롬프트를 Nano Banana 에 전송. KR 뷰 여부 무관, 항상 EN 전송. */}
+                  <div className="mt-4 p-6 rounded-sm border border-zinc-800/60 bg-[#0F0F12] relative shadow-[0_20px_60px_rgba(0,0,0,0.5)]">
+                      <div className="flex justify-between items-center mb-4">
+                          <h4 className="text-[10px] font-black text-[#76cee0] uppercase tracking-widest flex items-center gap-2">
+                              <ImageIcon className="w-4 h-4" /> Image Render
+                              <span className="text-[9px] font-bold text-zinc-600 normal-case tracking-normal">— 현재 프롬프트로 직접 생성</span>
+                          </h4>
+                          <div className="flex items-center gap-2">
+                              <div className="flex bg-black/40 p-1 rounded-sm border border-white/5">
+                                  {IMAGEN_MODELS.map(m => (
+                                      <button
+                                          key={m.id}
+                                          onClick={() => setCreationRenderModel(m.id)}
+                                          disabled={isCreationRendering}
+                                          title={m.desc}
+                                          className={`px-3 py-1.5 text-[9px] font-black rounded-sm transition-all uppercase tracking-wider ${creationRenderModel === m.id ? 'bg-[#76cee0] text-zinc-900 shadow' : 'text-zinc-500 hover:text-zinc-300'} disabled:opacity-40`}
+                                      >
+                                          {m.label}
+                                      </button>
+                                  ))}
+                              </div>
+                              <button
+                                  onClick={handleCreationRender}
+                                  disabled={isCreationRendering || !finalOutput || aiModel === 'Overview'}
+                                  title={aiModel === 'Overview' ? 'Overview 모드는 프롬프트가 아님 — 다른 탭 선택' : '이미지 생성'}
+                                  className="flex items-center gap-2 px-4 py-2 rounded-sm bg-[#76cee0] text-zinc-900 hover:bg-[#92dceb] font-bold text-[10px] uppercase tracking-widest shadow transition-colors disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed"
+                              >
+                                  {isCreationRendering ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImageIcon className="w-3.5 h-3.5" />}
+                                  {isCreationRendering ? '생성 중...' : (creationRenderResult ? '다시 생성' : '이미지 생성')}
+                              </button>
+                          </div>
+                      </div>
+
+                      {isCreationRendering && (
+                          <div className="aspect-[16/9] rounded-sm border border-zinc-800 bg-[#050507] flex flex-col items-center justify-center text-zinc-500">
+                              <Loader2 className="w-8 h-8 animate-spin text-[#76cee0] mb-3" />
+                              <div className="text-[11px] font-bold">Nano Banana 가 그리는 중...</div>
+                              <div className="text-[10px] text-zinc-600 mt-1">보통 5~20초</div>
+                          </div>
+                      )}
+
+                      {!isCreationRendering && creationRenderResult?.dataUrl && (
+                          <div className="space-y-2">
+                              <div className="rounded-sm border border-zinc-800 bg-black overflow-hidden">
+                                  <img src={creationRenderResult.dataUrl} alt="generated" className="w-full h-auto block" />
+                              </div>
+                              <div className="flex gap-2">
+                                  <button
+                                      onClick={handleDownloadCreationImage}
+                                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-sm bg-zinc-800 hover:bg-zinc-700 text-white text-[10px] font-bold uppercase tracking-widest transition-colors"
+                                  >
+                                      <Download className="w-3 h-3" /> PNG 다운로드
+                                  </button>
+                                  <button
+                                      onClick={handleCreationRender}
+                                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-sm bg-zinc-900 hover:bg-zinc-800 text-zinc-300 text-[10px] font-bold uppercase tracking-widest border border-zinc-800 transition-colors"
+                                  >
+                                      <RefreshCcw className="w-3 h-3" /> 같은 프롬프트로 재생성
+                                  </button>
+                                  <button
+                                      onClick={handleClearCreationRender}
+                                      className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-sm bg-zinc-900 hover:bg-red-500/20 text-zinc-500 hover:text-red-300 text-[10px] font-bold uppercase tracking-widest border border-zinc-800 transition-colors"
+                                      title="결과 지우기"
+                                  >
+                                      <X className="w-3 h-3" />
+                                  </button>
+                              </div>
+                          </div>
+                      )}
+
+                      {!isCreationRendering && !creationRenderResult && creationRenderError && (
+                          <div className="rounded-sm border border-rose-500/30 bg-rose-500/5 p-4 flex items-start gap-3">
+                              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                              <div className="flex-1 min-w-0">
+                                  <div className="text-[11px] font-bold text-rose-300 mb-1">생성 실패</div>
+                                  <div className="text-[10px] text-rose-400/80 leading-relaxed break-all">{creationRenderError}</div>
+                              </div>
+                          </div>
+                      )}
+
+                      {!isCreationRendering && !creationRenderResult && !creationRenderError && (
+                          <div className="text-[10px] text-zinc-600 leading-loose">
+                              위 프롬프트를 Nano Banana 에 직접 전송해서 결과 이미지를 받아옵니다.
+                              {aiModel === 'Overview' ? ' — Overview 모드는 프롬프트가 아닙니다. NanoBanana/ChatGPT/Midjourney 탭으로 전환하세요.' : ''}
+                          </div>
+                      )}
                   </div>
 
                   <div className="mt-4 p-6 rounded-sm border border-zinc-800/60 bg-[#0F0F12] relative shadow-[0_20px_60px_rgba(0,0,0,0.5)]">

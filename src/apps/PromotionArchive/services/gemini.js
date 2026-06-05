@@ -372,3 +372,192 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     console.error("[PromotionArchive] analyzeWebDesign failed:", lastError);
     return { ok: false, error: lastError?.message || '알 수 없는 오류' };
 };
+
+// =========================================================================
+// 공통 템플릿(아틀라스 골격) 추출 — N 개의 유사 페이지에서 동일 구조 추출.
+// =========================================================================
+// 입력:
+//   imagesBase64: 2~N 개의 압축된 base64 (prepareImageForAI 로 1024px 권장)
+//   options.groupHint: (선택) 사용자가 지정한 그룹 설명 — 모델에 컨텍스트 제공
+//
+// 응답 스키마: { ok, summary, fixedRegions, fixedCopy, dynamicPlaceholders, variableElements, masterTemplateSpec }
+//   - fixedRegions: 모든 페이지에 공통으로 존재하는 구조 영역 (위치·크기·역할)
+//   - fixedCopy: 모든 페이지에 똑같이 들어가는 카피 문구
+//   - dynamicPlaceholders: 매번 값이 바뀌는 데이터 슬롯 (예: NNN/NNN 카운터)
+//   - variableElements: 케이스별로 달라지는 요소 (컬러·캐릭터·재질·장식)
+//   - masterTemplateSpec: 마스터 와이어프레임을 만들 때 따라야 할 명세 (마크다운)
+
+const TEMPLATE_RESPONSE_SCHEMA = {
+    type: "OBJECT",
+    properties: {
+        summary: { type: "STRING" },
+        fixedRegions: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    name: { type: "STRING" },
+                    position: { type: "STRING" },
+                    sizePercent: { type: "STRING" },
+                    role: { type: "STRING" },
+                },
+                required: ["name", "position", "role"],
+            },
+        },
+        fixedCopy: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    text: { type: "STRING" },
+                    where: { type: "STRING" },
+                },
+                required: ["text", "where"],
+            },
+        },
+        dynamicPlaceholders: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    name: { type: "STRING" },
+                    where: { type: "STRING" },
+                    format: { type: "STRING" },
+                },
+                required: ["name", "where"],
+            },
+        },
+        variableElements: {
+            type: "ARRAY",
+            items: {
+                type: "OBJECT",
+                properties: {
+                    category: { type: "STRING" },
+                    description: { type: "STRING" },
+                },
+                required: ["category", "description"],
+            },
+        },
+        masterTemplateSpec: { type: "STRING" },
+    },
+    required: ["summary", "fixedRegions", "fixedCopy", "variableElements", "masterTemplateSpec"],
+};
+
+const TEMPLATE_INTRO = `당신은 디자인 시스템 분석가입니다.
+
+지금부터 같은 캠페인 / 시리즈에 속한 N 개의 브랜드 웹 페이지 이미지를 보여드립니다.
+이들은 같은 마스터 템플릿에서 파생된 월별 / 케이스별 변종일 가능성이 높습니다.
+
+목표: 이 N 장의 공통점을 추출해 "마스터 템플릿 골격"을 도출하는 것.
+
+다음 네 가지를 구분해서 정확하게 식별하세요.
+
+1. fixedRegions — 모든 페이지에 같은 위치 · 같은 크기 · 같은 역할로 존재하는 구조 영역
+   - 예: { name: "메인 타이틀", position: "상단 5~15%", sizePercent: "10%", role: "월 표시 + 시리즈 명 노출" }
+   - 위치는 "상단 / 중앙 상부 / 중앙 / 하부 / 최하단" 또는 % 로 명시
+   - 모든 페이지에 반드시 존재해야만 fixed 로 분류
+
+2. fixedCopy — 모든 페이지에 글자 그대로 똑같이 들어가는 카피
+   - 예: { text: "보너스 혜택", where: "하단 섹션 헤더" }
+   - 한 페이지에라도 다르면 fixed 가 아님
+
+3. dynamicPlaceholders — 같은 자리·같은 포맷이지만 값이 매번 바뀌는 데이터 슬롯
+   - 예: { name: "선착 사용 인원 카운터", where: "최하단", format: "NNN/NNN" }
+   - 값은 다르지만 위치·포맷·역할이 일관되면 dynamic placeholder
+
+4. variableElements — 케이스별로 달라지는 디자인 요소
+   - 카테고리: "color palette", "character illustration", "decorative motif", "background", "material/finish" 등
+   - 예: { category: "color palette", description: "월·계절에 따라 다른 팔레트 — 봄 핑크, 겨울 청록, 가을 갈색 등" }
+
+마지막으로 masterTemplateSpec 에 마스터 와이어프레임 명세를 마크다운으로 작성하세요. 디자이너가 이 명세만 보고 새 케이스를 만들 수 있어야 합니다 (영역 배치, 고정 카피 위치, 동적 데이터 슬롯, 가변 요소 가이드라인 포함).
+
+summary 에는 이 그룹이 어떤 종류의 페이지인지 한 줄로 요약하세요.
+
+다음 N 장이 분석 대상입니다.`;
+
+export const analyzeTemplateGroup = async (imagesBase64 = [], options = {}) => {
+    const keyToUse = apiKey;
+    const n = imagesBase64.length;
+    if (n < 2) return { ok: false, error: '2장 이상이 필요합니다.' };
+
+    const groupHintBlock = options.groupHint
+        ? `\n\n[사용자가 제공한 그룹 컨텍스트]\n${options.groupHint}\n`
+        : '';
+    const prompt = `${TEMPLATE_INTRO}${groupHintBlock}\n\n총 ${n} 장이 첨부됩니다.`;
+
+    const imageParts = imagesBase64
+        .filter(Boolean)
+        .map(b64 => ({ inlineData: { mimeType: "image/jpeg", data: b64 } }));
+
+    const requestBody = {
+        contents: [{ parts: [{ text: prompt }, ...imageParts] }],
+        generationConfig: {
+            temperature: 0.2,
+            responseMimeType: "application/json",
+            responseSchema: TEMPLATE_RESPONSE_SCHEMA,
+        },
+        safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
+    };
+
+    let lastError = null;
+    for (let attempt = 0; attempt < WEB_MAX_ATTEMPTS; attempt++) {
+        const controller = new AbortController();
+        let didTimeout = false;
+        // 다수 이미지라 타임아웃 여유 — 단일 분석 60s → 그룹 분석 120s.
+        const TIMEOUT = 120_000;
+        const timeoutId = setTimeout(() => {
+            didTimeout = true;
+            try { controller.abort(); } catch { /* noop */ }
+        }, TIMEOUT);
+
+        try {
+            const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${keyToUse}`,
+                {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(requestBody),
+                    signal: controller.signal,
+                }
+            );
+            clearTimeout(timeoutId);
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                const err = new Error(`HTTP ${response.status} ${errData?.error?.message || response.statusText}`);
+                err.status = response.status;
+                throw err;
+            }
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (!text) throw new Error('응답 본문이 비어 있습니다.');
+            const cleaned = text.replace(/```json|```/g, '').trim();
+            const parsed = JSON.parse(cleaned);
+            return {
+                ok: true,
+                summary: String(parsed.summary || ''),
+                fixedRegions: Array.isArray(parsed.fixedRegions) ? parsed.fixedRegions : [],
+                fixedCopy: Array.isArray(parsed.fixedCopy) ? parsed.fixedCopy : [],
+                dynamicPlaceholders: Array.isArray(parsed.dynamicPlaceholders) ? parsed.dynamicPlaceholders : [],
+                variableElements: Array.isArray(parsed.variableElements) ? parsed.variableElements : [],
+                masterTemplateSpec: String(parsed.masterTemplateSpec || ''),
+                count: n,
+            };
+        } catch (e) {
+            clearTimeout(timeoutId);
+            const err = didTimeout ? new Error(`타임아웃 (120s)`) : e;
+            lastError = err;
+            const retryable = !err.status || err.status === 429 || err.status >= 500;
+            if (!retryable || attempt === WEB_MAX_ATTEMPTS - 1) break;
+            console.warn(`[PromotionArchive] analyzeTemplateGroup 재시도 ${attempt + 1}: ${err.message}`);
+            await new Promise(r => setTimeout(r, WEB_RETRY_DELAYS[attempt] || 2000));
+        }
+    }
+
+    console.error('[PromotionArchive] analyzeTemplateGroup failed:', lastError);
+    return { ok: false, error: lastError?.message || '알 수 없는 오류' };
+};
