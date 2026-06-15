@@ -29,7 +29,12 @@ export const APP_REGISTRY = [
   { id: "competitor-radar",    label: "경쟁사 레이더",      sub: "Competitor Radar",    abbr: "Cr", icon: "⊙", desc: "경쟁사 프로모션·업데이트 디자인 정기 모니터링 · 트렌드 리포트", group: "explore", color: "#FF7675", canReceive: [],                                                                              canSend: ["design-eval"], beta: true, adminOnly: true },
   { id: "prompt-audit",        label: "프롬프트 최적화",    sub: "Prompt Optimizer",    abbr: "Po", icon: "◎", desc: "프롬프트 충돌 검출 + 대안 제시 + 엔진 학습용 데이터 적재",   group: "explore", color: "#A29BFE", canReceive: ["prompt-arc","typecore-sovereign","typecore-breeze","render-metrics","motion-metrics"], canSend: ["prompt-arc","typecore-sovereign","render-metrics","motion-metrics"], beta: true },
   { id: "asset-library",       label: "에셋 라이브러리",   sub: "Asset Library",       abbr: "Al", icon: "▥", desc: "타이틀·버튼·박스·아이콘 등 영역 선택으로 모은 에셋 보관소", group: "explore", color: "#55EFC4", canReceive: ["banner-codex","promotion-archive"],                                          canSend: [] },
-  { id: "brief-studio",        label: "브리프 스튜디오",    sub: "Brief Studio",        abbr: "Bs", icon: "◐", desc: "문서와 레퍼런스로 디자인 방향성을 잡아주는 AI 브리프 도구", group: "explore", color: "#A29BFE", canReceive: [],                                                                              canSend: ["typecore-sovereign","typecore-breeze","render-metrics","design-eval"], disabled: true, adminOnly: true },
+  { id: "brief-studio",        label: "브리프 스튜디오",    sub: "Brief Studio",        abbr: "Bs", icon: "◐", desc: "요청서 분석 도구 — 디자인 방향성 도출(스튜디오) / 요청서→구조화 데이터→ops(프리즘)", group: "explore", color: "#A29BFE", canReceive: [],                                                                              canSend: ["typecore-sovereign","typecore-breeze","render-metrics","design-eval"], disabled: true, adminOnly: true,
+    versions: [
+      { key: "studio", label: "스튜디오", color: "#A29BFE" },
+      { key: "prism",  label: "프리즘",   color: "#0eb9b3" },
+    ],
+    defaultVersion: "studio" },
   { id: "typecore-sovereign",  label: "타이프코어 소버린",  sub: "Typecore Sovereign",  abbr: "Ts", icon: "⟁", desc: "RPG류 게임의 타이포그래피 프롬프트 생성",  group: "generate", color: "#A29BFE", canReceive: ["prompt-arc"],                                                                  canSend: ["prompt-arc","render-metrics"],
     versions: [
       { key: "latest",   label: "최신",      color: "#0eb9b3" },

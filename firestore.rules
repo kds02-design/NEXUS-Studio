@@ -1,0 +1,84 @@
+rules_version = '2';
+
+// NEXUS Studio (promo-arc) Firestore 보안 규칙
+// 콘솔: Firebase Console > Firestore Database > 규칙(Rules) 탭에 붙여넣고 "게시"
+// CLI : npx firebase deploy --only firestore:rules
+//
+// 설계 원칙
+// - settings/* 와 artifacts/*/public/* 는 비로그인도 읽기 (대시보드/게이트가 마운트 즉시 구독)
+// - users/{uid} 및 하위(usage·credits)는 본인 또는 admin
+// - 쓰기 가능한 공개 데이터(artifacts/*/public)는 로그인 사용자
+// - admin = 토큰 이메일 화이트리스트 또는 본인 user doc 의 role == 'admin'
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // 관리자 화이트리스트 — src/lib/grades.js 의 ADMIN_EMAILS 와 동기화 유지.
+    function isAdminEmail() {
+      return isSignedIn()
+        && request.auth.token.email != null
+        && request.auth.token.email.lower() in ['kds02@ncsoft.com'];
+    }
+
+    function isAdmin() {
+      return isAdminEmail()
+        || (isSignedIn()
+            && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // 사용자 프로필 + 하위 컬렉션(usage/{day}, credits/{week})
+    match /users/{uid} {
+      allow read:   if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update, delete: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      match /{document=**} {
+        allow read, write: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      }
+    }
+
+    // 초대 코드 — 로그인 사용자가 읽기 + redeem(usedCount 증가) 트랜잭션. 생성/삭제는 admin.
+    match /inviteCodes/{code} {
+      allow read, update: if isSignedIn();
+      allow create, delete: if isAdmin();
+    }
+
+    // 등급 상향 요청 — 사용자가 생성, admin 이 조회/처리.
+    match /upgradeRequests/{reqId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // 전역 설정(dashboard / gemini / appVisibility) — 누구나 읽기, admin 만 쓰기.
+    match /settings/{doc} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 평가 기준(브랜드웹/프로모션) — 누구나 읽기, admin 만 쓰기.
+    match /evaluationCriteria/{document=**} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 앱별 데이터
+    match /artifacts/{appId} {
+      // 공개 데이터(banners/prompts/patterns/competitor-*/settings/gameLogos 등)
+      // — 읽기 전체 공개, 쓰기는 로그인 사용자.
+      match /public/{document=**} {
+        allow read: if true;
+        allow write: if isSignedIn();
+      }
+      // 사용자별 데이터(evaluations/audits/bookmarks/codexFolders/brandWebProjects 등)
+      // — 본인만 쓰기, 본인 또는 admin 읽기.
+      match /users/{uid}/{document=**} {
+        allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin());
+        allow write: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+  }
+}

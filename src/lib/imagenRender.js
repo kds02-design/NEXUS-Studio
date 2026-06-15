@@ -16,6 +16,25 @@ export const IMAGEN_MODELS = [
   },
 ];
 
+// 출력 해상도 — Pro 모델만 1K/2K/4K 지원, Flash 는 1K 고정.
+// id 가 generationConfig.imageConfig.imageSize 로 그대로 전달됨.
+export const RENDER_SIZES = [
+  { id: "1K", label: "1K", desc: "~1024px · 빠름" },
+  { id: "2K", label: "2K", desc: "~2048px · 기본" },
+  { id: "4K", label: "4K", desc: "~4096px · Pro 전용" },
+];
+
+// 모델이 Pro(1K/2K/4K) 인지. Flash 는 imageSize 미지원 → 1K 기본.
+export const isProImageModel = (modelId) =>
+  typeof modelId === "string" && modelId.includes("3-pro");
+
+// 요청 사이즈를 모델 능력에 맞게 보정. Flash 는 무조건 undefined(=1K 기본),
+// Pro 는 1K/2K/4K 만 허용하고 그 외 값이면 2K 로 fallback.
+export const clampImageSize = (modelId, requested) => {
+  if (!isProImageModel(modelId)) return undefined;
+  return ["1K", "2K", "4K"].includes(requested) ? requested : "2K";
+};
+
 // Gemini image API 가 지원하는 출력 비율. 입력 시안 비율에 가장 가까운 값으로 매핑한다.
 const SUPPORTED_RATIOS = [
   { id: "1:1", v: 1 }, { id: "2:3", v: 2 / 3 }, { id: "3:2", v: 3 / 2 },
@@ -139,11 +158,10 @@ export async function renderWithImagen(
   const originalAspect = (matchInputAspect && primaryRef)
     ? await probeRawAspectRatio(primaryRef) : null;
 
-  // 출력 해상도 — Pro 모델은 1K/2K/4K 지원, Flash 는 1K 만.
-  // 기본 1K(약 1024 short side) 가 너무 작아 디테일 손실 → Pro 모델 호출 시 2K 자동 적용.
-  // (options.imageSize 명시값이 있으면 그 값 우선; 모델별 미지원 값이면 모델 기본으로 fallback)
-  const isProModel = typeof modelId === "string" && modelId.includes("3-pro");
-  const imageSize = options.imageSize || (isProModel ? "2K" : undefined);
+  // 출력 해상도 — Pro 모델만 1K/2K/4K, Flash 는 1K 고정.
+  // options.imageSize 가 있으면 그 값을, 없으면 Pro 기본 2K. clampImageSize 가 모델 능력에 맞춰 보정:
+  //   Flash → undefined(=1K 기본), Pro → 1K/2K/4K (그 외 값이면 2K).
+  const imageSize = clampImageSize(modelId, options.imageSize || "2K");
 
   const generationConfig = { responseModalities: ["IMAGE", "TEXT"] };
   if (aspectRatio || imageSize) {
@@ -163,14 +181,36 @@ export async function renderWithImagen(
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) throw new Error(`Imagen API ${res.status}`);
+  if (!res.ok) {
+    // Google API 는 실패 시 JSON 본문에 { error: { message, status } } 를 담아줌.
+    // 상태코드만 던지면 원인(프롬프트 길이/안전필터/잘못된 인자 등)을 알 수 없어 본문을 까서 전달.
+    let detail = "";
+    try {
+      const err = await res.json();
+      detail = err?.error?.message || "";
+    } catch { /* 본문 파싱 실패 시 상태코드만 */ }
+    throw new Error(`Imagen API ${res.status}${detail ? ` — ${detail}` : ""}`);
+  }
   const data = await res.json();
 
   const resParts = data.candidates?.[0]?.content?.parts || [];
   const imgPart = resParts.find(
     p => p.inlineData?.mimeType?.startsWith("image/")
   );
-  if (!imgPart) throw new Error("이미지 응답 없음");
+  if (!imgPart) {
+    // 이미지가 없을 때 — 모델이 텍스트만 돌려준 경우(안전필터/프롬프트 거부) finishReason 과
+    // 텍스트를 함께 노출해야 "왜 안 나왔는지" 가 보임. promptFeedback 의 block 사유도 포함.
+    const cand = data.candidates?.[0];
+    const reason = cand?.finishReason;
+    const textPart = resParts.find(p => p.text)?.text;
+    const blockReason = data.promptFeedback?.blockReason;
+    const bits = [
+      reason && `finishReason: ${reason}`,
+      blockReason && `blocked: ${blockReason}`,
+      textPart && `"${textPart.slice(0, 240)}"`,
+    ].filter(Boolean);
+    throw new Error(`이미지 응답 없음${bits.length ? ` — ${bits.join(" / ")}` : ""}`);
+  }
 
   const rawDataUrl = `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
   // 원본 비율로 자동 center crop — 표준 비율 매핑으로 인한 미세 비율 차이를 복원.

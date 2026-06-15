@@ -15,6 +15,13 @@ import {
   Palette, Layers,
 } from "lucide-react";
 import { extractDocxText, extractPptxText, isDocx, isPptx } from "./officeExtract";
+import Prism from "./Prism";
+
+// 버전 스위치 — "studio"(디자인 방향성, 기본) / "prism"(요청서 파서 → ops).
+// Shell 이 APP_REGISTRY.versions 기준으로 version prop 주입 + 상단 VersionSubHeader 렌더.
+export default function BriefStudio({ version = "studio" }) {
+  return version === "prism" ? <Prism /> : <StudioView />;
+}
 
 // ─── 정적 데이터 ─────────────────────────────────────────
 const GENRES = [
@@ -84,7 +91,7 @@ const FLOW_APPS = {
   "brand-web-review":   { label: "브랜드웹 리뷰",     desc: "브랜드웹 검수",        icon: <Layers size={16} />, color: "#0eb9b3" },
 };
 
-export default function BriefStudio() {
+function StudioView() {
   const { user } = useAuth();
   const { navigate } = useGlobal();
 
@@ -319,36 +326,36 @@ export default function BriefStudio() {
 
   return (
     <div
-      className="flex h-full overflow-hidden bg-slate-50 text-slate-900 dark:bg-[#0a0a0f] dark:text-zinc-200"
-      style={{ fontFamily: "'Noto Sans KR', sans-serif", height: "calc(100vh - 52px)" }}
+      className="flex h-full overflow-hidden bg-slate-50 text-slate-900"
+      style={{ fontFamily: "'Noto Sans KR', sans-serif", height: "100%" }}
     >
       {/* PANEL 1 — 요청서 */}
-      <section className="flex-1 flex flex-col overflow-hidden border-r border-zinc-800">
+      <section className="flex-1 flex flex-col overflow-hidden border-r border-slate-200">
         <PanelHeader icon={<FileText size={14} />} title="요청서" subtitle="문서 / 텍스트 / 기본 설정" />
         <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
           {/* 문서 업로드 */}
           <div>
-            <Label>요청서 문서 <span className="text-zinc-600 font-normal">(PDF / DOCX / PPTX / TXT / MD / JSON)</span></Label>
+            <Label>요청서 문서 <span className="text-slate-400 font-normal">(PDF / DOCX / PPTX / TXT / MD / JSON)</span></Label>
             <label
               onDragOver={(e) => { e.preventDefault(); setIsDraggingDoc(true); }}
               onDragLeave={(e) => { e.preventDefault(); setIsDraggingDoc(false); }}
               onDrop={(e) => { e.preventDefault(); setIsDraggingDoc(false); acceptDocs(Array.from(e.dataTransfer.files || [])); }}
               className={`relative block w-full py-6 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-center ${
-                isDraggingDoc ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-zinc-800 hover:border-zinc-700 bg-[#0c0c12]"
+                isDraggingDoc ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-slate-200 hover:border-slate-300 bg-white"
               }`}
             >
-              <Upload size={20} className="mx-auto mb-2 text-zinc-500" />
-              <div className="text-[11px] text-zinc-400">클릭하거나 드래그하여 업로드</div>
+              <Upload size={20} className="mx-auto mb-2 text-slate-500" />
+              <div className="text-[11px] text-slate-500">클릭하거나 드래그하여 업로드</div>
               <input ref={docInputRef} type="file" accept=".pdf,.txt,.md,.json,.docx,.pptx" multiple className="hidden" onChange={onDocPick} />
             </label>
             {docFiles.length > 0 && (
               <div className="mt-2 space-y-1.5">
                 {docFiles.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 bg-white/5 border border-white/10 rounded-md text-[11px]">
-                    <FileText size={12} className="text-zinc-500 shrink-0" />
-                    <span className="flex-1 truncate text-zinc-300">{f.name}</span>
-                    <span className="text-[9px] text-zinc-500">{(f.size / 1024).toFixed(1)}KB</span>
-                    <button onClick={() => removeDoc(i)} className="text-zinc-500 hover:text-zinc-200 shrink-0"><X size={12} /></button>
+                  <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-md text-[11px]">
+                    <FileText size={12} className="text-slate-500 shrink-0" />
+                    <span className="flex-1 truncate text-slate-600">{f.name}</span>
+                    <span className="text-[9px] text-slate-500">{(f.size / 1024).toFixed(1)}KB</span>
+                    <button onClick={() => removeDoc(i)} className="text-slate-500 hover:text-slate-800 shrink-0"><X size={12} /></button>
                   </div>
                 ))}
               </div>
@@ -363,7 +370,7 @@ export default function BriefStudio() {
               onChange={(e) => setDocText(e.target.value)}
               placeholder="요청 내용을 텍스트로 입력하세요…"
               rows={5}
-              className="w-full bg-[#0c0c12] border border-zinc-800 rounded-lg px-3 py-2.5 text-[12px] text-zinc-200 placeholder:text-zinc-600 outline-none focus:border-[#A29BFE]/50 resize-y leading-relaxed"
+              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[12px] text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#A29BFE]/50 resize-y leading-relaxed"
               style={{ fontFamily: "inherit" }}
             />
           </div>
@@ -377,10 +384,10 @@ export default function BriefStudio() {
           <div>
             <Label><Users size={11} className="inline mr-1" />담당자</Label>
             {usersError ? (
-              <div className="text-[10px] text-amber-400 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded">{usersError}</div>
+              <div className="text-[10px] text-amber-600 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded">{usersError}</div>
             ) : (
               <select value={assigneeUid} onChange={(e) => setAssigneeUid(e.target.value)}
-                className="w-full bg-[#0c0c12] border border-zinc-800 rounded-lg px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[#A29BFE]/50">
+                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#A29BFE]/50">
                 <option value="">미지정</option>
                 {users.map(u => (
                   <option key={u.uid} value={u.uid}>{u.displayName || u.email}</option>
@@ -390,21 +397,21 @@ export default function BriefStudio() {
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[11px] text-rose-300">
+            <div className="flex items-start gap-2 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[11px] text-rose-600">
               <AlertCircle size={12} className="shrink-0 mt-0.5" /> <span>{error}</span>
             </div>
           )}
         </div>
 
         {/* 분석 시작 */}
-        <div className="border-t border-zinc-800 bg-[#0c0c12] p-3 shrink-0">
+        <div className="border-t border-slate-200 bg-white p-3 shrink-0">
           <button
             onClick={handleAnalyze}
             disabled={!hasInputs || isAnalyzing}
             className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg text-[12px] font-bold transition-colors ${
               hasInputs && !isAnalyzing
                 ? "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
-                : "bg-white/5 text-zinc-600 cursor-not-allowed"
+                : "bg-slate-100 text-slate-400 cursor-not-allowed"
             }`}
           >
             {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -414,7 +421,7 @@ export default function BriefStudio() {
       </section>
 
       {/* PANEL 2 — 레퍼런스 */}
-      <section className="flex-1 flex flex-col overflow-hidden border-r border-zinc-800">
+      <section className="flex-1 flex flex-col overflow-hidden border-r border-slate-200">
         <PanelHeader
           icon={<ImageIcon size={14} />}
           title="레퍼런스"
@@ -426,12 +433,12 @@ export default function BriefStudio() {
             onDragLeave={(e) => { e.preventDefault(); setIsDraggingImg(false); }}
             onDrop={(e) => { e.preventDefault(); setIsDraggingImg(false); acceptImages(Array.from(e.dataTransfer.files || [])); }}
             className={`relative block w-full py-10 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-center ${
-              isDraggingImg ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-zinc-800 hover:border-zinc-700 bg-[#0c0c12]"
+              isDraggingImg ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-slate-200 hover:border-slate-300 bg-white"
             } ${imageFiles.length >= MAX_IMAGES ? "opacity-50 cursor-not-allowed" : ""}`}
           >
-            <Upload size={24} className="mx-auto mb-2 text-zinc-500" />
-            <div className="text-[12px] text-zinc-300 font-medium">이미지 드래그 앤 드롭</div>
-            <div className="text-[10px] text-zinc-500 mt-1">최대 {MAX_IMAGES}장</div>
+            <Upload size={24} className="mx-auto mb-2 text-slate-500" />
+            <div className="text-[12px] text-slate-600 font-medium">이미지 드래그 앤 드롭</div>
+            <div className="text-[10px] text-slate-500 mt-1">최대 {MAX_IMAGES}장</div>
             <input ref={imgInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onImgPick}
               disabled={imageFiles.length >= MAX_IMAGES} />
           </label>
@@ -439,13 +446,13 @@ export default function BriefStudio() {
           {imageFiles.length > 0 && (
             <div className="grid grid-cols-3 gap-2">
               {imageFiles.map((it, i) => (
-                <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-zinc-800 bg-[#0c0c12]">
+                <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 bg-white">
                   <img src={it.preview} alt={it.name} className="w-full h-full object-cover" />
                   <button onClick={() => removeImage(i)}
                     className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-rose-500 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity">
                     <X size={11} />
                   </button>
-                  <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent text-[9px] text-zinc-300 truncate">
+                  <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent text-[9px] text-slate-600 truncate">
                     {it.name}
                   </div>
                 </div>
@@ -460,8 +467,8 @@ export default function BriefStudio() {
         <PanelHeader icon={<Sparkles size={14} />} title="AI 분석 결과" subtitle={report ? "완료" : isAnalyzing ? "분석 중" : "대기"} />
         <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
           {!report && !isAnalyzing && (
-            <div className="text-center py-16 text-zinc-500">
-              <Sparkles size={32} className="mx-auto mb-3 text-zinc-700" />
+            <div className="text-center py-16 text-slate-500">
+              <Sparkles size={32} className="mx-auto mb-3 text-slate-300" />
               <div className="text-[12px] leading-relaxed">
                 좌측에 요청서와 레퍼런스를 등록하고<br />
                 <span className="text-[#A29BFE]">[분석 시작]</span> 을 눌러주세요.
@@ -472,12 +479,12 @@ export default function BriefStudio() {
             <div className="py-16 px-4">
               <div className="flex flex-col items-center gap-3 mb-6">
                 <Loader2 size={32} className="animate-spin" style={{ color: POINT }} />
-                <div className="text-[12px] text-zinc-300 font-medium">{analysisStage}</div>
+                <div className="text-[12px] text-slate-600 font-medium">{analysisStage}</div>
               </div>
-              <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
                 <div className="h-full transition-all duration-500" style={{ width: `${analysisPercent}%`, background: POINT }} />
               </div>
-              <div className="text-[10px] text-zinc-600 mt-2 text-center">{analysisPercent}%</div>
+              <div className="text-[10px] text-slate-400 mt-2 text-center">{analysisPercent}%</div>
             </div>
           )}
           {report && (
@@ -500,24 +507,24 @@ export default function BriefStudio() {
 // ─── 공용 UI 컴포넌트 ────────────────────────────────────
 function PanelHeader({ icon, title, subtitle }) {
   return (
-    <header className="h-12 flex items-center px-5 border-b border-zinc-800 bg-[#0c0c12] shrink-0">
+    <header className="h-12 flex items-center px-5 border-b border-slate-200 bg-white shrink-0">
       <div className="flex items-center gap-2 text-[12px] flex-1">
         <span className="text-[#A29BFE]">{icon}</span>
-        <span className="font-bold text-zinc-200">{title}</span>
-        {subtitle && <span className="text-zinc-600">· {subtitle}</span>}
+        <span className="font-bold text-slate-800">{title}</span>
+        {subtitle && <span className="text-slate-400">· {subtitle}</span>}
       </div>
     </header>
   );
 }
 function Label({ children }) {
-  return <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">{children}</div>;
+  return <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">{children}</div>;
 }
 function SelectField({ label, value, onChange, options }) {
   return (
     <div>
       <Label>{label}</Label>
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-[#0c0c12] border border-zinc-800 rounded-lg px-3 py-2 text-[12px] text-zinc-200 outline-none focus:border-[#A29BFE]/50">
+        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#A29BFE]/50">
         {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
       </select>
     </div>
@@ -535,7 +542,7 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
           <KV label="게임명" value={report.gameName} />
           <KV label="프로젝트" value={report.projectName} />
         </div>
-        <div className="text-[10px] font-bold text-zinc-500 mb-2">제작 종류</div>
+        <div className="text-[10px] font-bold text-slate-500 mb-2">제작 종류</div>
         <div className="flex flex-wrap gap-1.5">
           {(report.productionTypes || []).map(t => {
             const m = PRODUCTION_TYPE_META[t]; if (!m) return null;
@@ -554,30 +561,30 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
         <SectionTitle>AI 컨셉 제안</SectionTitle>
         {report.directionSummary && (
           <div className="bg-[#A29BFE]/5 border border-[#A29BFE]/20 rounded-lg p-3 mb-3">
-            <div className="text-[11px] leading-relaxed text-zinc-200 whitespace-pre-wrap">{report.directionSummary}</div>
+            <div className="text-[11px] leading-relaxed text-slate-800 whitespace-pre-wrap">{report.directionSummary}</div>
           </div>
         )}
         {Array.isArray(report.keywords) && report.keywords.length > 0 && (
           <div className="mb-3">
-            <div className="text-[10px] font-bold text-zinc-500 mb-1.5">핵심 키워드</div>
+            <div className="text-[10px] font-bold text-slate-500 mb-1.5">핵심 키워드</div>
             <div className="flex flex-wrap gap-1.5">
               {report.keywords.map((k, i) => (
-                <span key={i} className="px-2.5 py-1 bg-white/5 border border-white/10 rounded-md text-[10px] text-zinc-300">#{k}</span>
+                <span key={i} className="px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-md text-[10px] text-slate-600">#{k}</span>
               ))}
             </div>
           </div>
         )}
         {Array.isArray(report.colorPalette) && report.colorPalette.length > 0 && (
           <div className="mb-3">
-            <div className="text-[10px] font-bold text-zinc-500 mb-1.5 flex items-center gap-1.5">
+            <div className="text-[10px] font-bold text-slate-500 mb-1.5 flex items-center gap-1.5">
               <Palette size={11} /> 컬러 팔레트
             </div>
             <div className="flex flex-wrap gap-1.5">
               {report.colorPalette.map((c, i) => (
-                <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-[#0c0c12] border border-zinc-800 rounded-md">
-                  <span className="w-4 h-4 rounded border border-white/10 shrink-0" style={{ background: c.hex }} />
-                  <span className="text-[9px] text-zinc-400 font-mono">{c.hex}</span>
-                  {c.name && <span className="text-[9px] text-zinc-500">· {c.name}</span>}
+                <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-md">
+                  <span className="w-4 h-4 rounded border border-slate-200 shrink-0" style={{ background: c.hex }} />
+                  <span className="text-[9px] text-slate-500 font-mono">{c.hex}</span>
+                  {c.name && <span className="text-[9px] text-slate-500">· {c.name}</span>}
                 </div>
               ))}
             </div>
@@ -585,8 +592,8 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
         )}
         {report.typography && (
           <div>
-            <div className="text-[10px] font-bold text-zinc-500 mb-1.5">타이포 방향</div>
-            <div className="bg-[#0c0c12] border border-zinc-800 rounded-lg p-2.5 space-y-1">
+            <div className="text-[10px] font-bold text-slate-500 mb-1.5">타이포 방향</div>
+            <div className="bg-white border border-slate-200 rounded-lg p-2.5 space-y-1">
               <KV small label="weight" value={report.typography.weight} />
               <KV small label="style" value={report.typography.style} />
               <KV small label="mood" value={report.typography.mood} />
@@ -630,7 +637,7 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
       )}
 
       {!imageFiles.length && (
-        <div className="text-[10px] text-zinc-600 px-1">
+        <div className="text-[10px] text-slate-400 px-1">
           <AlertCircle size={11} className="inline mr-1" />
           레퍼런스 이미지가 없으면 다음 앱에 전달되는 image 가 비어있습니다.
         </div>
@@ -640,14 +647,14 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
 }
 
 function SectionTitle({ children }) {
-  return <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest mb-2">{children}</div>;
+  return <div className="text-[9px] font-bold text-slate-500 uppercase tracking-widest mb-2">{children}</div>;
 }
 function KV({ label, value, small }) {
   if (!value) return null;
   return (
     <div className={`flex items-start gap-2 ${small ? "text-[10px]" : "text-[11px]"}`}>
-      <div className={`${small ? "w-14" : "w-16"} shrink-0 text-zinc-600`}>{label}</div>
-      <div className="flex-1 text-zinc-200 leading-relaxed break-words">{value}</div>
+      <div className={`${small ? "w-14" : "w-16"} shrink-0 text-slate-400`}>{label}</div>
+      <div className="flex-1 text-slate-800 leading-relaxed break-words">{value}</div>
     </div>
   );
 }
@@ -655,7 +662,7 @@ function KV({ label, value, small }) {
 function WorkflowArrow({ dim }) {
   return (
     <div className={`flex justify-center ${dim ? "opacity-30" : ""}`}>
-      <ChevronRight size={14} className="text-zinc-600 rotate-90" />
+      <ChevronRight size={14} className="text-slate-400 rotate-90" />
     </div>
   );
 }
@@ -663,27 +670,27 @@ function WorkflowArrow({ dim }) {
 function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }) {
   const m = FLOW_APPS[appId] || {};
   return (
-    <div className={`bg-[#0c0c12] border rounded-lg p-3 ${disabled && !optional ? "border-zinc-800 opacity-50" : "border-zinc-800"}`}>
+    <div className={`bg-white border rounded-lg p-3 ${disabled && !optional ? "border-slate-200 opacity-50" : "border-slate-200"}`}>
       <div className="flex items-center gap-2.5">
         <div className="w-7 h-7 flex items-center justify-center rounded-md text-[#0a0a0f]" style={{ background: m.color }}>
           {m.icon}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-mono text-zinc-500">STEP {n}</span>
-            <span className="text-[12px] font-bold text-zinc-200">{m.label}</span>
+            <span className="text-[9px] font-mono text-slate-500">STEP {n}</span>
+            <span className="text-[12px] font-bold text-slate-800">{m.label}</span>
             {optional && (
-              <span className="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 uppercase">선택</span>
+              <span className="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-slate-300 text-slate-600 uppercase">선택</span>
             )}
           </div>
-          <div className="text-[10px] text-zinc-500">{m.desc}</div>
+          <div className="text-[10px] text-slate-500">{m.desc}</div>
         </div>
         {optional ? (
           <button onClick={onToggle}
             className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-colors ${
               included
-                ? "bg-[#A29BFE]/15 border-[#A29BFE]/40 text-[#cfc8ff]"
-                : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+                ? "bg-[#A29BFE]/15 border-[#A29BFE]/40 text-[#5b4bcc]"
+                : "border-slate-300 text-slate-500 hover:text-slate-600"
             }`}>
             {included ? <><Check size={10} className="inline mr-0.5" />포함</> : "포함하기"}
           </button>
@@ -693,7 +700,7 @@ function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }
           disabled={disabled}
           className={`px-2.5 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
             disabled
-              ? "bg-white/5 text-zinc-600 cursor-not-allowed"
+              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
               : "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
           }`}
         >
@@ -707,20 +714,20 @@ function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }
 function DirectStep({ appId, goTo, disabled }) {
   const m = FLOW_APPS[appId] || {};
   return (
-    <div className="bg-[#0c0c12] border border-zinc-800 rounded-lg p-3 flex items-center gap-2.5">
+    <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-2.5">
       <div className="w-7 h-7 flex items-center justify-center rounded-md text-[#0a0a0f]" style={{ background: m.color }}>
         {m.icon}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[12px] font-bold text-zinc-200">{m.label}</div>
-        <div className="text-[10px] text-zinc-500">{m.desc}</div>
+        <div className="text-[12px] font-bold text-slate-800">{m.label}</div>
+        <div className="text-[10px] text-slate-500">{m.desc}</div>
       </div>
       <button
         onClick={() => goTo(appId)}
         disabled={disabled}
         className={`px-3 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
           disabled
-            ? "bg-white/5 text-zinc-600 cursor-not-allowed"
+            ? "bg-slate-100 text-slate-400 cursor-not-allowed"
             : "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
         }`}
       >

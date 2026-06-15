@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Upload, Download, Eye, EyeOff, Loader2,
   Sparkles, RotateCcw, Image as ImageIcon, X, ExternalLink,
-  ZoomIn, ZoomOut, Send,
+  ZoomIn, ZoomOut, Send, Pipette,
 } from 'lucide-react';
 import { useGlobal } from '../../context/GlobalContext';
 import { APP_MAP } from '../../config/apps';
@@ -13,10 +13,21 @@ const PREVIEW_COLOR = APP_MAP['nexus-preview']?.color || '#22B8CF';
 
 // 배경 제거 방식.
 //  - api  : Remove.bg AI (피사체 누끼 / 무료키는 ~0.25MP preview 해상도 제한)
-//  - luma : 블랙 배경을 루마키처럼 제거 (로컬 canvas · 원본 해상도 · 무료 · 빛/파티클/네온에 적합)
+//  - luma : 로컬 색상 키잉 — 감지/지정된 배경색 거리 기반 매트 (canvas · 원본 해상도 · 무료)
+//           단색·단순 배경의 타이포·로고·발광 소재에 최적. 형태 보호 + 디프린지 + 트림 포함.
 const METHOD_API = 'api';
 const METHOD_LUMA = 'luma';
 const METHOD_STORAGE = 'mask-forge:method';
+
+// 로컬 색상 키잉 기본값.
+const KEY_DEFAULTS = {
+  tolerance: 40,   // 배경으로 간주할 색 거리 (0~160)
+  feather: 22,     // 경계 페더링 폭 (1~120)
+  holeSize: 100,   // 메울 내부 구멍 최대 크기 (0~100%)
+  holeProtect: true,
+  decontam: true,
+  trim: false,
+};
 
 // 결과 패널 배경 미리보기 프리셋 — 투명 컷아웃에 남은 잔여 엣지/헤일로를
 // 다양한 배경(흰/검/회색 + 형광 녹·마젠타 = 잔여 픽셀 검출용)에서 검수.
@@ -74,11 +85,10 @@ function decodeImage(file) {
   });
 }
 
-// 블랙 배경 루마키 — 디코딩된 이미지 → 알파 적용 → PNG blob. 원본 해상도 유지(API 제약 없음).
-// blackness = max(r,g,b) 채널 최대값. 검정(0)일수록 투명, 밝을수록 불투명.
-// threshold 이하는 완전 투명, threshold+softness 이상은 완전 불투명, 사이는 선형 램프(앤티에일리어싱).
-// 채널 최대값을 쓰는 이유: 채도 높은 컬러 피사체(빨강/파랑 등)는 한 채널이 살아 있어 보존됨.
-function lumaKeyFromImage(img, { threshold = 24, softness = 48 } = {}) {
+const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
+
+// 디코딩된 이미지 → 원본 해상도 ImageData. 픽셀 키잉·배경 감지·스포이드가 공유.
+function imageToData(img) {
   const w = img.naturalWidth || img.width;
   const h = img.naturalHeight || img.height;
   const canvas = document.createElement('canvas');
@@ -86,21 +96,146 @@ function lumaKeyFromImage(img, { threshold = 24, softness = 48 } = {}) {
   canvas.height = h;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0, w, h);
-  const imageData = ctx.getImageData(0, 0, w, h);
-  const px = imageData.data;
-  const hi = threshold + Math.max(1, softness);
-  for (let i = 0; i < px.length; i += 4) {
-    const lum = Math.max(px[i], px[i + 1], px[i + 2]);
-    let a;
-    if (lum <= threshold) a = 0;
-    else if (lum >= hi) a = 255;
-    else a = Math.round(((lum - threshold) / (hi - threshold)) * 255);
-    // 원본 알파와 곱해 이미 투명한 부분 보존.
-    px[i + 3] = Math.round((px[i + 3] / 255) * a);
+  return { data: ctx.getImageData(0, 0, w, h), w, h };
+}
+
+// 테두리 링을 샘플링해 가장 빈번한 색을 배경으로 추정 (글자가 모서리에 닿아도 견고).
+function detectBg(d, w, h) {
+  const buckets = {};
+  const add = (x, y) => {
+    const i = (y * w + x) * 4;
+    const key = (d[i] >> 3) + ',' + (d[i + 1] >> 3) + ',' + (d[i + 2] >> 3);
+    const bk = (buckets[key] = buckets[key] || { n: 0, r: 0, g: 0, b: 0 });
+    bk.n++; bk.r += d[i]; bk.g += d[i + 1]; bk.b += d[i + 2];
+  };
+  const step = Math.max(1, Math.floor(Math.min(w, h) / 120));
+  for (let x = 0; x < w; x += step) { add(x, 0); add(x, h - 1); }
+  for (let y = 0; y < h; y += step) { add(0, y); add(w - 1, y); }
+  let best = null;
+  for (const k in buckets) { if (!best || buckets[k].n > best.n) best = buckets[k]; }
+  if (!best) return [0, 0, 0];
+  return [Math.round(best.r / best.n), Math.round(best.g / best.n), Math.round(best.b / best.n)];
+}
+
+// 테두리에서 투명 픽셀을 따라 flood fill → 진짜 외부 배경 판별. 가장자리에서 도달 불가능한
+// 투명 영역은 글자 안쪽에 뚫린 구멍이므로 형태 유지를 위해 다시 채움. 단, 임계값보다 큰
+// 구멍('O' 가운데 등)은 뚫린 채로 둠.
+function computeFillMask(alphaArr, W, H, holeSizePct) {
+  const N = W * H, OPAQUE = 250;
+  const exterior = new Uint8Array(N);
+  const stack = [];
+  const seed = (idx) => { if (alphaArr[idx] < OPAQUE && !exterior[idx]) { exterior[idx] = 1; stack.push(idx); } };
+  for (let x = 0; x < W; x++) { seed(x); seed((H - 1) * W + x); }
+  for (let y = 0; y < H; y++) { seed(y * W); seed(y * W + W - 1); }
+  while (stack.length) {
+    const idx = stack.pop(), x = idx % W, y = (idx / W) | 0;
+    if (x > 0) seed(idx - 1);
+    if (x < W - 1) seed(idx + 1);
+    if (y > 0) seed(idx - W);
+    if (y < H - 1) seed(idx + W);
   }
-  ctx.putImageData(imageData, 0, 0);
+
+  const fill = new Uint8Array(N), seen = new Uint8Array(N);
+  const maxFill = (holeSizePct / 100) * N * 0.6;
+  for (let i = 0; i < N; i++) {
+    if (alphaArr[i] < OPAQUE && !exterior[i] && !seen[i]) {
+      const comp = [], st = [i]; seen[i] = 1;
+      while (st.length) {
+        const idx = st.pop(); comp.push(idx);
+        const x = idx % W, y = (idx / W) | 0;
+        if (x > 0 && alphaArr[idx - 1] < OPAQUE && !exterior[idx - 1] && !seen[idx - 1]) { seen[idx - 1] = 1; st.push(idx - 1); }
+        if (x < W - 1 && alphaArr[idx + 1] < OPAQUE && !exterior[idx + 1] && !seen[idx + 1]) { seen[idx + 1] = 1; st.push(idx + 1); }
+        if (y > 0 && alphaArr[idx - W] < OPAQUE && !exterior[idx - W] && !seen[idx - W]) { seen[idx - W] = 1; st.push(idx - W); }
+        if (y < H - 1 && alphaArr[idx + W] < OPAQUE && !exterior[idx + W] && !seen[idx + W]) { seen[idx + W] = 1; st.push(idx + W); }
+      }
+      if (comp.length <= maxFill) for (const idx of comp) fill[idx] = 1;
+    }
+  }
+  return fill;
+}
+
+// 불투명 픽셀의 경계 박스 (트림용). pad 여백 포함.
+function alphaTrimBox(o, W, H) {
+  let minX = W, minY = H, maxX = 0, maxY = 0, found = false;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (o[(y * W + x) * 4 + 3] > 8) {
+        found = true;
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (!found) return null;
+  const pad = 2;
+  minX = Math.max(0, minX - pad); minY = Math.max(0, minY - pad);
+  maxX = Math.min(W - 1, maxX + pad); maxY = Math.min(H - 1, maxY + pad);
+  return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
+}
+
+// 로컬 색상 키잉 — ImageData → 배경색 거리 매트 → (형태 보호 + 디프린지 + 트림) → PNG blob.
+// 1) C = (r,g,b) 와 배경색 bg 의 유클리드 거리 dist. tolerance 이하 투명, +feather 이상 불투명, 사이 선형 램프.
+// 2) holeProtect: 글자 안쪽에 뚫린 구멍을 형태로 보고 복원.
+// 3) decontam: 반투명 경계 픽셀에서 배경색 역산 제거(디프린지) — C = af·F+(1-af)·B → F = (C-(1-af)B)/af.
+// 4) trim: 투명 여백 자동 잘라내기.
+function colorKeyToBlob(srcData, { bg, tolerance, feather, holeProtect, holeSize, decontam, trim }) {
+  const W = srcData.width, H = srcData.height, N = W * H;
+  const s = srcData.data;
+  const [br, bgC, bb] = bg;
+  const T = tolerance, S = Math.max(1, feather);
+
+  // pass 1 — 색 거리 → 알파
+  const alphaArr = new Uint8ClampedArray(N);
+  for (let p = 0; p < N; p++) {
+    const i = p * 4;
+    const dr = s[i] - br, dg = s[i + 1] - bgC, db = s[i + 2] - bb;
+    const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+    let a;
+    if (dist <= T) a = 0;
+    else if (dist >= T + S) a = 255;
+    else a = ((dist - T) / S) * 255;
+    alphaArr[p] = a;
+  }
+
+  // pass 2 — 형태 보호 (내부 구멍 복원)
+  const fill = holeProtect ? computeFillMask(alphaArr, W, H, holeSize) : null;
+
+  // pass 3 — 디컨태미네이션과 함께 출력 합성
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const out = ctx.createImageData(W, H), o = out.data;
+  for (let p = 0; p < N; p++) {
+    const i = p * 4;
+    let a = alphaArr[p], r = s[i], g = s[i + 1], b = s[i + 2];
+    // 원본 알파와 곱해 이미 투명한 부분 보존.
+    a = (s[i + 3] / 255) * a;
+    if (fill && fill[p]) {
+      a = s[i + 3]; // 내부 구멍 → 글자 형태 복원 (원본 알파 유지)
+    } else if (decontam && a > 0 && a < 255) {
+      const af = a / 255, inv = 1 - af;
+      r = clamp255((r - inv * br) / af);
+      g = clamp255((g - inv * bgC) / af);
+      b = clamp255((b - inv * bb) / af);
+    }
+    o[i] = r; o[i + 1] = g; o[i + 2] = b; o[i + 3] = a;
+  }
+  ctx.putImageData(out, 0, 0);
+
+  // pass 4 — 트림
+  let exportCanvas = canvas;
+  if (trim) {
+    const box = alphaTrimBox(o, W, H);
+    if (box) {
+      exportCanvas = document.createElement('canvas');
+      exportCanvas.width = box.w; exportCanvas.height = box.h;
+      exportCanvas.getContext('2d').drawImage(canvas, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+    }
+  }
+
+  const ow = exportCanvas.width, oh = exportCanvas.height;
   return new Promise((resolve, reject) => {
-    canvas.toBlob((b) => (b ? resolve({ blob: b, width: w, height: h }) : reject(new Error('PNG 변환 실패'))), 'image/png');
+    exportCanvas.toBlob((b) => (b ? resolve({ blob: b, width: ow, height: oh }) : reject(new Error('PNG 변환 실패'))), 'image/png');
   });
 }
 
@@ -122,10 +257,17 @@ export default function MaskForgeApp() {
   const [method, setMethod] = useState(() => {
     try { return localStorage.getItem(METHOD_STORAGE) || METHOD_API; } catch { return METHOD_API; }
   });
-  const [lumaThreshold, setLumaThreshold] = useState(24);
-  const [lumaSoftness, setLumaSoftness] = useState(48);
+  const [bgColor, setBgColor] = useState(null); // 감지/지정된 배경색 [r,g,b]
+  const [tolerance, setTolerance] = useState(KEY_DEFAULTS.tolerance);
+  const [feather, setFeather] = useState(KEY_DEFAULTS.feather);
+  const [holeProtect, setHoleProtect] = useState(KEY_DEFAULTS.holeProtect);
+  const [holeSize, setHoleSize] = useState(KEY_DEFAULTS.holeSize);
+  const [decontam, setDecontam] = useState(KEY_DEFAULTS.decontam);
+  const [trim, setTrim] = useState(KEY_DEFAULTS.trim);
+  const [picking, setPicking] = useState(false); // 스포이드 모드
   const [lumaBusy, setLumaBusy] = useState(false);
   const lumaImgRef = useRef(null); // 디코딩된 원본 캐시 — 실시간 재처리용
+  const srcDataRef = useRef(null);  // 원본 ImageData 캐시 — 키잉·감지·스포이드 공유
 
   // 결과 패널 배경 미리보기 (view-only — 다운로드 PNG 는 항상 투명 유지).
   const [bgPreset, setBgPreset] = useState('checker');
@@ -240,6 +382,9 @@ export default function MaskForgeApp() {
     }
     setUploadedFile(file);
     lumaImgRef.current = null; // 새 이미지 — 캐시 무효화
+    srcDataRef.current = null;
+    setBgColor(null); // 새 이미지 — 배경색 재감지
+    setPicking(false);
     if (previewUrl?.startsWith('blob:')) URL.revokeObjectURL(previewUrl);
     if (resultUrl?.startsWith('blob:')) URL.revokeObjectURL(resultUrl);
     setPreviewUrl(URL.createObjectURL(file));
@@ -262,32 +407,50 @@ export default function MaskForgeApp() {
     setZoom(1); setOffset({ x: 0, y: 0 });
   }, [applyResultQuiet]);
 
-  // 디코딩된 원본을 캐시에서 반환 (없으면 디코딩 후 캐시).
-  const ensureLumaImg = useCallback(async () => {
-    if (lumaImgRef.current) return lumaImgRef.current;
+  // 디코딩된 원본 ImageData 를 캐시에서 반환 (없으면 디코딩 후 캐시).
+  const ensureSrcData = useCallback(async () => {
+    if (srcDataRef.current) return srcDataRef.current;
     if (!uploadedFile) return null;
-    const img = await decodeImage(uploadedFile);
+    const img = lumaImgRef.current || await decodeImage(uploadedFile);
     lumaImgRef.current = img;
-    return img;
+    const { data } = imageToData(img);
+    srcDataRef.current = data;
+    return data;
   }, [uploadedFile]);
 
-  // 루마키 실시간 미리보기 — 슬라이더/이미지/방식 변경 시 디바운스 후 재처리.
+  // 배경색 자동 감지 — 로컬 키잉 모드 진입 + 이미지 준비 시 1회 (스포이드/수동 지정 전).
+  useEffect(() => {
+    if (method !== METHOD_LUMA || !uploadedFile || bgColor) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await ensureSrcData();
+        if (!data || cancelled) return;
+        setBgColor(detectBg(data.data, data.width, data.height));
+      } catch (e) {
+        if (!cancelled) console.error('[MaskForge] bg detect failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [method, uploadedFile, bgColor, ensureSrcData]);
+
+  // 로컬 키잉 실시간 미리보기 — 슬라이더/토글/배경색/이미지/방식 변경 시 디바운스 후 재처리.
   // 오버레이/진행바 없이 조용히 결과만 교체 (resultUrl 은 deps 에서 제외 → 무한 루프 방지).
   useEffect(() => {
-    if (method !== METHOD_LUMA || !uploadedFile) return undefined;
+    if (method !== METHOD_LUMA || !uploadedFile || !bgColor) return undefined;
     let cancelled = false;
     const t = setTimeout(async () => {
       setLumaBusy(true);
       try {
-        const img = await ensureLumaImg();
-        if (!img || cancelled) return;
-        const { blob, width, height } = await lumaKeyFromImage(img, { threshold: lumaThreshold, softness: lumaSoftness });
+        const data = await ensureSrcData();
+        if (!data || cancelled) return;
+        const { blob, width, height } = await colorKeyToBlob(data, { bg: bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim });
         if (cancelled) return;
         applyResultQuiet(blob);
-        setStatus({ msg: `블랙 배경 제거 · 실시간 (${width}×${height})`, state: 'done' });
+        setStatus({ msg: `로컬 배경 제거 · 실시간 (${width}×${height})`, state: 'done' });
       } catch (e) {
         if (!cancelled) {
-          console.error('[MaskForge] luma live failed', e);
+          console.error('[MaskForge] color key live failed', e);
           setStatus({ msg: `오류: ${e.message || e}`, state: 'error' });
         }
       } finally {
@@ -295,25 +458,45 @@ export default function MaskForgeApp() {
       }
     }, 120);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [method, uploadedFile, lumaThreshold, lumaSoftness, ensureLumaImg, applyResultQuiet]);
+  }, [method, uploadedFile, bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim, ensureSrcData, applyResultQuiet]);
+
+  // 스포이드 — 원본 미리보기 클릭 위치의 픽셀색을 배경색으로 지정.
+  const handleEyedrop = useCallback(async (e) => {
+    if (!picking || method !== METHOD_LUMA) return;
+    const data = await ensureSrcData();
+    if (!data) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const W = data.width, H = data.height;
+    // object-contain 보정 — 이미지가 컨테이너 안에 레터박스로 들어가 있음.
+    const scale = Math.min(rect.width / W, rect.height / H);
+    const dispW = W * scale, dispH = H * scale;
+    const padX = (rect.width - dispW) / 2, padY = (rect.height - dispH) / 2;
+    const x = Math.floor((e.clientX - rect.left - padX) / scale);
+    const y = Math.floor((e.clientY - rect.top - padY) / scale);
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    const i = (y * W + x) * 4;
+    setBgColor([data.data[i], data.data[i + 1], data.data[i + 2]]);
+    setPicking(false);
+  }, [picking, method, ensureSrcData]);
 
   const handleProcess = useCallback(async () => {
     if (!uploadedFile) { setStatusMsg('이미지를 먼저 업로드하세요', 'error'); return; }
 
-    // 블랙 배경 루마키 — 로컬 처리, API 키 불필요, 원본 해상도 유지.
+    // 로컬 색상 키잉 — 로컬 처리, API 키 불필요, 원본 해상도 유지.
     if (method === METHOD_LUMA) {
       setProcessing(true);
-      setStatusMsg('블랙 배경 제거 중... (로컬 처리)', 'active');
+      setStatusMsg('배경 제거 중... (로컬 처리)', 'active');
       setProgress(40);
       try {
-        const img = await ensureLumaImg();
-        if (!img) throw new Error('이미지를 불러올 수 없습니다.');
-        const { blob, width, height } = await lumaKeyFromImage(img, { threshold: lumaThreshold, softness: lumaSoftness });
+        const data = await ensureSrcData();
+        if (!data) throw new Error('이미지를 불러올 수 없습니다.');
+        const bg = bgColor || detectBg(data.data, data.width, data.height);
+        const { blob, width, height } = await colorKeyToBlob(data, { bg, tolerance, feather, holeProtect, holeSize, decontam, trim });
         applyResult(blob);
         setProgress(100);
-        setStatusMsg(`완료! 블랙 배경 제거 (${width}×${height} 원본 해상도)`, 'done');
+        setStatusMsg(`완료! 로컬 배경 제거 (${width}×${height})`, 'done');
       } catch (e) {
-        console.error('[MaskForge] luma failed', e);
+        console.error('[MaskForge] color key failed', e);
         setStatusMsg(`오류: ${e.message || e}`, 'error');
         setProgress(0);
       } finally {
@@ -344,7 +527,7 @@ export default function MaskForgeApp() {
     } finally {
       setProcessing(false);
     }
-  }, [apiKey, uploadedFile, method, lumaThreshold, lumaSoftness, applyResult, ensureLumaImg]);
+  }, [apiKey, uploadedFile, method, bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim, applyResult, ensureSrcData]);
 
   const handleDownload = useCallback(() => {
     if (!resultUrl) return;
@@ -380,6 +563,9 @@ export default function MaskForgeApp() {
     if (resultUrl?.startsWith('blob:')) URL.revokeObjectURL(resultUrl);
     setUploadedFile(null);
     lumaImgRef.current = null;
+    srcDataRef.current = null;
+    setBgColor(null);
+    setPicking(false);
     setPreviewUrl(null);
     setResultUrl(null);
     setZoom(1); setOffset({ x: 0, y: 0 });
@@ -437,7 +623,7 @@ export default function MaskForgeApp() {
           <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-1.5 flex gap-1.5">
             {[
               { key: METHOD_API, title: 'Remove.bg AI', desc: '피사체 누끼 · 무료키 저해상도(~0.25MP)' },
-              { key: METHOD_LUMA, title: '블랙 배경 (루마키)', desc: '원본 해상도 · 무료 · 빛 / 네온 / 파티클' },
+              { key: METHOD_LUMA, title: '로컬 색상 키', desc: '원본 해상도 · 무료 · 타이포 / 로고 / 단색 배경' },
             ].map((m) => {
               const active = method === m.key;
               return (
@@ -491,11 +677,11 @@ export default function MaskForgeApp() {
           </div>
           )}
 
-          {/* 루마키 설정 — 블랙 배경 방식에서만 */}
+          {/* 로컬 색상 키 설정 — 로컬 방식에서만 */}
           {method === METHOD_LUMA && (
-          <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+          <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">루마키 설정</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">색상 키 설정</span>
               <span className="text-[9px] font-bold tracking-wider px-1.5 py-0.5 rounded-full border" style={{ color: ACCENT, borderColor: `${ACCENT}55` }}>실시간</span>
               {lumaBusy && (
                 <span className="inline-flex items-center gap-1 text-[10px] font-bold text-zinc-500">
@@ -503,26 +689,90 @@ export default function MaskForgeApp() {
                 </span>
               )}
             </div>
+
+            {/* 배경색 — 자동 감지 + 스포이드 */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-[11px] font-bold text-zinc-400 w-20 shrink-0">배경색</span>
+              <span
+                className="w-8 h-8 rounded-md border border-zinc-700 shrink-0"
+                style={{ background: bgColor ? `rgb(${bgColor[0]},${bgColor[1]},${bgColor[2]})` : '#000' }}
+                title={bgColor ? `rgb(${bgColor.join(', ')})` : '감지 대기'}
+              />
+              <span className="text-[11px] font-mono text-zinc-400 tabular-nums">
+                {bgColor ? `#${bgColor.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()}` : '자동 감지 대기'}
+              </span>
+              <button
+                onClick={() => setPicking((v) => !v)}
+                disabled={!uploadedFile}
+                className={`ml-auto text-[10px] font-bold tracking-wider px-3 py-2 rounded-lg border inline-flex items-center gap-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${picking ? 'text-black' : 'text-zinc-300 border-zinc-700 hover:border-zinc-500'}`}
+                style={picking ? { background: ACCENT, borderColor: ACCENT } : undefined}
+              >
+                <Pipette size={12} /> {picking ? '원본에서 배경 클릭…' : '스포이드'}
+              </button>
+              {bgColor && (
+                <button
+                  onClick={async () => { const d = await ensureSrcData(); if (d) setBgColor(detectBg(d.data, d.width, d.height)); }}
+                  className="text-[10px] font-bold tracking-wider px-3 py-2 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+                  title="테두리에서 배경색 다시 감지"
+                >
+                  자동 재감지
+                </button>
+              )}
+            </div>
+
             <label className="flex items-center gap-3">
-              <span className="text-[11px] font-bold text-zinc-400 w-20 shrink-0">임계값</span>
+              <span className="text-[11px] font-bold text-zinc-400 w-20 shrink-0">허용 범위</span>
               <input
-                type="range" min={0} max={200} value={lumaThreshold}
-                onChange={(e) => setLumaThreshold(Number(e.target.value))}
+                type="range" min={0} max={160} value={tolerance}
+                onChange={(e) => setTolerance(Number(e.target.value))}
                 className="flex-1 accent-[#FF3366]"
               />
-              <span className="text-[11px] font-mono text-zinc-300 w-9 text-right tabular-nums">{lumaThreshold}</span>
+              <span className="text-[11px] font-mono text-zinc-300 w-9 text-right tabular-nums">{tolerance}</span>
             </label>
             <label className="flex items-center gap-3">
-              <span className="text-[11px] font-bold text-zinc-400 w-20 shrink-0">부드러움</span>
+              <span className="text-[11px] font-bold text-zinc-400 w-20 shrink-0">경계 부드럽기</span>
               <input
-                type="range" min={1} max={150} value={lumaSoftness}
-                onChange={(e) => setLumaSoftness(Number(e.target.value))}
+                type="range" min={1} max={120} value={feather}
+                onChange={(e) => setFeather(Number(e.target.value))}
                 className="flex-1 accent-[#FF3366]"
               />
-              <span className="text-[11px] font-mono text-zinc-300 w-9 text-right tabular-nums">{lumaSoftness}</span>
+              <span className="text-[11px] font-mono text-zinc-300 w-9 text-right tabular-nums">{feather}</span>
             </label>
+
+            {/* 토글 행 */}
+            <div className="flex flex-wrap gap-2">
+              {[
+                { on: holeProtect, set: setHoleProtect, label: '형태 보호', title: '글자 안쪽 구멍 침범 방지' },
+                { on: decontam, set: setDecontam, label: '디프린지', title: '경계의 배경색 역산 제거(후광 제거)' },
+                { on: trim, set: setTrim, label: '여백 트림', title: '투명 여백 자동 잘라내기' },
+              ].map((t) => (
+                <button
+                  key={t.label}
+                  onClick={() => t.set((v) => !v)}
+                  title={t.title}
+                  className={`text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-full border transition-colors inline-flex items-center gap-1.5 ${t.on ? 'text-black' : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+                  style={t.on ? { background: ACCENT, borderColor: ACCENT } : undefined}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${t.on ? 'bg-black' : 'bg-zinc-600'}`} /> {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* 구멍 크기 — 형태 보호 켜졌을 때만 */}
+            {holeProtect && (
+              <label className="flex items-center gap-3">
+                <span className="text-[11px] font-bold text-zinc-400 w-20 shrink-0">메울 구멍</span>
+                <input
+                  type="range" min={0} max={100} value={holeSize}
+                  onChange={(e) => setHoleSize(Number(e.target.value))}
+                  className="flex-1 accent-[#FF3366]"
+                />
+                <span className="text-[11px] font-mono text-zinc-300 w-9 text-right tabular-nums">{holeSize}</span>
+              </label>
+            )}
+
             <p className="text-[11px] text-zinc-500 leading-relaxed">
-              검정 배경 위의 빛·불꽃·파티클·네온 소재에 적합. <b className="text-zinc-300">임계값</b> 이하 밝기는 투명, <b className="text-zinc-300">부드러움</b>은 경계 페더링. 슬라이더를 움직이면 <b className="text-zinc-300">결과가 실시간으로 갱신</b>됩니다.
+              단색·단순 배경의 타이포·로고에 최적. <b className="text-zinc-300">배경색</b>은 테두리에서 자동 감지되며 잘못 잡히면 <b className="text-zinc-300">스포이드</b>로 직접 지정하세요. <b className="text-zinc-300">허용 범위</b>를 키우면 배경이 더 깔끔히 빠지고, <b className="text-zinc-300">디프린지</b>가 경계 후광을 제거합니다. 슬라이더/토글은 <b className="text-zinc-300">실시간 갱신</b>됩니다.
             </p>
           </div>
           )}
@@ -566,7 +816,17 @@ export default function MaskForgeApp() {
               </div>
               {previewUrl ? (
                 <>
-                  <img src={previewUrl} alt="원본" className="absolute inset-0 w-full h-full object-contain" />
+                  <img
+                    src={previewUrl}
+                    alt="원본"
+                    onClick={picking ? (e) => { e.stopPropagation(); handleEyedrop(e); } : undefined}
+                    className={`absolute inset-0 w-full h-full object-contain ${picking ? 'cursor-crosshair' : ''}`}
+                  />
+                  {picking && (
+                    <div className="absolute inset-x-0 bottom-0 z-10 bg-black/80 text-center py-1.5 text-[10px] font-bold tracking-wider" style={{ color: ACCENT }}>
+                      배경으로 쓸 색을 클릭하세요
+                    </div>
+                  )}
                   <button
                     onClick={(e) => { e.stopPropagation(); handleReset(); }}
                     className="absolute top-3 right-3 z-10 p-1.5 rounded-md bg-black/70 hover:bg-rose-500/80 text-white text-xs transition-colors"
@@ -686,7 +946,7 @@ export default function MaskForgeApp() {
                 <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-4 z-20">
                   <Loader2 className="w-8 h-8 animate-spin" style={{ color: ACCENT }} />
                   <span className="text-[11px] font-bold tracking-wider" style={{ color: ACCENT }}>
-                    {method === METHOD_LUMA ? '블랙 배경 제거 중...' : 'Remove.bg AI 처리 중...'}
+                    {method === METHOD_LUMA ? '로컬 배경 제거 중...' : 'Remove.bg AI 처리 중...'}
                   </span>
                 </div>
               )}
@@ -703,7 +963,7 @@ export default function MaskForgeApp() {
             >
               {processing ? (
                 <span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> 처리 중…</span>
-              ) : method === METHOD_LUMA ? '블랙 배경 제거' : '배경 제거 실행'}
+              ) : method === METHOD_LUMA ? '로컬 배경 제거' : '배경 제거 실행'}
             </button>
             <button
               onClick={handleReset}
@@ -753,12 +1013,13 @@ export default function MaskForgeApp() {
           ) : (
           <div className="bg-[#18181B] border border-zinc-800 rounded-xl px-5 py-4 text-[12px] text-zinc-400 leading-[1.9] mb-4">
             <div className="text-zinc-100 font-bold mb-1 flex items-center gap-2">
-              <ImageIcon size={14} style={{ color: ACCENT }} /> 블랙 배경 루마키 안내
+              <ImageIcon size={14} style={{ color: ACCENT }} /> 로컬 색상 키 안내
             </div>
             • 브라우저에서 직접 처리 — <b className="text-zinc-100">API 키 · 크레딧 불필요, 원본 해상도 그대로</b> 유지<br />
-            • 검정(어두운) 픽셀을 투명화 — 빛·불꽃·연기·파티클·네온처럼 <b className="text-zinc-100">검정 배경 위의 발광 소재</b>에 최적<br />
-            • 임계값/부드러움을 조절해 잔여 엣지를 제거하고, 결과 패널의 배경색·확대로 검수<br />
-            • 일반 사진 누끼(인물·제품)는 Remove.bg AI 방식이 더 정확합니다
+            • 배경색과의 <b className="text-zinc-100">색 거리</b>로 매트 생성 — 단색·단순 배경의 <b className="text-zinc-100">타이포·로고·발광 소재</b>에 최적<br />
+            • 배경색은 테두리에서 <b className="text-zinc-100">자동 감지</b>, 틀리면 <b className="text-zinc-100">스포이드</b>로 원본을 클릭해 지정<br />
+            • <b className="text-zinc-100">형태 보호</b>는 글자 안쪽 구멍 침범을 막고, <b className="text-zinc-100">디프린지</b>는 경계 후광을 역산 제거<br />
+            • 머리카락·반투명이 많은 일반 사진 누끼(인물·제품)는 Remove.bg AI 방식이 더 정확합니다
           </div>
           )}
         </div>

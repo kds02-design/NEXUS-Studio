@@ -15,8 +15,8 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { staticOptions } from '../constants/categories';
-import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS } from '../constants/variations';
-import { IMAGEN_MODELS } from '../../../lib/imagenRender';
+import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS, ATMOSPHERE_TEMPERATURE, ATMOSPHERE_AGE, DESIGN_VARIATIONS, VARIATION_STRENGTH } from '../constants/variations';
+import { IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from '../../../lib/imagenRender';
 import ForgeHeader from './ForgeHeader';
 
 // 1단 종류 카드용 아이콘 — 추상적인 SVG 글리프 대신 lucide 아이콘으로 한눈에 구분.
@@ -61,6 +61,87 @@ function Chip({ active, auto, disabled, onClick, children, title }) {
   );
 }
 
+// 분위기 미세조정 다이얼의 한 행(축) — 5단계 칩. 모듈 레벨 컴포넌트(렌더 중 생성 금지).
+function AtmosphereRow({ title, options, value, onChange }) {
+  return (
+    <div>
+      <div className="text-[11px] font-bold text-zinc-500 mb-2">{title}</div>
+      <div className="grid grid-cols-5 gap-1.5">
+        {options.map(opt => {
+          const active = opt.id === value;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => onChange(opt.id)}
+              title={opt.desc}
+              className={`px-1 py-2 rounded-lg border text-[10px] font-bold leading-tight transition-all text-center break-keep-all ${active ? 'bg-zinc-900 text-white shadow' : 'bg-[#121212] border-zinc-800 text-zinc-400 hover:border-zinc-700'}`}
+              style={active ? { borderColor: opt.accent, boxShadow: `0 0 0 1px ${opt.accent}40` } : {}}
+            >
+              {opt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// 출력 해상도 토글 — 변형/아틀라스 공용. Pro 모델만 2K/4K 유효(Flash 는 1K 고정).
+function ResolutionToggle({ modelId, value, onChange, disabled }) {
+  const isPro = isProImageModel(modelId);
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-2">
+        <h3 className="text-[12px] font-bold text-zinc-300">출력 해상도</h3>
+        {!isPro && <span className="text-[10px] text-zinc-500">2K·4K 는 Pro 모델만</span>}
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {RENDER_SIZES.map(sz => {
+          const sizeDisabled = disabled || (!isPro && sz.id !== '1K');
+          const active = isPro ? value === sz.id : sz.id === '1K';
+          return (
+            <button
+              key={sz.id}
+              onClick={() => onChange(sz.id)}
+              disabled={sizeDisabled}
+              title={sz.desc}
+              className={`px-2.5 py-2 rounded-lg border transition-colors text-left ${active ? 'bg-zinc-900 shadow' : 'bg-[#121212] border-zinc-800 hover:border-zinc-700'} disabled:opacity-40 disabled:cursor-not-allowed`}
+              style={active ? { borderColor: ACCENT, boxShadow: `0 0 0 1px ${ACCENT}40` } : {}}
+            >
+              <div className={`text-[11px] font-bold ${active ? 'text-white' : 'text-zinc-300'}`}>{sz.label}</div>
+              <div className="text-[9px] text-zinc-500 truncate">{sz.desc}</div>
+            </button>
+          );
+        })}
+      </div>
+      {isPro && value === '4K' && (
+        <p className="text-[10px] text-amber-400/70 mt-2 leading-relaxed break-keep-all">
+          4K 는 생성 시간·단가가 올라갑니다. 작은 서브 에셋이 많은 시트의 디테일·텍스트 보존에 특히 유리.
+        </p>
+      )}
+    </section>
+  );
+}
+
+// 분위기 미세조정 다이얼 — 변형/아틀라스 두 모드 공용. 무드·정제와 직교하는 3번째 축.
+// 광원 온도(5단) + 마모/세월감(5단). 양 끝 사이 'neutral' 이 변화 없음(원본).
+function AtmosphereDials({ temperature, age, onTemperature, onAge }) {
+  return (
+    <section>
+      <h3 className="text-[13px] font-bold text-zinc-200 mb-1">
+        분위기 미세조정 <span className="text-[10px] font-normal text-zinc-500">(구조 유지 · 색온도/표면만)</span>
+      </h3>
+      <p className="text-[10px] text-zinc-600 mb-3 leading-relaxed break-keep-all">
+        무드·정제와 별개로, 같은 골격을 유지한 채 <span className="text-zinc-400">광원 색온도</span>와 <span className="text-zinc-400">표면 세월감</span>만 미세하게 트는 축입니다. 가운데 <span className="text-zinc-400">원본</span>은 변화 없음.
+      </p>
+      <div className="space-y-3">
+        <AtmosphereRow title="광원 온도" options={ATMOSPHERE_TEMPERATURE} value={temperature} onChange={onTemperature} />
+        <AtmosphereRow title="마모 / 세월감" options={ATMOSPHERE_AGE} value={age} onChange={onAge} />
+      </div>
+    </section>
+  );
+}
+
 export default function ForgeSidebar({ forge }) {
   const {
     currentView, setCurrentView,
@@ -91,11 +172,11 @@ export default function ForgeSidebar({ forge }) {
     handleSourceUpload, handleSourceDragOver, handleSourceDragLeave, handleSourceDrop, handleClearSource,
     backgroundRef, isDraggingBackground,
     handleBackgroundUpload, handleBackgroundDragOver, handleBackgroundDragLeave, handleBackgroundDrop, handleClearBackground,
-    selectedMoodId, selectedStyleIds,
-    handleSelectMood, handleToggleStyle,
+    selectedVariationIds, handleToggleVariation,
+    variationStrength, setVariationStrength,
     isGeneratingVariations, handleGenerateVariations,
-    refinementLevel, setRefinementLevel,
     variationRenderModel, setVariationRenderModel,
+    variationImageSize, setVariationImageSize,
     // 아틀라스 모드
     atlasSource, isDraggingAtlasSource,
     handleAtlasSourceUpload, handleAtlasSourceDragOver, handleAtlasSourceDragLeave, handleAtlasSourceDrop, handleClearAtlasSource,
@@ -105,7 +186,9 @@ export default function ForgeSidebar({ forge }) {
     handleSelectAtlasMood, handleToggleAtlasStyle,
     isGeneratingAtlas, handleGenerateAtlas,
     atlasRefinementLevel, setAtlasRefinementLevel,
+    atlasTemperature, setAtlasTemperature, atlasAge, setAtlasAge,
     atlasRenderModel, setAtlasRenderModel,
+    atlasImageSize, setAtlasImageSize,
     atlasSpec, setAtlasSpec, atlasSpecTitle, setAtlasSpecTitle,
   } = forge;
 
@@ -524,11 +607,11 @@ export default function ForgeSidebar({ forge }) {
           {/* 변형 모드 안내 — 리얼 블랙 배경 + 알파 추출 가능 */}
           <div className="rounded-xl border border-[#76cee0]/30 bg-[#76cee0]/5 px-4 py-3">
             <div className="text-[11px] font-bold text-[#76cee0] flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> 변형(베리에이션) 모드
+              <Sparkles className="w-3.5 h-3.5" /> 세부 에셋 변형 생성
             </div>
             <div className="text-[10px] text-zinc-400 mt-1 leading-relaxed break-keep-all">
-              원본의 실루엣·외곽선 두께·장식 크기·비율은 유지하고 분위기·컬러·재질만 4가지로 바꿉니다.
-              배경은 <span className="text-zinc-200">리얼 블랙(#000000)</span> 고정 — 우측 결과에서 투명 PNG 로 바로 다운로드 가능합니다.
+              버튼·프레임·뱃지·오너먼트 같은 <span className="text-zinc-200">세부 에셋 1개</span>를 올리면, <span className="text-zinc-200">테두리 두께·장식 크기·비율은 원본과 비슷하게</span> 두고 모티프·재질·디테일만 재해석한 <span className="text-zinc-200">여러 디자인 대안</span>을 만듭니다.
+              배경은 <span className="text-zinc-200">리얼 블랙(#000000)</span> 고정 — 결과에서 투명 PNG 로 바로 추출 가능.
             </div>
           </div>
 
@@ -574,23 +657,32 @@ export default function ForgeSidebar({ forge }) {
             </div>
           </section>
 
-          {/* 2단 — 분위기 카테고리 (1개 선택) */}
+          {/* 2단 — 변형 방향 (다중 선택, 방향 수 = 대안 수) */}
           <section>
-            <h3 className="text-[13px] font-bold text-zinc-200 mb-3">2. 분위기 카테고리</h3>
+            <div className="flex items-baseline justify-between mb-1">
+              <h3 className="text-[13px] font-bold text-zinc-200">2. 변형 방향</h3>
+              <span className={`text-[10px] font-bold ${selectedVariationIds.length > 0 ? 'text-[#76cee0]' : 'text-zinc-500'}`}>
+                {selectedVariationIds.length}개 = {selectedVariationIds.length}장
+              </span>
+            </div>
+            <p className="text-[10px] text-zinc-600 mb-3 leading-relaxed break-keep-all">
+              탐색할 방향을 고르세요 — <span className="text-zinc-400">선택한 방향마다 한 장씩</span> 디자인 대안이 나옵니다. 컴포넌트 종류·기능은 유지됩니다.
+            </p>
             <div className="grid grid-cols-2 gap-1.5">
-              {VARIATION_MOODS.map(m => {
-                const active = m.id === selectedMoodId;
+              {DESIGN_VARIATIONS.map(d => {
+                const active = selectedVariationIds.includes(d.id);
                 return (
                   <button
-                    key={m.id}
-                    onClick={() => handleSelectMood(m.id)}
-                    className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-all text-left ${active ? 'bg-zinc-900 shadow-lg' : 'bg-[#121212] border-zinc-800 hover:border-zinc-700 hover:bg-[#1a1a1a]'}`}
-                    style={active ? { borderColor: m.accent, boxShadow: `0 0 0 1px ${m.accent}40` } : {}}
+                    key={d.id}
+                    onClick={() => handleToggleVariation(d.id)}
+                    title={d.desc}
+                    className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-all text-left ${active ? 'bg-zinc-900 shadow' : 'bg-[#121212] border-zinc-800 hover:border-zinc-700'}`}
+                    style={active ? { borderColor: d.color, boxShadow: `0 0 0 1px ${d.color}40` } : {}}
                   >
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: m.accent }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: d.color }} />
                     <div className="min-w-0 flex-1">
-                      <div className={`text-[11px] font-bold truncate ${active ? 'text-white' : 'text-zinc-300'}`}>{m.label}</div>
-                      <div className="text-[9px] text-zinc-500 truncate">{m.desc}</div>
+                      <div className={`text-[11px] font-bold truncate ${active ? 'text-white' : 'text-zinc-300'}`}>{d.label}</div>
+                      <div className="text-[9px] text-zinc-500 truncate">{d.desc}</div>
                     </div>
                   </button>
                 );
@@ -598,48 +690,18 @@ export default function ForgeSidebar({ forge }) {
             </div>
           </section>
 
-          {/* 3단 — 구체적 스타일 (1개 이상 선택, 상한 없음) */}
-          <section>
-            <div className="flex items-baseline justify-between mb-3">
-              <h3 className="text-[13px] font-bold text-zinc-200">3. 구체적 스타일</h3>
-              <span className={`text-[10px] font-bold ${selectedStyleIds.length > 0 ? 'text-[#76cee0]' : 'text-zinc-500'}`}>
-                {selectedStyleIds.length}개 선택됨
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(VARIATION_STYLES[selectedMoodId] || []).map(s => {
-                const active = selectedStyleIds.includes(s.id);
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => handleToggleStyle(s.id)}
-                    title={s.promptHint}
-                    className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-all text-left ${active ? 'bg-zinc-900 shadow' : 'bg-[#121212] border-zinc-800 hover:border-zinc-700'}`}
-                    style={active ? { borderColor: s.color, boxShadow: `0 0 0 1px ${s.color}40` } : {}}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: s.color }} />
-                    <div className={`text-[11px] font-bold truncate ${active ? 'text-white' : 'text-zinc-300'}`}>{s.label}</div>
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed break-keep-all">
-              원하는 만큼 선택하세요 — 선택한 개수만큼 동시 렌더링됩니다. 분위기를 바꾸면 앞 4개로 초기화.
-            </p>
-          </section>
-
-          {/* 3.5단 — 정제 강도 (장식 밀도 조절) */}
+          {/* 3단 — 변형 강도 (원본에서 멀어지는 정도) */}
           <section>
             <h3 className="text-[13px] font-bold text-zinc-200 mb-3">
-              정제 강도 <span className="text-[10px] font-normal text-zinc-500">(장식 밀도)</span>
+              3. 변형 강도 <span className="text-[10px] font-normal text-zinc-500">(원본에서 멀어지는 정도)</span>
             </h3>
             <div className="grid grid-cols-3 gap-1.5">
-              {REFINEMENT_LEVELS.map(lvl => {
-                const active = lvl.id === refinementLevel;
+              {VARIATION_STRENGTH.map(lvl => {
+                const active = lvl.id === variationStrength;
                 return (
                   <button
                     key={lvl.id}
-                    onClick={() => setRefinementLevel(lvl.id)}
+                    onClick={() => setVariationStrength(lvl.id)}
                     title={lvl.desc}
                     className={`flex flex-col items-start gap-0.5 px-2.5 py-2 rounded-lg border transition-all text-left ${active ? 'bg-zinc-900 shadow' : 'bg-[#121212] border-zinc-800 hover:border-zinc-700'}`}
                     style={active ? { borderColor: lvl.accent, boxShadow: `0 0 0 1px ${lvl.accent}40` } : {}}
@@ -651,7 +713,7 @@ export default function ForgeSidebar({ forge }) {
               })}
             </div>
             <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed break-keep-all">
-              원본이 이미 과한 경우 <span className="text-zinc-300">정제</span>·<span className="text-zinc-300">미니멀</span> 로 장식을 적극적으로 깎습니다. 실루엣·외곽선은 유지.
+              <span className="text-zinc-300">테두리 두께·장식 크기·비율</span>은 원본과 비슷하게 유지됩니다. 강도는 <span className="text-zinc-300">모티프·디테일·재질</span>을 얼마나 대담하게 재해석할지만 조절합니다.
             </p>
           </section>
 
@@ -727,22 +789,30 @@ export default function ForgeSidebar({ forge }) {
             </div>
           </section>
 
+          {/* 출력 해상도 — Pro 선택 시 2K/4K */}
+          <ResolutionToggle
+            modelId={variationRenderModel}
+            value={variationImageSize}
+            onChange={setVariationImageSize}
+            disabled={isGeneratingVariations}
+          />
+
           {/* 5단 — 생성 CTA */}
           <section>
             <button
               onClick={handleGenerateVariations}
-              disabled={!sourceAsset || selectedStyleIds.length === 0 || isGeneratingVariations}
+              disabled={!sourceAsset || selectedVariationIds.length === 0 || isGeneratingVariations}
               className="w-full px-4 py-4 rounded-xl bg-[#76cee0] text-zinc-900 hover:bg-[#92dceb] font-bold text-[13px] flex items-center justify-center gap-2 shadow-lg transition-colors disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed"
             >
               {isGeneratingVariations ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
               {isGeneratingVariations
-                ? `${selectedStyleIds.length}개 동시 생성 중...`
-                : selectedStyleIds.length === 0
-                  ? '스타일을 1개 이상 선택'
-                  : `변형 ${selectedStyleIds.length}개 생성`}
+                ? `${selectedVariationIds.length}개 대안 생성 중...`
+                : selectedVariationIds.length === 0
+                  ? '변형 방향을 선택하세요'
+                  : `디자인 대안 ${selectedVariationIds.length}장 생성`}
             </button>
             <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed break-keep-all">
-              결과는 우측 그리드에서 도착 순서대로 표시. 각 슬롯에서 9-슬라이스 / PNG / 투명 PNG / 프롬프트 다운로드 가능합니다.
+              선택한 방향마다 한 장씩, 우측 그리드에 도착 순서대로 표시됩니다. 각 슬롯에서 9-슬라이스 / PNG / 투명 PNG / 프롬프트 / 재시도 가능.
             </p>
           </section>
         </div>
@@ -879,8 +949,8 @@ export default function ForgeSidebar({ forge }) {
           <section>
             <div className="flex items-baseline justify-between mb-3">
               <h3 className="text-[13px] font-bold text-zinc-200">3. 구체적 스타일</h3>
-              <span className={`text-[10px] font-bold ${selectedAtlasStyleIds.length > 0 ? 'text-[#76cee0]' : 'text-zinc-500'}`}>
-                {selectedAtlasStyleIds.length}개 선택됨
+              <span className="text-[10px] font-bold text-[#76cee0]">
+                {VARIATION_STYLES[selectedAtlasMoodId]?.find(s => s.id === selectedAtlasStyleIds[0])?.label || '미선택'}
               </span>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
@@ -901,7 +971,7 @@ export default function ForgeSidebar({ forge }) {
               })}
             </div>
             <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed break-keep-all">
-              선택한 개수만큼 리테마된 아틀라스가 생성됩니다. 분위기를 바꾸면 앞 4개로 초기화.
+              스타일 1개를 고르면 그 테마로 <span className="text-zinc-300">한 판</span>만 리테마됩니다. 분위기를 바꾸면 첫 스타일로 초기화.
             </p>
           </section>
 
@@ -931,6 +1001,14 @@ export default function ForgeSidebar({ forge }) {
               원본 아틀라스가 이미 과한 경우 <span className="text-zinc-300">정제</span>·<span className="text-zinc-300">미니멀</span> 로 모든 서브 에셋의 장식을 일괄적으로 깎습니다.
             </p>
           </section>
+
+          {/* 3.6단 — 분위기 미세조정 (광원 온도 + 마모/세월감) — 전체 키트에 전역 일괄 적용 */}
+          <AtmosphereDials
+            temperature={atlasTemperature}
+            age={atlasAge}
+            onTemperature={setAtlasTemperature}
+            onAge={setAtlasAge}
+          />
 
           {/* 4단 — 배경 참고 (선택) */}
           <section>
@@ -1004,6 +1082,14 @@ export default function ForgeSidebar({ forge }) {
             </div>
           </section>
 
+          {/* 출력 해상도 — Pro 선택 시 2K/4K */}
+          <ResolutionToggle
+            modelId={atlasRenderModel}
+            value={atlasImageSize}
+            onChange={setAtlasImageSize}
+            disabled={isGeneratingAtlas}
+          />
+
           {/* 5단 — 생성 CTA */}
           <section>
             <button
@@ -1013,10 +1099,10 @@ export default function ForgeSidebar({ forge }) {
             >
               {isGeneratingAtlas ? <Loader2 className="w-4 h-4 animate-spin" /> : <SparkleIcon className="w-4 h-4" />}
               {isGeneratingAtlas
-                ? `${selectedAtlasStyleIds.length}개 동시 생성 중...`
+                ? '생성 중...'
                 : selectedAtlasStyleIds.length === 0
-                  ? '스타일을 1개 이상 선택'
-                  : `리테마 ${selectedAtlasStyleIds.length}개 생성`}
+                  ? '스타일을 선택하세요'
+                  : '리테마 생성'}
             </button>
             <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed break-keep-all">
               각 결과는 원본의 그리드 / 서브 에셋 개수 / 장식 크기를 그대로 유지하고, 모든 서브 에셋이 동일한 새 테마를 공유합니다.

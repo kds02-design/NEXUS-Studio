@@ -144,3 +144,131 @@ export const REFINEMENT_LEVELS = [
 ];
 
 export const REFINEMENT_BY_ID = Object.fromEntries(REFINEMENT_LEVELS.map(r => [r.id, r]));
+
+// ─── 분위기 미세조정(Atmosphere) — 무드/정제와 직교하는 3번째 축 ─────────────────
+// 무드(VARIATION_*)는 테마 통째 스왑, 정제(REFINEMENT_*)는 장식 밀도 감산.
+// Atmosphere 는 "같은 골격 유지 + 색온도/표면 마감만 미세하게" 트는 전역 축.
+//   - TEMPERATURE: 광원 화이트밸런스만 (새 광원/글로우 추가 금지)
+//   - AGE: 표면 마모/세월 (새 긁힘·크랙 도형 금지 — 셰이딩/재질로만)
+// 두 축 모두 'neutral' = 빈 블록 = 변화 없음. promptBlock 은 정제와 동일하게
+// "보존 규칙 위에 후처리로 추가 적용" 으로 명시 — 구조 잠금/순흑 배경 라인을 매 블록에 박음.
+// 적용 순서는 services 의 getAtmosphereBlock 에서 온도 → 세월 (세월이 최종 표면 마감).
+
+export const ATMOSPHERE_TEMPERATURE = [
+  {
+    id: 'coolStrong', label: '콜드 스틸', desc: '강한 월광·콜드', accent: '#7dd3fc',
+    promptBlock: `ATMOSPHERE — LIGHTING TEMPERATURE (strong cool shift — applied on top of all preservation rules):
+- Push the white balance of all lit surfaces firmly toward a cold moonlit steel-blue — highlights read icy, midtones carry a pronounced lunar cast
+- This is a white-balance / color-temperature adjustment of the EXISTING illumination only — do NOT add any new light source, glow, halo, lens flare, bloom, or rim light
+- Metals read distinctly cold (gold cools toward platinum/pewter; blues turn to sharp steel-silver); shadows cool noticeably
+- Material, surface finish, silhouette, outline thickness, decoration count and size remain EXACTLY as the source — only the temperature of existing light changes
+- The pure black background is unaffected — no cold spill, no ambient haze`,
+  },
+  {
+    id: 'cool', label: '쿨', desc: '옅은 한기', accent: '#a5b4fc',
+    promptBlock: `ATMOSPHERE — LIGHTING TEMPERATURE (subtle cool shift — applied on top of all preservation rules):
+- Shift the white balance of all lit surfaces gently toward cool moonlit silver-blue — highlights take a soft cold cast, midtones cool slightly
+- This is a white-balance / color-temperature adjustment of the EXISTING illumination only — do NOT add any new light source, glow, halo, lens flare, bloom, or rim light
+- Metals read cooler (gold turns toward pale champagne; blues sharpen toward steel); shadows stay neutral-to-cool
+- Material, surface finish, silhouette, outline thickness, decoration count and size remain EXACTLY as the source — only the temperature of existing light changes
+- The pure black background is unaffected — no cold spill, no ambient haze`,
+  },
+  { id: 'neutral', label: '원본', desc: '광원 그대로', accent: '#9CA3AF', promptBlock: '' },
+  {
+    id: 'warm', label: '웜', desc: '옅은 온기', accent: '#fbbf24',
+    promptBlock: `ATMOSPHERE — LIGHTING TEMPERATURE (subtle warm shift — applied on top of all preservation rules):
+- Shift the white balance of all lit surfaces gently toward warm candlelit gold — highlights take a soft amber cast, midtones warm slightly
+- This is a white-balance / color-temperature adjustment of the EXISTING illumination only — do NOT add any new light source, glow, halo, lens flare, bloom, or rim light
+- Metals read warmer (gold deepens; cool blues drift toward warm teal); shadows stay neutral-to-warm
+- Material, surface finish, silhouette, outline thickness, decoration count and size remain EXACTLY as the source — only the temperature of existing light changes
+- The pure black background is unaffected — no warm spill, no ambient haze`,
+  },
+  {
+    id: 'warmStrong', label: '촛불 골드', desc: '강한 촛불·앰버', accent: '#f59e0b',
+    promptBlock: `ATMOSPHERE — LIGHTING TEMPERATURE (strong warm shift — applied on top of all preservation rules):
+- Push the white balance of all lit surfaces firmly toward a warm firelit amber-gold — highlights glow warm, midtones carry a pronounced golden-hour cast
+- This is a white-balance / color-temperature adjustment of the EXISTING illumination only — do NOT add any new light source, flame, glow, halo, lens flare, bloom, or rim light
+- Metals read distinctly hot (gold turns rich; cool blues drift toward warm teal/bronze); shadows warm noticeably
+- Material, surface finish, silhouette, outline thickness, decoration count and size remain EXACTLY as the source — only the temperature of existing light changes
+- The pure black background is unaffected — no warm spill, no ambient haze`,
+  },
+];
+
+export const ATMOSPHERE_AGE = [
+  {
+    id: 'restoredStrong', label: '광택 복원', desc: '갓 세공·박물관급', accent: '#fde68a',
+    promptBlock: `ATMOSPHERE — SURFACE AGE (full restoration — applied on top of all preservation rules):
+- Fully restore EXISTING surfaces to a pristine, freshly-crafted condition: remove all tarnish, grime, dust and wear, bring metals to a clean polished finish, make the whole material read brand-new and immaculate
+- Adjust only material cleanliness and surface finish — do NOT add new highlights, glints, sparkles, bloom, or reflections as separate decorative elements, do NOT increase decoration count or size, and do NOT over-brighten into glow
+- Silhouette, outline thickness, decoration count and layout remain EXACTLY as the source
+- The pure black background is unaffected`,
+  },
+  {
+    id: 'restored', label: '살짝 광택', desc: '때 제거·생기', accent: '#fef3c7',
+    promptBlock: `ATMOSPHERE — SURFACE AGE (light restoration — applied on top of all preservation rules):
+- Clean and freshen EXISTING surfaces: remove tarnish and grime from recesses, lift the material to a fresher finish, make metals read newly forged and any gems or accents read clearer
+- Adjust only material cleanliness and surface finish — do NOT add new highlights, glints, sparkles, or reflections as separate decorative elements, and do NOT increase decoration count or size
+- Silhouette, outline thickness, decoration count and layout remain EXACTLY as the source
+- The pure black background is unaffected`,
+  },
+  { id: 'neutral', label: '원본', desc: '표면 그대로', accent: '#9CA3AF', promptBlock: '' },
+  {
+    id: 'worn', label: '가벼운 마모', desc: '모서리 마모·먼지', accent: '#a8a29e',
+    promptBlock: `ATMOSPHERE — SURFACE AGE (light weathering — applied on top of all preservation rules):
+- Add a light layer of age to EXISTING surfaces only: faint edge wear, subtle darkened patina settling into recesses, a thin film of dust in crevices, slightly dulled specular highlights
+- Render wear PURELY as surface shading and material treatment — it must NOT introduce any new distinct scratch shape, crack, chip, or decorative element that changes a silhouette, outline, or the decoration count
+- Do NOT erode, thin, or reshape any edge, frame, or ornament — the bounding box and count of every element stay identical
+- Metals lose a little shine and gain tarnish in the darks; gold reads slightly antique
+- The pure black background is unaffected`,
+  },
+  {
+    id: 'wornStrong', label: '전장 패티나', desc: '산화·녹·전장감', accent: '#78716c',
+    promptBlock: `ATMOSPHERE — SURFACE AGE (heavy weathering — applied on top of all preservation rules):
+- Apply a heavy, battle-worn age to EXISTING surfaces: pronounced tarnish, oxidation and verdigris in recesses, grime and dust build-up, heavily dulled highlights, a weathered patina across the whole material
+- Render all wear PURELY as surface shading, discoloration, and material treatment — it must NOT introduce any new distinct scratch shape, crack, chip, dent, or decorative element that changes a silhouette, outline, or the decoration count
+- Do NOT erode, thin, pit, or reshape any edge, frame, or ornament — the bounding box and count of every element stay identical
+- Metals look old and oxidized; gold turns deep antique; bright surfaces go muted and matte
+- The pure black background is unaffected`,
+  },
+];
+
+export const ATMOSPHERE_TEMPERATURE_BY_ID = Object.fromEntries(ATMOSPHERE_TEMPERATURE.map(t => [t.id, t]));
+export const ATMOSPHERE_AGE_BY_ID = Object.fromEntries(ATMOSPHERE_AGE.map(a => [a.id, a]));
+
+// ─── 세부 에셋 디자인 변형(대안) — '변형 생성'(micro-edit) 탭 전용 ───────────────
+// retheme(색·재질만 바꾸는 구조 고정 변형)과 다르다. 같은 컴포넌트 정체성(버튼은 버튼,
+// 프레임은 프레임)·기능은 유지하되 형태·장식·비율·구성을 적극 변주해 '고를 수 있는
+// 여러 디자인 시안'을 만든다. 각 방향(direction)이 한 장의 대안에 대응 — 선택한 방향 수만큼 렌더.
+// promptBlock 은 그 방향으로 디자인을 밀어붙이는 1문장 지시(영문). 색 테마 힌트가 아니라 디자인 방향.
+// theme 셀이 그대로 쓰도록 id/label/color/desc 를 스타일 객체와 같은 형태로 맞춤.
+export const DESIGN_VARIATIONS = [
+  { id: 'ornateUp',   label: '장식 강화',   color: '#d4af37', desc: '같은 자리에 더 정교한 모티프',
+    promptBlock: 'Push toward a FINER, more intricate decorative MOTIF — denser delicate carving and filigree in the SAME areas at a THIN, fine line weight, like detailed etching or inlay. Do NOT enlarge the ornaments, thicken the frame or border, deepen the relief, or let decoration grow into the content area — "richer" here means MORE fine detail, never heavier, thicker, or bulkier.' },
+  { id: 'simplify',   label: '미니멀 정리', color: '#a5b4fc', desc: '장식을 덜고 더 깔끔하게',
+    promptBlock: 'Reinterpret it as a cleaner, more minimal version — reduce ornament busyness and simplify into confident clean forms, while keeping the same component type, the same frame thickness, and the same footprint.' },
+  { id: 'silhouette', label: '실루엣 변주', color: '#f472b6', desc: '외곽 디테일·코너 처리만',
+    promptBlock: 'Explore a different contour and corner / edge treatment within a SIMILAR overall silhouette and the SAME aspect ratio — refine the shape language and edge profile, while keeping the outer footprint, border thickness, and ornament scale close to the source.' },
+  { id: 'proportion', label: '내부 균형',   color: '#34d399', desc: '무게중심·강조 균형 변경',
+    promptBlock: 'Rebalance the internal weighting and emphasis — shift which area feels heavier and how internal detailing is distributed, WITHOUT changing the outer aspect ratio, the border thickness, or the ornament sizes.' },
+  { id: 'recompose',  label: '구성 재배치', color: '#22d3ee', desc: '내부 디테일 배치를 재구성',
+    promptBlock: 'Rearrange the INTERNAL composition — restyle and relocate internal accents and detailing into a fresh arrangement within the same footprint, keeping the same outer shape, border thickness, and aspect ratio.' },
+  { id: 'material',   label: '재질 대비',   color: '#fb923c', desc: '재질·마감을 과감히 변경',
+    promptBlock: 'Reimagine the material and surface finish boldly — try a distinctly different material treatment and finish, while keeping the same component type and silhouette family.' },
+  { id: 'accentMove', label: '강조 변경',   color: '#c084fc', desc: '포컬 강조 요소를 다르게',
+    promptBlock: 'Restyle and reposition the focal accent — change what draws the eye and how it is emphasized, while keeping the same component type.' },
+  { id: 'genreShift', label: '장르 톤 전환', color: '#fbbf24', desc: '스타일 장르·시대 톤 전환',
+    promptBlock: 'Shift the stylistic genre/era tone (e.g. more modern, more classical, more rugged), while keeping the same component type and function.' },
+];
+export const DESIGN_VARIATION_BY_ID = Object.fromEntries(DESIGN_VARIATIONS.map(d => [d.id, d]));
+export const defaultDesignVariationIds = DESIGN_VARIATIONS.slice(0, 4).map(d => d.id);
+
+// 변형 강도 — 원본에서 얼마나 멀어질지. 선택한 모든 방향에 공통 적용.
+export const VARIATION_STRENGTH = [
+  { id: 'subtle',   label: '미세', desc: '원본에 매우 가깝게',  accent: '#76cee0',
+    promptBlock: 'VARIATION STRENGTH: subtle — stay very close to the reference; only a gentle restyle of motif and material, reading as a near sibling of the original. Structural envelope unchanged.' },
+  { id: 'moderate', label: '중간', desc: '뚜렷하나 동일 골격',  accent: '#a78bfa',
+    promptBlock: 'VARIATION STRENGTH: moderate — a clearly distinct redesign of the motif, detail, and material, yet obviously the same component on the same structural envelope (same thickness, ornament scale, aspect ratio).' },
+  { id: 'bold',     label: '과감', desc: '모티프·재질만 대담히', accent: '#f472b6',
+    promptBlock: 'VARIATION STRENGTH: bold — boldly reinterpret the decorative motif, shape detail, material, and internal arrangement, while still respecting the structural envelope (same-or-slimmer border thickness, same ornament scale, same aspect ratio and footprint). Boldness lives in the motif and material — NEVER in thicker strokes, deeper relief, or heavier mass.' },
+];
+export const VARIATION_STRENGTH_BY_ID = Object.fromEntries(VARIATION_STRENGTH.map(s => [s.id, s]));

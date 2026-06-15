@@ -583,7 +583,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "vector-forge":       return <VectorForgeApp />;
     case "lumkey":             return <LumKeyApp />;
     case "figma-l10n":         return <FigmaL10nApp />;
-    case "brief-studio":       return <BriefStudioApp />;
+    case "brief-studio":       return <BriefStudioApp version={version} />;
     case "prompt-audit":       return <PromptAuditApp />;
     case "nexus-admin":        return <NexusAdminApp />;
     default:                   return <PlaceholderApp appId={appId} />;

@@ -14,10 +14,11 @@ import {
   analyzeStyleImage,
   generateLore as generateLoreApi,
 } from '../services/gemini';
-import { renderVariation, renderAtlasVariation } from '../services/variations';
+import { renderDesignAlternative, renderAtlasVariation } from '../services/variations';
 import { renderWithImagen, IMAGEN_MODELS } from '../../../lib/imagenRender';
 import {
   VARIATION_MOODS, STYLE_BY_ID, defaultStyleIdsFor,
+  DESIGN_VARIATION_BY_ID, defaultDesignVariationIds, VARIATION_STRENGTH_BY_ID,
 } from '../constants/variations';
 
 export function useForgePrompt() {
@@ -72,27 +73,25 @@ export function useForgePrompt() {
   const [tempIntent, setTempIntent] = useState("");
   const chatScrollRef = useRef(null);
 
-  // 변형(베리에이션) 모드 — Micro-Edit 탭에서 사용.
-  //   sourceAsset: 원본 dataURL
+  // 세부 에셋 디자인 변형 모드 — '변형 생성'(micro-edit) 탭.
+  //   sourceAsset: 원본 세부 에셋 dataURL (버튼·프레임·뱃지·오너먼트 등 파츠 1개)
   //   backgroundRef: (선택) 배경 참고 dataURL — 어울리는 컬러/형태로 조정
-  //   selectedMoodId: 분위기 카테고리 (플랫/캐주얼/다크판타지/모던테크/럭셔리)
-  //   selectedStyleIds: 4개 — 카테고리 내 구체 스타일 4종 선택
-  //   variationResults: 4 슬롯 { styleId, theme, dataUrl?, error?, isLoading }
+  //   selectedVariationIds: 변형 방향 다중 선택 — 선택한 방향 수만큼 디자인 대안이 렌더됨
+  //   variationStrength: 원본에서 멀어지는 정도 (subtle/moderate/bold), 모든 방향 공통
+  //   variationResults: N 슬롯 { styleId(=방향 id), theme(=방향 객체), dataUrl?, error?, isLoading }
   const [sourceAsset, setSourceAsset] = useState(null);
   const [isDraggingSource, setIsDraggingSource] = useState(false);
   const [backgroundRef, setBackgroundRef] = useState(null);
   const [isDraggingBackground, setIsDraggingBackground] = useState(false);
-  const [selectedMoodId, setSelectedMoodId] = useState(VARIATION_MOODS[2].id); // 기본 다크 판타지
-  const [selectedStyleIds, setSelectedStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id));
+  const [selectedVariationIds, setSelectedVariationIds] = useState(defaultDesignVariationIds);
+  const [variationStrength, setVariationStrength] = useState('subtle');
   const [variationResults, setVariationResults] = useState(() =>
-    defaultStyleIdsFor(VARIATION_MOODS[2].id).map(id => {
-      const s = STYLE_BY_ID[id];
-      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+    defaultDesignVariationIds.map(id => {
+      const d = DESIGN_VARIATION_BY_ID[id];
+      return { styleId: id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
     })
   );
   const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
-  // 정제 강도 — 'source' (기본, 원본 밀도 유지) / 'refined' (60% 단순화) / 'minimal' (핵심만)
-  const [refinementLevel, setRefinementLevel] = useState('source');
 
   // ─── 아틀라스(디자인 시스템) 모드 — 변형 모드와 동일 구조, 별도 state 유지 ─────────
   // 단일 에셋 변형과 분리한 이유: 탭 전환 시 업로드/선택이 섞이면 혼란.
@@ -101,15 +100,18 @@ export function useForgePrompt() {
   const [atlasBackgroundRef, setAtlasBackgroundRef] = useState(null);
   const [isDraggingAtlasBackground, setIsDraggingAtlasBackground] = useState(false);
   const [selectedAtlasMoodId, setSelectedAtlasMoodId] = useState(VARIATION_MOODS[2].id);
-  const [selectedAtlasStyleIds, setSelectedAtlasStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id));
+  const [selectedAtlasStyleIds, setSelectedAtlasStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id).slice(0, 1));
   const [atlasResults, setAtlasResults] = useState(() =>
-    defaultStyleIdsFor(VARIATION_MOODS[2].id).map(id => {
+    defaultStyleIdsFor(VARIATION_MOODS[2].id).slice(0, 1).map(id => {
       const s = STYLE_BY_ID[id];
       return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
     })
   );
   const [isGeneratingAtlas, setIsGeneratingAtlas] = useState(false);
   const [atlasRefinementLevel, setAtlasRefinementLevel] = useState('source');
+  // 분위기 미세조정 (아틀라스) — 변형 모드와 동일 축, 별도 state.
+  const [atlasTemperature, setAtlasTemperature] = useState('neutral');
+  const [atlasAge, setAtlasAge] = useState('neutral');
   // 마스터 템플릿에서 송신된 명세(마크다운). 있으면 atlas 프롬프트에 ATLAS STRUCTURE SPEC 으로 주입.
   const [atlasSpec, setAtlasSpec] = useState('');
   const [atlasSpecTitle, setAtlasSpecTitle] = useState('');
@@ -121,6 +123,9 @@ export function useForgePrompt() {
   // 503 같은 일시 capacity 이슈 회피용으로도 유용 (다른 모델 슬롯 시도).
   const [variationRenderModel, setVariationRenderModel] = useState(IMAGEN_MODELS[0]?.id || 'gemini-3.1-flash-image-preview');
   const [atlasRenderModel, setAtlasRenderModel] = useState(IMAGEN_MODELS[0]?.id || 'gemini-3.1-flash-image-preview');
+  // 출력 해상도 — Pro 모델에서만 2K/4K 유효(Flash 는 1K 고정, imagenRender 가 클램프). 기본 2K.
+  const [variationImageSize, setVariationImageSize] = useState('2K');
+  const [atlasImageSize, setAtlasImageSize] = useState('2K');
   const [creationRenderResult, setCreationRenderResult] = useState(null); // { dataUrl, modelId }
   const [creationRenderError, setCreationRenderError] = useState('');
   const [isCreationRendering, setIsCreationRendering] = useState(false);
@@ -239,54 +244,50 @@ export function useForgePrompt() {
   const handleBackgroundDrop = useCallback((e) => { e.preventDefault(); setIsDraggingBackground(false); handleBackgroundFile(e.dataTransfer.files[0]); }, []);
   const handleClearBackground = () => setBackgroundRef(null);
 
-  // ─── 변형 모드: 분위기 / 스타일 선택 ──────────────────────────────────
-  // 분위기 변경 → 그 카테고리 앞 4개로 자동 채움. 사용자는 이후 토글로 교체 가능.
-  const handleSelectMood = (moodId) => {
-    setSelectedMoodId(moodId);
-    const defaults = defaultStyleIdsFor(moodId);
-    setSelectedStyleIds(defaults);
-    setVariationResults(defaults.map(id => {
-      const s = STYLE_BY_ID[id];
-      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
-    }));
-  };
-
-  // 스타일 칩 토글: 이미 선택 → 해제. 미선택 → 추가. 상한 없음 (카테고리 내 스타일 수만큼 가능).
-  const handleToggleStyle = (styleId) => {
-    const isSelected = selectedStyleIds.includes(styleId);
+  // ─── 변형 모드: 변형 방향 다중 선택 ───────────────────────────────────
+  // 방향 칩 토글: 이미 선택 → 해제, 미선택 → 추가. 선택한 방향 수 = 생성될 대안 수.
+  const handleToggleVariation = (variationId) => {
+    const isSelected = selectedVariationIds.includes(variationId);
     const next = isSelected
-      ? selectedStyleIds.filter(id => id !== styleId)
-      : [...selectedStyleIds, styleId];
-    setSelectedStyleIds(next);
+      ? selectedVariationIds.filter(id => id !== variationId)
+      : [...selectedVariationIds, variationId];
+    setSelectedVariationIds(next);
     setVariationResults(next.map(id => {
-      const s = STYLE_BY_ID[id];
-      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
+      const d = DESIGN_VARIATION_BY_ID[id];
+      return { styleId: id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
     }));
   };
 
-  // ─── 변형 모드: 4개 병렬 생성 ──────────────────────────────────────────
+  // ─── 변형 모드: 선택한 방향 수만큼 병렬 생성 ───────────────────────────
   // 각 슬롯은 자기 결과가 도착하는 즉시 isLoading → false 로 전환되어 도착 순서대로 표시.
+  // 같은 강도(variationStrength)를 공유하되 방향(promptBlock)이 달라 서로 다른 대안이 나온다.
   const handleGenerateVariations = async () => {
-    if (!sourceAsset) { setErrorMsg('원본 에셋 이미지를 먼저 업로드해주세요.'); return; }
-    if (selectedStyleIds.length === 0) { setErrorMsg('스타일을 1개 이상 선택해주세요.'); return; }
+    if (!sourceAsset) { setErrorMsg('세부 에셋 이미지를 먼저 업로드해주세요.'); return; }
+    if (selectedVariationIds.length === 0) { setErrorMsg('변형 방향을 1개 이상 선택해주세요.'); return; }
     if (isGeneratingVariations) return;
     setIsGeneratingVariations(true);
-    const styles = selectedStyleIds.map(id => STYLE_BY_ID[id]).filter(Boolean);
-    setVariationResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: true })));
-    await Promise.all(styles.map(async (style, idx) => {
-      const result = await renderVariation(sourceAsset, style.promptHint, {
+    const dirs = selectedVariationIds.map(id => DESIGN_VARIATION_BY_ID[id]).filter(Boolean);
+    const strength = VARIATION_STRENGTH_BY_ID[variationStrength] || VARIATION_STRENGTH_BY_ID.moderate;
+    setVariationResults(dirs.map(d => ({ styleId: d.id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true })));
+    await Promise.all(dirs.map(async (dir, idx) => {
+      const result = await renderDesignAlternative(sourceAsset, {
+        directionBlock: dir.promptBlock,
+        directionHint: dir.promptBlock,
+        strengthBlock: strength?.promptBlock,
+        strengthHint: strength?.promptBlock,
         backgroundRefDataUrl: backgroundRef,
-        refinementLevel,
+        imageSize: variationImageSize,
         modelId: variationRenderModel,
       });
       setVariationResults(prev => {
         const next = prev.slice();
         next[idx] = {
-          styleId: style.id,
-          theme: style,
+          styleId: dir.id,
+          theme: dir,
           dataUrl: result.ok ? result.dataUrl : null,
           error: result.ok ? null : (result.error || '생성 실패'),
           prompt: result.prompt || null,
+          compactPrompt: result.compactPrompt || null,
           isLoading: false,
         };
         return next;
@@ -295,19 +296,24 @@ export function useForgePrompt() {
     setIsGeneratingVariations(false);
   };
 
-  // 단일 슬롯 재시도 — 4장 중 하나만 실패하거나 마음에 안 들 때 그 슬롯만 다시 호출.
+  // 단일 슬롯 재시도 — 그 방향만 다시 호출 (실패하거나 마음에 안 들 때).
   const handleRegenerateVariation = async (idx) => {
     if (!sourceAsset) return;
     const slot = variationResults[idx];
     if (!slot || slot.isLoading) return;
+    const strength = VARIATION_STRENGTH_BY_ID[variationStrength] || VARIATION_STRENGTH_BY_ID.moderate;
     setVariationResults(prev => {
       const next = prev.slice();
       next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
       return next;
     });
-    const result = await renderVariation(sourceAsset, slot.theme.promptHint, {
+    const result = await renderDesignAlternative(sourceAsset, {
+      directionBlock: slot.theme.promptBlock,
+      directionHint: slot.theme.promptBlock,
+      strengthBlock: strength?.promptBlock,
+      strengthHint: strength?.promptBlock,
       backgroundRefDataUrl: backgroundRef,
-      refinementLevel,
+      imageSize: variationImageSize,
       modelId: variationRenderModel,
     });
     setVariationResults(prev => {
@@ -318,6 +324,7 @@ export function useForgePrompt() {
         dataUrl: result.ok ? result.dataUrl : null,
         error: result.ok ? null : (result.error || '생성 실패'),
         prompt: result.prompt || null,
+        compactPrompt: result.compactPrompt || null,
         isLoading: false,
       };
       return next;
@@ -355,19 +362,16 @@ export function useForgePrompt() {
 
   const handleSelectAtlasMood = (moodId) => {
     setSelectedAtlasMoodId(moodId);
-    const defaults = defaultStyleIdsFor(moodId);
-    setSelectedAtlasStyleIds(defaults);
-    setAtlasResults(defaults.map(id => {
+    const first = defaultStyleIdsFor(moodId).slice(0, 1);
+    setSelectedAtlasStyleIds(first);
+    setAtlasResults(first.map(id => {
       const s = STYLE_BY_ID[id];
       return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: false };
     }));
   };
 
   const handleToggleAtlasStyle = (styleId) => {
-    const isSelected = selectedAtlasStyleIds.includes(styleId);
-    const next = isSelected
-      ? selectedAtlasStyleIds.filter(id => id !== styleId)
-      : [...selectedAtlasStyleIds, styleId];
+    const next = [styleId];
     setSelectedAtlasStyleIds(next);
     setAtlasResults(next.map(id => {
       const s = STYLE_BY_ID[id];
@@ -387,6 +391,9 @@ export function useForgePrompt() {
         backgroundRefDataUrl: atlasBackgroundRef,
         refinementLevel: atlasRefinementLevel,
         atlasSpec,
+        temperature: atlasTemperature,
+        age: atlasAge,
+        imageSize: atlasImageSize,
         modelId: atlasRenderModel,
       });
       setAtlasResults(prev => {
@@ -397,6 +404,7 @@ export function useForgePrompt() {
           dataUrl: result.ok ? result.dataUrl : null,
           error: result.ok ? null : (result.error || '생성 실패'),
           prompt: result.prompt || null,
+          compactPrompt: result.compactPrompt || null,
           isLoading: false,
         };
         return next;
@@ -418,6 +426,9 @@ export function useForgePrompt() {
       backgroundRefDataUrl: atlasBackgroundRef,
       refinementLevel: atlasRefinementLevel,
       atlasSpec,
+      temperature: atlasTemperature,
+      age: atlasAge,
+      imageSize: atlasImageSize,
       modelId: atlasRenderModel,
     });
     setAtlasResults(prev => {
@@ -428,6 +439,7 @@ export function useForgePrompt() {
         dataUrl: result.ok ? result.dataUrl : null,
         error: result.ok ? null : (result.error || '생성 실패'),
         prompt: result.prompt || null,
+        compactPrompt: result.compactPrompt || null,
         isLoading: false,
       };
       return next;
@@ -703,12 +715,12 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     handleSourceUpload, handleSourceDragOver, handleSourceDragLeave, handleSourceDrop, handleClearSource,
     backgroundRef, isDraggingBackground,
     handleBackgroundUpload, handleBackgroundDragOver, handleBackgroundDragLeave, handleBackgroundDrop, handleClearBackground,
-    selectedMoodId, selectedStyleIds,
-    handleSelectMood, handleToggleStyle,
+    selectedVariationIds, handleToggleVariation,
+    variationStrength, setVariationStrength,
     variationResults, isGeneratingVariations,
     handleGenerateVariations, handleRegenerateVariation,
-    refinementLevel, setRefinementLevel,
     variationRenderModel, setVariationRenderModel,
+    variationImageSize, setVariationImageSize,
     // atlas (디자인 시스템) mode
     atlasSource, isDraggingAtlasSource,
     handleAtlasSourceUpload, handleAtlasSourceDragOver, handleAtlasSourceDragLeave, handleAtlasSourceDrop, handleClearAtlasSource,
@@ -719,7 +731,9 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     atlasResults, isGeneratingAtlas,
     handleGenerateAtlas, handleRegenerateAtlas,
     atlasRefinementLevel, setAtlasRefinementLevel,
+    atlasTemperature, setAtlasTemperature, atlasAge, setAtlasAge,
     atlasRenderModel, setAtlasRenderModel,
+    atlasImageSize, setAtlasImageSize,
     atlasSpec, setAtlasSpec, atlasSpecTitle, setAtlasSpecTitle,
     setAtlasSource,
     // core options

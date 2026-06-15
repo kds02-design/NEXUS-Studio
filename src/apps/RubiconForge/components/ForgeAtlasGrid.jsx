@@ -56,7 +56,7 @@ export default function ForgeAtlasGrid({ forge }) {
             <div className="text-[11px] font-bold text-zinc-300">원본 아틀라스</div>
             <div className="text-[10px] text-zinc-500 mt-0.5 break-keep-all">
               {atlasSource
-                ? `준비 완료 — 리테마 ${totalCount}개를 생성합니다`
+                ? '준비 완료 — 리테마 한 판을 생성합니다'
                 : '좌측 사이드바에서 페이지 전체 에셋 시트를 업로드해주세요'}
             </div>
             {hasAnyResult && (
@@ -69,7 +69,7 @@ export default function ForgeAtlasGrid({ forge }) {
             className="px-5 py-3 rounded-lg bg-[#76cee0] text-zinc-900 hover:bg-[#92dceb] font-bold text-[13px] flex items-center gap-2 shadow-lg transition-colors disabled:bg-zinc-700 disabled:text-zinc-500 disabled:cursor-not-allowed"
           >
             {isGeneratingAtlas ? <Loader2 className="w-4 h-4 animate-spin" /> : <Layers className="w-4 h-4" />}
-            {isGeneratingAtlas ? '생성 중...' : `리테마 ${totalCount}개 생성`}
+            {isGeneratingAtlas ? '생성 중...' : '리테마 생성'}
           </button>
         </div>
 
@@ -91,9 +91,9 @@ export default function ForgeAtlasGrid({ forge }) {
           <div className="mt-8 text-[11px] text-zinc-600 leading-relaxed break-keep-all p-4 rounded-lg border border-zinc-800/40 bg-zinc-900/20">
             <div className="font-bold text-zinc-400 mb-2">사용 방법</div>
             1. 좌측에서 원본 <span className="text-zinc-400 font-bold">아틀라스</span>(여러 UI 요소가 한 시트에 배치된 이미지)를 업로드합니다.<br />
-            2. 분위기 카테고리를 고른 뒤 스타일을 원하는 개수만큼 선택합니다.<br />
+            2. 분위기 카테고리·스타일을 고르고, 필요하면 분위기 미세조정(광원 온도·세월감)을 더합니다.<br />
             3. (선택) 배경 참고 이미지를 추가하면 그 배경에 어울리는 통일된 톤으로 조정됩니다.<br />
-            4. "리테마 N개 생성" — 각 결과는 <span className="text-zinc-400 font-bold">모든 서브 에셋이 동일한 테마</span>를 공유하는 새 아틀라스입니다. 그리드 구조와 장식 크기는 원본 그대로 유지.
+            4. "리테마 생성" — 결과는 <span className="text-zinc-400 font-bold">모든 서브 에셋이 동일한 테마</span>를 공유하는 새 아틀라스 한 판입니다. 그리드 구조와 장식 크기는 원본 그대로 유지.
           </div>
         )}
       </div>

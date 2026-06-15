@@ -34,12 +34,15 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   // 프로필이 한 번이라도 성공적으로 로드됐는지. false인 동안엔 권한 판정 보류.
   const [profileLoaded, setProfileLoaded] = useState(false);
+  // 첫 프로필 로드가 (재시도 소진 후에도) 실패했을 때의 에러. set 되면 LoadingScreen 대신
+  // 복구 화면(재시도/로그아웃)으로 빠진다 — Firestore 권한 거부로 인한 무한 로딩 방지.
+  const [profileError, setProfileError] = useState(null);
   const [usageToday, setUsageToday] = useState(0);
   const pendingInviteRef = useRef(null);
 
-  const loadProfile = useCallback(async (u) => {
+  const loadProfile = useCallback(async (u, attempt = 0) => {
     if (!u?.uid) {
-      setProfile(null); setProfileLoaded(true); setUsageToday(0);
+      setProfile(null); setProfileLoaded(true); setUsageToday(0); setProfileError(null);
       return;
     }
     try {
@@ -61,6 +64,7 @@ export function AuthProvider({ children }) {
         setProfile(p);
       }
       setProfileLoaded(true);
+      setProfileError(null);
       try {
         const count = await getTodayUsage(u.uid);
         setUsageToday(count);
@@ -69,8 +73,15 @@ export function AuthProvider({ children }) {
       }
     } catch (e) {
       // 일시적 네트워크 오류 등 — 기존 profile을 유지해서 잘못된 PendingScreen 표시 방지.
-      console.error("[Auth] profile load failed (기존 값 유지):", e);
-      // profileLoaded가 한 번이라도 true였다면 그대로 유지. 첫 로드 실패면 false 유지(LoadingScreen 노출).
+      console.error("[Auth] profile load failed:", e);
+      // 일시적 오류 대비 제한적 자동 재시도 (지수 백오프). 재시도 동안엔 LoadingScreen 유지.
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        return loadProfile(u, attempt + 1);
+      }
+      // 재시도 소진 — profileError 설정. 첫 로드 실패면 게이트(!profileLoaded && profileError)가
+      // 복구 화면을 띄우고, 이미 로드된 적 있으면 게이트가 무시해 기존 profile 을 무중단 유지.
+      setProfileError(e);
     }
   }, []);
 
@@ -104,6 +115,16 @@ export function AuthProvider({ children }) {
     });
     return () => unsubscribe();
   }, [loadProfile]);
+
+  // 복구 화면의 "다시 시도" — 캐시된 현재 user 로 프로필 로드를 재시도.
+  const retryProfile = useCallback(async () => {
+    const u = auth?.currentUser || user;
+    if (!u?.uid) { setProfileError(null); return; }
+    setProfileError(null);
+    setLoading(true);
+    await loadProfile(u);
+    setLoading(false);
+  }, [loadProfile, user]);
 
   const setPendingInviteCode = useCallback((code) => {
     pendingInviteRef.current = code ? String(code).trim() : null;
@@ -176,7 +197,8 @@ export function AuthProvider({ children }) {
   const status = profile?.status || STATUS.approved;
   const isRejected = !!user && !isAdmin && profileLoaded && profile && status === STATUS.rejected;
   // user가 있는데 profile이 아직이면 auth 자체는 로딩 중으로 본다.
-  const isAuthLoading = loading || (!!user && !profileLoaded);
+  // 단, 첫 로드가 끝내 실패해 profileError 가 세워지면 로딩을 풀고 복구 화면으로 넘긴다.
+  const isAuthLoading = loading || (!!user && !profileLoaded && !profileError);
   // 서브앱 접근 가능 여부 — 로그인 안 했거나 general 등급이면 인덱스만.
   // 프로필 로딩 중에는 보수적으로 false (false → 인덱스만, 진입 시도 시 로그인 모달).
   const canAccessSubApps = !!user && profileLoaded && grade !== GRADES.general && !isRejected;
@@ -191,6 +213,7 @@ export function AuthProvider({ children }) {
   // cascade 재렌더를 일으키는 것을 차단.
   const ctxValue = useMemo(() => ({
     user, profile, grade, loading, profileLoaded, isAuthLoading,
+    profileError, retryProfile,
     isAdmin, isRejected, status, canAccessSubApps,
     usageToday, dailyLimit: limit, remainingToday: remaining,
     signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,
@@ -199,6 +222,7 @@ export function AuthProvider({ children }) {
     loginModalOpen, openLoginModal, closeLoginModal,
   }), [
     user, profile, grade, loading, profileLoaded, isAuthLoading,
+    profileError, retryProfile,
     isAdmin, isRejected, status, canAccessSubApps,
     usageToday, limit, remaining,
     signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,

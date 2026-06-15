@@ -3,7 +3,23 @@
     "allow": [
       "Read(//tmp/**)",
       "WebFetch(domain:www.remove.bg)",
-      "Bash(echo \"--- exit $? ---\")"
+      "Bash(echo \"--- exit $? ---\")",
+      "Bash(grep -n \"history\\\\|selectedHistoryId\\\\|HistoryItem\\\\|item.image\\\\|item\\\\\\\\.image\" c:/work/00_claude/src/apps/DesignEvaluator/index.jsx)",
+      "Bash(grep -n \"type === \\\\|setType\\\\|TYPE_LIST\\\\|typeOptions\\\\|평가 기준\\\\|CRITERIA_TYPES\\\\\\\\.banner\\\\|CRITERIA_TYPES\\\\\\\\.prompt\\\\|categories\\\\|categoryOptions\" c:/work/00_claude/src/apps/NexusAdmin/index.jsx)",
+      "Bash(grep -n \"v\\\\\\\\.rules\\\\|version\\\\\\\\.rules\" c:/work/00_claude/src/lib/evaluationCriteria.js)",
+      "Bash(grep -n \"CRITERIA_TYPES\\\\\\\\.\" c:/work/00_claude/src/apps/NexusAdmin/index.jsx)",
+      "Bash(grep -n \"Color Grading\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\services\\\\\\\\promptCompiler.js\")",
+      "Bash(grep -n \"highly saturated\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\services\\\\\\\\promptCompiler.js\")",
+      "Bash(grep -n \"^export default\\\\|^}$\" src/apps/RubiconForge/components/ForgeSidebar.jsx)",
+      "Bash(grep -E \"\\\\.jsx$\")",
+      "Bash(grep -nE \"SectionGroup|<aside|label=|index=\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrix\\\\\\\\components\\\\\\\\MatrixSidebar.jsx\")",
+      "Bash(grep -nE 'index=\\\\{[2-5]\\\\}|label=\"[A-Z][a-z]+ ?[A-Za-z]*\"' \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrix\\\\\\\\components\\\\\\\\MatrixSidebar.jsx\")",
+      "Bash(grep -nE \"SectionGroup|<aside|label=\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
+      "Bash(grep -nE 'tracking-widest\">[A-Z]' \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
+      "Bash(grep -nE 'state.currentView === \"edit\"|tracking-widest\">' \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
+      "Bash(grep -n \"}$\\\\|</aside>\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
+      "Bash(grep -nE \"^      </div>$|^    </aside>$|^  \\\\\\);$|^}$\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
+      "Bash(grep -vE \"set-state-in-effect|no-useless-assignment|exhaustive-deps|setState synchronously|Effects are intended|Update external|Subscribe for|Calling setState|^\\\\s*$|^\\\\s*\\\\*|react\\\\.dev|187 \\\\||188 \\\\||189 \\\\||190 \\\\||191 \\\\||192 \\\\||193 \\\\||515|704|^\\\\s*[0-9]+ \\\\|\")"
     ]
   },
   "enabledPlugins": {

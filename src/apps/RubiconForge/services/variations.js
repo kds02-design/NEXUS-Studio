@@ -6,7 +6,7 @@
 //   - REFINEMENT_LEVELS 의 promptBlock 으로 사용자가 적극적 감산 지시 가능
 
 import { renderWithImagen } from '../../../lib/imagenRender';
-import { REFINEMENT_BY_ID } from '../constants/variations';
+import { REFINEMENT_BY_ID, ATMOSPHERE_TEMPERATURE_BY_ID, ATMOSPHERE_AGE_BY_ID } from '../constants/variations';
 
 // ─── 공통 빌딩 블록 ──────────────────────────────────────────────────────────
 const OVERLAY_FRAMING = `Apply a COLOR + MATERIAL OVERLAY PASS to the source. This is a recolor / retexture operation IN PLACE — NOT a regeneration, NOT a re-imagining of the composition. The source is the master template; you are only changing pigment, surface, and material — never structure, count, or size.`;
@@ -52,6 +52,15 @@ const getRefinementBlock = (refinementLevel) => {
   return lvl?.promptBlock ? `\n\n${lvl.promptBlock}` : '';
 };
 
+// 분위기 미세조정 블록 — 온도 → 세월 순으로 비중립만 이어붙임.
+// 세월(표면 마감)이 최종 단계라 온도 뒤에 와야 자연스러움. 둘 다 neutral 이면 빈 문자열.
+const getAtmosphereBlock = (temperature, age) => {
+  const temp = ATMOSPHERE_TEMPERATURE_BY_ID[temperature || 'neutral'];
+  const aged = ATMOSPHERE_AGE_BY_ID[age || 'neutral'];
+  const blocks = [temp?.promptBlock, aged?.promptBlock].filter(Boolean);
+  return blocks.length ? `\n\n${blocks.join('\n\n')}` : '';
+};
+
 // 배경 참고 블록.
 const getBgContextBlock = (hasBackgroundRef, isAtlas) => {
   if (!hasBackgroundRef) return '';
@@ -61,7 +70,7 @@ A second reference represents the destination background where this ${subject} w
 };
 
 // ─── 단일 에셋 변형 프롬프트 ────────────────────────────────────────────────
-export const buildVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel }) => {
+export const buildVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, temperature, age }) => {
   const refLabel = hasBackgroundRef
     ? 'TWO reference images are provided. The FIRST is the source asset to retheme. The SECOND is the destination background environment.'
     : 'Reference image is provided as the first input — it is the source asset to retheme.';
@@ -88,7 +97,7 @@ ${BACKGROUND_BLOCK}
 ${ONLY_VARY_BLOCK}
 
 TARGET COLOR + MATERIAL (this is a color/material descriptor only — it does NOT add decorations):
-${themeHint}${getBgContextBlock(hasBackgroundRef, false)}${getRefinementBlock(refinementLevel)}
+${themeHint}${getBgContextBlock(hasBackgroundRef, false)}${getRefinementBlock(refinementLevel)}${getAtmosphereBlock(temperature, age)}
 
 ${FINAL_REMINDER}`;
 };
@@ -96,7 +105,7 @@ ${FINAL_REMINDER}`;
 // ─── 아틀라스(디자인 시스템) 변형 프롬프트 ───────────────────────────────────
 // atlasSpec: PromotionArchive 의 공통 템플릿 분석에서 추출한 마스터 명세(마크다운).
 // 있으면 ATLAS STRUCTURE SPEC 블록으로 주입 — 모델에게 보존해야 할 구조를 텍스트로도 명시.
-export const buildAtlasVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, atlasSpec }) => {
+export const buildAtlasVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, atlasSpec, temperature, age }) => {
   const refLabel = hasBackgroundRef
     ? 'TWO reference images are provided. The FIRST is the source DESIGN SYSTEM ATLAS to retheme. The SECOND is the destination background environment.'
     : 'Reference image is provided as the first input — it is a complete DESIGN SYSTEM ATLAS.';
@@ -137,9 +146,116 @@ ${BACKGROUND_BLOCK}
 ${ONLY_VARY_BLOCK}
 
 TARGET COLOR + MATERIAL (this is a color/material descriptor only — it does NOT add decorations):
-${themeHint}${getBgContextBlock(hasBackgroundRef, true)}${getRefinementBlock(refinementLevel)}
+${themeHint}${getBgContextBlock(hasBackgroundRef, true)}${getRefinementBlock(refinementLevel)}${getAtmosphereBlock(temperature, age)}
 
 ${FINAL_REMINDER}`;
+};
+
+// ─── 외부 Gemini / AI Studio 챗 붙여넣기용 컴팩트 프롬프트 ────────────────────
+// 위의 buildVariationPrompt / buildAtlasVariationPrompt 는 앱 API 호출 전용:
+//   - 레퍼런스 이미지를 inlineData 로 첨부하는 전제 ("first/second reference image")
+//   - HIGHEST PRIORITY 보존 블록이 수십 줄 반복
+// → 외부 챗에 그대로 붙이면 지시 충돌로 거부되거나 이미지 없이 텍스트만 돌아옴.
+// 챗에선 사용자가 이미지를 직접 첨부하므로, 핵심 제약만 짧게 압축한 버전을 따로 제공한다.
+const COMPACT_TEMP_HINT = {
+  coolStrong: 'Cool moonlit steel-blue lighting (white-balance shift only, no new light source).',
+  cool: 'Slightly cool lighting.',
+  warm: 'Slightly warm candlelit lighting.',
+  warmStrong: 'Warm firelit amber-gold lighting (white-balance shift only, no new light source).',
+};
+const COMPACT_AGE_HINT = {
+  restoredStrong: 'Pristine, freshly-crafted surfaces — remove all wear and tarnish.',
+  restored: 'Slightly cleaner, fresher surfaces.',
+  worn: 'Lightly aged and worn surfaces (shading/material only — no new scratches or cracks).',
+  wornStrong: 'Heavily weathered, battle-worn patina and oxidation (shading/material only — no new scratches or cracks).',
+};
+const COMPACT_REFINE_HINT = {
+  refined: 'Simplify decorative density to about 60% — keep the silhouette and outline exactly.',
+  minimal: 'Strip to only the single most prominent accent per element — keep the silhouette and outline exactly.',
+};
+
+const compactExtras = (refinementLevel, temperature, age) => [
+  COMPACT_TEMP_HINT[temperature],
+  COMPACT_AGE_HINT[age],
+  COMPACT_REFINE_HINT[refinementLevel],
+].filter(Boolean).map(s => `- ${s}`).join('\n');
+
+export const buildCompactVariationPrompt = ({ themeHint, refinementLevel, temperature, age }) => {
+  const extras = compactExtras(refinementLevel, temperature, age);
+  return `Recolor and retexture the attached image IN PLACE. Keep the exact same shapes, outlines, layout, proportions, embedded text, and number of elements — change ONLY color, material, and surface finish.
+New color + material: ${themeHint}
+${extras ? `${extras}\n` : ''}Rules: background must be pure black #000000; do NOT add, remove, resize, or rearrange any decoration; do NOT redraw or alter any text; match the source's detail level, do not exceed it.`;
+};
+
+export const buildCompactAtlasVariationPrompt = ({ themeHint, refinementLevel, temperature, age }) => {
+  const extras = compactExtras(refinementLevel, temperature, age);
+  return `The attached image is a UI kit / design-system sheet containing multiple separate elements (buttons, frames, panels, badges, dividers, etc.). Recolor and retexture EVERY element IN PLACE with ONE unified theme. Keep each element's exact shape, position, size, outline, embedded text, and the total element count — change ONLY color, material, and surface finish, consistently across all elements.
+New color + material: ${themeHint}
+${extras ? `${extras}\n` : ''}Rules: background must be pure black #000000; do NOT add, remove, resize, or rearrange any element or decoration; do NOT redraw or alter any text; keep one consistent light direction across the whole sheet.`;
+};
+
+// ─── 세부 에셋 디자인 대안 프롬프트 ('변형 생성' 탭) ─────────────────────────
+// recolor 빌더와 정반대 철학: 구조 락(COUNT_MATCH/SIZE_LOCK)을 풀고, 같은 컴포넌트
+// 정체성·기능만 유지한 채 형태·장식·비율·구성을 적극 변주한다. directionBlock 이 이번
+// 대안이 밀어붙일 방향, strengthBlock 이 원본에서 멀어지는 정도.
+const DESIGN_TEXT_RULE = `TEXT RULE: If the reference contains text, keep the same text CONTENT and keep it legible. You may reposition or restyle it to fit the new design, but never invent garbled or broken glyphs — this is critical for non-Latin scripts (Korean Hangul, Chinese, Japanese). If unsure, keep the text minimal and clean rather than risk mangling it.`;
+
+export const buildDesignAlternativePrompt = ({ directionBlock, strengthBlock, hasBackgroundRef }) => {
+  const refLabel = hasBackgroundRef
+    ? 'TWO reference images are provided. The FIRST is the source detail asset to redesign. The SECOND is the destination background environment.'
+    : 'Reference image is provided as the first input — it is the source detail asset to redesign.';
+
+  return `${refLabel}
+
+Generate a DESIGN ALTERNATIVE of the reference detail asset — a fresh REDESIGN of the SAME game-UI component, keeping the SAME structural proportions but changing the design language. Think of it as the same frame/button/badge redrawn by a different artist who kept the same blueprint: the motif, ornament style, material, and detailing change — the size, thickness, and footprint do NOT.
+
+IDENTITY ANCHORS (must stay true to the reference):
+- The component type / function / role — a button stays a button, a frame stays a frame, a badge stays a badge, an ornament stays an ornament; do NOT turn it into a different kind of asset
+- A SINGLE, centered, isolated asset — same subject, not a scene, not a collection
+
+BORDER & LINE-WEIGHT LOCK (HIGHEST PRIORITY — overrides EVERY variation direction and strength below):
+- Visually trace the source's outer frame / border and reproduce the SAME stroke WIDTH and THICKNESS — do NOT thicken, bulk up, fatten, or inflate the frame or border. If the source border is slim and delicate, the result MUST stay slim and delicate.
+- Ornament, filigree, and engraving LINE WEIGHT and relief / bevel / emboss depth stay at the source level — you may change the MOTIF and pattern, but the strokes must stay as THIN and FINE as the source; do NOT make ornaments chunkier, bolder, heavier, thicker, or more raised
+- The overall visual HEAVINESS / weight of the piece matches the source — match how much "ink" and metal mass the source uses; a light, airy source yields a light, airy result
+- This lock is absolute: when a direction says "richer" or "more ornate", it means a more intricate FINE pattern in the same thin line weight — NEVER thicker or heavier strokes
+- WHEN IN DOUBT, ERR THINNER: if the source stroke width is hard to judge, render the border and all ornament strokes SLIGHTLY THINNER and finer rather than thicker. A too-slim result is acceptable; a thickened, chunky frame is a failure.
+
+FINENESS & PRECISION (global quality bias — apply throughout, second only to the locks above):
+- Aim for a highly refined, precise, jeweler-grade result: crisp clean edges, delicate fine linework, tightly controlled detail. Favor finesse and elegance over heft.
+- Render detail as FINE and intricate at a small scale — like fine engraving, etched metal, or inlay — NEVER as thick, blocky, molded, rounded, tube-like, or chunky relief.
+- Keep frames, borders, and ornament strokes SLIM and sharp; resist any drift toward swollen, padded, bulky, or rope-like forms.
+
+STRUCTURAL ENVELOPE — KEEP CLOSE TO THE SOURCE (high priority, do NOT exaggerate):
+- Decoration and ornament SIZE / SCALE stays close to the source — you may change the ornament's motif and style, but each ornament must occupy roughly the SAME footprint and area; do NOT enlarge corner pieces, do NOT let ornaments grow inward over the content area
+- Overall ASPECT RATIO and outer bounding proportions stay close to the source — do NOT restretch or reorient the canvas (landscape stays landscape, portrait stays portrait), do NOT change the asset's footprint
+- The central content / text-safe area keeps roughly the same size and position
+- The structural envelope and the border/line-weight lock are preserved at EVERY variation strength — strength only controls how boldly the MOTIF, shape DETAIL, MATERIAL, and ARRANGEMENT are reinterpreted, never the stroke thickness, ornament size, or aspect ratio
+
+YOU MAY VARY (within the lock + envelope):
+- Decorative MOTIF and pattern — the look of the carving / filigree / framing, NOT its line weight or size
+- Corner / edge treatment and fine shape detail — within a similar silhouette, the SAME border thickness, and the SAME aspect ratio
+- Color, material, and surface finish
+- Internal arrangement and focal-accent styling
+
+VARIATION DIRECTION (the primary axis to explore for THIS alternative):
+${directionBlock || 'Explore a tasteful, distinct redesign of the motif, detail, and material.'}
+
+${strengthBlock || 'VARIATION STRENGTH: subtle — stay close to the reference; gentle redesign only.'}
+
+${DESIGN_TEXT_RULE}
+
+ISOLATION (critical — overrides any direction that hints at a scene):
+- ONE single asset, centered on pure black — absolutely NO environment, NO background scenery, NO floor / wall / pillars / landscape / props, NO scene, NO duplicate copies. If a direction mentions composition or proportion, it refers ONLY to the asset's own internal layout, never to building a scene around it.
+
+${BACKGROUND_BLOCK}${getBgContextBlock(hasBackgroundRef, false)}
+
+FINAL: Output ONE single redesigned detail asset, centered and isolated on pure black #000000 — same component type, a border / frame stroke NO THICKER than the reference (slimmer is fine), the same thin fine ornament line weight, same ornament scale, same aspect ratio as the reference, but a distinct, finely-detailed and precise decorative motif and material.`;
+};
+
+// 외부 챗 붙여넣기용 컴팩트 디자인 대안 프롬프트.
+export const buildCompactDesignAlternativePrompt = ({ directionHint, strengthHint }) => {
+  return `Redesign the attached game-UI detail asset into a DESIGN ALTERNATIVE — same component type and purpose (a button stays a button, a frame stays a frame), as a single centered asset isolated on pure black #000000. Change the design language (motif, pattern, material, internal arrangement), but KEEP the structure close to the source: trace and reproduce the SAME border/frame stroke thickness, the SAME thin ornament line weight (do NOT make ornaments thicker, bolder, or more raised), the same ornament size/scale (don't enlarge), and the same aspect ratio and footprint. "Richer" means a finer, more intricate pattern at the same thin line weight, never heavier strokes. If unsure of the source stroke width, err THINNER. Aim for a refined, precise, finely-detailed result — never thick, chunky, or bulky. NO background scene, NO environment.
+${directionHint ? `Direction: ${directionHint}\n` : ''}${strengthHint ? `Strength: ${strengthHint}\n` : ''}If there is text, keep the same content and keep it legible (no garbled glyphs). Output one single redesigned asset only.`;
 };
 
 // ─── 호출 헬퍼 ────────────────────────────────────────────────────────────────
@@ -161,13 +277,48 @@ export async function renderVariation(
     themeHint,
     hasBackgroundRef: !!backgroundRef,
     refinementLevel: options.refinementLevel,
+    temperature: options.temperature,
+    age: options.age,
+  });
+  // 외부 챗 붙여넣기용 — API 실패 시에도 복사할 수 있게 항상 동봉.
+  const compactPrompt = buildCompactVariationPrompt({
+    themeHint,
+    refinementLevel: options.refinementLevel,
+    temperature: options.temperature,
+    age: options.age,
   });
 
   try {
-    const result = await renderWithImagen(prompt, modelId, refs);
-    return { ok: true, dataUrl: result.dataUrl, modelId: result.modelId, prompt };
+    const result = await renderWithImagen(prompt, modelId, refs, { imageSize: options.imageSize });
+    return { ok: true, dataUrl: result.dataUrl, modelId: result.modelId, prompt, compactPrompt };
   } catch (e) {
-    return { ok: false, error: e?.message || String(e), prompt };
+    return { ok: false, error: e?.message || String(e), prompt, compactPrompt };
+  }
+}
+
+// 세부 에셋 디자인 대안 렌더 — recolor 와 별개 경로. themeHint 대신 방향/강도 블록을 받는다.
+export async function renderDesignAlternative(sourceDataUrl, options = {}) {
+  if (!sourceDataUrl) return { ok: false, error: '원본 에셋이 없습니다.', prompt: null, compactPrompt: null };
+
+  const modelId = options.modelId || DEFAULT_MODEL;
+  const backgroundRef = options.backgroundRefDataUrl || null;
+  const refs = backgroundRef ? [sourceDataUrl, backgroundRef] : [sourceDataUrl];
+
+  const prompt = buildDesignAlternativePrompt({
+    directionBlock: options.directionBlock,
+    strengthBlock: options.strengthBlock,
+    hasBackgroundRef: !!backgroundRef,
+  });
+  const compactPrompt = buildCompactDesignAlternativePrompt({
+    directionHint: options.directionHint,
+    strengthHint: options.strengthHint,
+  });
+
+  try {
+    const result = await renderWithImagen(prompt, modelId, refs, { imageSize: options.imageSize });
+    return { ok: true, dataUrl: result.dataUrl, modelId: result.modelId, prompt, compactPrompt };
+  } catch (e) {
+    return { ok: false, error: e?.message || String(e), prompt, compactPrompt };
   }
 }
 
@@ -188,13 +339,21 @@ export async function renderAtlasVariation(
     hasBackgroundRef: !!backgroundRef,
     refinementLevel: options.refinementLevel,
     atlasSpec: options.atlasSpec,
+    temperature: options.temperature,
+    age: options.age,
+  });
+  const compactPrompt = buildCompactAtlasVariationPrompt({
+    themeHint,
+    refinementLevel: options.refinementLevel,
+    temperature: options.temperature,
+    age: options.age,
   });
 
   try {
-    const result = await renderWithImagen(prompt, modelId, refs);
-    return { ok: true, dataUrl: result.dataUrl, modelId: result.modelId, prompt };
+    const result = await renderWithImagen(prompt, modelId, refs, { imageSize: options.imageSize });
+    return { ok: true, dataUrl: result.dataUrl, modelId: result.modelId, prompt, compactPrompt };
   } catch (e) {
-    return { ok: false, error: e?.message || String(e), prompt };
+    return { ok: false, error: e?.message || String(e), prompt, compactPrompt };
   }
 }
 
