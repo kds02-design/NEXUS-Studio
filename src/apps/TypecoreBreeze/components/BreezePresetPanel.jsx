@@ -1,4 +1,4 @@
-import { Sparkles, Cpu, Loader2, RefreshCcw, Star, Palette, Type, Layers, Wand2, Activity } from 'lucide-react';
+import { Sparkles, Cpu, Loader2, RefreshCcw, Star, Type, Layers, Wand2, Activity } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { staticOptions } from '../constants/presets.js';
 import { ChipGroup, Collapsible, Tooltip } from './ui.jsx';
@@ -8,9 +8,6 @@ import { ChipGroup, Collapsible, Tooltip } from './ui.jsx';
 export default function BreezePresetPanel() {
   const b = useBreeze();
   const accent = '#A78BFA';
-
-  // 16개 스타일 — 5개씩 줄바꿈(2-col 카드). 카드 안은 짧은 한글명 + 영문 한 줄.
-  const styleCards = [...staticOptions.CasualStyles, ...(b.dynamicOptions.CasualStyles || [])];
 
   return (
     <div className="space-y-4">
@@ -43,35 +40,7 @@ export default function BreezePresetPanel() {
         )}
       </div>
 
-      {/* ② 글자 스타일 — 가장 임팩트 큰 단일 선택. 시각적 2-col 카드. */}
-      <section>
-        <div className="flex items-center gap-2 mb-2 px-0.5">
-          <Palette className="w-3.5 h-3.5 text-zinc-500" />
-          <h3 className="text-[11px] font-bold text-zinc-200">글자 스타일</h3>
-          <span className="text-[10px] text-zinc-500">— 가장 큰 영향</span>
-        </div>
-        <div className="grid grid-cols-2 gap-1.5">
-          {styleCards.map((s) => {
-            const active = b.scriptType === s.id;
-            const ko = s.name.split(/[(（]/)[0].trim();
-            const en = (s.name.match(/[(（]([^)）]+)[)）]/)?.[1] || '').trim();
-            return (
-              <button
-                key={s.id}
-                onClick={() => b.handleScriptPresetChange(s.id)}
-                title={s.name}
-                className={`text-left px-2.5 py-2 rounded-lg border transition-colors ${active ? 'bg-zinc-900 text-white' : 'bg-[#0F0F0F] border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'}`}
-                style={active ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}40` } : {}}
-              >
-                <div className="text-[11px] font-bold leading-tight">{ko}</div>
-                {en && <div className="text-[9px] text-zinc-500 mt-0.5 truncate">{en}</div>}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ③ 핵심 설정 — 한 화면에서 빠르게 결정 가능한 4개. */}
+      {/* 핵심 설정 — 한 화면에서 빠르게 결정 가능한 4개. (글자 스타일/효과 선택은 상단 효과 갤러리에서.) */}
       <section className="space-y-3">
         <div className="flex items-center gap-2 px-0.5">
           <Type className="w-3.5 h-3.5 text-zinc-500" />
@@ -80,7 +49,7 @@ export default function BreezePresetPanel() {
         <div className="p-3 rounded-xl border border-zinc-800 bg-[#0E0E0E] space-y-3">
           <ChipGroup label="배경" data={staticOptions.base} value={b.baseStyle} onChange={b.setBaseStyle} columns={2} accent={accent} />
           <ChipGroup label="비율" data={staticOptions.ratios} value={b.aspectRatio} onChange={b.setAspectRatio} columns={3} accent={accent} />
-          <ChipGroup label="배치" data={staticOptions.layouts} value={b.layoutType} onChange={b.setLayoutType} columns={2} accent={accent} />
+          <ChipGroup label="배치" data={staticOptions.layouts} value={b.layoutType} onChange={b.setLayoutType} columns={3} accent={accent} />
           <ChipGroup label="글자 두께" data={[...staticOptions.strokeWeights, ...(b.dynamicOptions.strokeWeights || [])]} value={b.stemWeight} onChange={b.setStemWeight} columns={4} accent={accent} />
         </div>
       </section>

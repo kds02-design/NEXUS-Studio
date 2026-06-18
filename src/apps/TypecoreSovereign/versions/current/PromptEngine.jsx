@@ -2,7 +2,7 @@
 // 버전 스냅샷(아카이브): TypecoreSovereign current. 2043줄 단일 파일을 components/hooks/constants 로
 // 격리 분리한 thin 진입점. versions/current/ 외부의 TypecoreSovereign 공유 모듈은 사용하지 않음 (격리 원칙).
 // Imagen 렌더링은 lib/imagenRender + PromptArc 저장 흐름을 RenderMatrix 와 동일하게 재사용.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Edit3, Settings } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../services/gemini';
@@ -23,8 +23,23 @@ const App = ({ version, setVersion, versions } = {}) => {
   const apiKey = GEMINI_API_KEY;
   const rp = useSovereignPromptCurrent({ apiKey });
   const { user, grade } = useAuth();
-  const { navigate } = useGlobal();
+  const { navigate, payload } = useGlobal();
   const canRender = grade === 'pro' || grade === 'expert';
+
+  // 완전 자동 파이프라인 모드 — 인덱스의 "타이포그래피 자동화 1단계" 메뉴로 진입했을 때만 true.
+  // (payload.params.autoPipeline 은 그 메뉴에서만 주입됨 → 일반 앱 목록 진입 시엔 자동 전송 안 함.)
+  // 이 플래그가 켜져야 handleRender 가 렌더 직후 RenderMatrix 로 자동 전송한다.
+  const [autoPipelineMode, setAutoPipelineMode] = useState(false);
+  const autoPipelineConsumedRef = useRef(null);
+  useEffect(() => {
+    if (!payload || payload.target !== 'typecore-sovereign' || !payload.timestamp) return;
+    if (autoPipelineConsumedRef.current === payload.timestamp) return;
+    if (payload.params?.autoPipeline) {
+      autoPipelineConsumedRef.current = payload.timestamp;
+      setAutoPipelineMode(true);
+    }
+    // payload 정리는 useSovereignPromptCurrent 의 수신 effect 가 담당 (여기선 플래그만 캡처).
+  }, [payload?.timestamp, payload?.target, payload?.params?.autoPipeline]);
 
   // Imagen 렌더링 — RenderMatrix 와 동일 흐름.
   const [rendering, setRendering] = useState(false);
@@ -105,6 +120,26 @@ const App = ({ version, setVersion, versions } = {}) => {
     }
   }, [renderedImage, savedCloudinaryUrl, navigate, rp]);
 
+  // 완전 자동 파이프라인 — 렌더된 이미지를 RenderMatrix 로 보내 자동으로 image-to-image 렌더까지 실행.
+  // mode:'pipeline' 이면 RenderMatrix 가 base image 임포트 + 추천 옵션 자동 적용 + 자동 렌더한다.
+  // cloudUrl(자동 저장 결과)이 있으면 재사용, 없으면 즉시 업로드.
+  const autoSendToRenderMatrix = useCallback(async (image, promptText, cloudUrl) => {
+    if (!image?.dataUrl) return;
+    try {
+      const url = cloudUrl || await uploadBase64(image.dataUrl);
+      navigate('render-metrics', {
+        source: 'typecore-sovereign',
+        mode: 'pipeline',
+        prompt: { text: rp.currentOutputContent || promptText || '', tags: ['TypecoreSovereign', 'Typography'] },
+        image: { url, metadata: { from: 'TypecoreSovereign' } },
+      });
+      rp.showToast?.('🤖 완전 자동 파이프라인 — Render Matrix 로 보냈어요');
+    } catch (e) {
+      console.error('[TypecoreSovereign] auto pipeline send failed', e);
+      rp.showToast?.(`자동 파이프라인 전송 실패: ${e.message || e.code}`);
+    }
+  }, [navigate, rp]);
+
   const handleRender = useCallback(async (promptText) => {
     if (!promptText) return;
     if (!canRender) { setRenderError('Imagen 렌더링은 Pro 등급 이상만 사용할 수 있습니다.'); return; }
@@ -115,12 +150,22 @@ const App = ({ version, setVersion, versions } = {}) => {
       // 참조 이미지 없이 텍스트 프롬프트만으로 호출.
       const result = await renderWithImagen(promptText, selectedImagenModel, null);
       setRenderedImage(result);
-      if (user?.uid && result?.dataUrl) saveRenderToPromptArc(promptText, result);
+      // PromptArc 자동 저장 → cloudinary URL 확보(파이프라인 전송 시 재업로드 회피).
+      let cloudUrl = null;
+      if (user?.uid && result?.dataUrl) {
+        const saved = await saveRenderToPromptArc(promptText, result);
+        cloudUrl = saved?.cloudinaryUrl || null;
+      }
+      // 완전 자동 파이프라인 — 인덱스 메뉴로 진입한 경우(autoPipelineMode)에만 RenderMatrix 로 자동 전송 + 자동 렌더.
+      // 일반 진입 시엔 전송하지 않음 — 수동 "Render Matrix 로 보내기" 버튼은 그대로 사용 가능.
+      if (autoPipelineMode) {
+        await autoSendToRenderMatrix(result, promptText, cloudUrl);
+      }
     } catch (e) {
       console.error('[TypecoreSovereign] imagen failed', e);
       setRenderError(e.message || String(e));
     } finally { setRendering(false); }
-  }, [canRender, selectedImagenModel, user, saveRenderToPromptArc, rp]);
+  }, [canRender, selectedImagenModel, user, saveRenderToPromptArc, autoSendToRenderMatrix, autoPipelineMode, rp]);
 
   const handleDownloadRendered = useCallback(() => {
     if (!renderedImage?.dataUrl) return;

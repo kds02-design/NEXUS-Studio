@@ -22,7 +22,8 @@ export const editOptions = {
     { id: "Tex_Chalk", name: "거친 분필 가루", en: "Rough, dusty chalkboard chalk texture" },
     { id: "Tex_Glossy", name: "매끄러운 젤리 광택", en: "Smooth, glossy jelly highlight reflections" },
     { id: "Tex_Watercolor", name: "촉촉한 수채화 번짐", en: "Wet watercolor bleed and soft ink pooling" },
-    { id: "Tex_Grunge", name: "거친 스크래치 파편", en: "Heavy grunge texture with scratches and battle damage" }
+    { id: "Tex_Grunge", name: "거친 스크래치 파편", en: "Heavy grunge texture with scratches and battle damage" },
+    { id: "Tex_Stamp", name: "잉크 스탬프/판화 거칠음", en: "Rough distressed ink stamp and letterpress texture, worn uneven edges, ink speckles and grain, high-pressure printed grunge, vintage rubber stamp imperfections" }
   ],
   edges: [
     { id: "Edge_Round", name: "말랑하고 둥글게 (Jelly/Bubble)", en: "Soft, round, bubble-like chewy edges and corners" },

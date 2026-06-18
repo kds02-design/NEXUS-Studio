@@ -1,6 +1,6 @@
 // Breeze 전용 Imagen 렌더 영역 — Sovereign current 의 ImagenRenderArea 를 Breeze 톤(violet)으로 변형.
 // Creation/Edit 두 뷰가 공통으로 사용.
-import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers } from 'lucide-react';
+import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, ImagePlus } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 
 export default function BreezeRenderArea() {
@@ -9,8 +9,12 @@ export default function BreezeRenderArea() {
     handleRender, rendering, renderedImage, renderError,
     handleDownloadRendered, handleSaveToPromptArc, savingToArc, savedToArcId,
     handleSendToRenderMatrix, sendingToRenderMatrix,
+    sendRenderedToEditReference, currentView, editUploadedImage,
     isLoggedIn, canRender, grade,
   } = useBreeze();
+
+  // 렌더 결과가 이미 Micro-Edit 레퍼런스(base)와 동일하면 "사용 중" 으로 표시.
+  const isRenderedTheRef = !!renderedImage?.dataUrl && editUploadedImage === renderedImage.dataUrl;
 
   return (
     <div className="rounded-xl border bg-[#111111] border-zinc-800/80 overflow-hidden">
@@ -82,6 +86,19 @@ export default function BreezeRenderArea() {
                 >
                   {savingToArc ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 저장 중…</>
                     : <><Save className="w-3.5 h-3.5" /> PromptArc에 저장</>}
+                </button>
+              )}
+              {isRenderedTheRef ? (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 text-violet-300 text-[11px] font-semibold" title="이 이미지가 현재 Micro-Edit 레퍼런스(base)입니다">
+                  <Check className="w-3.5 h-3.5" /> 레퍼런스로 사용 중
+                </div>
+              ) : (
+                <button
+                  onClick={sendRenderedToEditReference}
+                  title="이 이미지를 Micro-Edit 레퍼런스(base)로 보내 추가 효과를 적용"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15 hover:border-violet-500/50 text-[11px] font-semibold transition-colors"
+                >
+                  <ImagePlus className="w-3.5 h-3.5" /> {currentView === 'edit' ? '레퍼런스로 보내기' : 'Micro-Edit 레퍼런스로'}
                 </button>
               )}
               <button

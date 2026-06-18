@@ -10,7 +10,8 @@ export const staticOptions = {
   ],
   layouts: [
     { id: "1Line", name: "1줄 (가로)", en: "STRICT SINGLE HORIZONTAL LINE." },
-    { id: "2Lines", name: "2줄 (적층)", en: "Two-tier vertical stacked composition." }
+    { id: "2Lines", name: "2줄 (적층)", en: "Two-tier vertical stacked composition." },
+    { id: "3Lines", name: "3줄 (적층)", en: "Three-tier vertical stacked composition." }
   ],
   proportions: [
     { id: "P_Condensed", name: "5:10 (매우 좁음)", en: "Condensed 5:10 ratio" }, { id: "P_Slim", name: "6:10 (좁음)", en: "Slim 6:10 ratio" },
@@ -33,7 +34,8 @@ export const staticOptions = {
     { id: "Casual_Emblem", name: "스포츠 엠블럼 (Sports Emblem)", en: "College sports team emblem style with arch and ribbon banners" },
     { id: "Casual_Racing", name: "레이싱/스피드 (Racing Action)", en: "Dynamic racing game title with high speed slant and sliced strokes" },
     { id: "Casual_Idol", name: "아이돌/하이틴 (Idol Pop)", en: "Soft, clean, elegant and cute pastel idol group logo typography" },
-    { id: "Casual_Grunge", name: "거친 영화 타이틀 (Grunge Movie)", en: "Aggressive action thriller title with heavy grunge distressed textures" }
+    { id: "Casual_Grunge", name: "거친 영화 타이틀 (Grunge Movie)", en: "Aggressive action thriller title with heavy grunge distressed textures" },
+    { id: "Casual_StencilBlock", name: "스텐실 블록 (Stencil Block)", en: "Bold geometric stencil block lettering with hard right-angle corners, heavy condensed solid strokes, thick chunky mass, modern stamped block forms with sharp flat terminals" }
   ],
   InternalDecorations: [ { id: "Solid", name: "꽉 찬 단색", en: "Solid filled internal mass" }, { id: "Hatched", name: "스케치 빗금", en: "Hand-drawn hatched sketch lines inside" }, { id: "Hatched_Chalk", name: "거친 분필 빗금", en: "rough chalk hatched shading inside" }, { id: "PolkaDots", name: "코믹 하프톤 도트", en: "Comic book pop-art halftone dots inside" }, { id: "Highlight", name: "반짝임/글로시", en: "Cartoonish glossy highlights and reflections" }, { id: "Extruded3D", name: "3D 입체/그림자", en: "Thick 3D extruded block depth and heavy drop shadow" }, { id: "StickerBorder", name: "스티커 컷아웃 테두리", en: "Thick, bold white sticker cut-out border surrounding the text" } ],
   TextFlows: [ { id: "Straight", name: "단정하게 (수평)", en: "Straight horizontal baseline" }, { id: "Bouncy", name: "통통 튀는 리듬감", en: "Bouncy, playful baseline with alternating letter heights" }, { id: "Wave", name: "물결 치듯", en: "Flowing wave-like baseline" }, { id: "Arch", name: "아치형", en: "Playful arching baseline" } ],

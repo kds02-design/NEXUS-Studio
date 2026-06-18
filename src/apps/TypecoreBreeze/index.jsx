@@ -3,6 +3,7 @@ import { BreezeProvider, useBreeze } from './context/BreezeContext.jsx';
 import BreezeSidebar from './components/BreezeSidebar.jsx';
 import BreezeHeader from './components/BreezeHeader.jsx';
 import BreezePromptForm from './components/BreezePromptForm.jsx';
+import BreezeEffectGallery from './components/BreezeEffectGallery.jsx';
 import BreezePresetPanel from './components/BreezePresetPanel.jsx';
 import BreezeResultPanel from './components/BreezeResultPanel.jsx';
 import BreezeModals from './components/BreezeModals.jsx';
@@ -33,6 +34,7 @@ function BreezeViews() {
                 마지막에 명시적 spacer(div h-16) — 스크롤 끝까지 내려도 박스 bottom border 가 viewport 와 맞물리지 않게. */}
             <aside className="w-[360px] shrink-0 border-r bg-[#111111] border-zinc-800/80 flex flex-col min-h-0">
               <div className="flex-1 overflow-y-auto pl-4 pr-2 py-4 space-y-3 custom-scrollbar">
+                <BreezeEffectGallery />
                 <BreezeHeader />
                 <AdvancedToggle
                   open={advancedOpen}

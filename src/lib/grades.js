@@ -178,6 +178,10 @@ export async function ensureUserProfile(user) {
     if (ADMIN_EMAILS.includes(String(data.email || user.email || "").toLowerCase())) {
       if (data.role !== "admin") patch.role = "admin";
       if (data.status !== STATUS.approved) patch.status = STATUS.approved;
+      // grade 백필 — admin doc 이 과거 general/pro 로 박혀 있으면 expert 로 승급.
+      // (위 ncsoft 백필은 inferred.grade===pro 조건이라 admin(inferred=expert)에선 안 걸려
+      //  grade 가 general 로 남아 canAccessSubApps 가 막히던 버그를 여기서 해소)
+      if (data.grade !== GRADES.expert) patch.grade = GRADES.expert;
     }
     if (Object.keys(patch).length > 0) {
       patch.updatedAt = serverTimestamp();

@@ -30,7 +30,8 @@ const PREVIEW_H = "clamp(320px, min(58vh, 40vw), 880px)";
 
 const MODE_TABS = [
   { key: "placement", label: "배치 미리보기" },
-  { key: "quality", label: "퀄리티 업" },
+  { key: "quality", label: "배너 퀄리티업" },
+  { key: "qualityBg", label: "배경 퀄리티업" },
 ];
 
 function loadLockedSizes() {
@@ -395,8 +396,8 @@ export default function NexusPreview() {
         )}
 
         <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 28px" }}>
-          {mode === "quality" ? (
-            <QualityEnhancer T={T} accent={ACCENT} />
+          {mode === "quality" || mode === "qualityBg" ? (
+            <QualityEnhancer T={T} accent={ACCENT} variant={mode === "qualityBg" ? "background" : "banner"} />
           ) : (
             <div style={{ display: "flex", flexWrap: category === "banner" ? "nowrap" : "wrap", gap: 20, alignItems: "flex-start" }}>
               {shown.map((tpl) => (

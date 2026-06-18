@@ -18,6 +18,7 @@ import {
   dailyLimit,
   remainingToday,
   GRADES,
+  gradeFromEmail,
   STATUS,
   ADMIN_EMAILS,
   USAGE_ERROR_MESSAGES,
@@ -27,6 +28,9 @@ import {
 } from "../lib/grades";
 
 const AuthContext = createContext(null);
+
+// 등급 우선순위 — 저장 등급과 이메일 자격 중 더 높은 쪽을 고르기 위한 랭크.
+const GRADE_RANK = { general: 0, pro: 1, pro_plus: 2, expert: 3 };
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -146,6 +150,12 @@ export function AuthProvider({ children }) {
     }
   }, [user?.uid]);
 
+  // 로컬 프로필 즉시 패치 — 서버 재조회(refreshProfile)가 실패/지연돼도 UI 가 바로 반영되도록.
+  // "쓰기는 성공했는데 화면이 안 바뀌는"(예: 아바타 변경) 케이스 방지.
+  const patchProfile = useCallback((patch) => {
+    setProfile((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
   const applyInviteCode = useCallback(async (code) => {
     if (!user?.uid) throw new Error("NOT_AUTHENTICATED");
     const result = await redeemInviteCode(user.uid, code);
@@ -189,11 +199,16 @@ export function AuthProvider({ children }) {
     await fbDeleteUser(u); // 성공 시 onAuthStateChanged 가 자동으로 로그아웃 처리
   }, []);
 
-  const grade = profile?.grade || GRADES.general;
+  const isAdmin = (profile?.role === "admin") || (user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()));
+
+  // 유효 등급 — 저장된 doc 등급과 이메일 기반 자격(admin=expert, ncsoft=pro) 중 더 높은 쪽을 채택.
+  // Firestore 백필 "쓰기"가 지연되거나 보안 규칙에 막혀도, 권한 판정·등급 표시가 즉시 올바르게
+  // 나오도록 read-time 에서 보정한다. (관리자가 수동 부여한 pro_plus/expert 는 더 높으므로 그대로 유지)
+  const storedGrade = profile?.grade || GRADES.general;
+  const entitledGrade = isAdmin ? GRADES.expert : gradeFromEmail(user?.email || "");
+  const grade = (GRADE_RANK[entitledGrade] ?? 0) > (GRADE_RANK[storedGrade] ?? 0) ? entitledGrade : storedGrade;
   const limit = dailyLimit(grade);
   const remaining = remainingToday(grade, usageToday);
-
-  const isAdmin = (profile?.role === "admin") || (user?.email && ADMIN_EMAILS.includes(user.email.toLowerCase()));
   const status = profile?.status || STATUS.approved;
   const isRejected = !!user && !isAdmin && profileLoaded && profile && status === STATUS.rejected;
   // user가 있는데 profile이 아직이면 auth 자체는 로딩 중으로 본다.
@@ -201,7 +216,8 @@ export function AuthProvider({ children }) {
   const isAuthLoading = loading || (!!user && !profileLoaded && !profileError);
   // 서브앱 접근 가능 여부 — 로그인 안 했거나 general 등급이면 인덱스만.
   // 프로필 로딩 중에는 보수적으로 false (false → 인덱스만, 진입 시도 시 로그인 모달).
-  const canAccessSubApps = !!user && profileLoaded && grade !== GRADES.general && !isRejected;
+  // admin 은 grade/프로필 로딩 상태와 무관하게 항상 서브앱 접근 — 백필 지연이나 프로필 로드 실패 시에도 잠기지 않도록 방어.
+  const canAccessSubApps = !!user && (isAdmin || (profileLoaded && grade !== GRADES.general && !isRejected));
 
   // 로그인 모달 — 비로그인/일반 사용자가 서브앱 진입 시도 시 트리거.
   // 닫기는 LoginScreen 성공 콜백 / X 버튼 / 배경 클릭으로만. (effect 자동닫기는 cascade 재렌더 유발)
@@ -218,7 +234,7 @@ export function AuthProvider({ children }) {
     usageToday, dailyLimit: limit, remainingToday: remaining,
     signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,
     setPendingInviteCode, applyInviteCode,
-    refreshProfile, tryConsumeUsage,
+    refreshProfile, patchProfile, tryConsumeUsage,
     loginModalOpen, openLoginModal, closeLoginModal,
   }), [
     user, profile, grade, loading, profileLoaded, isAuthLoading,
@@ -227,7 +243,7 @@ export function AuthProvider({ children }) {
     usageToday, limit, remaining,
     signInEmail, signUpEmail, signInGoogle, signOut, deleteAccount,
     setPendingInviteCode, applyInviteCode,
-    refreshProfile, tryConsumeUsage,
+    refreshProfile, patchProfile, tryConsumeUsage,
     loginModalOpen, openLoginModal, closeLoginModal,
   ]);
 

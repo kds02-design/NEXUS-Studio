@@ -2,17 +2,21 @@
 // 분석 호출 전 ensureCanGenerate("analysis"), 렌더 호출 전 ensureCanGenerate("image") (프로젝트 규약).
 // 업로드 이미지의 크기·위치 변형은 제거 — 원본을 그대로 모델에 전달해 비율 어긋남을 방지.
 import { useRef, useState } from "react";
-import { Upload, Sparkles, Copy, Check, RotateCcw, Wand2, Download, Plus } from "lucide-react";
+import { Upload, Sparkles, Copy, Check, RotateCcw, Wand2, Download, Plus, FolderCheck } from "lucide-react";
 import { useUsageGate } from "../../../components/UsageGate";
-import { analyzeForQuality, renderEnhanced } from "../services/qualityEnhancer";
+import { useAuth } from "../../../context/AuthContext";
+import { analyzeForQuality, renderEnhanced, saveEnhancedToPromptArc } from "../services/qualityEnhancer";
 
 const TOOLS = [
   { key: "gemini", label: "Gemini", sub: "Imagen / Nano Banana", color: "#8b5cf6" },
   { key: "gpt", label: "ChatGPT", sub: "GPT-4o 이미지 편집", color: "#10b981" },
 ];
 
-export default function QualityEnhancer({ T, accent }) {
+export default function QualityEnhancer({ T, accent, variant = "banner" }) {
   const { ensureCanGenerate, modal } = useUsageGate();
+  const { user } = useAuth();
+  const isBg = variant === "background";
+  const mode = isBg ? "background" : "banner";
   const [dataUrl, setDataUrl] = useState(null);
   const [aspect, setAspect] = useState(16 / 9);
 
@@ -20,6 +24,7 @@ export default function QualityEnhancer({ T, accent }) {
   const [loading, setLoading] = useState(""); // '' | 'prompt' | 'render'
   const [result, setResult] = useState(null);     // 프롬프트 결과
   const [renderedUrl, setRenderedUrl] = useState(null); // 렌더 결과
+  const [savedToArc, setSavedToArc] = useState(""); // '' | 'saving' | 'done' | 'failed'
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState(0);
   const [dragOver, setDragOver] = useState(false);
@@ -57,7 +62,7 @@ export default function QualityEnhancer({ T, accent }) {
     setLoading("prompt"); setResult(null); setRenderedUrl(null);
     try {
       const input = await getInput();
-      const r = await analyzeForQuality(input, tool, extraInstructions);
+      const r = await analyzeForQuality(input, tool, extraInstructions, mode);
       setResult(r); setActiveTab(0);
     } catch (e) { setError(e?.message || "분석 중 오류가 발생했습니다."); }
     finally { setLoading(""); }
@@ -67,11 +72,17 @@ export default function QualityEnhancer({ T, accent }) {
     if (!dataUrl || loading) return;
     setError("");
     if (!(await ensureCanGenerate("image"))) return;
-    setLoading("render"); setRenderedUrl(null); setResult(null);
+    setLoading("render"); setRenderedUrl(null); setResult(null); setSavedToArc("");
     try {
       const input = await getInput();
-      const url = await renderEnhanced(input, undefined, extraInstructions);
+      const url = await renderEnhanced(input, undefined, extraInstructions, mode);
       setRenderedUrl(url);
+      // 렌더 완료 즉시 PromptArc 내 폴더에 자동 업로드 — 로그인 사용자만. 실패해도 렌더 결과는 유지.
+      if (user?.uid) {
+        setSavedToArc("saving");
+        try { await saveEnhancedToPromptArc(url, user, mode); setSavedToArc("done"); }
+        catch (e) { console.error("[QualityEnhancer] PromptArc 저장 실패", e); setSavedToArc("failed"); }
+      }
     } catch (e) { setError(e?.message || "렌더링 중 오류가 발생했습니다."); }
     finally { setLoading(""); }
   };
@@ -88,11 +99,28 @@ export default function QualityEnhancer({ T, accent }) {
     <div style={{ maxWidth: 880, margin: "0 auto", padding: "8px 4px 40px" }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <h2 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", color: T.text, fontFamily: "'Teko', sans-serif" }}>
-          이미지 분석 → <span style={{ color: accent }}>향상 프롬프트</span> 또는 <span style={{ color: accent }}>바로 렌더링</span>
+          {isBg ? (
+            <><span style={{ color: accent }}>배경</span>에 드라마틱한 <span style={{ color: accent }}>빛 효과</span> 추가</>
+          ) : (
+            <>이미지 분석 → <span style={{ color: accent }}>향상 프롬프트</span> 또는 <span style={{ color: accent }}>바로 렌더링</span></>
+          )}
         </h2>
         <p style={{ fontSize: 13, color: T.textMuted, marginTop: 6 }}>
-          배너를 올리고 크기·위치를 맞춘 뒤, 프롬프트를 생성하거나 Pro 모델로 바로 향상 렌더링하세요
+          {isBg
+            ? "캐릭터·타이틀은 그대로 두고 배경의 조명·대기·명암만 영화적으로 끌어올립니다 (Pro 모델 · 4K)"
+            : "배너를 올리고 크기·위치를 맞춘 뒤, 프롬프트를 생성하거나 Pro 모델로 바로 향상 렌더링하세요"}
         </p>
+        {isBg && (
+          <div style={{
+            marginTop: 12, display: "inline-block", textAlign: "left", maxWidth: 620,
+            padding: "10px 14px", borderRadius: 10, fontSize: 12, lineHeight: 1.6,
+            color: T.textMuted, background: `${accent}10`, border: `1px solid ${accent}33`,
+          }}>
+            ⚠️ 캐릭터가 있으면 <b style={{ color: T.text }}>외형 보존 가드</b>(얼굴·체형·의상·포즈)를 강하게 적용하지만,
+            image-to-image 특성상 <b style={{ color: T.text }}>100% 고정은 어렵습니다</b>. 외형이 바뀌면 다시 렌더링하거나,
+            아래 <b style={{ color: T.text }}>추가 지시</b>에 "캐릭터는 절대 바꾸지 말고 배경 빛만" 처럼 명시하면 더 안정적입니다.
+          </div>
+        )}
       </div>
 
       {/* 업로드 미리보기 — 원본 그대로 표시. 크기·위치 조절 UI 제거 (비율 어긋남 방지). */}
@@ -208,8 +236,18 @@ export default function QualityEnhancer({ T, accent }) {
       {/* 렌더 결과 */}
       {renderedUrl && (
         <div style={{ marginTop: 30 }}>
-          <SectionLabel T={T}>향상 렌더링 결과 (Pro)</SectionLabel>
+          <SectionLabel T={T}>향상 렌더링 결과 (Pro · 4K)</SectionLabel>
           <img src={renderedUrl} alt="rendered" style={{ width: "100%", borderRadius: 12, border: `1px solid ${T.border}`, background: "#0c0c12" }} />
+          {savedToArc && (
+            <div style={{
+              marginTop: 10, display: "flex", alignItems: "center", gap: 7, fontSize: 12,
+              color: savedToArc === "failed" ? "#f87171" : savedToArc === "done" ? "#10b981" : T.textMuted,
+            }}>
+              {savedToArc === "saving" && <>프롬프트 아크 내 폴더에 저장 중…</>}
+              {savedToArc === "done" && <><FolderCheck size={14} /> 프롬프트 아크 내 폴더에 저장됨</>}
+              {savedToArc === "failed" && <>프롬프트 아크 저장 실패 (렌더 결과는 다운로드 가능)</>}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
             <button onClick={downloadRendered} style={{ flex: 1, padding: 11, borderRadius: 10, border: `1px solid ${accent}55`, background: `${accent}1C`, color: accent, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <Download size={14} /> 다운로드 (PNG)

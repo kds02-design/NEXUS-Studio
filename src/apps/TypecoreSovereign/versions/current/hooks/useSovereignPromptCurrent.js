@@ -541,6 +541,10 @@ Return strictly in JSON format:
     const source = payload.source || 'unknown';
     const isEditModeArc = payload.mode === 'edit';
 
+    // 컨트롤 전용 payload (이미지·텍스트 없이 params 플래그만; 예: 인덱스 "타이포그래피 자동화 1단계" 메뉴) —
+    // 역설계/배너 처리를 건너뛴다. autoPipeline 플래그는 PromptEngine 의 별도 effect 가 캡처.
+    if (!imgUrl && !text && !isEditModeArc) { try { clearPayload(); } catch {} return; }
+
     (async () => {
       let dataUrl = null;
       if (imgUrl) {

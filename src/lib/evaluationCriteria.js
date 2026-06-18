@@ -25,6 +25,10 @@ export const CRITERIA_TYPES = {
   //                   프로모션 모바일 750×5000+ (긴 세로 스크롤 랜딩).
   brandwebMobile: "brandwebMobile",
   promotionMobile: "promotionMobile",
+  // ─── 프로모션 상단 키비주얼(KV/히어로) 전용 (2026-06 추가) ───
+  // 프로모션 페이지 전체가 아니라 최상단 키비주얼(히어로) 영역만 평가. 메인 일러스트·타이틀
+  // 임팩트·카피 가독성 등 KV 본질에 가중치를 몰아준 별도 기준.
+  promotionKv: "promotionKv",
   prompt: "prompt",
   // ─── 타이포그래피 전용 평가 타입 (2026-05 추가) ─────────────
   // 각 타이포 성격에 맞는 항목으로 시드. 관리자가 NexusAdmin 에서 가중치/항목 자유 조정.
@@ -122,6 +126,22 @@ const PROMOTION_MOBILE_SEED = [
   { id: "detail",     name: "운영 신뢰성",         weight: 7,  maxScore: 100, description: "안내·면책·기간 명시·터치 타깃 크기 등 모바일 운영 디테일의 완성도." },
 ];
 
+// ─── 프로모션 상단 키비주얼(KV / 히어로) 전용 ──────────────────────────────
+// 전체 랜딩이 아니라 최상단 키비주얼 영역만 평가. 메인 비주얼 완성도·타이틀 임팩트·
+// 카피 가독성·시선 유도에 가중치를 몰아줌. id 는 10개 표준 키 유지(responseSchema 호환).
+const PROMOTION_KV_SEED = [
+  { id: "impression", name: "첫인상 / 주목도 (Hook)", weight: 14, maxScore: 100, description: "키비주얼이 한눈에 시선을 사로잡는 강렬함. 단조롭고 평이한 배치면 80점대." },
+  { id: "color",      name: "핵심 비주얼 매력",       weight: 15, maxScore: 100, description: "메인 일러스트/캐릭터/오브젝트의 완성도와 매력 — KV 의 본질. 빈약하면 70점대." },
+  { id: "typography", name: "메인 타이틀 임팩트",     weight: 14, maxScore: 100, description: "타이틀/로고 타이포의 존재감·위계·박력. 배경에 묻히면 60~70점대." },
+  { id: "concept",    name: "캠페인 콘셉트 전달",     weight: 10, maxScore: 100, description: "키비주얼만으로 캠페인의 성격·테마가 즉시 읽히는가." },
+  { id: "layout",     name: "구도·여백 균형",         weight: 10, maxScore: 100, description: "키비주얼의 구도, 시각 무게중심, 여백 운용. 산만하거나 답답하면 감점." },
+  { id: "readability",name: "카피·슬로건 가독성",     weight: 9,  maxScore: 100, description: "핵심 카피/슬로건이 배경과 분리되어 또렷이 읽히는가." },
+  { id: "flow",       name: "시선 유도 / 포컬",       weight: 8,  maxScore: 100, description: "타이틀→캐릭터→핵심 요소로 이어지는 시선 흐름과 포컬의 명확성." },
+  { id: "brand",      name: "브랜드·톤 일치",         weight: 8,  maxScore: 100, description: "게임/브랜드 정체성과 캠페인 무드의 일치도." },
+  { id: "detail",     name: "완성도 / 디테일",        weight: 8,  maxScore: 100, description: "빛/뎁스/합성/마감의 디테일. 캐릭터 없는 단순 나열은 90점 이상 금지." },
+  { id: "conversion", name: "클릭/스크롤 유도력",     weight: 4,  maxScore: 100, description: "아래 콘텐츠로 내려가거나 참여하고 싶게 만드는 매력도." },
+];
+
 // 프롬프트 평가 — placeholder. 사용자가 NexusAdmin 에서 직접 채워 넣을 수 있도록 빈 시드.
 const PROMPT_SEED = [];
 
@@ -194,6 +214,7 @@ const SEEDS = {
   [CRITERIA_TYPES.brandwebSub]:     { items: BRANDWEB_SUB_SEED,     name: "v1.0 (시드)", rules: "" },
   [CRITERIA_TYPES.brandwebMobile]:  { items: BRANDWEB_MOBILE_SEED,  name: "v1.0 (시드)", rules: "" },
   [CRITERIA_TYPES.promotionMobile]: { items: PROMOTION_MOBILE_SEED, name: "v1.0 (시드)", rules: "" },
+  [CRITERIA_TYPES.promotionKv]:     { items: PROMOTION_KV_SEED,     name: "v1.0 (시드)", rules: "" },
   [CRITERIA_TYPES.prompt]:          { items: PROMPT_SEED,           name: "v1.0 (시드)", rules: "" },
   [CRITERIA_TYPES.typo2d]:          { items: TYPO2D_SEED,           name: "v1.0 (시드)", rules: "" },
   [CRITERIA_TYPES.typoRender]:  { items: TYPO_RENDER_SEED,  name: "v1.0 (시드)", rules: "" },
@@ -319,6 +340,10 @@ export function resolveCriteriaType(category) {
     if (c.includes("2d")) return CRITERIA_TYPES.typo2d;
     if (c.includes("렌더") || c.includes("render")) return CRITERIA_TYPES.typoRender;
     if (c.includes("모션") || c.includes("motion")) return CRITERIA_TYPES.typoMotion;
+  }
+  // 키비주얼(KV/히어로) — "프로모션" 보다 먼저 검사해야 generic 프로모션으로 빠지지 않음.
+  if (c.includes("키비주얼") || c.includes("키 비주얼") || c.includes("kv") || c.includes("히어로") || c.includes("hero")) {
+    return CRITERIA_TYPES.promotionKv;
   }
   const isMobile = c.includes("모바일") || c.includes("mobile");
   if (isMobile) {

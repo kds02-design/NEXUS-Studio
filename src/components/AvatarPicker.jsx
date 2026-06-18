@@ -12,23 +12,29 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5MB
 
 export default function AvatarPicker({ onClose }) {
   const T = useTheme();
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, patchProfile } = useAuth();
   const [tab, setTab] = useState("emoji");
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadErr, setUploadErr] = useState("");
+  const [saveErr, setSaveErr] = useState("");
   const fileRef = useRef(null);
   const current = resolveAvatar({ profile, user });
   const initial = (user?.displayName || user?.email || "?").charAt(0).toUpperCase() || "?";
 
   const apply = async (type, value) => {
-    if (!user?.uid || busy) return;
-    setBusy(true);
+    if (!user?.uid || busy) return false;
+    setBusy(true); setSaveErr("");
     try {
       await updateUserAvatar(user.uid, type, value);
+      patchProfile({ avatarType: type, avatarValue: value }); // 즉시 반영 — 서버 재조회가 실패해도 UI 갱신
       await refreshProfile();
+      return true;
     } catch (e) {
       console.error("[Avatar] save failed", e);
+      // 조용히 삼키지 않고 원인(권한/네트워크)을 화면에 노출.
+      setSaveErr(`저장 실패: ${e?.code || e?.message || e} — Firestore 권한 또는 네트워크를 확인해주세요.`);
+      return false;
     } finally { setBusy(false); }
   };
 
@@ -190,6 +196,12 @@ export default function AvatarPicker({ onClose }) {
               <div style={{ fontSize:10, color:T.textDim, marginTop:12, lineHeight:1.6 }}>
                 업로드한 이미지는 Cloudinary에 저장되며, 프로필 사진으로 즉시 적용됩니다.
               </div>
+            </div>
+          )}
+
+          {saveErr && (
+            <div style={{ marginTop:12, padding:"8px 12px", background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)", borderRadius:6, fontSize:11, color:"#fca5a5" }}>
+              {saveErr}
             </div>
           )}
         </div>

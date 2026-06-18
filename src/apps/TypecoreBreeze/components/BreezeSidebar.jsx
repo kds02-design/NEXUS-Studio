@@ -4,7 +4,7 @@ import { useBreeze } from '../context/BreezeContext.jsx';
 export default function BreezeSidebar() {
   const {
     isSidebarOpen,
-    currentView, setCurrentView, setBaseLangView,
+    currentView, setCurrentView, setBaseLangView, enterMicroEdit,
     selectedCategory, handleCategoryChange,
   } = useBreeze();
 
@@ -14,7 +14,7 @@ export default function BreezeSidebar() {
         <div className="flex rounded-md p-1 bg-[#1A1A1A] border border-zinc-800 relative">
           <div className={`absolute top-1 bottom-1 w-[calc(50%-4px)] rounded shadow-[0_1px_3px_rgba(0,0,0,0.5)] transition-all duration-300 ${currentView === 'editor' ? 'left-1 bg-[#2C2C2C]' : 'left-[calc(50%+2px)] bg-[#2C2C2C]'}`}></div>
           <button onClick={() => { setCurrentView('editor'); setBaseLangView('ko'); }} className={`flex-1 py-1.5 text-[11px] font-bold rounded relative z-10 flex items-center justify-center gap-1.5 ${currentView === 'editor' ? 'text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}><PenTool className="w-3.5 h-3.5" /> Creation</button>
-          <button onClick={() => { setCurrentView('edit'); setBaseLangView('ko'); }} className={`flex-1 py-1.5 text-[11px] font-bold rounded relative z-10 flex items-center justify-center gap-1.5 ${currentView === 'edit' ? 'text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}><Edit3 className="w-3.5 h-3.5" /> Micro-Edit</button>
+          <button onClick={enterMicroEdit} className={`flex-1 py-1.5 text-[11px] font-bold rounded relative z-10 flex items-center justify-center gap-1.5 ${currentView === 'edit' ? 'text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'}`}><Edit3 className="w-3.5 h-3.5" /> Micro-Edit</button>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-2 space-y-2 custom-scrollbar">

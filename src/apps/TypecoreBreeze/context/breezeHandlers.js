@@ -17,6 +17,23 @@ export const createHandlers = (b) => {
   const handleScriptPresetChange = (id) => applyScriptPreset(id, presetSetters);
   const handleCategoryChange = (cat) => applyCategoryChange(cat, presetSetters);
 
+  // Micro-Edit 진입 — 생성 이미지가 있고 레퍼런스가 비어있으면 자동으로 base(레퍼런스)로 임포트.
+  // (사용자가 이미 직접 올린 레퍼런스가 있으면 덮어쓰지 않음.)
+  const enterMicroEdit = () => {
+    b.setBaseLangView('ko');
+    if (!b.editUploadedImage && b.renderedImage?.dataUrl) b.setEditUploadedImage(b.renderedImage.dataUrl);
+    b.setCurrentView('edit');
+  };
+
+  // 렌더된 이미지를 Micro-Edit 레퍼런스(base)로 전송 — Creation/Edit 양쪽에서 호출.
+  // Edit 뷰에서 누르면 방금 편집한 결과를 다시 base 로 올려 추가 효과를 반복 적용할 수 있음.
+  const sendRenderedToEditReference = () => {
+    if (!b.renderedImage?.dataUrl) return;
+    b.setEditUploadedImage(b.renderedImage.dataUrl);
+    b.setBaseLangView('ko');
+    b.setCurrentView('edit');
+  };
+
   const handleReset = () => {
     b.setDynamicOptions({ CasualStyles: [], strokeTextures: [], analogImperfections: [], strokeEnds: [], strokeWeights: [], strokeSharpness: [], widths: [], kerningOptions: [], strokeExtensions: [], rhythmDynamics: [], playfulDistortions: [] });
     b.setCustomDesignInjections(""); b.setNanoViewMode("enhanced"); b.setAiModel("Overview");
@@ -77,6 +94,7 @@ export const createHandlers = (b) => {
 
   return {
     handleScriptPresetChange, handleCategoryChange, handleReset, copyToClipboard, upsertDynamic,
+    enterMicroEdit, sendRenderedToEditReference,
     openTuningRoom, openEditTuningRoom,
     handleEditDrop, handleEditImageUpload, handleDragOver, handleDragLeave,
     handleStyleDragOver, handleStyleDragLeave, handleStyleDrop, handleStyleImageUpload,

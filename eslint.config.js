@@ -24,4 +24,9 @@ export default defineConfig([
       'no-unused-vars': ['error', { caughtErrors: 'none', argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
+  // 서버/빌드 측 Node 파일 — 백엔드 프록시(api/), vite 설정. Node 글로벌(process 등) 허용.
+  {
+    files: ['api/**/*.js', 'vite.config.js'],
+    languageOptions: { globals: { ...globals.node } },
+  },
 ])

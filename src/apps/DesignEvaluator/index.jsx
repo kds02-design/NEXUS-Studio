@@ -14,6 +14,7 @@ import {
 } from '../../lib/evaluationCriteria';
 import { prepareAnchorImages } from '../../lib/anchorImages';
 import { db, appId } from '../../lib/firebase';
+import { uploadBase64 } from '../../lib/storage';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
 
@@ -348,20 +349,35 @@ export default function DesignEvaluator() {
         console.warn('[Evaluator] blob → dataURL 변환 실패, 원본 사용', e);
       }
     }
-    let compressed = normalized;
+    // 원본을 Cloudinary 에 풀해상도로 업로드하고 URL 을 저장 → 다시 불러올 때 선명하게 복원.
+    // (기존엔 480px·0.7 로 압축한 dataURL 을 Firestore 에 저장해 재로딩 시 화질이 크게 떨어졌음.)
+    // 업로드 실패(설정 누락/네트워크) 시에만 압축 dataURL 로 폴백 — 저장 자체는 보장.
+    let imageToStore = null;
     try {
-      // image 가 너무 크면 Firestore 1MB 제한에 걸리므로 압축.
-      if (typeof compressed === 'string' && compressed.startsWith('data:')) {
-        compressed = await compressImage(compressed, 480, 0.7);
+      if (typeof normalized === 'string' && normalized.startsWith('http')) {
+        imageToStore = normalized; // 이미 URL(멱등)
+      } else if (typeof normalized === 'string' && normalized.startsWith('data:')) {
+        imageToStore = await uploadBase64(normalized);
       }
     } catch (e) {
-      console.error('[Evaluator] image compress failed', e);
-      compressed = normalized; // 압축 실패 시 정규화 결과로 시도
+      console.warn('[Evaluator] Cloudinary 업로드 실패 — 압축 dataURL 로 폴백', e);
     }
-    // 안전장치 — 1MB 근접 시 한 번 더 작게 압축.
-    if (typeof compressed === 'string' && compressed.length > 900_000) {
-      console.warn(`[Evaluator] image still too large (${compressed.length}b), recompressing 320/0.6`);
-      try { compressed = await compressImage(normalized, 320, 0.6); } catch {}
+    if (!imageToStore) {
+      // 폴백: 기존 압축 경로 (저화질이지만 Firestore 1MB 안에 저장은 됨).
+      let compressed = normalized;
+      try {
+        if (typeof compressed === 'string' && compressed.startsWith('data:')) {
+          compressed = await compressImage(compressed, 480, 0.7);
+        }
+      } catch (e) {
+        console.error('[Evaluator] image compress failed', e);
+        compressed = normalized;
+      }
+      if (typeof compressed === 'string' && compressed.length > 900_000) {
+        console.warn(`[Evaluator] image still too large (${compressed.length}b), recompressing 320/0.6`);
+        try { compressed = await compressImage(normalized, 320, 0.6); } catch {}
+      }
+      imageToStore = compressed;
     }
     try {
       await addDoc(evaluationsCol, {
@@ -370,12 +386,15 @@ export default function DesignEvaluator() {
         tags: result.tags || [],
         scores: result.scores || {},
         finalScore: getFinalScore100(result, 0),
-        image: compressed,
+        image: imageToStore,
         createdAt: serverTimestamp(),
       });
     } catch (e) {
       console.error('[Evaluator] save history failed', e);
-      alert(`평가 저장 실패: ${e.message || e.code}\n\n이미지가 너무 크거나 권한 문제일 수 있습니다.`);
+      const perm = e?.code === 'permission-denied' || /insufficient permissions|permission/i.test(e?.message || '');
+      alert(`평가 저장 실패: ${e.message || e.code}\n\n${perm
+        ? 'Firestore 보안 규칙 권한 거부입니다 — 배포된 규칙이 최신이 아닐 수 있어요. firestore.rules 를 재배포해주세요 (npx firebase deploy --only firestore:rules).'
+        : '이미지가 저장 한도(1MB)를 초과했을 수 있습니다.'}`);
     }
   };
 
@@ -405,6 +424,16 @@ export default function DesignEvaluator() {
       await deleteDoc(doc(evaluationsCol, id));
       if (selectedHistoryId === id) setSelectedHistoryId(null);
     } catch (err) { console.warn("[Evaluator] delete history failed", err); }
+  };
+
+  // 평가완료 전체 삭제 — 되돌릴 수 없으므로 건수 표시 + confirm. onSnapshot 이 목록을 자동 갱신.
+  const deleteAllHistory = async () => {
+    if (!evaluationsCol || history.length === 0) return;
+    if (!confirm(`평가 완료 항목 ${history.length}건을 모두 삭제할까요? 되돌릴 수 없습니다.`)) return;
+    try {
+      await Promise.all(history.map(h => deleteDoc(doc(evaluationsCol, h.id))));
+      setSelectedHistoryId(null);
+    } catch (err) { console.warn("[Evaluator] delete all history failed", err); }
   };
 
   // ── 외부 앱으로 보내기 ──
@@ -474,6 +503,7 @@ export default function DesignEvaluator() {
     banner:          seedEntry(CRITERIA_TYPES.banner),
     promotion:       seedEntry(CRITERIA_TYPES.promotion),
     promotionMobile: seedEntry(CRITERIA_TYPES.promotionMobile),
+    promotionKv:     seedEntry(CRITERIA_TYPES.promotionKv),
     brandweb:        seedEntry(CRITERIA_TYPES.brandweb),
     brandwebSub:     seedEntry(CRITERIA_TYPES.brandwebSub),
     brandwebMobile:  seedEntry(CRITERIA_TYPES.brandwebMobile),
@@ -487,10 +517,11 @@ export default function DesignEvaluator() {
   const refreshCriteria = useCallback(async () => {
     setCriteriaLoading(true);
     try {
-      const [b, p, pm, w, ws, wm, t2, tr, tm] = await Promise.all([
+      const [b, p, pm, pkv, w, ws, wm, t2, tr, tm] = await Promise.all([
         fetchActiveCriteria(CRITERIA_TYPES.banner),
         fetchActiveCriteria(CRITERIA_TYPES.promotion),
         fetchActiveCriteria(CRITERIA_TYPES.promotionMobile),
+        fetchActiveCriteria(CRITERIA_TYPES.promotionKv),
         fetchActiveCriteria(CRITERIA_TYPES.brandweb),
         fetchActiveCriteria(CRITERIA_TYPES.brandwebSub),
         fetchActiveCriteria(CRITERIA_TYPES.brandwebMobile),
@@ -505,6 +536,7 @@ export default function DesignEvaluator() {
         banner:          pickOrSeed(b,  CRITERIA_TYPES.banner),
         promotion:       pickOrSeed(p,  CRITERIA_TYPES.promotion),
         promotionMobile: pickOrSeed(pm, CRITERIA_TYPES.promotionMobile),
+        promotionKv:     pickOrSeed(pkv, CRITERIA_TYPES.promotionKv),
         brandweb:        pickOrSeed(w,  CRITERIA_TYPES.brandweb),
         brandwebSub:     pickOrSeed(ws, CRITERIA_TYPES.brandwebSub),
         brandwebMobile:  pickOrSeed(wm, CRITERIA_TYPES.brandwebMobile),
@@ -546,6 +578,10 @@ ${formatCriteriaList(criteriaByType.promotion.items)}
 ▶ [프로모션 모바일] 카테고리 (모바일 긴 세로 랜딩 — 750×5000+):
 ${formatCriteriaList(criteriaByType.promotionMobile.items)}
 
+▶ [프로모션 키비주얼] 카테고리 (프로모션 최상단 키비주얼/히어로 영역 전용):
+※ 전체 랜딩이 아니라 상단 키비주얼(히어로) 영역만 평가합니다. 전체 페이지 이미지가 들어온 경우에도 최상단 키비주얼 영역에만 집중해 채점하고, 하단 보상/약관/푸터 등은 평가 대상에서 제외하세요.
+${formatCriteriaList(criteriaByType.promotionKv.items)}
+
 ▶ [브랜드웹_메인] 카테고리:
 ${formatCriteriaList(criteriaByType.brandweb.items)}
 
@@ -576,6 +612,7 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
   const scoringRulesText = useMemo(() => {
     const labelOf = {
       banner: "배너 / 기타", promotion: "프로모션 페이지", promotionMobile: "프로모션 모바일",
+      promotionKv: "프로모션 키비주얼",
       brandweb: "브랜드웹_메인", brandwebSub: "브랜드웹_서브", brandwebMobile: "브랜드웹_모바일",
       typo2d: "2D 타이포", typoRender: "렌더링 타이포", typoMotion: "모션 타이포",
     };
@@ -773,6 +810,7 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
   · "배너" (캠페인/이벤트 배너 — 가로형/정사각형의 단일 시안)
   · "프로모션 페이지" (데스크톱 세로로 긴 랜딩 페이지 — 폭이 넓고 컬럼이 여럿 가능)
   · "프로모션 모바일" (모바일 세로 랜딩 페이지 — 폭이 좁고 단일 컬럼, 보통 750×5000+ 비율)
+  · "프로모션 키비주얼" (프로모션 최상단 키비주얼/히어로 영역만 잘라낸 단일 시안 — 메인 일러스트+타이틀 중심, 하단 보상/약관 없음)
   · "브랜드웹_메인" / "브랜드웹_서브" (데스크톱 게임/브랜드 사이트)
   · "브랜드웹_모바일" (모바일 브랜드/게임 사이트 — 단일 화면 mockup, 보통 750×1234 또는 9:16~9:22 비율)
   · "2D 타이포" (글자 자체가 주인공인 평면 타이포그래피 디자인 — 벡터/플랫, 배경 효과 거의 없음)
@@ -1099,6 +1137,13 @@ ${scoringRulesText}${anchorsText}
                         <Layers className="w-4 h-4 text-[#df6a78]" /> 평가 완료 항목
                         <span className="text-[11px] font-normal text-zinc-500">({history.length})</span>
                     </h2>
+                    {user && history.length > 0 && (
+                        <button
+                            onClick={deleteAllHistory}
+                            title="평가 완료 항목 전체 삭제"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-white/10 text-[11px] font-bold text-zinc-400 hover:text-red-400 hover:border-red-400/40 transition-colors"
+                        ><Trash2 className="w-3.5 h-3.5" /> 전체 삭제</button>
+                    )}
                 </div>
                 {!user ? (
                     <div className="text-center py-20 text-zinc-500 text-sm">로그인하면 평가 결과가 자동으로 저장됩니다.</div>
@@ -1121,11 +1166,6 @@ ${scoringRulesText}${anchorsText}
                                                 {item.finalScore}
                                             </span>
                                         )}
-                                        <button
-                                            onClick={(e) => deleteHistoryItem(e, item.id)}
-                                            title="삭제"
-                                            className="absolute top-2 left-2 p-1.5 rounded bg-black/60 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                        ><Trash2 className="w-3.5 h-3.5" /></button>
                                     </div>
                                 ) : (
                                     <div className="w-full aspect-video bg-zinc-900 flex items-center justify-center relative">
@@ -1137,6 +1177,12 @@ ${scoringRulesText}${anchorsText}
                                         </div>
                                     </div>
                                 )}
+                                {/* 삭제 — 이미지 유무와 무관하게 모든 카드에 노출 (이미지 안 뜬 항목도 삭제 가능) */}
+                                <button
+                                    onClick={(e) => deleteHistoryItem(e, item.id)}
+                                    title="삭제"
+                                    className="absolute top-2 left-2 z-10 p-1.5 rounded bg-black/60 text-zinc-300 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                ><Trash2 className="w-3.5 h-3.5" /></button>
                                 <div className="p-3">
                                     <div className="text-[12px] font-bold text-white truncate mb-0.5">{item.title || '제목 없음'}</div>
                                     <div className="text-[10px] text-zinc-500 truncate">{item.category}</div>
@@ -1156,6 +1202,7 @@ ${scoringRulesText}${anchorsText}
                       <option value="auto" className="bg-zinc-900">✨ AI 자동 판별 (권장)</option>
                       <option value="배너" className="bg-zinc-900">🖼️ 배너 (Banner)</option>
                       <option value="프로모션 페이지" className="bg-zinc-900">📜 프로모션 페이지 (데스크톱)</option>
+                      <option value="프로모션 키비주얼" className="bg-zinc-900">🎯 프로모션 키비주얼 (상단 히어로 영역)</option>
                       <option value="프로모션 모바일" className="bg-zinc-900">📱 프로모션 모바일 (750×5000+)</option>
                       <option value="브랜드웹_메인" className="bg-zinc-900">🌐 브랜드 사이트 (메인)</option>
                       <option value="브랜드웹_서브" className="bg-zinc-900">🌐 브랜드 사이트 (서브)</option>

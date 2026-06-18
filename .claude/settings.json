@@ -19,7 +19,14 @@
       "Bash(grep -nE 'state.currentView === \"edit\"|tracking-widest\">' \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
       "Bash(grep -n \"}$\\\\|</aside>\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
       "Bash(grep -nE \"^      </div>$|^    </aside>$|^  \\\\\\);$|^}$\" \"c:\\\\\\\\work\\\\\\\\00_claude\\\\\\\\src\\\\\\\\apps\\\\\\\\RenderMatrixPop\\\\\\\\components\\\\\\\\PopSidebar.jsx\")",
-      "Bash(grep -vE \"set-state-in-effect|no-useless-assignment|exhaustive-deps|setState synchronously|Effects are intended|Update external|Subscribe for|Calling setState|^\\\\s*$|^\\\\s*\\\\*|react\\\\.dev|187 \\\\||188 \\\\||189 \\\\||190 \\\\||191 \\\\||192 \\\\||193 \\\\||515|704|^\\\\s*[0-9]+ \\\\|\")"
+      "Bash(grep -vE \"set-state-in-effect|no-useless-assignment|exhaustive-deps|setState synchronously|Effects are intended|Update external|Subscribe for|Calling setState|^\\\\s*$|^\\\\s*\\\\*|react\\\\.dev|187 \\\\||188 \\\\||189 \\\\||190 \\\\||191 \\\\||192 \\\\||193 \\\\||515|704|^\\\\s*[0-9]+ \\\\|\")",
+      "Bash(npx firebase *)",
+      "Bash(grep -E \"VITE_FIREBASE_PROJECT_ID|VITE_FIREBASE_AUTH_DOMAIN\" .env)",
+      "Bash(grep -rE \"VITE_FIREBASE_PROJECT_ID|VITE_FIREBASE_AUTH_DOMAIN\" .env.local .env.*)",
+      "PowerShell(npx eslint src/apps/RenderMatrix/hooks/useRenderPrompt.js src/apps/RenderMatrix/index.jsx src/apps/TypecoreSovereign/versions/current/PromptEngine.jsx)",
+      "PowerShell(npx eslint src/apps/RenderMatrix/hooks/useRenderPrompt.js src/apps/RenderMatrix/index.jsx src/apps/TypecoreSovereign/versions/current/PromptEngine.jsx; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx eslint src/components/Shell.jsx src/apps/TypecoreSovereign/versions/current/PromptEngine.jsx src/apps/TypecoreSovereign/versions/current/hooks/useSovereignPromptCurrent.js; Write-Output \"EXIT=$LASTEXITCODE\")",
+      "Bash(awk -F: '{n=$1; gsub\\(/ /,\"\",n\\); if \\(\\(n>=403 && n<=425\\) || \\(n>=1100 && n<=1170\\)\\) print \"IN MY RANGE: \"$0}')"
     ]
   },
   "enabledPlugins": {

@@ -35,12 +35,17 @@ export default function BreezeHeader() {
     <div className="space-y-3">
       {/* Step 1 — 어떤 글자? */}
       <StepCard step="1" accent={ACCENT} title={FRIENDLY.text.label} hint={FRIENDLY.text.hint} pro={FRIENDLY.text.pro}>
-        <FieldHeader icon={<Type className="w-3 h-3" />} label="텍스트 입력" hint="짧을수록 결과가 또렷합니다" />
-        <input
+        <FieldHeader icon={<Type className="w-3 h-3" />} label="텍스트 입력" hint="짧을수록 또렷 · 엔터로 줄바꿈 (최대 3줄)" />
+        <textarea
           value={inputText}
-          onChange={e => setInputText(e.target.value)}
-          className="w-full bg-transparent border-b border-zinc-600 focus:border-[#D4AF37] text-[18px] font-bold outline-none pb-2 text-zinc-100 transition-colors placeholder:text-zinc-600"
-          placeholder="예: BREEZE · 산들바람"
+          onChange={e => {
+            // 최대 3줄 — 초과 입력/붙여넣기는 앞 3줄로 자름.
+            const lines = e.target.value.split('\n');
+            setInputText(lines.length > 3 ? lines.slice(0, 3).join('\n') : e.target.value);
+          }}
+          rows={Math.min(3, (inputText.match(/\n/g)?.length || 0) + 1)}
+          className="w-full bg-transparent border-b border-zinc-600 focus:border-[#D4AF37] text-[18px] font-bold outline-none pb-2 text-zinc-100 transition-colors placeholder:text-zinc-600 resize-none custom-scrollbar leading-tight"
+          placeholder="예: BREEZE · 산들바람 (엔터로 줄바꿈, 최대 3줄)"
         />
       </StepCard>
 

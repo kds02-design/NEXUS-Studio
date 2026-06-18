@@ -60,14 +60,32 @@ export function initGeminiGate() {
     }
   }
 
-  // 2) window.fetch wrap — Gemini 도메인 + 비활성이면 즉시 reject.
+  // 2) window.fetch wrap — Gemini 도메인 호출을 가로채:
+  //    (a) 관리자가 비활성화했으면 즉시 reject,
+  //    (b) ★ 백엔드 프록시(/api/gemini)로 우회하고 key 파라미터 제거 ★
+  //        → API 키가 클라이언트 번들/네트워크에 절대 노출되지 않음. 서버가 키를 주입.
+  //    호출부(각 services/gemini.js, imagenRender, veoRender 등)는 수정 없이 그대로 동작.
   if (typeof window !== "undefined" && !window.__geminiGated) {
     window.__geminiGated = true;
     const _origFetch = window.fetch;
     window.fetch = function (input, init) {
       const url = typeof input === "string" ? input : input?.url;
-      if (url && url.includes("generativelanguage.googleapis.com") && !_geminiEnabled) {
-        return Promise.reject(new Error("GEMINI_DISABLED: 관리자가 Gemini API를 비활성화했습니다."));
+      if (url && url.includes("generativelanguage.googleapis.com")) {
+        if (!_geminiEnabled) {
+          return Promise.reject(new Error("GEMINI_DISABLED: 관리자가 Gemini API를 비활성화했습니다."));
+        }
+        try {
+          const u = new URL(url);
+          u.searchParams.delete("key"); // 클라이언트 키 제거 — 서버 프록시가 주입.
+          const target = u.pathname + (u.search || "");
+          const proxied = `/api/gemini?target=${encodeURIComponent(target)}`;
+          if (typeof input === "string") return _origFetch.call(this, proxied, init);
+          // Request 객체면 url 만 교체해 재구성(method/headers/body 보존).
+          return _origFetch.call(this, new Request(proxied, input), init);
+        } catch {
+          // URL 파싱 실패 시 원본 그대로(방어적) — 정상 케이스에선 도달 안 함.
+          return _origFetch.apply(this, arguments);
+        }
       }
       return _origFetch.apply(this, arguments);
     };

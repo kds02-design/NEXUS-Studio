@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Menu, Lock, MoreHorizontal, Eye, EyeOff } from "lucide-react";
+import { Menu, Lock, MoreHorizontal, Eye, EyeOff, Zap, ArrowRight } from "lucide-react";
 import { APP_MAP, APP_REGISTRY } from "../config/apps";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
@@ -464,6 +464,85 @@ function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false, groupAccent = 
   );
 }
 
+// 인덱스 전용 자동화 파이프라인 메뉴.
+// "타이포그래피 자동화 1단계" — 타이포코어 소버린(current)을 autoPipeline 모드로 진입시킨다.
+// 이 플래그(payload.params.autoPipeline)는 인덱스의 이 메뉴를 통해서만 주입되므로,
+// 완전 자동(타이포 생성 → RenderMatrix 자동 렌더)은 여기서 시작했을 때만 작동한다.
+function AutomationMenu() {
+  const { navigate } = useGlobal();
+  const T = useTheme();
+  const typo = APP_MAP['typecore-sovereign'];
+  const render = APP_MAP['render-metrics'];
+  const c1 = typo?.color || '#A29BFE';
+  const c2 = render?.color || '#00CEC9';
+
+  const startStep1 = (e) => {
+    if (e?.ctrlKey || e?.metaKey) return; // 새 탭 진입은 payload 가 유지되지 않으므로 무시.
+    navigate('typecore-sovereign', { source: 'index-automation', params: { autoPipeline: true } });
+  };
+
+  return (
+    <div style={{ padding:"0 40px 8px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box" }}>
+      <div style={{
+        fontSize:10, fontWeight:700, letterSpacing:"0.14em",
+        color: c2, textTransform:"uppercase", marginBottom:14,
+        display:"flex", alignItems:"center", gap:8,
+      }}>
+        <span style={{ width:6, height:6, borderRadius:999, background:c2, boxShadow:`0 0 8px ${c2}66`, flexShrink:0 }} />
+        자동화 파이프라인
+      </div>
+
+      <button
+        onClick={startStep1}
+        style={{
+          width:"100%", textAlign:"left", cursor:"pointer",
+          border:`1px solid ${c1}55`, borderRadius:16, padding:"20px 22px",
+          background:`linear-gradient(120deg, ${c1}1f 0%, ${T.card} 45%, ${c2}1f 100%)`,
+          display:"flex", alignItems:"center", gap:18,
+          transition:"border-color .15s, transform .1s",
+        }}
+        onMouseEnter={(e)=>{ e.currentTarget.style.borderColor = c1; }}
+        onMouseLeave={(e)=>{ e.currentTarget.style.borderColor = `${c1}55`; }}
+      >
+        <div style={{
+          width:46, height:46, borderRadius:12, flexShrink:0,
+          display:"flex", alignItems:"center", justifyContent:"center",
+          background:`${c1}22`, border:`1px solid ${c1}55`, color:c1,
+        }}>
+          <Zap size={22} />
+        </div>
+
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:5 }}>
+            <span style={{ fontSize:15, fontWeight:800, color:T.text, letterSpacing:"-0.01em" }}>타이포그래피 자동화 1단계</span>
+            <span style={{ fontSize:9, fontWeight:800, letterSpacing:"0.1em", color:c2, border:`1px solid ${c2}66`, borderRadius:999, padding:"2px 7px" }}>STEP 1</span>
+          </div>
+          <div style={{ fontSize:12, color:T.textMuted, lineHeight:1.6 }}>
+            타이포코어에서 타이포를 만들면 <b style={{ color:T.text }}>렌더 매트릭스 렌더링 이미지까지 자동</b>으로 생성됩니다.
+            <span style={{ color:T.textDim }}> · 인덱스 전용 · Imagen 렌더는 Pro 등급 이상</span>
+          </div>
+          {/* 흐름 칩 */}
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginTop:10 }}>
+            <span style={{ fontSize:10, fontWeight:700, color:c1, border:`1px solid ${c1}44`, borderRadius:6, padding:"3px 8px" }}>타이포코어 소버린</span>
+            <ArrowRight size={13} style={{ color:T.textDim }} />
+            <span style={{ fontSize:10, fontWeight:700, color:c2, border:`1px solid ${c2}44`, borderRadius:6, padding:"3px 8px" }}>렌더 매트릭스</span>
+            <ArrowRight size={13} style={{ color:T.textDim }} />
+            <span style={{ fontSize:10, fontWeight:700, color:T.textMuted, border:`1px solid ${T.border}`, borderRadius:6, padding:"3px 8px" }}>자동 렌더링</span>
+          </div>
+        </div>
+
+        <div style={{
+          flexShrink:0, display:"flex", alignItems:"center", gap:7,
+          fontSize:12, fontWeight:800, color:"#0A0A0F",
+          background:c1, borderRadius:10, padding:"10px 16px",
+        }}>
+          시작 <ArrowRight size={15} />
+        </div>
+      </button>
+    </div>
+  );
+}
+
 function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
   const { navigate } = useGlobal();
   const { isAdmin } = useAuth();
@@ -505,6 +584,7 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
       <DashboardHero />
       <IndexSearchBar />
       <DashboardRecentPrompts />
+      <AutomationMenu />
       <div style={{ padding:"0 40px 60px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box" }}>
       {groups.map(g => {
         // 숨김 처리된 앱(원래 adminOnly 또는 관리자 토글)은 비-관리자에게 보이지 않음.

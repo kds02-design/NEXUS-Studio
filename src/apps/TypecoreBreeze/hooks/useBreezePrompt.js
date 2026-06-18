@@ -66,6 +66,19 @@ const resolveConflicts = (s) => {
 
 export const buildPrompts = (raw) => {
   const { resolved: s, conflicts } = resolveConflicts(raw);
+
+  // 수동 줄바꿈(\n) 처리 — 입력의 줄바꿈을 명시적 행(최대 3줄)으로 분리하고,
+  // 본문 텍스트 자체는 한 줄로 정규화(모델에 깨끗한 텍스트 전달 + [LINE BREAK] 디렉티브로 분할 위치 지정).
+  const rawInput = s.inputText || '';
+  const manualLines = rawInput.includes('\n') ? rawInput.split('\n').map(t => t.trim()).filter(Boolean) : null;
+  const manualLineCount = manualLines ? manualLines.length : 1;
+  s.inputText = rawInput.replace(/\s*\n\s*/g, ' ').replace(/\s+/g, ' ').trim();
+  // 효과적 줄 수 — 수동 줄바꿈이 우선(최대 3), 없으면 layoutType(1Line/2Lines/3Lines).
+  const layoutLines = manualLineCount >= 3 ? 3
+    : manualLineCount === 2 ? 2
+    : s.layoutType === '3Lines' ? 3
+    : s.layoutType === '2Lines' ? 2
+    : 1;
   const styleList = [...staticOptions.CasualStyles, ...(s.dynamicOptions.CasualStyles || [])];
   const weightList = [...staticOptions.strokeWeights, ...(s.dynamicOptions.strokeWeights || [])];
   const kerningList = [...staticOptions.kerningOptions, ...(s.dynamicOptions.kerningOptions || [])];
@@ -112,10 +125,18 @@ export const buildPrompts = (raw) => {
   const surroundKo = getOptionName(staticOptions.CasualSurroundings, s.casualSurrounding);
 
   const genreSpecEn = `- Fill Decoration: ${internalEn}\n- Text Flow Baseline: ${textFlowEn}\n- Connections: ${connectionEn}\n- Surrounding Elements: ${surroundEn}\n- Distortions: ${getOptionEn(staticOptions.playfulDistortions, s.playfulDistortion)}`;
-  const layoutEn = s.layoutType === "1Line" ? `[LAYOUT MANDATE]: STRICT SINGLE HORIZONTAL ROW. ABSOLUTELY NO VERTICAL STACKING.` : `[LAYOUT MANDATE]: Balanced Two-tier vertical stacked composition.`;
+  const layoutEn = layoutLines === 1
+    ? `[LAYOUT MANDATE]: STRICT SINGLE HORIZONTAL ROW. ABSOLUTELY NO VERTICAL STACKING.`
+    : layoutLines === 3
+      ? `[LAYOUT MANDATE]: Balanced Three-tier vertical stacked composition (exactly 3 rows).`
+      : `[LAYOUT MANDATE]: Balanced Two-tier vertical stacked composition.`;
   const userAuraEn = s.customDesignInjections ? `\n[USER DESIGN DIRECTION / AURA]: ${s.customDesignInjections}` : "";
 
-  const layoutKo = s.layoutType === "1Line" ? `[레이아웃 강제]: 엄격한 1줄 가로 배열. 세로 적층 절대 금지.` : `[레이아웃 강제]: 균형잡힌 2줄 세로 적층 구성.`;
+  const layoutKo = layoutLines === 1
+    ? `[레이아웃 강제]: 엄격한 1줄 가로 배열. 세로 적층 절대 금지.`
+    : layoutLines === 3
+      ? `[레이아웃 강제]: 균형잡힌 3줄 세로 적층 구성.`
+      : `[레이아웃 강제]: 균형잡힌 2줄 세로 적층 구성.`;
   const userAuraKo = s.customDesignInjections ? `\n[사용자 디자인 지시 / 아우라]: ${s.customDesignInjections}` : "";
   const subTraitContextKo = `\n[세부 속성 집중도]: ${getSliderText(s.personaSliderValue)}`;
   const subTraitContext = `\n[SUB-TRAIT FOCUS]: ${getSliderText(s.personaSliderValue)}`;
@@ -147,9 +168,16 @@ export const buildPrompts = (raw) => {
   const hangulBoostEn = hasHangul(s.inputText)
     ? `\n[HANGUL LEGIBILITY]: (perfectly legible Korean Hangul "${s.inputText}":1.6), preserve every jamo and syllable block, absolutely no missing, substituted, or romanized characters, no spelling errors.`
     : '';
-  // 2줄 한글일 때만 명시적 줄 분할 위치 제공.
-  const lineBreak = (s.layoutType === '2Lines' && hasHangul(s.inputText)) ? computeLineBreak(s.inputText) : null;
-  const lineBreakEn = lineBreak ? `\n[LINE BREAK]: First line "${lineBreak[0]}" / Second line "${lineBreak[1]}".` : '';
+  // 줄 분할 위치 제공 — 사용자가 직접 줄바꿈하면 그 분할을 우선(최대 3줄), 아니면 2줄 한글일 때 자동 분할.
+  let lineRows = null;
+  if (manualLines && manualLineCount >= 2) {
+    lineRows = manualLineCount >= 3
+      ? [manualLines[0], manualLines[1], manualLines.slice(2).join(' ')]
+      : [manualLines[0], manualLines.slice(1).join(' ')];
+  } else if (s.layoutType === '2Lines' && hasHangul(s.inputText)) {
+    lineRows = computeLineBreak(s.inputText);
+  }
+  const lineBreakEn = lineRows ? `\n[LINE BREAK]: ${lineRows.map((l, i) => `Line ${i + 1} "${l}"`).join(' / ')}.` : '';
   // 비율 보강 — 16:9 일 때 세로 변환 방지, 1:1 일 때 한쪽 늘어짐 방지.
   const arBoostEn = s.aspectRatio === '16:9'
     ? `(strict 16:9 horizontal widescreen format:1.6), landscape orientation, explicitly NOT vertical, NOT portrait`
@@ -165,7 +193,7 @@ export const buildPrompts = (raw) => {
 ${layoutEn}${lineBreakEn}${personaMandate}${hangulBoostEn}
 [PROPORTION SAFETY]: Force character proportion to ${proportionEn} and width to ${widthEn}. Expand horizontally. Strictly PROHIBIT vertical stretching to prevent unintended vertical text stacking.
 [MORPHOLOGY]:
-- Theme: ${s.isAdvancedOptionsEnabled ? styleEn : `Casual Theme`}.
+- Theme: ${styleEn}.
 - Body: ${morphologyBody}${morphologyDetail}
 [RHYTHM]: ${rhythmEn}.
 [ENVIRONMENT]: AR ${arBoostEn}, ${bgDesc}.${artisticBoost}${qualityBoost}${transformationBoost}${momentumBoost}`.trim();
@@ -173,7 +201,7 @@ ${layoutEn}${lineBreakEn}${personaMandate}${hangulBoostEn}
   const hangulBoostKo = hasHangul(s.inputText)
     ? `\n[한글 가독성]: "${s.inputText}" 의 모든 자모와 음절 블록을 완벽히 보존. 글자 누락·치환·로마자화 절대 금지, 맞춤법 오류 금지.`
     : '';
-  const lineBreakKo = lineBreak ? `\n[줄 분할]: 1줄 "${lineBreak[0]}" / 2줄 "${lineBreak[1]}".` : '';
+  const lineBreakKo = lineRows ? `\n[줄 분할]: ${lineRows.map((l, i) => `${i + 1}줄 "${l}"`).join(' / ')}.` : '';
 
   const baseTechnicalKo = `[마스터 타이포 스펙 V3.0 - 캐주얼 코어] 텍스트: "${s.inputText}". ${userAuraKo}${subTraitContextKo}
 [핵심 철학 및 지시사항]:
@@ -186,7 +214,7 @@ ${layoutKo}${lineBreakKo}${personaMandateKo}${hangulBoostKo}
 [충돌 정책]: 사양 안에 상충되는 방향이 있을 때 페르소나와 스타일이 우선합니다. 모순 키워드는 평균내지 말고 제거하세요.
 [비율 안전장치]: 글자 비율을 ${proportionKo}(으)로, 자폭을 ${widthKo}(으)로 강제. 가로 확장. 세로 적층을 막기 위해 '세로로 늘리기'나 '압축된 세로 종횡비' 엄격히 금지. 강력한 수평 흐름 유지.
 [형태학]:
-- 테마: ${s.isAdvancedOptionsEnabled ? styleKo : `캐주얼 기본 테마`}.
+- 테마: ${styleKo}.
 - 뼈대: ${morphologyBodyKo}${morphologyDetailKo}
 [리듬감]: ${rhythmKo}.
 [환경]: 화면비 ${s.aspectRatio}, ${bgDescKo}.${artisticBoostKo}${qualityBoostKo}${transformationBoostKo}${momentumBoostKo}`.trim();

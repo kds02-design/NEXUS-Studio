@@ -75,6 +75,14 @@ export function useRenderPrompt() {
   const [isArcAnalyzing, setIsArcAnalyzing] = useState(false);
   const consumedPayloadRef = useRef(null);
 
+  // ===== 완전 자동 파이프라인 (TypeCore → RenderMatrix → 자동 렌더) =====
+  // payload.mode==='pipeline' 로 들어오면 base image 임포트 + Gemini 추천 옵션 자동 적용 후
+  // status:'ready' 로 전환 → index.jsx 의 effect 가 image-to-image 렌더를 자동 실행한다.
+  // { id, from, status: 'preparing' | 'ready' | 'rendering' | 'failed' }
+  const [autoPipeline, setAutoPipeline] = useState(null);
+  // 옵션 적용 후 compile 이 반영되면 ready 로 올리기 위한 1회성 플래그.
+  const autoPipelineReadyPendingRef = useRef(false);
+
   // ===== edit state =====
   const [editImage, setEditImage] = useState(null);
   const [editBudget, setEditBudget] = useState("Conservative");
@@ -132,12 +140,20 @@ export function useRenderPrompt() {
     const text = payload.prompt?.text || '';
     const tags = Array.isArray(payload.prompt?.tags) ? payload.prompt.tags : [];
     const source = payload.source || 'unknown';
+    const isPipeline = payload.mode === 'pipeline';
     const isEditMode = payload.mode === 'edit';
+    const payloadTs = payload.timestamp;
 
     (async () => {
-      setIncomingFromArc({ from: source, tags, text, hasImage: !!imgUrl, status: 'starting', mode: isEditMode ? 'edit' : 'creation' });
+      const mode = isPipeline ? 'pipeline' : isEditMode ? 'edit' : 'creation';
+      setIncomingFromArc({ from: source, tags, text, hasImage: !!imgUrl, status: 'starting', mode });
       try { clearPayload(); } catch {}
-      if (!imgUrl) { setIncomingFromArc((s) => s ? { ...s, status: 'no-image' } : null); return; }
+      // 파이프라인은 base image 가 없으면 자동 렌더가 불가능 → 실패 처리.
+      if (!imgUrl) {
+        setIncomingFromArc((s) => s ? { ...s, status: 'no-image' } : null);
+        if (isPipeline) setAutoPipeline({ id: payloadTs, from: source, status: 'failed' });
+        return;
+      }
       setIsArcAnalyzing(true);
       setIncomingFromArc((s) => s ? { ...s, status: 'fetching' } : null);
       let dataUrl;
@@ -161,10 +177,18 @@ export function useRenderPrompt() {
         console.error('[RenderMatrix] arc 이미지 다운로드 실패', e);
         setIsArcAnalyzing(false);
         setIncomingFromArc((s) => s ? { ...s, status: 'fetch-failed' } : null);
+        if (isPipeline) setAutoPipeline({ id: payloadTs, from: source, status: 'failed' });
         return;
       }
-      // edit 모드 — 마이크로 에디트 뷰 + editImage 자동 임포트. (view 전환은 onSwitchView 로직 일부만 수동 적용)
-      if (isEditMode) {
+      // pipeline — image-to-image 렌더 입력은 base image 이므로 editor 뷰 + baseImage 로 임포트.
+      // edit — 마이크로 에디트 뷰 + editImage 로 임포트.
+      if (isPipeline) {
+        try {
+          setCurrentView('editor');
+          setAiModel('NanoBanana');
+          setBaseImage(dataUrl);
+        } catch (e) { console.error('[RenderMatrix] pipeline 전환 실패', e); }
+      } else if (isEditMode) {
         try {
           setCurrentView('edit');
           setAiModel('NanoBanana');
@@ -175,7 +199,7 @@ export function useRenderPrompt() {
       try {
         const parsed = await analyzeArcImage(base64Data, appOptions, tags, text);
         const filterId = (val, list) => list.some(o => o.id === val) ? val : null;
-        setArcRecommended({
+        const rec = {
           summary: parsed.summary || '',
           material: filterId(parsed.material, appOptions.materials),
           frontRelief: filterId(parsed.frontRelief, appOptions.frontReliefs),
@@ -183,12 +207,31 @@ export function useRenderPrompt() {
           background: filterId(parsed.background, appOptions.backgrounds),
           energyCore: filterId(parsed.energyCore, appOptions.energyCores),
           surfaceDetail: filterId(parsed.surfaceDetail, appOptions.surfaceDetails),
-        });
+        };
+        setArcRecommended(rec);
+        // 파이프라인 — 추천 옵션을 실제 상태에 자동 적용 (수동 "적용" 클릭 없이 렌더에 반영).
+        if (isPipeline) {
+          if (rec.material) setMaterial(rec.material);
+          if (rec.frontRelief) setFrontRelief(rec.frontRelief);
+          if (rec.surfaceTreatment) setSurfaceTreatment(rec.surfaceTreatment);
+          if (rec.background) setBackground(rec.background);
+          if (rec.energyCore) setEnergyCore(rec.energyCore);
+          if (rec.surfaceDetail) setSurfaceDetail(rec.surfaceDetail);
+        }
         setIncomingFromArc((s) => s ? { ...s, status: 'done', summary: parsed.summary } : null);
       } catch (e) {
         console.error('[RenderMatrix] arc 추천 분석 실패', e);
         setIncomingFromArc((s) => s ? { ...s, status: 'analyze-failed', errorMessage: e.message } : null);
-      } finally { setIsArcAnalyzing(false); }
+        // 분석 실패해도 파이프라인은 기본 옵션으로 렌더를 진행한다.
+      } finally {
+        setIsArcAnalyzing(false);
+        // 파이프라인: 옵션 적용 직후 ready 신호. 실제 ready 전환은 compile effect 가
+        // 최신 옵션으로 프롬프트를 재컴파일한 뒤 수행 (autoPipelineReadyPendingRef).
+        if (isPipeline) {
+          autoPipelineReadyPendingRef.current = true;
+          setAutoPipeline({ id: payloadTs, from: source, status: 'preparing' });
+        }
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload?.timestamp, payload?.target]);
@@ -442,7 +485,15 @@ export function useRenderPrompt() {
     }
     setAuditIssues(performLogicAudit(s));
     setQualityScores(calculateQualityScore(s));
-  }, [directorPersona, complexity, typographyScale, cameraLens, frontRelief, projectionDepth, surfaceTreatment, energyCore, fxOrigin, fxIntensity, material, materialInt, dramaticTex, wearLevel, rimMaterial, rimThickness, rimColor, rimIntensity, enableGlint, background, renderEngine, userIntent, imageRatio, currentView, editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent, surfaceDetail, vfxPassMode, enableVfx, enableShadow, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity, motionImage, cameraMotion, vfxDynamics, motionIntent, appOptions]);
+
+    // 파이프라인: 옵션이 반영된 최신 compiledOutputs 가 만들어진 직후 ready 로 전환.
+    // (autoPipeline?.id 를 deps 에 포함해 파이프라인 시작 시 이 effect 가 반드시 1회 재실행되도록 보장 —
+    //  추천 옵션이 모두 기존값과 같아 다른 dep 이 안 바뀌는 경우에도 ready 신호가 누락되지 않음.)
+    if (autoPipelineReadyPendingRef.current) {
+      autoPipelineReadyPendingRef.current = false;
+      setAutoPipeline((s2) => (s2 ? { ...s2, status: 'ready' } : null));
+    }
+  }, [directorPersona, complexity, typographyScale, cameraLens, frontRelief, projectionDepth, surfaceTreatment, energyCore, fxOrigin, fxIntensity, material, materialInt, dramaticTex, wearLevel, rimMaterial, rimThickness, rimColor, rimIntensity, enableGlint, background, renderEngine, userIntent, imageRatio, currentView, editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent, surfaceDetail, vfxPassMode, enableVfx, enableShadow, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity, motionImage, cameraMotion, vfxDynamics, motionIntent, appOptions, autoPipeline?.id]);
 
   // ===== send to Motion Metrics =====
   const sendToMotion = () => {
@@ -517,6 +568,8 @@ export function useRenderPrompt() {
     incomingFromArc, setIncomingFromArc,
     arcRecommended, setArcRecommended,
     isArcAnalyzing,
+    // 완전 자동 파이프라인
+    autoPipeline, setAutoPipeline,
     // edit
     editImage, setEditImage,
     editBudget, setEditBudget,

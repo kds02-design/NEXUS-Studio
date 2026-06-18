@@ -19,6 +19,8 @@ VITE_CLOUDINARY_UPLOAD_PRESET=
 
 `src/lib/firebase.js` / `gemini.js` / `storage.js` 가 각각 읽음.
 
+⚠️ **Gemini 키는 백엔드 프록시로 격리** — 모든 `generativelanguage.googleapis.com` 호출은 `lib/gemini.js` 의 `window.fetch` 래퍼가 가로채 **`/api/gemini` 프록시로 우회**하고 `key` 파라미터를 제거한다. 실제 키는 서버 전용 `GEMINI_API_KEY`(VITE_ 아님)에만 둔다 — 프로덕션은 `api/gemini.js`(Vercel Edge), 개발은 `vite.config.js` 의 dev 미들웨어가 처리. 클라이언트의 `VITE_GEMINI_API_KEY` 는 더미('proxy')이며 "키 존재" 가드 통과용일 뿐 노출돼도 무해. 새 Gemini 호출을 추가할 때 URL/키를 직접 만들어도 래퍼가 자동 우회하므로 호출부 수정 불필요.
+
 ## 3. 단일 진실 소스
 
 - **앱 목록**: `src/config/apps.js` 의 `APP_REGISTRY` (그룹: explore / generate / production / admin)

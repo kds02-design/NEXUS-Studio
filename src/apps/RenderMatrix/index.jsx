@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { AlertCircle, CheckCircle } from "lucide-react";
 import { doc, setDoc } from "firebase/firestore";
 import { useRenderPrompt } from "./hooks/useRenderPrompt";
@@ -161,6 +161,29 @@ export default function RenderMatrixApp() {
     if (savingToArc) return;
     await saveRenderToPromptArc(promptText, renderedImage);
   }, [user, renderedImage, savingToArc, rp, saveRenderToPromptArc]);
+
+  // ─── 완전 자동 파이프라인 ───
+  // TypeCore 에서 mode:'pipeline' 로 들어오면 훅이 base image 임포트 + 추천 옵션 적용 후
+  // autoPipeline.status==='ready' 로 올린다. 그 시점의 compiledOutputs(최신 옵션 반영)로
+  // image-to-image 렌더를 1회 자동 실행. autoFiredRef 로 파이프라인당 단 한 번만 발화.
+  const autoFiredRef = useRef(null);
+  useEffect(() => {
+    const pipe = rp.autoPipeline;
+    if (!pipe || pipe.status !== 'ready') return;
+    if (autoFiredRef.current === pipe.id) return;
+    if (!rp.baseImage || rendering) return;
+    const text = rp.optimizedPrompts[rp.aiModel] || rp.compiledOutputs[rp.aiModel];
+    // 컴파일이 아직 placeholder/빈 상태면 다음 렌더 틱을 기다린다 (deps 로 재진입).
+    if (!text || text.length < 20 || text.includes('업로드')) return;
+    autoFiredRef.current = pipe.id; // 동기 가드 — 중복 발화 차단.
+    // 실제 발화는 마이크로태스크로 디퍼 — effect 본문에서 동기 setState(cascading render) 회피.
+    // handleRender 는 !canRender 면 내부에서 안내 처리.
+    queueMicrotask(() => {
+      rp.setAutoPipeline?.((s) => (s ? { ...s, status: 'rendering' } : null));
+      rp.showToast?.('🤖 완전 자동 파이프라인 — Render Matrix 렌더 실행', 4000);
+      handleRender(text);
+    });
+  }, [rp.autoPipeline, rp.baseImage, rp.compiledOutputs, rp.optimizedPrompts, rp.aiModel, rendering, handleRender, rp]);
 
 
   const presets = usePresets({

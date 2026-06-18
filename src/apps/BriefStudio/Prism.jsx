@@ -9,6 +9,7 @@ import {
 import { createParserCore } from "./prism/parserCore.js";
 import { GeminiProvider } from "./prism/gemini.js";
 import { loadPptx, slidesToText } from "./prism/pptx.js";
+import SectionsView from "./prism/SectionsView.jsx";
 import { GEMINI_API_KEY } from "../../lib/gemini";
 
 const taCls =
@@ -33,7 +34,13 @@ export default function Prism() {
   const [stage, setStage] = useState(1);
   const [copyMsg, setCopyMsg] = useState({});
   const [isDragging, setIsDragging] = useState(false);
+  const [viewMode, setViewMode] = useState("visual"); // 세부 데이터 표시: visual | json
   const fileRef = useRef(null);
+
+  // 편집된 JSON 을 그대로 파싱해 비주얼에 반영 (확인용 일관성). 파싱 실패(편집 중) 시 null.
+  const parsed = useMemo(() => {
+    try { return extracted ? JSON.parse(extracted) : null; } catch { return null; }
+  }, [extracted]);
 
   const addFiles = (list) => {
     [...list].forEach(async (f) => {
@@ -185,9 +192,25 @@ export default function Prism() {
                   {uncertain.map((u, i) => <li key={i}>{u}</li>)}
                 </ul>
               )}
-              <FieldLabel>추출 데이터 (JSON)</FieldLabel>
-              <textarea className={`${taCls} h-[200px]`} value={extracted} onChange={(e) => setExtracted(e.target.value)} spellCheck={false} />
-              <CopyRow onClick={() => copy(extracted, "ex")} msg={copyMsg.ex} label="JSON 복사" />
+              <div className="flex items-center gap-2 mt-3.5 mb-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">세부 데이터</span>
+                <div className="ml-auto inline-flex rounded-md border border-slate-200 overflow-hidden">
+                  {[["visual", "비주얼"], ["json", "JSON"]].map(([m, label]) => (
+                    <button key={m} onClick={() => setViewMode(m)}
+                      className={`px-2.5 py-1 text-[11px] font-medium transition-colors ${viewMode === m ? "bg-[#A29BFE] text-white" : "bg-white text-slate-500 hover:text-slate-700"}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {viewMode === "visual" ? (
+                <SectionsView data={parsed} />
+              ) : (
+                <>
+                  <textarea className={`${taCls} h-[260px]`} value={extracted} onChange={(e) => setExtracted(e.target.value)} spellCheck={false} />
+                  <CopyRow onClick={() => copy(extracted, "ex")} msg={copyMsg.ex} label="JSON 복사" />
+                </>
+              )}
             </>
           )}
         </StageCard>

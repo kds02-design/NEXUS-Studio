@@ -213,6 +213,11 @@ IDENTITY ANCHORS (must stay true to the reference):
 - The component type / function / role — a button stays a button, a frame stays a frame, a badge stays a badge, an ornament stays an ornament; do NOT turn it into a different kind of asset
 - A SINGLE, centered, isolated asset — same subject, not a scene, not a collection
 
+BACKGROUND — PURE BLACK, HIGHEST PRIORITY (frequent failure — do NOT get this wrong):
+- The background MUST be pure solid black #000000 / RGB(0,0,0), uniform edge-to-edge — mandatory regardless of the design direction, material, or genre.
+- NEVER output a white, light, gray, cream, or colored background. Do NOT place the asset on a white card, paper, sheet, panel, podium, table, or product-shot backdrop — even if the new design reads "clean", "modern", "minimal", "flat", or "studio".
+- If the source asset sits on a white or light background, REPLACE that backdrop with pure black #000000 and keep ONLY the asset.
+
 BORDER & LINE-WEIGHT LOCK (HIGHEST PRIORITY — overrides EVERY variation direction and strength below):
 - Visually trace the source's outer frame / border and reproduce the SAME stroke WIDTH and THICKNESS — do NOT thicken, bulk up, fatten, or inflate the frame or border. If the source border is slim and delicate, the result MUST stay slim and delicate.
 - Ornament, filigree, and engraving LINE WEIGHT and relief / bevel / emboss depth stay at the source level — you may change the MOTIF and pattern, but the strokes must stay as THIN and FINE as the source; do NOT make ornaments chunkier, bolder, heavier, thicker, or more raised
@@ -237,6 +242,10 @@ YOU MAY VARY (within the lock + envelope):
 - Color, material, and surface finish
 - Internal arrangement and focal-accent styling
 
+EFFECTS — KEEP RESTRAINED (do NOT overdo borders or finishing effects):
+- Match the source's level of glow, bloom, drop shadow, rim light, sparkle, and particle effects — do NOT add new or stronger effects than the source has. A clean source stays clean.
+- No heavy outer glow, no large drop shadow, no halo, no lens flare, no floating particles or sparkles around the asset — subtle, contained finishing only.
+
 VARIATION DIRECTION (the primary axis to explore for THIS alternative):
 ${directionBlock || 'Explore a tasteful, distinct redesign of the motif, detail, and material.'}
 
@@ -249,12 +258,12 @@ ISOLATION (critical — overrides any direction that hints at a scene):
 
 ${BACKGROUND_BLOCK}${getBgContextBlock(hasBackgroundRef, false)}
 
-FINAL: Output ONE single redesigned detail asset, centered and isolated on pure black #000000 — same component type, a border / frame stroke NO THICKER than the reference (slimmer is fine), the same thin fine ornament line weight, same ornament scale, same aspect ratio as the reference, but a distinct, finely-detailed and precise decorative motif and material.`;
+FINAL: Output ONE single redesigned detail asset on a PURE BLACK #000000 background (never white or light), centered and isolated — same component type, a border / frame stroke NO THICKER than the reference (slimmer is fine), the same thin fine ornament line weight, same ornament scale, same aspect ratio as the reference, restrained finishing effects (no added glow / shadow / particles), but a distinct, finely-detailed and precise decorative motif and material.`;
 };
 
 // 외부 챗 붙여넣기용 컴팩트 디자인 대안 프롬프트.
 export const buildCompactDesignAlternativePrompt = ({ directionHint, strengthHint }) => {
-  return `Redesign the attached game-UI detail asset into a DESIGN ALTERNATIVE — same component type and purpose (a button stays a button, a frame stays a frame), as a single centered asset isolated on pure black #000000. Change the design language (motif, pattern, material, internal arrangement), but KEEP the structure close to the source: trace and reproduce the SAME border/frame stroke thickness, the SAME thin ornament line weight (do NOT make ornaments thicker, bolder, or more raised), the same ornament size/scale (don't enlarge), and the same aspect ratio and footprint. "Richer" means a finer, more intricate pattern at the same thin line weight, never heavier strokes. If unsure of the source stroke width, err THINNER. Aim for a refined, precise, finely-detailed result — never thick, chunky, or bulky. NO background scene, NO environment.
+  return `Redesign the attached game-UI detail asset into a DESIGN ALTERNATIVE — same component type and purpose (a button stays a button, a frame stays a frame), as a single centered asset isolated on pure black #000000. Change the design language (motif, pattern, material, internal arrangement), but KEEP the structure close to the source: trace and reproduce the SAME border/frame stroke thickness, the SAME thin ornament line weight (do NOT make ornaments thicker, bolder, or more raised), the same ornament size/scale (don't enlarge), and the same aspect ratio and footprint. "Richer" means a finer, more intricate pattern at the same thin line weight, never heavier strokes. If unsure of the source stroke width, err THINNER. Aim for a refined, precise, finely-detailed result — never thick, chunky, or bulky. The background MUST be pure black #000000 even if the new design reads clean/minimal — never white or light, never a white card or product-shot backdrop. Keep effects restrained: match the source's glow/shadow/particles, do NOT add new or stronger ones. NO background scene, NO environment.
 ${directionHint ? `Direction: ${directionHint}\n` : ''}${strengthHint ? `Strength: ${strengthHint}\n` : ''}If there is text, keep the same content and keep it legible (no garbled glyphs). Output one single redesigned asset only.`;
 };
 
