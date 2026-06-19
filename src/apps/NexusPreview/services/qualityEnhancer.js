@@ -72,7 +72,7 @@ export async function renderEnhanced(dataUrl, modelId = RENDER_MODEL, extraInstr
     imageSize: "4K",
     matchInputAspect: false,
   });
-  return r.dataUrl;
+  return r?.dataUrl || null;
 }
 
 // 향상 렌더 결과를 PromptArc 본 컬렉션에 'private'(내 폴더) 로 자동 저장.

@@ -76,6 +76,7 @@ export default function QualityEnhancer({ T, accent, variant = "banner" }) {
     try {
       const input = await getInput();
       const url = await renderEnhanced(input, undefined, extraInstructions, mode);
+      if (!url) throw new Error("렌더 결과가 비어 있습니다. 다시 시도해 주세요.");
       setRenderedUrl(url);
       // 렌더 완료 즉시 PromptArc 내 폴더에 자동 업로드 — 로그인 사용자만. 실패해도 렌더 결과는 유지.
       if (user?.uid) {

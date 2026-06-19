@@ -58,7 +58,7 @@ function probeAspectRatio(dataUrl) {
       resolve(nearest.id);
     };
     img.onerror = () => resolve(null);
-    img.src = dataUrl;
+    try { img.src = dataUrl; } catch { resolve(null); }
   });
 }
 
@@ -73,7 +73,7 @@ function probeRawAspectRatio(dataUrl) {
       resolve(Number.isFinite(r) && r > 0 ? r : null);
     };
     img.onerror = () => resolve(null);
-    img.src = dataUrl;
+    try { img.src = dataUrl; } catch { resolve(null); }
   });
 }
 
@@ -114,7 +114,7 @@ function cropToAspect(dataUrl, targetAspect, mimeType = "image/png") {
       } catch { resolve(dataUrl); }
     };
     img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
+    try { img.src = dataUrl; } catch { resolve(dataUrl); }
   });
 }
 

@@ -58,7 +58,7 @@ const VEO_SAFETY_REMAP = [
   [/\bcorpse\b/gi, "dark form"],
 ];
 
-export function sanitizeForVeo(text) {
+function sanitizeForVeo(text) {
   if (!text || typeof text !== "string") return text;
   let out = text;
   for (const [re, rep] of VEO_SAFETY_REMAP) out = out.replace(re, rep);
@@ -70,7 +70,7 @@ export function sanitizeForVeo(text) {
 // Veo 는 (1) --flag 문법을 이해 못 하고 (2) negativePrompt 를 parameters 로 별도 수신한다.
 // 따라서 본문/네거티브를 분리하고 플래그를 제거해 Veo 형식에 맞춰야 카메라 고정 negative 가 실제로 적용됨.
 const MJ_FLAG_RE = /--[a-z-]+(?:\s+[0-9.]+)?/gi;
-export function splitVeoPrompt(text) {
+function splitVeoPrompt(text) {
   if (!text || typeof text !== "string") return { positive: text || "", negative: "" };
   const parts = text.split(/\n*\s*Negative prompt:\s*/i);
   let positive = (parts[0] || "").replace(MJ_FLAG_RE, "").replace(/\s{2,}/g, " ").trim();

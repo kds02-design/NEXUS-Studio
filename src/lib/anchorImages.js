@@ -71,7 +71,3 @@ export async function prepareAnchorImages(anchors) {
   }
   return out;
 }
-
-export function clearAnchorImageCache() {
-  _cache.clear();
-}
