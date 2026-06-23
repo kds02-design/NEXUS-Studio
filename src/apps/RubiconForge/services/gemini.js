@@ -94,6 +94,18 @@ export async function analyzeStyleImage(styleImage, assetType, themeDna) {
   return JSON.parse(result.candidates?.[0]?.content?.parts?.[0]?.text);
 }
 
+// 벡터 생성 — Gemini 텍스트 모델이 <svg> 마크업을 직접 출력. 원시 텍스트 반환(정제는 호출부).
+// temperature 를 높여 변형 간 다양성 확보.
+export async function generateVectorSvg({ system, user }) {
+  const payload = {
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    systemInstruction: { parts: [{ text: system }] },
+    generationConfig: { temperature: 0.95, topP: 0.95 },
+  };
+  const result = await fetchWithRetry(GEMINI_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  return result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+}
+
 // 프로모션 에셋 명세 → 캠페인 카피/분위기 텍스트.
 export async function generateLore(finalOutput) {
   const payload = {

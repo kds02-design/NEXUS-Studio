@@ -65,6 +65,35 @@ export async function uploadBase64Many(values /*, _pathFn */) {
   return results;
 }
 
+// Upload a raw image File to Cloudinary (binary body — no canvas re-encode, so
+// the original pixels are preserved losslessly). Use this over uploadBase64 when
+// the original File is available; the dataURL path is only needed for paste/blob.
+// Returns secure_url. Idempotent guard: callers should fall back to uploadBase64
+// when no File object exists.
+export async function uploadImageFile(file) {
+  if (!file) return null;
+  if (!CLOUD_NAME || !UPLOAD_PRESET) {
+    throw new Error(
+      "[cloudinary] cloud name / upload preset가 설정되지 않았습니다. .env 확인."
+    );
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", UPLOAD_PRESET);
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`,
+    { method: "POST", body: formData }
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Cloudinary image upload failed (${res.status} ${res.statusText}): ${text.slice(0, 300)}`
+    );
+  }
+  const data = await res.json();
+  return data.secure_url || data.url;
+}
+
 // --- Video upload (Cloudinary unsigned, raw File body) ----------------------
 
 export const VIDEO_MAX_BYTES = 50 * 1024 * 1024; // 50MB

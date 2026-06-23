@@ -14,7 +14,7 @@ import {
 } from '../../lib/evaluationCriteria';
 import { prepareAnchorImages } from '../../lib/anchorImages';
 import { db, appId } from '../../lib/firebase';
-import { uploadBase64 } from '../../lib/storage';
+import { uploadBase64, uploadImageFile } from '../../lib/storage';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
 
@@ -184,7 +184,7 @@ export default function DesignEvaluator() {
   // 좌측 메뉴 — 평가중(현재 작업) / 평가완료(저장 목록 그리드). 'detail' = 메인 영역에 이미지+결과, 'list' = 그리드.
   const [viewMode, setViewMode] = useState('detail');
   const [isCriteriaHelpOpen, setIsCriteriaHelpOpen] = useState(false);
-  const [, setImageFile] = useState(null);
+  const [imageFile, setImageFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [aspectRatio, setAspectRatio] = useState(1);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -336,7 +336,7 @@ export default function DesignEvaluator() {
 
   // 평가 결과를 히스토리에 저장. 호출부에서 setResultData 후 await 으로 호출.
   // image 정규화 → 압축 → Firestore 저장. 실패 시 alert 으로 사용자에게 알림(silent 방지).
-  const saveEvaluationToHistory = async (result, image, category) => {
+  const saveEvaluationToHistory = async (result, image, category, file) => {
     if (!evaluationsCol) return; // 미로그인
     // previewUrl 은 URL.createObjectURL 로 만든 blob: URL 일 수 있다. blob URL 은 세션 종료/새로고침 후
     // 무효가 되므로 Firestore 에 그대로 저장하면 나중에 히스토리에서 이미지가 깨진다.
@@ -353,29 +353,42 @@ export default function DesignEvaluator() {
     // (기존엔 480px·0.7 로 압축한 dataURL 을 Firestore 에 저장해 재로딩 시 화질이 크게 떨어졌음.)
     // 업로드 실패(설정 누락/네트워크) 시에만 압축 dataURL 로 폴백 — 저장 자체는 보장.
     let imageToStore = null;
-    try {
-      if (typeof normalized === 'string' && normalized.startsWith('http')) {
-        imageToStore = normalized; // 이미 URL(멱등)
-      } else if (typeof normalized === 'string' && normalized.startsWith('data:')) {
-        imageToStore = await uploadBase64(normalized);
-      }
-    } catch (e) {
-      console.warn('[Evaluator] Cloudinary 업로드 실패 — 압축 dataURL 로 폴백', e);
-    }
-    if (!imageToStore) {
-      // 폴백: 기존 압축 경로 (저화질이지만 Firestore 1MB 안에 저장은 됨).
-      let compressed = normalized;
+    // 1) 원본 File 이 있으면 바이너리 그대로 업로드 → canvas 재인코딩 없이 완전 무손실.
+    if (file instanceof File) {
       try {
-        if (typeof compressed === 'string' && compressed.startsWith('data:')) {
-          compressed = await compressImage(compressed, 480, 0.7);
+        imageToStore = await uploadImageFile(file);
+      } catch (e) {
+        console.warn('[Evaluator] 원본 File 업로드 실패 — dataURL 경로로 폴백', e);
+      }
+    }
+    // 2) File 이 없거나(붙여넣기) 실패 → dataURL 업로드 (멱등: 이미 http URL 이면 그대로).
+    if (!imageToStore) {
+      try {
+        if (typeof normalized === 'string' && normalized.startsWith('http')) {
+          imageToStore = normalized;
+        } else if (typeof normalized === 'string' && normalized.startsWith('data:')) {
+          imageToStore = await uploadBase64(normalized);
         }
       } catch (e) {
-        console.error('[Evaluator] image compress failed', e);
-        compressed = normalized;
+        console.warn('[Evaluator] Cloudinary 업로드 실패 — 고품질 압축 dataURL 로 폴백', e);
       }
-      if (typeof compressed === 'string' && compressed.length > 900_000) {
-        console.warn(`[Evaluator] image still too large (${compressed.length}b), recompressing 320/0.6`);
-        try { compressed = await compressImage(normalized, 320, 0.6); } catch {}
+    }
+    if (!imageToStore) {
+      // 폴백(Cloudinary 미설정/장애): Firestore 1MB 한도 안에서 최대한 선명하게.
+      // 큰 해상도·고품질부터 시도하고 한도를 넘을 때만 단계적으로 낮춘다. (기존 480/0.7 은 과하게 뭉개짐.)
+      let compressed = normalized;
+      const ladder = [[1920, 0.92], [1600, 0.9], [1280, 0.86], [1024, 0.82], [768, 0.78]];
+      if (typeof normalized === 'string' && normalized.startsWith('data:')) {
+        for (const [w, q] of ladder) {
+          try {
+            compressed = await compressImage(normalized, w, q);
+          } catch (e) {
+            console.error('[Evaluator] image compress failed', e);
+            break;
+          }
+          // Firestore doc 1MB 한도(여유분 포함 ~900KB) 안에 들어오면 채택.
+          if (typeof compressed === 'string' && compressed.length <= 900_000) break;
+        }
       }
       imageToStore = compressed;
     }
@@ -651,6 +664,8 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
       }
   };
 
+
+
   useEffect(() => {
       const handlePaste = (e) => {
           if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
@@ -919,7 +934,7 @@ ${scoringRulesText}${anchorsText}
               setResultData(finalResult);
               showNotification("분석이 성공적으로 완료되었습니다.");
               // 로그인 사용자면 히스토리에 자동 저장 (fire-and-forget).
-              if (user) saveEvaluationToHistory(finalResult, previewUrl, detectedCategory);
+              if (user) saveEvaluationToHistory(finalResult, previewUrl, detectedCategory, imageFile);
               setSelectedHistoryId(null);
           } else {
               throw new Error("JSON 파싱 실패");

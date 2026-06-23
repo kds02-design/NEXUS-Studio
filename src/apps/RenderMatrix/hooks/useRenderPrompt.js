@@ -180,20 +180,21 @@ export function useRenderPrompt() {
         if (isPipeline) setAutoPipeline({ id: payloadTs, from: source, status: 'failed' });
         return;
       }
-      // pipeline — image-to-image 렌더 입력은 base image 이므로 editor 뷰 + baseImage 로 임포트.
       // edit — 마이크로 에디트 뷰 + editImage 로 임포트.
-      if (isPipeline) {
-        try {
-          setCurrentView('editor');
-          setAiModel('NanoBanana');
-          setBaseImage(dataUrl);
-        } catch (e) { console.error('[RenderMatrix] pipeline 전환 실패', e); }
-      } else if (isEditMode) {
+      // pipeline · creation(브리즈 등 일반 송신) — image-to-image 렌더 입력은 base image 이므로
+      //   editor 뷰 + baseImage 로 임포트. (pipeline 은 이후 추천 옵션 자동 적용 + 자동 렌더까지 진행)
+      if (isEditMode) {
         try {
           setCurrentView('edit');
           setAiModel('NanoBanana');
           setEditImage(dataUrl);
         } catch (e) { console.error('[RenderMatrix] edit 모드 전환 실패', e); }
+      } else {
+        try {
+          setCurrentView('editor');
+          setAiModel('NanoBanana');
+          setBaseImage(dataUrl);
+        } catch (e) { console.error('[RenderMatrix] base image 임포트 실패', e); }
       }
       setIncomingFromArc((s) => s ? { ...s, status: 'analyzing' } : null);
       try {

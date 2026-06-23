@@ -23,7 +23,7 @@ export const BreezeProvider = ({ children }) => {
   const [selectedCategory, setSelectedCategory] = useState("casual");
 
   // ─── Creation: input + persona ────────────────────────────
-  const [inputText, setInputText] = useState("해피데이");
+  const [inputText, setInputText] = useState("6월\n오늘의 상품\n스페셜");
   const [base64Image, setBase64Image] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [aiPersona, setAiPersona] = useState('bubble_pop');
@@ -135,6 +135,7 @@ export const BreezeProvider = ({ children }) => {
   const [savedCloudinaryUrl, setSavedCloudinaryUrl] = useState(null);
   const [selectedImagenModel, setSelectedImagenModel] = useState(IMAGEN_MODELS[0].id);
   const [sendingToRenderMatrix, setSendingToRenderMatrix] = useState(false);
+  const [sendingToMaskForge, setSendingToMaskForge] = useState(false);
 
   // 새 렌더 결과가 들어오면 PromptArc 저장 상태 초기화.
   useEffect(() => {
@@ -193,9 +194,9 @@ export const BreezeProvider = ({ children }) => {
 
     // Imagen 렌더링
     rendering, renderedImage, renderError, savingToArc, savedToArcId, savedCloudinaryUrl,
-    selectedImagenModel, sendingToRenderMatrix, canRender, grade,
+    selectedImagenModel, sendingToRenderMatrix, sendingToMaskForge, canRender, grade,
     setRendering, setRenderedImage, setRenderError, setSavingToArc, setSavedToArcId, setSavedCloudinaryUrl,
-    setSelectedImagenModel, setSendingToRenderMatrix,
+    setSelectedImagenModel, setSendingToRenderMatrix, setSendingToMaskForge,
   };
 
   const handlers = createHandlers(stateBag);

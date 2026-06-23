@@ -11,6 +11,10 @@ const ACCENT = '#A78BFA';
 // 16 효과 메타 — 이모지 + 한 줄 태그라인. id 누락(동적 스타일)은 기본값 폴백.
 const EFFECT_META = {
   Calli_Brush:       { emoji: '🖌️', tag: '수채 붓글씨 번짐' },
+  Calli_Ink:         { emoji: '🌑', tag: '수묵 먹번짐' },
+  Calli_Modern:      { emoji: '✍️', tag: '깔끔한 모던 붓' },
+  Calli_DryBrush:    { emoji: '🪵', tag: '거친 갈필 질감' },
+  Calli_Marker:      { emoji: '🖋️', tag: '브러시펜 마커' },
   Casual_Bubble:     { emoji: '🫧', tag: '말랑 버블 풍선' },
   Casual_Comic:      { emoji: '💥', tag: '코믹북 하프톤' },
   Casual_Block:      { emoji: '🔳', tag: '모던 기하 블록' },
@@ -31,13 +35,17 @@ const EFFECT_META = {
 
 export default function BreezeEffectGallery() {
   const b = useBreeze();
-  const effects = [...staticOptions.CasualStyles, ...(b.dynamicOptions.CasualStyles || [])];
+  // 좌측 카테고리(casual / calli)로 필터 — '캘리그라피' 선택 시 붓글씨 계열만 노출.
+  // cat 미지정(동적 AI 생성 스타일)은 캐주얼로 간주.
+  const allEffects = [...staticOptions.CasualStyles, ...(b.dynamicOptions.CasualStyles || [])];
+  const effects = allEffects.filter((s) => (s.cat || 'casual') === b.selectedCategory);
+  const isCalli = b.selectedCategory === 'calli';
 
   return (
     <section className="rounded-xl border border-violet-500/25 bg-gradient-to-br from-violet-950/30 to-[#0E0E0E] p-3">
       <div className="flex items-center gap-2 mb-2.5 px-0.5">
         <Sparkles className="w-3.5 h-3.5 text-violet-300" />
-        <h3 className="text-[11px] font-bold text-violet-100">효과 선택</h3>
+        <h3 className="text-[11px] font-bold text-violet-100">{isCalli ? '붓글씨 효과' : '효과 선택'}</h3>
         <span className="text-[10px] text-zinc-500">— 클릭 한 번에 스타일 완성</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">

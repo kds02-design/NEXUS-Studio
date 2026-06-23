@@ -9,6 +9,10 @@ const PERSONA_FOR_STYLE = {
   Calli_Brush:       ["ink_master", "calli"],
   Calli_Ribbon:      ["flourish_artist", "calli"],
   Diary_Pen:         ["monoline_crafter", "calli"],
+  Calli_Ink:         ["ink_master", "calli"],
+  Calli_Modern:      ["ink_master", "calli"],
+  Calli_DryBrush:    ["ink_master", "calli"],
+  Calli_Marker:      ["flourish_artist", "calli"],
   Casual_Bubble:     ["bubble_pop", "casual"],
   Casual_Jelly:      ["bubble_pop", "casual"],
   Casual_Marker:     ["bubble_pop", "casual"],
@@ -36,6 +40,14 @@ export const applyScriptPreset = (presetId, s) => {
   else if (presetId === "Casual_Block") { s.setStemWeight("Weight_Chunky"); s.setTerminalStyle("End_Block"); s.setStrokeTexture("Tex_Smooth"); s.setRhythmDynamic("Rhythm_Calm"); s.setPlayfulDistortion("Distort_None"); }
   else if (presetId === "Casual_Marker") { s.setStemWeight("Weight_Marker"); s.setTerminalStyle("End_Round"); s.setStrokeSharpness("Sharp_Crisp"); s.setStrokeTexture("Tex_Smooth"); s.setRhythmDynamic("Rhythm_Calm"); }
   else if (presetId === "Calli_Ribbon") { s.setStemWeight("Weight_Brush"); s.setTerminalStyle("End_Swash"); s.setStrokeSharpness("Sharp_Crisp"); s.setCharProportion("P_Slim"); s.setStrokeExtension("Ext_Elegant"); s.setLetterConnection("CursiveFlow"); }
+  // 수묵 먹글씨 — 전통 동양 붓글씨. 젖은 먹 번짐 + 부드러운 붓끝 + 명상적 여백(개별 분리).
+  else if (presetId === "Calli_Ink") { s.setStemWeight("Weight_Brush"); s.setTerminalStyle("End_Brush"); s.setStrokeTexture("Tex_Watercolor"); s.setStrokeSharpness("Sharp_Soft"); s.setAnalogImperfection("Imp_Bleed"); s.setStrokeExtension("Ext_None"); s.setRhythmDynamic("Rhythm_Calm"); s.setLetterConnection("Separated"); s.setTextFlow("Straight"); s.setSlantAngle("Slant_0"); }
+  // 모던 캘리 — 깔끔·자신감 있는 붓 선, 살짝 바운스. 디지털 클린(번짐 없음).
+  else if (presetId === "Calli_Modern") { s.setStemWeight("Weight_Brush"); s.setTerminalStyle("End_Brush"); s.setStrokeTexture("Tex_Smooth"); s.setStrokeSharpness("Sharp_Crisp"); s.setAnalogImperfection("Imp_None"); s.setStrokeExtension("Ext_Playful"); s.setRhythmDynamic("Rhythm_Bouncy"); s.setLetterConnection("CursiveFlow"); s.setTextFlow("Bouncy"); s.setSlantAngle("Slant_Casual"); }
+  // 갈필 마른붓 — 거친 마찰 갈라짐 + 빠른 속도감 + 사선.
+  else if (presetId === "Calli_DryBrush") { s.setStemWeight("Weight_Brush"); s.setTerminalStyle("End_Brush"); s.setStrokeTexture("Tex_Grunge"); s.setStrokeSharpness("Sharp_Crisp"); s.setAnalogImperfection("Imp_RoughEdge"); s.setStrokeExtension("Ext_None"); s.setRhythmDynamic("Rhythm_Fast"); s.setSlantAngle("Slant_Italic"); s.setLetterConnection("Separated"); s.setTextFlow("Straight"); }
+  // 브러시 마커 — 매끈한 붓펜 마커, 경쾌한 플릭.
+  else if (presetId === "Calli_Marker") { s.setStemWeight("Weight_Marker"); s.setTerminalStyle("End_Brush"); s.setStrokeTexture("Tex_Smooth"); s.setStrokeSharpness("Sharp_Crisp"); s.setStrokeExtension("Ext_Playful"); s.setRhythmDynamic("Rhythm_Bouncy"); s.setSlantAngle("Slant_Casual"); s.setLetterConnection("CursiveFlow"); s.setTextFlow("Bouncy"); }
   else if (presetId === "Casual_Jelly") { s.setStemWeight("Weight_Chunky"); s.setTerminalStyle("End_Round"); s.setPlayfulDistortion("Distort_Jelly"); s.setStrokeSharpness("Sharp_Soft"); s.setRhythmDynamic("Rhythm_Bouncy"); s.setInternalDecoration("Highlight"); }
   else if (presetId === "Street_Graffiti") { s.setCharProportion("P_Condensed"); s.setStemWeight("Weight_Marker"); s.setTerminalStyle("End_Brush"); s.setRhythmDynamic("Rhythm_Fast"); s.setLetterConnection("Overlapping"); s.setCasualSurrounding("Splatter"); }
   else if (presetId === "Vintage_Chalk") { s.setTerminalStyle("End_Blunt"); s.setStrokeTexture("Tex_Chalk"); s.setAnalogImperfection("Imp_RoughEdge"); s.setCharProportion("P_Std"); s.setInternalDecoration("Hatched"); }

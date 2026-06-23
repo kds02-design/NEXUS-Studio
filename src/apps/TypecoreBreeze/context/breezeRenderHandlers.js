@@ -97,9 +97,10 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
       const useEdit = isEditView();
       const prompts = useEdit ? getEditPrompts() : getPrompts();
       const text = pickEn(prompts.outputContent) || '';
+      // mode 미지정 = creation 뷰. RenderMatrix 의 base image 로 임포트되어
+      // 입체감·재질감 옵션을 얹는 정상 흐름. (mode:'edit' 는 마이크로 에디트 뷰로 빠지므로 사용하지 않음)
       navigate?.('render-metrics', {
         source: 'typecore-breeze',
-        mode: 'edit',
         prompt: { text, tags: ['TypecoreBreeze', 'Typography'] },
         image: { url, metadata: { from: 'TypecoreBreeze' } },
       });
@@ -110,5 +111,22 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
     }
   };
 
-  return { handleRender, handleDownloadRendered, handleSaveToPromptArc, handleSendToRenderMatrix };
+  // MaskForge 송신 — 렌더된 타이포를 배경 제거(누끼) 도구로 전송. cloudinary URL 재사용, 없으면 즉시 업로드.
+  const handleSendToMaskForge = async () => {
+    if (!b.renderedImage?.dataUrl) return;
+    b.setSendingToMaskForge(true);
+    try {
+      const url = b.savedCloudinaryUrl || await uploadBase64(b.renderedImage.dataUrl);
+      navigate?.('mask-forge', {
+        source: 'typecore-breeze',
+        image: { url, metadata: { from: 'TypecoreBreeze' } },
+      });
+    } catch (e) {
+      console.error('[TypecoreBreeze] send to MaskForge failed', e);
+    } finally {
+      b.setSendingToMaskForge(false);
+    }
+  };
+
+  return { handleRender, handleDownloadRendered, handleSaveToPromptArc, handleSendToRenderMatrix, handleSendToMaskForge };
 };

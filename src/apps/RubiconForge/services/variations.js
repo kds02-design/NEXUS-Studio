@@ -46,6 +46,28 @@ const ONLY_VARY_BLOCK = `ONLY VARY THE FOLLOWING — applied as a recolor / rete
 
 const FINAL_REMINDER = `FINAL REMINDER: Layout, silhouette, aspect ratio, outline thickness, and decoration count must remain IDENTICAL to the source. Only color, material, and surface finish change. Match the source's rendering quality and detail level — do not exceed it.`;
 
+// ─── 리스킨(단일 버튼) 전용 보강 블록 ──────────────────────────────────────────
+// recolor 의 기본은 "전부 보존" 이지만, 버튼 리스킨에서는 사용자가 직접 카피를 얹으므로
+//   (1) 내부 텍스트를 지워 빈 공간으로 만들고,
+//   (2) 프레임 두께가 커지는 흔한 실패를 차단하며,
+//   (3) 흰/유색 배경으로 빠지는 실패를 추가로 막는다.
+const TEXT_REMOVAL_BLOCK = `TEXT REMOVAL — LEAVE THE TEXT AREA EMPTY (critical):
+- The source has embedded text / a label inside its central area. In the OUTPUT, REMOVE that text completely.
+- Do NOT redraw, re-render, translate, keep, or replace the text with new glyphs, placeholder words, symbols, numbers, or icons.
+- Leave the central text zone as a CLEAN, EMPTY, smooth surface in the new material — the same reserved area, just blank, ready for a designer to add their own text later.
+- Keep the panel / button surface, frame, and decorations fully intact around that empty zone — ONLY the text glyphs disappear, revealing the underlying surface beneath them.
+- The empty area must read as intentional, clean negative space — NOT as a blurred, smeared, scratched, or damaged patch.`;
+
+const FRAME_THICKNESS_LOCK = `FRAME / BORDER THICKNESS LOCK (HIGHEST PRIORITY — the frame must NOT grow):
+- Trace the source's outer frame / border / rim and reproduce the SAME stroke WIDTH and the SAME proportion of the asset — do NOT thicken, fatten, inflate, bulk up, or deepen the relief of the frame.
+- Switching to a richer material (ornate gold, heavy iron, etc.) must NOT add thickness, height, or bevel depth — it is the SAME thin frame in a new material, never a chunkier one.
+- If the source frame is slim, the output frame stays slim. The inner content area must NOT shrink because the frame grew.
+- WHEN IN DOUBT, ERR THINNER: render the frame and edge slightly thinner rather than thicker. A too-slim frame is acceptable; a thick, swollen, oversized frame is a failure.`;
+
+const BACKGROUND_RESKIN_EMPHASIS = `BACKGROUND — EXTRA EMPHASIS (frequent failure on recolor): even if the SOURCE asset sits on a white, light, gray, cream, or colored backdrop, the OUTPUT background MUST be replaced with pure black #000000. NEVER place the asset on a white card, sheet, panel, podium, table, or product-shot backdrop. Only the asset itself survives — everything behind and around it is pure solid black.`;
+
+const RESKIN_FINAL_CHECK = `RE-SKIN FINAL CHECK (verify all three before output): (1) the background is pure black #000000 — never white, light, or a card/backdrop; (2) the frame / border / outline is NO thicker than the source — slimmer is fine, never thicker; (3) if the source had embedded text, the central text area is now EMPTY — the original text is removed and NOT replaced, leaving clean blank surface.`;
+
 // 정제 블록 — REFINEMENT_LEVELS 에서 promptBlock 조회. source 면 빈 문자열.
 const getRefinementBlock = (refinementLevel) => {
   const lvl = REFINEMENT_BY_ID[refinementLevel || 'source'];
@@ -84,22 +106,28 @@ ABSOLUTE PRESERVATION RULES (must remain IDENTICAL to the source):
 - The aspect ratio and canvas composition — do not crop, do not extend, do not change framing
 - The thickness of the outer frame / outline / border stroke
 - The component type (button / card / panel / badge) and overall layout
-- The center text-safe zone and any embedded typography placement
+- The center text-safe zone's size and position — but it must be left EMPTY (see TEXT REMOVAL below)
 
 ${COUNT_MATCH_BLOCK}
 
 ${SIZE_LOCK_BLOCK}
 
-${TEXT_PRESERVATION_BLOCK}
+${FRAME_THICKNESS_LOCK}
+
+${TEXT_REMOVAL_BLOCK}
 
 ${BACKGROUND_BLOCK}
+
+${BACKGROUND_RESKIN_EMPHASIS}
 
 ${ONLY_VARY_BLOCK}
 
 TARGET COLOR + MATERIAL (this is a color/material descriptor only — it does NOT add decorations):
 ${themeHint}${getBgContextBlock(hasBackgroundRef, false)}${getRefinementBlock(refinementLevel)}${getAtmosphereBlock(temperature, age)}
 
-${FINAL_REMINDER}`;
+${FINAL_REMINDER}
+
+${RESKIN_FINAL_CHECK}`;
 };
 
 // ─── 아틀라스(디자인 시스템) 변형 프롬프트 ───────────────────────────────────
@@ -182,9 +210,10 @@ const compactExtras = (refinementLevel, temperature, age) => [
 
 export const buildCompactVariationPrompt = ({ themeHint, refinementLevel, temperature, age }) => {
   const extras = compactExtras(refinementLevel, temperature, age);
-  return `Recolor and retexture the attached image IN PLACE. Keep the exact same shapes, outlines, layout, proportions, embedded text, and number of elements — change ONLY color, material, and surface finish.
+  return `Recolor and retexture the attached UI asset (button, frame, icon, badge, etc.) IN PLACE. Keep the exact same shapes, outlines, layout, proportions, and number of elements — change ONLY color, material, and surface finish.
+Remove any embedded text/label and leave that central area as a clean EMPTY space in the new material (do NOT redraw, keep, or replace the text). Keep the frame/border the SAME thickness as the source — do NOT thicken it (when unsure, err thinner).
 New color + material: ${themeHint}
-${extras ? `${extras}\n` : ''}Rules: background must be pure black #000000; do NOT add, remove, resize, or rearrange any decoration; do NOT redraw or alter any text; match the source's detail level, do not exceed it.`;
+${extras ? `${extras}\n` : ''}Rules: background MUST be pure black #000000 even if the source has a white/light/colored background; do NOT add, resize, or rearrange any decoration; do NOT enlarge the frame; match the source's detail level, do not exceed it.`;
 };
 
 export const buildCompactAtlasVariationPrompt = ({ themeHint, refinementLevel, temperature, age }) => {
@@ -198,7 +227,7 @@ ${extras ? `${extras}\n` : ''}Rules: background must be pure black #000000; do N
 // recolor 빌더와 정반대 철학: 구조 락(COUNT_MATCH/SIZE_LOCK)을 풀고, 같은 컴포넌트
 // 정체성·기능만 유지한 채 형태·장식·비율·구성을 적극 변주한다. directionBlock 이 이번
 // 대안이 밀어붙일 방향, strengthBlock 이 원본에서 멀어지는 정도.
-const DESIGN_TEXT_RULE = `TEXT RULE: If the reference contains text, keep the same text CONTENT and keep it legible. You may reposition or restyle it to fit the new design, but never invent garbled or broken glyphs — this is critical for non-Latin scripts (Korean Hangul, Chinese, Japanese). If unsure, keep the text minimal and clean rather than risk mangling it.`;
+const DESIGN_TEXT_RULE = `TEXT REMOVAL — LEAVE THE TEXT AREA EMPTY: If the reference contains embedded text or a label (e.g. a button caption), REMOVE it in the output. Do NOT redraw, re-render, translate, keep, or replace it with new glyphs, placeholder words, symbols, numbers, or icons. Leave the central text-safe area as a clean, EMPTY surface in the redesigned material — the same reserved zone, just blank, ready for a designer to add their own text later. Keep the asset's surface, frame, and decorations intact around that empty zone; the empty area must read as intentional negative space, not a smeared or damaged patch. (Assets that have no text — frames, ornaments, badges — are unaffected by this rule.)`;
 
 export const buildDesignAlternativePrompt = ({ directionBlock, strengthBlock, hasBackgroundRef }) => {
   const refLabel = hasBackgroundRef
@@ -258,13 +287,13 @@ ISOLATION (critical — overrides any direction that hints at a scene):
 
 ${BACKGROUND_BLOCK}${getBgContextBlock(hasBackgroundRef, false)}
 
-FINAL: Output ONE single redesigned detail asset on a PURE BLACK #000000 background (never white or light), centered and isolated — same component type, a border / frame stroke NO THICKER than the reference (slimmer is fine), the same thin fine ornament line weight, same ornament scale, same aspect ratio as the reference, restrained finishing effects (no added glow / shadow / particles), but a distinct, finely-detailed and precise decorative motif and material.`;
+FINAL: Output ONE single redesigned detail asset on a PURE BLACK #000000 background (never white or light), centered and isolated — same component type, a border / frame stroke NO THICKER than the reference (slimmer is fine), the same thin fine ornament line weight, same ornament scale, same aspect ratio as the reference, restrained finishing effects (no added glow / shadow / particles), the central text area left EMPTY (any source text removed, not replaced), but a distinct, finely-detailed and precise decorative motif and material.`;
 };
 
 // 외부 챗 붙여넣기용 컴팩트 디자인 대안 프롬프트.
 export const buildCompactDesignAlternativePrompt = ({ directionHint, strengthHint }) => {
   return `Redesign the attached game-UI detail asset into a DESIGN ALTERNATIVE — same component type and purpose (a button stays a button, a frame stays a frame), as a single centered asset isolated on pure black #000000. Change the design language (motif, pattern, material, internal arrangement), but KEEP the structure close to the source: trace and reproduce the SAME border/frame stroke thickness, the SAME thin ornament line weight (do NOT make ornaments thicker, bolder, or more raised), the same ornament size/scale (don't enlarge), and the same aspect ratio and footprint. "Richer" means a finer, more intricate pattern at the same thin line weight, never heavier strokes. If unsure of the source stroke width, err THINNER. Aim for a refined, precise, finely-detailed result — never thick, chunky, or bulky. The background MUST be pure black #000000 even if the new design reads clean/minimal — never white or light, never a white card or product-shot backdrop. Keep effects restrained: match the source's glow/shadow/particles, do NOT add new or stronger ones. NO background scene, NO environment.
-${directionHint ? `Direction: ${directionHint}\n` : ''}${strengthHint ? `Strength: ${strengthHint}\n` : ''}If there is text, keep the same content and keep it legible (no garbled glyphs). Output one single redesigned asset only.`;
+${directionHint ? `Direction: ${directionHint}\n` : ''}${strengthHint ? `Strength: ${strengthHint}\n` : ''}If the source has embedded text/label, REMOVE it and leave that central area empty — do NOT redraw or replace it (assets without text are unaffected). Output one single redesigned asset only.`;
 };
 
 // ─── 호출 헬퍼 ────────────────────────────────────────────────────────────────

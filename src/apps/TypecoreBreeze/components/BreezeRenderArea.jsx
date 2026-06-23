@@ -1,6 +1,6 @@
 // Breeze 전용 Imagen 렌더 영역 — Sovereign current 의 ImagenRenderArea 를 Breeze 톤(violet)으로 변형.
 // Creation/Edit 두 뷰가 공통으로 사용.
-import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, ImagePlus } from 'lucide-react';
+import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, ImagePlus, Scissors } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 
 export default function BreezeRenderArea() {
@@ -9,6 +9,7 @@ export default function BreezeRenderArea() {
     handleRender, rendering, renderedImage, renderError,
     handleDownloadRendered, handleSaveToPromptArc, savingToArc, savedToArcId,
     handleSendToRenderMatrix, sendingToRenderMatrix,
+    handleSendToMaskForge, sendingToMaskForge,
     sendRenderedToEditReference, currentView, editUploadedImage,
     isLoggedIn, canRender, grade,
   } = useBreeze();
@@ -109,6 +110,15 @@ export default function BreezeRenderArea() {
               >
                 {sendingToRenderMatrix ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 전송 중…</>
                   : <><Layers className="w-3.5 h-3.5" /> Render Matrix 로 보내기</>}
+              </button>
+              <button
+                onClick={handleSendToMaskForge}
+                disabled={sendingToMaskForge}
+                title="렌더된 이미지를 Mask Forge 로 보내 배경(누끼)을 제거"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/15 hover:border-rose-500/50 text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {sendingToMaskForge ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 전송 중…</>
+                  : <><Scissors className="w-3.5 h-3.5" /> Mask Forge 로 보내기</>}
               </button>
               {renderedImage.modelId && (
                 <span className="ml-auto text-[10px] text-zinc-500">

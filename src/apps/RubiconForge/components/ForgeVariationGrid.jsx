@@ -36,7 +36,7 @@ export default function ForgeVariationGrid({ forge }) {
         <div className="flex flex-col gap-2 mb-8">
           <div className="flex items-center gap-2 text-zinc-300">
             <Sparkles className="w-5 h-5 text-[#76cee0]" />
-            <h2 className="text-[18px] font-bold">세부 에셋 변형 생성</h2>
+            <h2 className="text-[18px] font-bold">리디자인 <span className="text-[12px] font-normal text-zinc-500">— 종류 유지, 형태·디자인 재해석</span></h2>
           </div>
           <p className="text-[12px] text-zinc-500 leading-relaxed break-keep-all">
             세부 에셋 1개의 <span className="text-zinc-300">컴포넌트 종류·기능</span>은 유지하고, 좌측에서 고른 <span className="text-zinc-300">변형 방향</span>마다 형태·장식·구성을 재해석한 <span className="text-zinc-300">디자인 대안</span>을 한 장씩 만듭니다.

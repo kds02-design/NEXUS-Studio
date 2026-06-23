@@ -14,16 +14,23 @@ import {
   analyzeStyleImage,
   generateLore as generateLoreApi,
 } from '../services/gemini';
-import { renderDesignAlternative, renderAtlasVariation } from '../services/variations';
+import { renderDesignAlternative, renderAtlasVariation, renderVariation } from '../services/variations';
+import { renderVectorAsset, svgToPngDataUrl } from '../services/vectorGen';
 import { renderWithImagen, IMAGEN_MODELS } from '../../../lib/imagenRender';
+import { savePromptToArc } from '../../../lib/promptArcSave';
 import {
   VARIATION_MOODS, STYLE_BY_ID, defaultStyleIdsFor,
   DESIGN_VARIATION_BY_ID, defaultDesignVariationIds, VARIATION_STRENGTH_BY_ID,
 } from '../constants/variations';
+import { VECTOR_CATEGORY_BY_ID, VECTOR_STYLE_BY_ID } from '../constants/vectors';
+
+// 결과가 자동 저장될 PromptArc 폴더 이름.
+const ARC_FOLDER_NAME = '리스킨 보관함';
+const VECTOR_FOLDER_NAME = '벡터 보관함';
 
 export function useForgePrompt() {
   // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
-  const { isLight } = useGlobal();
+  const { isLight, user } = useGlobal();
   const theme = isLight ? "light" : "dark";
   const [currentView, setCurrentView] = useState("creation");
 
@@ -184,6 +191,239 @@ export function useForgePrompt() {
     handleThemeDnaChange("LineageDarkRoyal");
     handleAssetTypeChange("Button");
     setOutputFormat("Isolated"); setRimThickness("Narrow"); setEnergyCore("None"); setUserIntent("");
+  };
+
+  // ─── 버튼 리스킨(creation) 모드 ────────────────────────────────────────────
+  // "처음부터 옵션으로 생성"이 아니라, 이미 만들어진 버튼 이미지를 업로드해 형태·텍스트·
+  // 비율은 그대로 잠그고 색/표면/프레임/장식 재질만 새 테마로 갈아끼운다(image-to-image recolor).
+  // services 의 renderVariation(구조 보존 recolor 패스)을 그대로 사용 — 선택한 테마 톤마다 1장.
+  const [creationSource, setCreationSource] = useState(null);
+  const [isDraggingCreationSource, setIsDraggingCreationSource] = useState(false);
+  const [creationBgRef, setCreationBgRef] = useState(null);
+  const [isDraggingCreationBg, setIsDraggingCreationBg] = useState(false);
+  const [reskinMoodId, setReskinMoodId] = useState(VARIATION_MOODS[2].id); // darkFantasy 기본
+  const [selectedReskinStyleIds, setSelectedReskinStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id));
+  const [reskinResults, setReskinResults] = useState(() =>
+    defaultStyleIdsFor(VARIATION_MOODS[2].id).map(id => {
+      const s = STYLE_BY_ID[id];
+      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
+    })
+  );
+  const [isGeneratingReskin, setIsGeneratingReskin] = useState(false);
+  const [reskinRefinementLevel, setReskinRefinementLevel] = useState('source');
+  const [reskinTemperature, setReskinTemperature] = useState('neutral');
+  const [reskinAge, setReskinAge] = useState('neutral');
+  const [reskinImageSize, setReskinImageSize] = useState('2K');
+  // PromptArc 자동 저장 결과 알림 (성공/실패/로그인 안내). 잠시 노출 후 사라짐.
+  const [reskinSaveMsg, setReskinSaveMsg] = useState(null);
+
+  // 렌더 성공 결과 1건을 PromptArc '리스킨 보관함' 폴더에 자동 저장. 실패해도 렌더 흐름은 막지 않음.
+  const autoSaveReskin = (style, result) => {
+    if (!result?.ok || !user?.uid) return null;
+    return savePromptToArc(user.uid, {
+      imageDataUrl: result.dataUrl,
+      promptText: result.compactPrompt || result.prompt || '',
+      title: `리스킨 — ${style?.label || ''}`.trim(),
+      tags: ['리스킨', style?.label].filter(Boolean),
+      folderName: ARC_FOLDER_NAME,
+    });
+  };
+
+  const flashSaveMsg = (msg) => {
+    setReskinSaveMsg(msg);
+    setTimeout(() => setReskinSaveMsg(null), 4000);
+  };
+
+  // 빈 슬롯 빌더 — 선택한 스타일 id 배열 → 결과 슬롯 배열.
+  const buildReskinSlots = (ids) => ids.map(id => {
+    const s = STYLE_BY_ID[id];
+    return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
+  });
+
+  const handleCreationSourceFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setCreationSource(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleCreationSourceUpload = (e) => handleCreationSourceFile(e.target.files[0]);
+  const handleCreationSourceDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingCreationSource(true); }, []);
+  const handleCreationSourceDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingCreationSource(false); }, []);
+  const handleCreationSourceDrop = useCallback((e) => { e.preventDefault(); setIsDraggingCreationSource(false); handleCreationSourceFile(e.dataTransfer.files[0]); }, []);
+  const handleClearCreationSource = () => {
+    setCreationSource(null);
+    setReskinResults(prev => prev.map(s => ({ ...s, dataUrl: null, error: null, isLoading: false })));
+  };
+
+  const handleCreationBgFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setCreationBgRef(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleCreationBgUpload = (e) => handleCreationBgFile(e.target.files[0]);
+  const handleCreationBgDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingCreationBg(true); }, []);
+  const handleCreationBgDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingCreationBg(false); }, []);
+  const handleCreationBgDrop = useCallback((e) => { e.preventDefault(); setIsDraggingCreationBg(false); handleCreationBgFile(e.dataTransfer.files[0]); }, []);
+  const handleClearCreationBg = () => setCreationBgRef(null);
+
+  // 분위기 카테고리 변경 → 기본 스타일 채움. 선택 톤 수 = 생성 장수.
+  const handleSelectReskinMood = (moodId) => {
+    setReskinMoodId(moodId);
+    const ids = defaultStyleIdsFor(moodId);
+    setSelectedReskinStyleIds(ids);
+    setReskinResults(buildReskinSlots(ids));
+  };
+  // 테마 톤 토글 — 다중 선택(선택한 톤마다 한 장씩 리스킨).
+  const handleToggleReskinStyle = (styleId) => {
+    const isSel = selectedReskinStyleIds.includes(styleId);
+    const next = isSel
+      ? selectedReskinStyleIds.filter(id => id !== styleId)
+      : [...selectedReskinStyleIds, styleId];
+    setSelectedReskinStyleIds(next);
+    setReskinResults(buildReskinSlots(next));
+  };
+
+  const handleGenerateReskin = async () => {
+    if (!creationSource) { setErrorMsg('리스킨할 기존 버튼 이미지를 먼저 업로드해주세요.'); return; }
+    if (selectedReskinStyleIds.length === 0) { setErrorMsg('적용할 테마 톤을 1개 이상 선택해주세요.'); return; }
+    if (isGeneratingReskin) return;
+    setIsGeneratingReskin(true);
+    const styles = selectedReskinStyleIds.map(id => STYLE_BY_ID[id]).filter(Boolean);
+    setReskinResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true })));
+    const saves = [];
+    let anyOk = false;
+    await Promise.all(styles.map(async (style, idx) => {
+      const result = await renderVariation(creationSource, style.promptHint, {
+        refinementLevel: reskinRefinementLevel,
+        temperature: reskinTemperature,
+        age: reskinAge,
+        backgroundRefDataUrl: creationBgRef,
+        imageSize: reskinImageSize,
+        modelId: creationRenderModel,
+      });
+      setReskinResults(prev => {
+        const next = prev.slice();
+        next[idx] = {
+          styleId: style.id, theme: style,
+          dataUrl: result.ok ? result.dataUrl : null,
+          error: result.ok ? null : (result.error || '생성 실패'),
+          prompt: result.prompt || null,
+          compactPrompt: result.compactPrompt || null,
+          isLoading: false,
+        };
+        return next;
+      });
+      if (result.ok) { anyOk = true; const p = autoSaveReskin(style, result); if (p) saves.push(p); }
+    }));
+    setIsGeneratingReskin(false);
+    // PromptArc 자동 저장 — 렌더 완료 후 백그라운드로 처리하고 결과만 알림.
+    if (saves.length) {
+      const okCount = (await Promise.all(saves)).filter(r => r?.ok).length;
+      flashSaveMsg(okCount ? `PromptArc '${ARC_FOLDER_NAME}' 폴더에 ${okCount}장 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인');
+    } else if (anyOk && !user?.uid) {
+      flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
+    }
+  };
+
+  const handleRegenerateReskin = async (idx) => {
+    if (!creationSource) return;
+    const slot = reskinResults[idx];
+    if (!slot || slot.isLoading) return;
+    setReskinResults(prev => {
+      const next = prev.slice();
+      next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
+      return next;
+    });
+    const result = await renderVariation(creationSource, slot.theme.promptHint, {
+      refinementLevel: reskinRefinementLevel,
+      temperature: reskinTemperature,
+      age: reskinAge,
+      backgroundRefDataUrl: creationBgRef,
+      imageSize: reskinImageSize,
+      modelId: creationRenderModel,
+    });
+    setReskinResults(prev => {
+      const next = prev.slice();
+      next[idx] = {
+        styleId: slot.styleId, theme: slot.theme,
+        dataUrl: result.ok ? result.dataUrl : null,
+        error: result.ok ? null : (result.error || '생성 실패'),
+        prompt: result.prompt || null,
+        compactPrompt: result.compactPrompt || null,
+        isLoading: false,
+      };
+      return next;
+    });
+    if (result.ok) {
+      const p = autoSaveReskin(slot.theme, result);
+      if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${ARC_FOLDER_NAME}'에 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인');
+      else if (!user?.uid) flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
+    }
+  };
+
+  // ─── 벡터 생성(vector) 모드 — Gemini 가 <svg> 를 직접 출력 ──────────────────
+  const [vectorCategory, setVectorCategory] = useState('bullet');
+  const [vectorStyle, setVectorStyle] = useState('flat');
+  const [vectorPalette, setVectorPalette] = useState('gold');
+  const [vectorText, setVectorText] = useState('');
+  const [vectorCount, setVectorCount] = useState(4);
+  const [vectorResults, setVectorResults] = useState([]); // { id, svg, viewBox, error, isLoading }
+  const [isGeneratingVector, setIsGeneratingVector] = useState(false);
+
+  // 벡터 1건 자동 저장 — SVG 를 PNG 썸네일로 래스터화 + 원본 SVG 는 content 에 보관.
+  const autoSaveVector = async (svg) => {
+    if (!user?.uid || !svg) return null;
+    let png = null;
+    try { png = await svgToPngDataUrl(svg, { width: 512, background: '#0b0b0d' }); } catch { /* 썸네일 실패해도 SVG 는 저장 */ }
+    const cat = VECTOR_CATEGORY_BY_ID[vectorCategory];
+    const st = VECTOR_STYLE_BY_ID[vectorStyle];
+    return savePromptToArc(user.uid, {
+      imageDataUrl: png,
+      promptText: svg,
+      title: `벡터 — ${cat?.label || ''}`.trim(),
+      tags: ['벡터', cat?.label, st?.label].filter(Boolean),
+      folderName: VECTOR_FOLDER_NAME,
+      type: '2D',
+    });
+  };
+
+  const handleGenerateVector = async () => {
+    if (isGeneratingVector) return;
+    setIsGeneratingVector(true);
+    const n = vectorCount;
+    setVectorResults(Array.from({ length: n }, (_, i) => ({ id: i, svg: null, viewBox: null, error: null, isLoading: true })));
+    const saves = [];
+    let anyOk = false;
+    await Promise.all(Array.from({ length: n }, (_, i) => (async () => {
+      const r = await renderVectorAsset({ category: vectorCategory, style: vectorStyle, palette: vectorPalette, userText: vectorText, index: i });
+      setVectorResults(prev => {
+        const next = prev.slice();
+        next[i] = { id: i, svg: r.ok ? r.svg : null, viewBox: r.ok ? r.viewBox : null, error: r.ok ? null : (r.error || '생성 실패'), isLoading: false };
+        return next;
+      });
+      if (r.ok) { anyOk = true; const p = autoSaveVector(r.svg); if (p) saves.push(p); }
+    })()));
+    setIsGeneratingVector(false);
+    if (saves.length) {
+      const okCount = (await Promise.all(saves)).filter(x => x?.ok).length;
+      flashSaveMsg(okCount ? `PromptArc '${VECTOR_FOLDER_NAME}' 폴더에 ${okCount}개 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인');
+    } else if (anyOk && !user?.uid) {
+      flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
+    }
+  };
+
+  const handleRegenerateVector = async (idx) => {
+    const slot = vectorResults[idx];
+    if (!slot || slot.isLoading) return;
+    setVectorResults(prev => { const next = prev.slice(); next[idx] = { ...slot, svg: null, error: null, isLoading: true }; return next; });
+    const r = await renderVectorAsset({ category: vectorCategory, style: vectorStyle, palette: vectorPalette, userText: vectorText, index: idx });
+    setVectorResults(prev => {
+      const next = prev.slice();
+      next[idx] = { id: slot.id, svg: r.ok ? r.svg : null, viewBox: r.ok ? r.viewBox : null, error: r.ok ? null : (r.error || '생성 실패'), isLoading: false };
+      return next;
+    });
+    if (r.ok) { const p = autoSaveVector(r.svg); if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${VECTOR_FOLDER_NAME}'에 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인'); }
   };
 
   useEffect(() => {
@@ -778,6 +1018,25 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     // derived
     finalOutput, originalOutput, baseSpec,
     validation,
+    // 버튼 리스킨(creation) 모드
+    creationSource, isDraggingCreationSource,
+    handleCreationSourceUpload, handleCreationSourceDragOver, handleCreationSourceDragLeave, handleCreationSourceDrop, handleClearCreationSource,
+    creationBgRef, isDraggingCreationBg,
+    handleCreationBgUpload, handleCreationBgDragOver, handleCreationBgDragLeave, handleCreationBgDrop, handleClearCreationBg,
+    reskinMoodId, selectedReskinStyleIds, handleSelectReskinMood, handleToggleReskinStyle,
+    reskinResults, isGeneratingReskin, handleGenerateReskin, handleRegenerateReskin,
+    reskinSaveMsg, setReskinSaveMsg,
+    // 벡터 생성(vector) 모드
+    vectorCategory, setVectorCategory,
+    vectorStyle, setVectorStyle,
+    vectorPalette, setVectorPalette,
+    vectorText, setVectorText,
+    vectorCount, setVectorCount,
+    vectorResults, isGeneratingVector,
+    handleGenerateVector, handleRegenerateVector,
+    reskinRefinementLevel, setReskinRefinementLevel,
+    reskinTemperature, setReskinTemperature, reskinAge, setReskinAge,
+    reskinImageSize, setReskinImageSize,
     // handlers
     handleResetSettings,
     copyToClipboard,

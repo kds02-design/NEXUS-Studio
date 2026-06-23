@@ -240,7 +240,8 @@ function colorKeyToBlob(srcData, { bg, tolerance, feather, holeProtect, holeSize
 }
 
 export default function MaskForgeApp() {
-  const { navigate } = useGlobal();
+  const { navigate, payload, clearPayload } = useGlobal();
+  const consumedPayloadRef = useRef(null);
 
   const [apiKey, setApiKey] = useState(() => {
     try { return localStorage.getItem(API_KEY_STORAGE) || ''; } catch { return ''; }
@@ -392,6 +393,37 @@ export default function MaskForgeApp() {
     setProgress(0);
     setStatusMsg('이미지 준비 완료. 배경 제거를 실행하세요.', 'done');
   }, [previewUrl, resultUrl]);
+
+  // 다른 앱(TypecoreBreeze 등)에서 navigate 로 보낸 이미지를 자동 로드.
+  // cloudinary URL · dataURL 모두 fetch → File 변환 후 loadFile 로 동일 경로 진입.
+  useEffect(() => {
+    if (!payload || payload.target !== 'mask-forge' || !payload.timestamp) return undefined;
+    if (consumedPayloadRef.current === payload.timestamp) return undefined;
+    const url = payload.image?.url;
+    if (!url) return undefined;
+    consumedPayloadRef.current = payload.timestamp;
+    let cancelled = false;
+    (async () => {
+      try {
+        setStatus({ msg: '이미지 불러오는 중…', state: 'active' });
+        const res = await fetch(url, url.startsWith('data:') ? undefined : { mode: 'cors' });
+        if (!res.ok) throw new Error(`이미지 fetch ${res.status}`);
+        const blob = await res.blob();
+        if (cancelled) return;
+        const ext = (blob.type && blob.type.split('/')[1]) || 'png';
+        const file = new File([blob], `incoming_${payload.timestamp}.${ext}`, { type: blob.type || 'image/png' });
+        loadFile(file);
+        try { clearPayload(); } catch { /* ignore */ }
+      } catch (e) {
+        if (!cancelled) {
+          console.error('[MaskForge] payload 이미지 로드 실패', e);
+          setStatus({ msg: `불러오기 실패: ${e.message || e}`, state: 'error' });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload?.timestamp, payload?.target]);
 
   // 결과 blob 교체 (이전 blob URL 정리). 줌은 건드리지 않음.
   const applyResultQuiet = useCallback((blob) => {

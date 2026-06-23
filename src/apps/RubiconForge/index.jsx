@@ -2,7 +2,7 @@
 // 여기서는 컴포넌트 컴포지션 + 글로벌 에러 토스트 + 외부 payload 수신만 담당.
 
 import { useEffect } from 'react';
-import { AlertCircle, X, Layers } from 'lucide-react';
+import { AlertCircle, X, Layers, CheckCircle2 } from 'lucide-react';
 import { useGlobal } from '../../context/GlobalContext';
 import { useForgePrompt } from './hooks/useForgePrompt';
 import { usePresets } from './hooks/usePresets';
@@ -74,6 +74,15 @@ export default function App() {
             <AlertCircle className="w-4 h-4" />
             {forge.errorMsg}
             <button onClick={() => forge.setErrorMsg(null)} className="ml-2 hover:bg-white/20 p-1 rounded-full transition-colors"><X className="w-3 h-3" /></button>
+        </div>
+      )}
+
+      {/* PromptArc 자동 저장 알림 — 리스킨 결과가 '리스킨 보관함' 폴더에 저장됐을 때 */}
+      {forge.reskinSaveMsg && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-emerald-500/95 text-white px-5 py-2.5 rounded-md font-bold text-[11px] shadow-[0_10px_30px_rgba(16,185,129,0.35)] z-[1000] flex items-center gap-3 animate-in slide-in-from-top-4">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            {forge.reskinSaveMsg}
+            <button onClick={() => forge.setReskinSaveMsg(null)} className="ml-2 hover:bg-white/20 p-1 rounded-full transition-colors"><X className="w-3 h-3" /></button>
         </div>
       )}
 
