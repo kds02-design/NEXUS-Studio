@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   setDoc, deleteDoc, onSnapshot, writeBatch, updateDoc, increment,
   arrayUnion, arrayRemove,
@@ -11,12 +11,25 @@ import {
 } from "../services/firebase";
 import { uploadPromptImages } from "../services/cloudinary";
 import { inferRelatedType } from "../constants/categories";
+import { sweepExpiredTempPrompts, TEMP_TTL_DAYS, TRASH_TTL_DAYS } from "../../../lib/promptArcSave";
 
 export function usePrompts({ user, showToast }) {
   const [prompts, setPrompts] = useState([]);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [likedIds, setLikedIds] = useState(new Set());
   const [isHydrated, setIsHydrated] = useState(false);
+  const sweptUidRef = useRef(null);
+
+  // 임시 파일(렌더 자동 저장물) 만료 정리 — 백엔드 크론이 없어 PromptArc 로드 시 클라이언트가 처리.
+  // 이미 로드된 prompts 스냅샷을 재사용해 추가 쿼리 없이 본인 소유의 만료분만 삭제. uid 당 세션 1회.
+  useEffect(() => {
+    if (!user?.uid || !isHydrated || prompts.length === 0) return;
+    if (sweptUidRef.current === user.uid) return;
+    sweptUidRef.current = user.uid;
+    sweepExpiredTempPrompts(user.uid, prompts)
+      .then(r => { if (r && (r.trashed || r.deleted)) console.log(`[PromptArc] 임시 정리 — 휴지통 이동 ${r.trashed}건 · 영구 삭제 ${r.deleted}건 (보관 ${TEMP_TTL_DAYS}일 + 휴지통 ${TRASH_TTL_DAYS}일)`); })
+      .catch(e => console.warn("[PromptArc] 임시 파일 정리 실패", e));
+  }, [user, isHydrated, prompts]);
 
   // Prompts (public)
   useEffect(() => {

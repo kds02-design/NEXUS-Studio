@@ -17,7 +17,7 @@ import {
 import { renderDesignAlternative, renderAtlasVariation, renderVariation } from '../services/variations';
 import { renderVectorAsset, svgToPngDataUrl } from '../services/vectorGen';
 import { renderWithImagen, IMAGEN_MODELS } from '../../../lib/imagenRender';
-import { savePromptToArc } from '../../../lib/promptArcSave';
+import { savePromptToArc, TEMP_TTL_DAYS } from '../../../lib/promptArcSave';
 import {
   VARIATION_MOODS, STYLE_BY_ID, defaultStyleIdsFor,
   DESIGN_VARIATION_BY_ID, defaultDesignVariationIds, VARIATION_STRENGTH_BY_ID,
@@ -320,7 +320,7 @@ export function useForgePrompt() {
     // PromptArc 자동 저장 — 렌더 완료 후 백그라운드로 처리하고 결과만 알림.
     if (saves.length) {
       const okCount = (await Promise.all(saves)).filter(r => r?.ok).length;
-      flashSaveMsg(okCount ? `PromptArc '${ARC_FOLDER_NAME}' 폴더에 ${okCount}장 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인');
+      flashSaveMsg(okCount ? `PromptArc '${ARC_FOLDER_NAME}'에 ${okCount}장 저장 · 임시 ${TEMP_TTL_DAYS}일 보관` : 'PromptArc 저장 실패 — 콘솔 확인');
     } else if (anyOk && !user?.uid) {
       flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
     }
@@ -357,7 +357,7 @@ export function useForgePrompt() {
     });
     if (result.ok) {
       const p = autoSaveReskin(slot.theme, result);
-      if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${ARC_FOLDER_NAME}'에 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인');
+      if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${ARC_FOLDER_NAME}'에 저장 · 임시 ${TEMP_TTL_DAYS}일` : 'PromptArc 저장 실패 — 콘솔 확인');
       else if (!user?.uid) flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
     }
   };
@@ -407,7 +407,7 @@ export function useForgePrompt() {
     setIsGeneratingVector(false);
     if (saves.length) {
       const okCount = (await Promise.all(saves)).filter(x => x?.ok).length;
-      flashSaveMsg(okCount ? `PromptArc '${VECTOR_FOLDER_NAME}' 폴더에 ${okCount}개 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인');
+      flashSaveMsg(okCount ? `PromptArc '${VECTOR_FOLDER_NAME}'에 ${okCount}개 저장 · 임시 ${TEMP_TTL_DAYS}일 보관` : 'PromptArc 저장 실패 — 콘솔 확인');
     } else if (anyOk && !user?.uid) {
       flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
     }
@@ -423,7 +423,7 @@ export function useForgePrompt() {
       next[idx] = { id: slot.id, svg: r.ok ? r.svg : null, viewBox: r.ok ? r.viewBox : null, error: r.ok ? null : (r.error || '생성 실패'), isLoading: false };
       return next;
     });
-    if (r.ok) { const p = autoSaveVector(r.svg); if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${VECTOR_FOLDER_NAME}'에 저장됨` : 'PromptArc 저장 실패 — 콘솔 확인'); }
+    if (r.ok) { const p = autoSaveVector(r.svg); if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${VECTOR_FOLDER_NAME}'에 저장 · 임시 ${TEMP_TTL_DAYS}일` : 'PromptArc 저장 실패 — 콘솔 확인'); }
   };
 
   useEffect(() => {

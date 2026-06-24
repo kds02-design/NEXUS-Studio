@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Image as ImageIcon, Trash2, Edit2, Play, Link2, Lock, ShieldCheck } from "lucide-react";
+import { Image as ImageIcon, Trash2, Edit2, Play, Link2, Lock, ShieldCheck, Clock } from "lucide-react";
 import { cloudinaryVideoThumb } from "../services/cloudinary";
 import { useGlobal } from "../../../context/GlobalContext";
+import { TEMP_TTL_DAYS, TRASH_TTL_DAYS } from "../../../lib/promptArcSave";
 
 export const PromptImage = ({ src, alt, className }) => {
   const [error, setError] = useState(false);
@@ -96,9 +97,24 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
         )}
       </div>
       {prompt.isLive && <div className="absolute top-0 left-0 px-2 py-0.5 bg-rose-950/80 text-rose-200 text-[9px] font-bold rounded-br-lg z-30 tracking-wider">LIVE</div>}
-      {prompt.visibility === 'private' && (
-        <div className="absolute top-2 left-2 z-30 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-bold backdrop-blur-sm" title="나만 볼 수 있는 비공개 항목">
-          <Lock size={10} strokeWidth={2.5} /> 비공개
+      {(prompt.visibility === 'private' || (prompt.temporary && prompt.visibility !== 'public')) && (
+        <div className="absolute top-2 left-2 z-30 flex flex-col items-start gap-1">
+          {prompt.visibility === 'private' && (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-amber-950 text-[10px] font-bold backdrop-blur-sm" title="나만 볼 수 있는 비공개 항목">
+              <Lock size={10} strokeWidth={2.5} /> 비공개
+            </div>
+          )}
+          {prompt.temporary && prompt.visibility !== 'public' && (
+            prompt.trashed ? (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-900/85 text-rose-200 text-[10px] font-bold backdrop-blur-sm border border-rose-500/30" title={`휴지통 — ${TRASH_TTL_DAYS}일 후 영구 삭제됩니다. 공개로 전환하면 보존됩니다.`}>
+                <Trash2 size={10} strokeWidth={2.5} /> 휴지통
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-zinc-200 text-[10px] font-bold backdrop-blur-sm border border-white/10" title={`임시 파일 — ${TEMP_TTL_DAYS}일 후 휴지통으로 이동, 다시 ${TRASH_TTL_DAYS}일 뒤 영구 삭제됩니다. 공개로 전환하면 보존됩니다.`}>
+                <Clock size={10} strokeWidth={2.5} /> 임시 {TEMP_TTL_DAYS}일
+              </div>
+            )
+          )}
         </div>
       )}
       {videoUrl && (
