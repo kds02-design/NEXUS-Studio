@@ -78,7 +78,10 @@ export function initGeminiGate() {
           const u = new URL(url);
           u.searchParams.delete("key"); // 클라이언트 키 제거 — 서버 프록시가 주입.
           const target = u.pathname + (u.search || "");
-          const proxied = `/api/gemini?target=${encodeURIComponent(target)}`;
+          // 이미지 생성 모델(경로에 'image')은 오래 걸려 Edge(25초)에서 504 → maxDuration 긴 Node 프록시로 분기.
+          // 텍스트/영상(Veo)·일반 호출은 기존 Edge 프록시(스트리밍) 유지.
+          const endpoint = /image/i.test(u.pathname) ? "/api/gemini-img" : "/api/gemini";
+          const proxied = `${endpoint}?target=${encodeURIComponent(target)}`;
           if (typeof input === "string") return _origFetch.call(this, proxied, init);
           // Request 객체면 url 만 교체해 재구성(method/headers/body 보존).
           return _origFetch.call(this, new Request(proxied, input), init);
