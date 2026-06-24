@@ -116,6 +116,9 @@ export class GeminiProvider {
       if (!sawCandidate) throw new Error('Gemini: 응답 후보 없음' + (promptFeedback ? ` (${JSON.stringify(promptFeedback)})` : ''));
       if (finishReason === 'MAX_TOKENS') throw new Error('Gemini: 응답이 최대 토큰에서 잘렸습니다 — 입력을 줄이거나 maxOutputTokens를 늘려주세요');
       if (!text.trim()) throw new Error(`Gemini: 빈 응답 (finishReason: ${finishReason || '?'})`);
+      // 정상 완료면 finishReason 이 'STOP' 등으로 채워진다. 비어 있으면 스트림이 중간에 끊긴 것
+      // (배포 환경 25초 타임아웃 가능성) — 잘린 JSON 을 조용히 부분 사용하지 말고 명확히 에러로 알린다.
+      if (!finishReason) throw new Error('Gemini: 응답이 중간에 끊겼습니다 (배포 환경 타임아웃 가능성) — 다시 시도하거나 입력 이미지를 줄여주세요');
       return parseJsonLoose(text);
     } finally {
       clearTimeout(timer);

@@ -730,12 +730,23 @@ function ProductCard({ b, slotIcon, hasRollover }) {
     const m = name.match(/^(오늘의\s*선물상자|화려한\s*결정|영롱한\s+\S+)\s+(.+)$/);
     if (m) { top = m[1]; name = m[2]; }
   }
-  // top·name 접두어 중복 제거 — name이 top(공백 무시)으로 시작하면 그 부분을 떼어 중복 표시 방지.
+  // top·name 접두어 중복 제거 — name 앞부분이 top(공백 무시)과 같으면 떼어내 중복 표시 방지.
+  // 정규식 대신 비공백 문자 단위 비교라 "선물상자" vs "선물 상자" 같은 띄어쓰기 차이도 흡수.
   if (top && name) {
-    const pat = top.trim().split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
-    const stripped = name.replace(new RegExp("^" + pat + "\\s*"), "").trim();
-    if (stripped) name = stripped;   // 남는 이름이 있으면 접두어만 제거
-    else top = "";                   // name이 top과 동일하면 타이틀만 표시
+    const squash = (s) => String(s).replace(/\s+/g, "");
+    const st = squash(top);
+    if (st) {
+      let acc = "", cut = 0;
+      for (let k = 0; k < name.length && acc.length < st.length; k++) {
+        cut = k + 1;
+        if (!/\s/.test(name[k])) acc += name[k];
+      }
+      if (acc === st) {                      // name 앞부분이 top 과 동일(공백 무시)
+        const rest = name.slice(cut).trim();
+        if (rest) name = rest;               // 남는 이름만 남김 (예: "진무")
+        else top = "";                       // name===top 이면 타이틀만 표시
+      }
+    }
   }
   // 대표 아이콘 — 여러 종이면 ' + '로 묶여 오므로 쪼개서 각각 칩으로 표시.
   const icons = String(slotIcon || "").split(/\s*\+\s*/).map((s) => s.trim()).filter(Boolean);
