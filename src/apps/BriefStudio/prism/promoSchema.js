@@ -128,6 +128,15 @@ function splitBoxName(top, name) {
   return { top: t, name: nm };
 }
 
+// 대표 아이콘 한 조각을 "이름 / 개수" 형식으로 — 플러그인은 ' / ' 로 이름만 떼어 아이콘 PNG 를 매칭하므로,
+// "진무강 200개"(개수가 이름에 공백으로 붙음)면 "진무강 200개" 라는 이름의 아이콘을 찾다 실패한다.
+// 끝의 개수("200개","1,500개","15개" 등) 앞에 ' / ' 를 넣어 cardPresets("진무강 / 200개")와 형식을 통일.
+function formatIconPiece(piece) {
+  const p = String(piece || '').trim();
+  if (!p || p.includes('/')) return p;            // 빈 값/이미 슬래시 형식이면 그대로
+  return p.replace(/\s+([\d][\d,]*\s*개)\s*$/, ' / $1');
+}
+
 // 구조화 추출 → 플러그인 "데이터 채우기"가 그대로 먹는 data.{월}.json 형태로 변환.
 export function toPluginJson(d) {
   d = d || {};
@@ -154,7 +163,8 @@ export function toPluginJson(d) {
     // (쉼표는 "1,500개" 같은 개수와 충돌하므로 구분자로 쓰지 않음)
     slotIcons: (d.slotIcons || [])
       .map((s) => String(s || '').replace(/<br\s*\/?>/gi, ' + ').replace(/\s*[\n;]+\s*/g, ' + ').replace(/\s*\+\s*/g, ' + ').trim())
-      .filter(Boolean),
+      .filter(Boolean)
+      .map((s) => s.split(' + ').map(formatIconPiece).filter(Boolean).join(' + ')), // 각 아이콘에 "이름 / 개수" 형식 적용
     // milestones: "보상명 / 조건(threshold) *" — 슬래시로 조건을 함께 실어야 플러그인이
     // milestone/cond(상단 [조건])까지 채운다. magnify(돋보기)는 끝의 " *". 조건 없으면 이름만.
     milestones: (d.milestones || []).map((m) => {
