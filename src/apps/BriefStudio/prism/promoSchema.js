@@ -104,12 +104,28 @@ export const PROMO_SCHEMA = {
 // 알려진 분류 접두어로 자동 분리. (접두어 없는 상품은 top 없이 name 한 줄 그대로 — 의도된 동작)
 const BOX_TOP_RE = /^(오늘의\s*선물\s*상자|화려한\s*결정)\s+(.+)$/;
 function splitBoxName(top, name) {
-  const t = String(top || '').trim();
-  const nm = String(name || '').trim();
-  if (t) return { top: t, name: nm };
-  const m = nm.match(BOX_TOP_RE);
-  if (m) return { top: m[1].replace(/\s+/g, ' ').trim(), name: m[2].trim() };
-  return { top: '', name: nm };
+  let t = String(top || '').trim();
+  let nm = String(name || '').trim();
+  // top 이 비어 한 덩어리로 온 경우 알려진 분류 접두어로 분리.
+  if (!t && nm) {
+    const m = nm.match(BOX_TOP_RE);
+    if (m) { t = m[1].replace(/\s+/g, ' ').trim(); nm = m[2].trim(); }
+  }
+  // top·name 접두어 중복 제거(공백 무시) — name 이 top 으로 시작하면 떼어내,
+  // "오늘의 선물상자 / 오늘의 선물상자 진무" 처럼 JSON·플러그인에 겹쳐 들어가는 것을 막는다.
+  if (t && nm) {
+    const st = t.replace(/\s+/g, '');
+    let acc = '', cut = 0;
+    for (let k = 0; k < nm.length && acc.length < st.length; k++) {
+      cut = k + 1;
+      if (!/\s/.test(nm[k])) acc += nm[k];
+    }
+    if (st && acc === st) {
+      const rest = nm.slice(cut).trim();
+      if (rest) nm = rest; else t = '';   // 남는 이름만; name===top 이면 한 줄만
+    }
+  }
+  return { top: t, name: nm };
 }
 
 // 구조화 추출 → 플러그인 "데이터 채우기"가 그대로 먹는 data.{월}.json 형태로 변환.
