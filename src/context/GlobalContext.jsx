@@ -39,13 +39,12 @@ export function GlobalProvider({ children }) {
   // 완료된 앱: BannerCodex, PromotionArchive.
   const [theme, setThemeRaw] = useState(() => {
     if (typeof window === "undefined") return "dark";
+    // 사용자가 직접 고른 값(localStorage)은 유지. 없으면 OS 설정 무시하고 항상 다크 기본.
     try {
       const saved = localStorage.getItem("nexus.theme");
       if (saved === "light" || saved === "dark") return saved;
     } catch {}
-    try {
-      return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
-    } catch { return "dark"; }
+    return "dark";
   });
   useEffect(() => {
     try { localStorage.setItem("nexus.theme", theme); } catch {}

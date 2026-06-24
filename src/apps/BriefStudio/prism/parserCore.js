@@ -24,7 +24,9 @@ export function createParserCore({ provider }) {
      */
     async extract({ files = [], text = '', note = '' }) {
       const prompt = extractionPrompt(note) + (text ? '\n\n[요청서 텍스트]\n' + text : '');
-      const out = await provider.generateJSON({ prompt, parts: files, schema: EXTRACTION_SCHEMA, temperature: 0 });
+      // 추출은 문서 비전·추론이 정확도 핵심 → pro 사용(스트리밍 + thought 스트리밍으로 타임아웃 회피).
+      // ops/promo 등 나머지는 기본 flash(빠름) 유지.
+      const out = await provider.generateJSON({ prompt, parts: files, schema: EXTRACTION_SCHEMA, temperature: 0, model: 'gemini-2.5-pro' });
       out.structure = out.structure || [];
       out.sections = out.sections || [];
       out.uncertain = out.uncertain || [];

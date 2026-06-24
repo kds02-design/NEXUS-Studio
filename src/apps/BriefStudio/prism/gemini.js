@@ -25,7 +25,8 @@ export class GeminiProvider {
    * @param {number} [p.temperature]
    * @returns {Promise<object>} 파싱된 JSON
    */
-  async generateJSON({ prompt, parts = [], schema = null, temperature = 0, timeoutMs = 240000 }) {
+  async generateJSON({ prompt, parts = [], schema = null, temperature = 0, timeoutMs = 240000, model = this.model }) {
+    const isFlash = /flash/i.test(model);
     const body = {
       contents: [{
         role: 'user',
@@ -38,8 +39,10 @@ export class GeminiProvider {
         temperature,
         responseMimeType: 'application/json',
         maxOutputTokens: 65536, // 전체상품 13일+롤오버 등 큰 JSON이 잘리지 않게.
-        // flash는 thinking을 끄면(0) 출력 예산이 보존돼 JSON 잘림 방지. pro는 thinking을 끌 수 없어(0 거부) 동적 thinking 사용.
-        ...(/flash/i.test(this.model) ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        // flash: thinking 끔(0) → 빠름 + 출력 예산 보존(JSON 잘림 방지).
+        // pro: 동적 thinking + thought 스트리밍(includeThoughts) → 사고 중에도 SSE 가 흘러
+        //      Edge 프록시 연결이 끊기지 않아 504 방지(사고 요약 텍스트는 파싱에서 제외).
+        thinkingConfig: isFlash ? { thinkingBudget: 0 } : { includeThoughts: true },
         ...(schema ? { responseSchema: schema } : {}),
       },
     };
@@ -47,7 +50,7 @@ export class GeminiProvider {
     // (Vercel Edge 프록시)의 초기 응답 타임아웃(~25초)에 걸려 504(FUNCTION_INVOCATION_TIMEOUT)
     // 나는 것을 방지. 첫 토큰이 도착하는 즉시 응답이 시작돼 연결이 유지되고, 청크를 모아 파싱한다.
     // 로컬(vite dev)은 타임아웃이 없어 generateContent 로도 됐지만, 배포는 스트리밍이 필요.
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
 
     // 무한 대기 방지 — 타임아웃 시 abort. 스트리밍 동안에도 유효(전체 상한).
     const ctrl = new AbortController();
@@ -84,7 +87,10 @@ export class GeminiProvider {
         const cand = chunk.candidates && chunk.candidates[0];
         if (cand) {
           sawCandidate = true;
-          for (const p of (cand.content && cand.content.parts) || []) if (typeof p.text === 'string') text += p.text;
+          for (const p of (cand.content && cand.content.parts) || []) {
+            if (p.thought) continue; // 사고 요약(thought)은 출력 JSON 이 아니므로 누적 제외
+            if (typeof p.text === 'string') text += p.text;
+          }
           if (cand.finishReason) finishReason = cand.finishReason;
         }
       };
