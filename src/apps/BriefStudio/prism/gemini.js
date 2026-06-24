@@ -11,7 +11,9 @@ export class GeminiProvider {
    */
   constructor(opts = {}) {
     this.apiKey = opts.apiKey || (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GEMINI_API_KEY);
-    this.model = opts.model || 'gemini-2.5-pro'; // 비전·추론 최상위. (flash 대비 정확↑·속도↓)
+    // 기본 flash — 빠르고 thinking 비활성(0) 가능 → 배포(Vercel) 타임아웃 회피 + 출력 예산 보존.
+    // (pro 대비 속도↑·정확 약간↓. 정확도가 더 필요하면 opts.model 로 'gemini-2.5-pro' 지정 가능.)
+    this.model = opts.model || 'gemini-2.5-flash';
     if (!this.apiKey) throw new Error('Gemini API 키가 없습니다 (VITE_GEMINI_API_KEY 또는 apiKey 옵션)');
   }
 
@@ -41,34 +43,76 @@ export class GeminiProvider {
         ...(schema ? { responseSchema: schema } : {}),
       },
     };
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+    // ★ 스트리밍(streamGenerateContent + alt=sse) 사용 — 긴 생성(pro·대용량 JSON)이 배포 환경
+    // (Vercel Edge 프록시)의 초기 응답 타임아웃(~25초)에 걸려 504(FUNCTION_INVOCATION_TIMEOUT)
+    // 나는 것을 방지. 첫 토큰이 도착하는 즉시 응답이 시작돼 연결이 유지되고, 청크를 모아 파싱한다.
+    // 로컬(vite dev)은 타임아웃이 없어 generateContent 로도 됐지만, 배포는 스트리밍이 필요.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:streamGenerateContent?alt=sse&key=${this.apiKey}`;
 
-    // 무한 대기 방지 — 타임아웃 시 abort 후 명확한 에러.
+    // 무한 대기 방지 — 타임아웃 시 abort. 스트리밍 동안에도 유효(전체 상한).
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res;
     try {
-      res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
-    } catch (e) {
-      if (e && e.name === 'AbortError') throw new Error(`Gemini: 응답 지연으로 중단됨(${Math.round(timeoutMs / 1000)}초 초과) — 입력(이미지) 크기를 줄이거나 다시 시도해주세요`, { cause: e });
-      throw new Error('Gemini: 네트워크 요청 실패 — ' + ((e && e.message) || e), { cause: e });
+      let res;
+      try {
+        res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal });
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw new Error(`Gemini: 응답 지연으로 중단됨(${Math.round(timeoutMs / 1000)}초 초과) — 입력(이미지) 크기를 줄이거나 다시 시도해주세요`, { cause: e });
+        throw new Error('Gemini: 네트워크 요청 실패 — ' + ((e && e.message) || e), { cause: e });
+      }
+
+      if (!res.ok) {
+        let detail = '';
+        try { detail = (await res.text()).slice(0, 300); } catch (e2) { /* noop */ }
+        throw new Error(`Gemini: HTTP ${res.status} ${res.statusText}${detail ? ' — ' + detail : ''}`);
+      }
+      if (!res.body) throw new Error('Gemini: 스트림 본문이 없습니다.');
+
+      let text = '';
+      let finishReason = null;
+      let promptFeedback = null;
+      let sawCandidate = false;
+
+      // SSE 이벤트 1개(여러 data: 줄 가능) 처리 — 누적 text/finishReason 갱신.
+      const handleEvent = (ev) => {
+        const payload = ev.split(/\r?\n/).filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('');
+        if (!payload || payload === '[DONE]') return;
+        let chunk;
+        try { chunk = JSON.parse(payload); } catch { return; } // 부분/비정상 청크는 스킵
+        if (chunk.error) throw new Error(`Gemini: ${chunk.error.message || chunk.error.status}`);
+        if (chunk.promptFeedback) promptFeedback = chunk.promptFeedback;
+        const cand = chunk.candidates && chunk.candidates[0];
+        if (cand) {
+          sawCandidate = true;
+          for (const p of (cand.content && cand.content.parts) || []) if (typeof p.text === 'string') text += p.text;
+          if (cand.finishReason) finishReason = cand.finishReason;
+        }
+      };
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split(/\r?\n\r?\n/);
+          buffer = events.pop(); // 마지막 미완성 이벤트는 보류
+          for (const ev of events) handleEvent(ev);
+        }
+      } catch (e) {
+        if (e && e.name === 'AbortError') throw new Error(`Gemini: 응답 지연으로 중단됨(${Math.round(timeoutMs / 1000)}초 초과) — 입력(이미지) 크기를 줄이거나 다시 시도해주세요`, { cause: e });
+        throw e;
+      }
+      if (buffer.trim()) handleEvent(buffer); // 잔여 플러시
+
+      if (!sawCandidate) throw new Error('Gemini: 응답 후보 없음' + (promptFeedback ? ` (${JSON.stringify(promptFeedback)})` : ''));
+      if (finishReason === 'MAX_TOKENS') throw new Error('Gemini: 응답이 최대 토큰에서 잘렸습니다 — 입력을 줄이거나 maxOutputTokens를 늘려주세요');
+      if (!text.trim()) throw new Error(`Gemini: 빈 응답 (finishReason: ${finishReason || '?'})`);
+      return parseJsonLoose(text);
     } finally {
       clearTimeout(timer);
     }
-
-    if (!res.ok) {
-      let detail = '';
-      try { detail = (await res.text()).slice(0, 300); } catch (e) { /* noop */ }
-      throw new Error(`Gemini: HTTP ${res.status} ${res.statusText}${detail ? ' — ' + detail : ''}`);
-    }
-    let data;
-    try { data = await res.json(); } catch (e) { throw new Error('Gemini: 응답 JSON 파싱 실패(빈 응답일 수 있음)', { cause: e }); }
-    if (data.error) throw new Error(`Gemini: ${data.error.message || data.error.status}`);
-    const cand = data.candidates && data.candidates[0];
-    if (!cand) throw new Error('Gemini: 응답 후보 없음' + (data.promptFeedback ? ` (${JSON.stringify(data.promptFeedback)})` : ''));
-    if (cand.finishReason === 'MAX_TOKENS') throw new Error('Gemini: 응답이 최대 토큰에서 잘렸습니다 — 입력을 줄이거나 maxOutputTokens를 늘려주세요');
-    const text = (cand.content && cand.content.parts || []).map(p => p.text || '').join('');
-    if (!text.trim()) throw new Error(`Gemini: 빈 응답 (finishReason: ${cand.finishReason || '?'})`);
-    return parseJsonLoose(text);
   }
 }
