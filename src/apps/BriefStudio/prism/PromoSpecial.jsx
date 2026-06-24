@@ -1,19 +1,23 @@
 // BriefStudio · Prism — prism/PromoSpecial.jsx
 // "오늘의 상품 스페셜" 전용 모드 (다크). 수정요청서 → (Gemini, 플러그인 구조 스키마) 구조화 추출
 // → 실제 페이지 디자인 구조를 닮은 기획서 미리보기 + 플러그인 "데이터 채우기"용 JSON.
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Upload, FileText, Image as ImageIcon, X, Loader2, Copy, Check, AlertCircle,
   Sparkles, Search, ScrollText, Plus, History, Gem, Trash2,
 } from "lucide-react";
+import { useGlobal } from "../../../context/GlobalContext";
+import { subscribePromoItems, savePromoItem, deletePromoItem } from "./promoStore.js";
 import { GeminiProvider } from "./gemini.js";
 import { loadPptx, slidesToText } from "./pptx.js";
 import { PROMO_SCHEMA, TRANSCRIBE_SCHEMA, toPluginJson, promoStats } from "./promoSchema.js";
 import { promoExtractionPrompt, promoMergePrompt, transcribePrompt } from "./promoPrompt.js";
 
 // 1단계: 이미지/PDF가 있으면 "반영 희망 내용"만 텍스트로 전사(배너 무시) 후 baseText와 합침.
+// 반환 { sourceText, redByBox } — redByBox 는 상자별 빨강 아이템 묶음(코드에서 slotIcons 결정적 주입에 사용).
 async function transcribeIfImages(provider, files, baseText) {
-  if (!files.length) return baseText;
+  if (!files.length) return { sourceText: baseText, redByBox: [] };
+  // flash(기본) — 빠르고 배포 환경 타임아웃 없음. 빨강 인식이 일부 빠져도 결정적 주입 + 수동 편집(검수 패널)으로 보완.
   const tr = await provider.generateJSON({
     prompt: transcribePrompt(),
     parts: files.map((f) => ({ mimeType: f.mimeType, base64: f.base64 })),
@@ -21,12 +25,45 @@ async function transcribeIfImages(provider, files, baseText) {
   });
   const transcript = (tr && tr.transcript) || "";
   const reds = (tr && tr.redItems) || [];
-  const redInfo = reds.filter((r) => r && r.item).map((r) => `${r.box || "?"} → ${r.item}`).join("\n");
-  return [
+  // 같은 상자(box)의 빨강 항목 여러 개를 모은다 — 대표 아이콘 4종이 모두 들어가게.
+  const byBox = new Map();
+  for (const r of reds) {
+    if (!r || !r.item) continue;
+    const box = (r.box || "?").trim();
+    const it = String(r.item).trim();
+    if (!it) continue;
+    if (!byBox.has(box)) byBox.set(box, []);
+    if (!byBox.get(box).includes(it)) byBox.get(box).push(it);
+  }
+  const redByBox = [...byBox.entries()].map(([box, items]) => ({ box, items }));
+  const redInfo = redByBox.map(({ box, items }) => `${box} → ${items.join(" + ")}`).join("\n");
+  const sourceText = [
     transcript,
     redInfo ? "[붉은색 대표 아이콘 (상자→아이템)]\n" + redInfo : "",
     baseText ? "[추가 입력 텍스트]\n" + baseText : "",
   ].filter(Boolean).join("\n\n");
+  return { sourceText, redByBox };
+}
+
+// transcribe 가 잡은 상자별 빨강 아이템을 boxes 순서에 맞춰 slotIcons 에 결정적으로 주입한다.
+// (모델이 여러 빨강을 1개로 합치거나 grouped 힌트를 무시하는 문제를 코드에서 차단)
+// 상자명은 공백 무시 + 포함 관계로 매칭. 매칭되는 상자만 덮어쓰고, 없으면 모델 값 유지.
+function applyRedIconsToBoxes(out, redByBox) {
+  if (!out || !Array.isArray(out.boxes) || !Array.isArray(redByBox) || !redByBox.length) return out;
+  const norm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+  const slot = Array.isArray(out.slotIcons) ? out.slotIcons.slice() : [];
+  out.boxes.forEach((b, i) => {
+    const nm = norm(b && b.name);
+    const full = norm(b && (b.top ? b.top + b.name : b.name));
+    const hit = redByBox.find((rb) => {
+      const k = norm(rb.box);
+      if (!k) return false;
+      return (nm && (k.includes(nm) || nm.includes(k))) || (full && (k.includes(full) || full.includes(k)));
+    });
+    if (hit && hit.items && hit.items.length) slot[i] = hit.items.join(" + ");
+  });
+  out.slotIcons = slot;
+  return out;
 }
 
 // 큰 이미지(특히 세로로 긴 캡처)는 Gemini 처리가 느려 타임아웃 → 보내기 전 4MP 이하로 다운스케일(텍스트 가독성 유지).
@@ -84,6 +121,7 @@ export default function PromoSpecial() {
   const provider = useMemo(() => {
     try { return new GeminiProvider({ apiKey: GEMINI_API_KEY }); } catch (e) { return { _err: e.message }; }
   }, []);
+  const { user } = useGlobal();
   const seed = useState(loadSession)[0];
 
   // 좌측 목록(다건) + 현재 활성 항목 id. 레거시(단일 STORE) 세션은 첫 로드 시 목록에 1건으로 흡수.
@@ -91,7 +129,7 @@ export default function PromoSpecial() {
   const [items, setItems] = useState(() => {
     const list = loadItems();
     if (seed.data && legacyId && !list.some((x) => x.id === legacyId)) {
-      list.unshift({ id: legacyId, title: titleOf(seed.data), month: seed.data?.meta?.month || "", rev: seed.rev || 1, stats: promoStats(seed.data), kvTheme: seed.kvTheme || null, kvName: seed.kvName || "", data: seed.data, updatedAt: Date.now() });
+      list.unshift({ id: legacyId, title: titleOf(seed.data), month: seed.data?.meta?.month || "", rev: seed.rev || 1, stats: promoStats(seed.data), kvTheme: seed.kvTheme || null, kvName: seed.kvName || "", data: seed.data, createdAt: Date.now(), updatedAt: Date.now() });
       saveItems(list);
     }
     return list;
@@ -123,19 +161,39 @@ export default function PromoSpecial() {
   const [secNote, setSecNote] = useState("");
   const [secDrag, setSecDrag] = useState(false);
 
-  // 작업본을 STORE(마지막 세션) 에 저장하고, data·currentId 가 있으면 좌측 목록에도 upsert.
+  // 서버(Firestore) 동기화 — 로그인 사용자 기준으로 목록을 구독. 다른 컴퓨터에서도 동일 목록이 보이고
+  // 삭제 전까지 유지된다. 첫 스냅샷에서 로컬(localStorage) 전용 항목을 서버로 1회 마이그레이션.
+  const migratedRef = useRef(false);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsub = subscribePromoItems(user.uid, (serverItems) => {
+      if (!migratedRef.current) {
+        migratedRef.current = true;
+        const ids = new Set(serverItems.map((s) => s.id));
+        loadItems().forEach((it) => { if (it?.id && it.data && !ids.has(it.id)) savePromoItem(user.uid, it).catch(() => {}); });
+      }
+      setItems(serverItems);
+      saveItems(serverItems); // 로컬 캐시도 최신으로
+    });
+    return () => unsub();
+  }, [user]);
+
+  // 작업본을 STORE(마지막 세션) 에 저장하고, data·currentId 가 있으면 좌측 목록에도 upsert(+서버 저장).
   // (effect 가 아니라 명시적 호출 — 모든 데이터 변경 지점이 이미 persist 를 호출함)
   const persist = (next) => {
     const obj = { pasted, note, data, rev, lastChanges, kvTheme, kvName, currentId, ...next };
     try { localStorage.setItem(STORE, JSON.stringify(obj)); } catch { /* noop */ }
     if (obj.data && obj.currentId) {
+      const existing = items.find((x) => x.id === obj.currentId); // 생성 시각 보존(위치 고정)
+      const ts = Date.now();
+      const entry = { id: obj.currentId, title: titleOf(obj.data), month: obj.data?.meta?.month || "", rev: obj.rev, stats: promoStats(obj.data), kvTheme: obj.kvTheme, kvName: obj.kvName, data: obj.data, createdAt: existing?.createdAt || ts, updatedAt: ts };
       setItems((prev) => {
-        const entry = { id: obj.currentId, title: titleOf(obj.data), month: obj.data?.meta?.month || "", rev: obj.rev, stats: promoStats(obj.data), kvTheme: obj.kvTheme, kvName: obj.kvName, data: obj.data, updatedAt: Date.now() };
         const idx = prev.findIndex((x) => x.id === obj.currentId);
         const arr = idx >= 0 ? prev.map((x, i) => (i === idx ? entry : x)) : [entry, ...prev];
         saveItems(arr);
         return arr;
       });
+      if (user?.uid) savePromoItem(user.uid, entry).catch((e) => console.warn("[promoStore] 저장 실패", e?.code || e));
     }
   };
 
@@ -163,6 +221,7 @@ export default function PromoSpecial() {
     if (e) e.stopPropagation();
     if (!confirm("이 분석 기록을 삭제할까요?")) return;
     setItems((prev) => { const nextArr = prev.filter((x) => x.id !== id); saveItems(nextArr); return nextArr; });
+    if (user?.uid) deletePromoItem(user.uid, id).catch((e2) => console.warn("[promoStore] 삭제 실패", e2?.code || e2));
     if (currentId === id) newAnalysis();
   };
 
@@ -180,6 +239,8 @@ export default function PromoSpecial() {
   const patchData = (patch) => { const next = { ...(data || {}), ...patch }; setData(next); persist({ data: next }); };
   const setPText = (i, value) => { const a = [...(data.popupTexts || [])]; a[i] = { ...a[i], value }; patchData({ popupTexts: a }); };
   const setPKey = (i, key) => { const a = [...(data.popupTexts || [])]; a[i] = { ...a[i], key }; patchData({ popupTexts: a }); };
+  // 상품별 대표 아이콘 직접 편집 — 여러 종은 ' + '로 구분(플러그인이 분리·합성).
+  const setSlotIcon = (i, value) => { const a = [...(data.slotIcons || [])]; while (a.length <= i) a.push(""); a[i] = value; patchData({ slotIcons: a }); };
   const addPText = () => patchData({ popupTexts: [...(data.popupTexts || []), { key: POPUP_SLOTS.find((k) => !(data.popupTexts || []).some((t) => t.key === k)) || POPUP_SLOTS[0], value: "" }] });
   const delPText = (i) => { const a = [...(data.popupTexts || [])]; a.splice(i, 1); patchData({ popupTexts: a }); };
   const setRep = (i, f, v) => { const a = [...(data.replacements || [])]; a[i] = { ...a[i], [f]: v }; patchData({ replacements: a }); };
@@ -238,10 +299,10 @@ export default function PromoSpecial() {
     setSt({ state: "run", msg: files.length ? "1/2 요청서 전사 중… (이미지→텍스트, 배너 무시)" : "요청서 분석 중… (20~50초)" });
     try {
       const baseText = [...pptxTexts.map((p) => `[${p.name}]\n${p.text}`), pasted.trim()].filter(Boolean).join("\n\n");
-      const sourceText = await transcribeIfImages(provider, files, baseText);
+      const { sourceText, redByBox } = await transcribeIfImages(provider, files, baseText);
       if (files.length) setSt({ state: "run", msg: "2/2 구조화 추출 중…" });
       const prompt = promoExtractionPrompt(note.trim()) + (sourceText ? "\n\n[반영 희망 내용 (전사)]\n" + sourceText : "");
-      const out = await provider.generateJSON({ prompt, parts: [], schema: PROMO_SCHEMA, temperature: 0 });
+      const out = applyRedIconsToBoxes(await provider.generateJSON({ prompt, parts: [], schema: PROMO_SCHEMA, temperature: 0 }), redByBox);
       const id = "s" + Date.now(); // 새 분석마다 새 목록 항목
       setCurrentId(id);
       setData(out); setRev(1); setLastChanges([]); persist({ data: out, rev: 1, lastChanges: [], currentId: id }); setTab("brief");
@@ -259,11 +320,11 @@ export default function PromoSpecial() {
     setSt({ state: "run", msg: secFiles.length ? `${next}차 1/2 전사 중…` : `${next}차 수정요청서 반영 중…` });
     try {
       const baseText = [...secPptx.map((p) => `[${p.name}]\n${p.text}`), secPasted.trim()].filter(Boolean).join("\n\n");
-      const sourceText = await transcribeIfImages(provider, secFiles, baseText);
+      const { sourceText, redByBox } = await transcribeIfImages(provider, secFiles, baseText);
       if (secFiles.length) setSt({ state: "run", msg: `${next}차 2/2 반영 중…` });
       const base = { meta: data.meta, boxes: data.boxes, slotIcons: data.slotIcons, rollovers: data.rollovers, milestones: data.milestones, popupDays: data.popupDays, popupTexts: data.popupTexts, replacements: data.replacements };
       const prompt = promoMergePrompt(JSON.stringify(base, null, 1), secNote.trim()) + (sourceText ? "\n\n[이번 차수 변경 (전사)]\n" + sourceText : "");
-      const out = await provider.generateJSON({ prompt, parts: [], schema: PROMO_SCHEMA, temperature: 0 });
+      const out = applyRedIconsToBoxes(await provider.generateJSON({ prompt, parts: [], schema: PROMO_SCHEMA, temperature: 0 }), redByBox);
       const changes = out.changes || [];
       setData(out); setRev(next); setLastChanges(changes); persist({ data: out, rev: next, lastChanges: changes }); setTab("brief");
       setSecFiles([]); setSecPptx([]); setSecPasted(""); setSecNote("");
@@ -276,7 +337,8 @@ export default function PromoSpecial() {
     .catch(() => setCopyMsg("복사 실패"));
 
 
-  const sortedItems = items.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  // 생성 시각(createdAt) 고정 정렬 — 불러오기/편집으로 updatedAt 이 바뀌어도 위치가 안 움직인다. (없으면 updatedAt 폴백)
+  const sortedItems = items.slice().sort((a, b) => ((b.createdAt || b.updatedAt || 0) - (a.createdAt || a.updatedAt || 0)));
 
   return (
     <div className="h-full flex" style={{ background: C.bg, color: C.text, fontFamily: "'Noto Sans KR', sans-serif" }}>
@@ -308,7 +370,7 @@ export default function PromoSpecial() {
                 <div className="text-[10px] mt-0.5 truncate" style={{ color: C.muted }}>
                   {it.rev ? `${it.rev}차` : ""}{it.rev && it.stats ? " · " : ""}{it.stats ? `상품 ${it.stats.boxes} · 보너스 ${it.stats.milestones}` : ""}
                 </div>
-                <div className="text-[9.5px] mt-0.5" style={{ color: C.muted }}>{fmtTime(it.updatedAt)}</div>
+                <div className="text-[9.5px] mt-0.5" style={{ color: C.muted }}>{fmtTime(it.createdAt || it.updatedAt)}</div>
                 <button onClick={(e) => deleteItem(it.id, e)} title="삭제"
                   className="absolute top-1.5 right-1.5 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:text-rose-400" style={{ color: C.muted }}>
                   <Trash2 size={12} />
@@ -432,6 +494,24 @@ export default function PromoSpecial() {
             {/* ✏️ 텍스트 검수·수정 — 보너스 팝업 텍스트 오타 교정 + 전체 일괄 교체 */}
             {showEdit && (
               <div className="rounded-xl p-4 mb-4 space-y-5" style={{ background: C.panel, border: "1px solid rgba(251,191,36,0.3)" }}>
+                {/* 대표 아이콘 (상품별) — 빨강 자동감지가 놓친 경우 직접 입력. 여러 종은 ' + '로 구분. */}
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[12.5px] font-bold" style={{ color: C.text }}>대표 아이콘 (상품별)</span>
+                    <span className="text-[11px] font-mono px-1.5 py-0.5 rounded" style={{ color: G.gold, background: "rgba(236,220,160,0.1)" }}>{(data.boxes || []).length}</span>
+                  </div>
+                  <p className="text-[10.5px] mb-2.5" style={{ color: C.muted }}>각 상품 카드에 삽입될 대표 아이콘. 빨강 자동감지가 일부를 놓쳤으면 여기서 직접 고치세요. <span className="font-mono" style={{ color: G.gold }}>여러 종은 +로 구분</span> (예: <span className="font-mono">진무강 200개 + 홍문수 결정 400개</span>) — 플러그인이 분리해 한 장으로 합성합니다.</p>
+                  <div className="space-y-1.5">
+                    {(data.boxes || []).map((b, i) => (
+                      <div key={i} className="flex items-start gap-2">
+                        <span className="text-[11px] rounded px-1.5 py-1.5 shrink-0 truncate" style={{ background: C.panel2, border: `1px solid ${C.border}`, color: C.muted, width: 104 }} title={(b && b.top ? b.top + " " : "") + ((b && b.name) || "")}>{(b && b.name) || `상품 ${i + 1}`}</span>
+                        <input value={(data.slotIcons || [])[i] || ""} onChange={(e) => setSlotIcon(i, e.target.value)}
+                          placeholder="대표 아이콘 (여러 종은 +)"
+                          className="flex-1 rounded px-2 py-1.5 text-[12px] leading-snug outline-none" style={{ background: C.panel2, border: `1px solid ${C.border}`, color: C.text }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 {/* 개별 팝업 텍스트 (돋보기 상세 팝업) */}
                 <div>
                   <div className="flex items-center gap-2 mb-1">
@@ -650,6 +730,15 @@ function ProductCard({ b, slotIcon, hasRollover }) {
     const m = name.match(/^(오늘의\s*선물상자|화려한\s*결정|영롱한\s+\S+)\s+(.+)$/);
     if (m) { top = m[1]; name = m[2]; }
   }
+  // top·name 접두어 중복 제거 — name이 top(공백 무시)으로 시작하면 그 부분을 떼어 중복 표시 방지.
+  if (top && name) {
+    const pat = top.trim().split(/\s+/).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+    const stripped = name.replace(new RegExp("^" + pat + "\\s*"), "").trim();
+    if (stripped) name = stripped;   // 남는 이름이 있으면 접두어만 제거
+    else top = "";                   // name이 top과 동일하면 타이틀만 표시
+  }
+  // 대표 아이콘 — 여러 종이면 ' + '로 묶여 오므로 쪼개서 각각 칩으로 표시.
+  const icons = String(slotIcon || "").split(/\s*\+\s*/).map((s) => s.trim()).filter(Boolean);
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: G.card, border: `1px solid ${G.cardBd}` }}>
       <div className="pt-4 pb-2 flex justify-center">
@@ -667,13 +756,21 @@ function ProductCard({ b, slotIcon, hasRollover }) {
       <div className="px-2 pb-2.5 text-center">
         {top && <div className="text-[11px] leading-snug" style={{ color: "#b3bb98", wordBreak: "keep-all" }}>{top}</div>}
         <div className="text-[15px] font-black leading-snug mt-0.5" style={{ color: G.gold, textShadow: "0 1px 4px rgba(0,0,0,0.5)", wordBreak: "keep-all" }}>{name}</div>
-        {/* 표시: 대표 아이콘(항상) + 돋보기 유무 */}
+        {/* 표시: 대표 아이콘 — 여러 종이면(빨강 여럿) ' + '로 쪼개 칩 N개. 모두 합성되어 들어간다. */}
         <div className="mt-2 flex flex-col items-center gap-1">
-          <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded max-w-full"
-            style={{ background: slotIcon ? "rgba(236,220,160,0.12)" : "rgba(255,255,255,0.04)", border: `1px solid ${slotIcon ? G.cardBd : "rgba(255,255,255,0.12)"}` }} title="대표 아이콘으로 삽입되는 아이템">
-            <span className="text-[8px] font-bold px-1 rounded shrink-0" style={{ background: slotIcon ? G.gold : "#6b6b55", color: "#2a230f" }}>아이콘</span>
-            <span className="text-[9.5px] truncate" style={{ color: slotIcon ? "#d8cfa6" : "#8a8a72" }}>{slotIcon || "미지정"}</span>
-          </div>
+          {icons.length ? icons.map((ic, k) => (
+            <div key={k} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded max-w-full"
+              style={{ background: "rgba(236,220,160,0.12)", border: `1px solid ${G.cardBd}` }} title="대표 아이콘으로 삽입되는 아이템">
+              <span className="text-[8px] font-bold px-1 rounded shrink-0" style={{ background: G.gold, color: "#2a230f" }}>아이콘</span>
+              <span className="text-[9.5px] truncate" style={{ color: "#d8cfa6" }}>{ic}</span>
+            </div>
+          )) : (
+            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded max-w-full"
+              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)" }} title="대표 아이콘으로 삽입되는 아이템">
+              <span className="text-[8px] font-bold px-1 rounded shrink-0" style={{ background: "#6b6b55", color: "#2a230f" }}>아이콘</span>
+              <span className="text-[9.5px] truncate" style={{ color: "#8a8a72" }}>미지정</span>
+            </div>
+          )}
           <div className="inline-flex items-center gap-1 text-[9px]" style={{ color: hasRollover ? "#a8cf5f" : "#6f7a5a" }} title="마우스 오버 시 상세 구성(롤오버) 노출 여부">
             <Search size={9} /> {hasRollover ? "돋보기(상세) 있음" : "돋보기 없음"}
           </div>
