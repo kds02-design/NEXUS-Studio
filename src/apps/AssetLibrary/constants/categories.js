@@ -1,16 +1,22 @@
 // 에셋 카테고리 — 잘라낸 영역을 분류해서 저장. PromptArc ARC_CATEGORIES 패턴.
 // 새 카테고리 추가 시 ASSET_CATEGORIES 에만 추가하면 사이드바·그리드 모두 자동 반영.
 import React from "react";
-import { Type, MousePointerClick, Square, Package, Sparkles, Folder, ListChecks, Heart, CheckCircle2, Clock } from "lucide-react";
+import { Type, MousePointerClick, Square, Package, Sparkles, Folder, ListChecks, Heart, CheckCircle2, Clock, Frame, List, Zap, LayoutTemplate, Star } from "lucide-react";
 
 // 카테고리 — 사이드바 active 표시·내부 액센트용으로 컬러 보관. 카드 딱지는 무채색으로 렌더.
+// 기존(타이틀/버튼/박스/아이템/아이콘) + Figma 프로모션 에셋 메뉴(프레임/블릿/빛효과/배경/장식) 병합.
 export const ASSET_CATEGORY_LIST = [
-  { id: "title",  name: "타이틀", color: "#A29BFE" },
-  { id: "button", name: "버튼",   color: "#0eb9b3" },
-  { id: "box",    name: "박스",   color: "#FDCB6E" },
-  { id: "item",   name: "아이템", color: "#FD79A8" },
-  { id: "icon",   name: "아이콘", color: "#74B9FF" },
-  { id: "etc",    name: "기타",   color: "#7A7A9A" },
+  { id: "title",      name: "타이틀",     color: "#A29BFE" },
+  { id: "button",     name: "버튼",       color: "#0eb9b3" },
+  { id: "box",        name: "박스",       color: "#FDCB6E" },
+  { id: "item",       name: "아이템",     color: "#FD79A8" },
+  { id: "icon",       name: "아이콘",     color: "#74B9FF" },
+  { id: "frame",      name: "프레임",     color: "#FF7675" },
+  { id: "bullet",     name: "블릿",       color: "#22B8CF" },
+  { id: "lightfx",    name: "빛효과",     color: "#5C7CFA" },
+  { id: "background", name: "배경·텍스처", color: "#C8A969" },
+  { id: "ornament",   name: "장식·구분선", color: "#E17055" },
+  { id: "etc",        name: "기타",       color: "#7A7A9A" },
 ];
 
 // 카드 좌상단 카테고리 딱지용 무채색 톤 — 어두운 zinc.
@@ -28,12 +34,17 @@ export const TEMP_BADGE_TONE = {
 };
 
 const ICON_BY_ID = {
-  title:  Type,
-  button: MousePointerClick,
-  box:    Square,
-  item:   Package,
-  icon:   Sparkles,
-  etc:    Folder,
+  title:      Type,
+  button:     MousePointerClick,
+  box:        Square,
+  item:       Package,
+  icon:       Sparkles,
+  frame:      Frame,
+  bullet:     List,
+  lightfx:    Zap,
+  background: LayoutTemplate,
+  ornament:   Star,
+  etc:        Folder,
 };
 
 export const getCategoryIcon = (id, size = 18) => {

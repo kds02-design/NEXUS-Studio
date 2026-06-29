@@ -6,13 +6,71 @@
 import {
   ChevronDown, UploadCloud, X,
   MousePointer2,
-  Sparkle as SparkleIcon, Loader2, Sparkles,
+  Sparkle as SparkleIcon, Loader2, Sparkles, Sun,
 } from 'lucide-react';
 import { useState } from 'react';
-import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS, ATMOSPHERE_TEMPERATURE, ATMOSPHERE_AGE, DESIGN_VARIATIONS, VARIATION_STRENGTH } from '../constants/variations';
-import { VECTOR_CATEGORIES, VECTOR_STYLES, VECTOR_PALETTES, VECTOR_COUNTS } from '../constants/vectors';
+import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS, ATMOSPHERE_TEMPERATURE, ATMOSPHERE_AGE, DESIGN_VARIATIONS, VARIATION_STRENGTH, BG_COLORS } from '../constants/variations';
+import { LIGHTFX_CATEGORIES, LIGHTFX_STYLES, LIGHTFX_COLORS, LIGHTFX_COUNTS } from '../constants/lightfx';
 import { IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from '../../../lib/imagenRender';
 import ForgeHeader from './ForgeHeader';
+
+// 생성 배경색 선택 — 결과가 깔릴 단색. 리스킨/리디자인/광원 공용.
+// 블랙(기본·발광 합성) 외 화이트·그레이·크로마(그린/마젠타/블루) 선택 시 마스크포지·단색 키로 깔끔히 누끼.
+function BgColorPicker({ value, onChange, hint }) {
+  return (
+    <section>
+      <h3 className="text-[12px] font-semibold text-zinc-300 mb-1 flex items-center gap-2">
+        생성 배경색 <span className="text-[10px] font-normal text-zinc-500">· 누끼/합성용</span>
+      </h3>
+      <p className="text-[10px] text-zinc-600 mb-2.5 leading-relaxed break-keep-all">
+        {hint || '결과가 깔릴 단색 배경입니다. 소프트 글로우의 검은 띠가 생기면 크로마(그린·마젠타·블루)로 생성 후 마스크 포지로 보내면 깔끔히 제거됩니다.'}
+      </p>
+      <div className="grid grid-cols-6 gap-1.5">
+        {BG_COLORS.map(c => {
+          const active = c.id === value;
+          return (
+            <button
+              key={c.id}
+              onClick={() => onChange(c.id)}
+              title={`${c.label} · ${c.desc}`}
+              className={`flex flex-col items-center gap-1 px-1 py-2 rounded-md border transition-colors ${active ? 'bg-zinc-800 border-zinc-500' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
+            >
+              <span
+                className="w-5 h-5 rounded-full shrink-0"
+                style={{ backgroundColor: c.hex, boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.25)' }}
+              />
+              <span className={`text-[9px] font-semibold truncate w-full text-center ${active ? 'text-white' : 'text-zinc-400'}`}>{c.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+// 주변 광원 제외(오브젝트만) 토글 — 리스킨/리디자인 공용. 원본 주변 빛효과를 제거하고 본체만 남김.
+function StripGlowToggle({ value, onChange }) {
+  return (
+    <section>
+      <button
+        onClick={() => onChange(!value)}
+        className={`w-full flex items-start gap-3 px-3.5 py-3 rounded-lg border text-left transition-colors ${value ? 'bg-[#76cee0]/10 border-[#76cee0]/50' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
+      >
+        <span className={`mt-0.5 w-9 h-5 rounded-full shrink-0 relative transition-colors ${value ? 'bg-[#76cee0]' : 'bg-zinc-700'}`}>
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-[18px]' : 'left-0.5'}`} />
+        </span>
+        <div className="min-w-0">
+          <div className={`text-[11px] font-semibold flex items-center gap-1.5 ${value ? 'text-[#76cee0]' : 'text-zinc-300'}`}>
+            <Sun className="w-3.5 h-3.5" /> 주변 광원 제외 · 오브젝트만
+          </div>
+          <div className="text-[10px] text-zinc-500 mt-1 leading-relaxed break-keep-all">
+            원본에 갓레이·후광·글로우·파티클 같은 주변 빛효과가 있어도 제거하고 <span className="text-zinc-400">오브젝트 본체만</span> 순흑 위에 남깁니다. 본체 표면의 자체 음영·하이라이트는 유지.
+          </div>
+        </div>
+      </button>
+    </section>
+  );
+}
 
 // 분위기 미세조정 다이얼의 한 행(축) — 5단계 칩. 모듈 레벨 컴포넌트(렌더 중 생성 금지).
 function AtmosphereRow({ title, options, value, onChange }) {
@@ -106,14 +164,21 @@ export default function ForgeSidebar({ forge }) {
     reskinRefinementLevel, setReskinRefinementLevel,
     reskinTemperature, setReskinTemperature, reskinAge, setReskinAge,
     reskinImageSize, setReskinImageSize,
+    reskinStripGlow, setReskinStripGlow,
+    reskinBgColor, setReskinBgColor,
     creationRenderModel, setCreationRenderModel,
-    // 벡터 생성 모드
-    vectorCategory, setVectorCategory,
-    vectorStyle, setVectorStyle,
-    vectorPalette, setVectorPalette,
-    vectorText, setVectorText,
-    vectorCount, setVectorCount,
-    isGeneratingVector, handleGenerateVector,
+    // 광원·빛효과 모드
+    lightFxCategory, setLightFxCategory,
+    lightFxStyle, setLightFxStyle,
+    lightFxColor, setLightFxColor,
+    lightFxText, setLightFxText,
+    lightFxCount, setLightFxCount,
+    lightFxRef, isDraggingLightFxRef,
+    handleLightFxRefUpload, handleLightFxRefDragOver, handleLightFxRefDragLeave, handleLightFxRefDrop, handleClearLightFxRef,
+    lightFxRenderModel, setLightFxRenderModel,
+    lightFxImageSize, setLightFxImageSize,
+    lightFxBgColor, setLightFxBgColor,
+    isGeneratingLightFx, handleGenerateLightFx,
     // 변형 모드
     sourceAsset, isDraggingSource,
     handleSourceUpload, handleSourceDragOver, handleSourceDragLeave, handleSourceDrop, handleClearSource,
@@ -121,6 +186,8 @@ export default function ForgeSidebar({ forge }) {
     handleBackgroundUpload, handleBackgroundDragOver, handleBackgroundDragLeave, handleBackgroundDrop, handleClearBackground,
     selectedVariationIds, handleToggleVariation,
     variationStrength, setVariationStrength,
+    variationStripGlow, setVariationStripGlow,
+    variationBgColor, setVariationBgColor,
     isGeneratingVariations, handleGenerateVariations,
     variationRenderModel, setVariationRenderModel,
     variationImageSize, setVariationImageSize,
@@ -263,6 +330,12 @@ export default function ForgeSidebar({ forge }) {
               })}
             </div>
           </section>
+
+          {/* 주변 광원 제외 — 오브젝트만 (리스킨) */}
+          <StripGlowToggle value={reskinStripGlow} onChange={setReskinStripGlow} />
+
+          {/* 생성 배경색 (리스킨) */}
+          <BgColorPicker value={reskinBgColor} onChange={setReskinBgColor} />
 
           {/* 세부 조정 (선택) — 정제 강도 · 분위기 미세조정 · 배경 참고 */}
           <section className="border-t border-zinc-800/70 pt-5">
@@ -512,6 +585,12 @@ export default function ForgeSidebar({ forge }) {
             </p>
           </section>
 
+          {/* 주변 광원 제외 — 오브젝트만 (리디자인) */}
+          <StripGlowToggle value={variationStripGlow} onChange={setVariationStripGlow} />
+
+          {/* 생성 배경색 (리디자인) */}
+          <BgColorPicker value={variationBgColor} onChange={setVariationBgColor} />
+
           {/* 04 — 배경 참고 이미지 (선택) */}
           <section>
             <h3 className="text-[12px] font-semibold text-zinc-300 mb-1 flex items-center gap-2">
@@ -608,17 +687,17 @@ export default function ForgeSidebar({ forge }) {
             </p>
           </section>
         </div>
-      ) : currentView === 'vector' ? (
-        // ─── 벡터 생성 모드 사이드바 ─────────────────────────
+      ) : currentView === 'lightfx' ? (
+        // ─── 광원·빛효과 모드 사이드바 ─────────────────────────
         <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-5 space-y-6 pb-16">
 
-          {/* 안내 — 벡터 생성 (중립 톤) */}
+          {/* 안내 — 광원·빛효과 (중립 톤) */}
           <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 px-3.5 py-3">
             <div className="text-[11px] font-semibold text-zinc-200 flex items-center gap-1.5">
-              <SparkleIcon className="w-3.5 h-3.5 text-zinc-400" /> 벡터 생성
+              <Sun className="w-3.5 h-3.5 text-zinc-400" /> 광원 · 빛효과
             </div>
             <div className="text-[10px] text-zinc-500 mt-1 leading-relaxed break-keep-all">
-              불릿·구분선·프레임을 진짜 벡터(SVG)로 만듭니다. 깔끔한 플랫·라인 스타일에 최적 — 무한 확대·편집 자유. <span className="text-zinc-400">로그인 시 PromptArc '벡터 보관함'에 자동 저장.</span>
+              광원·후광·파티클·빛효과를 순흑(#000000) 배경 위 발광 에셋으로 만듭니다. 스크린/애드 블렌드 합성 또는 투명 PNG 추출에 최적. <span className="text-zinc-400">로그인 시 PromptArc '광원 보관함'에 자동 저장.</span>
             </div>
           </div>
 
@@ -628,12 +707,12 @@ export default function ForgeSidebar({ forge }) {
               <span className="text-[10px] font-bold text-zinc-500 tabular-nums">01</span> 종류
             </h3>
             <div className="grid grid-cols-1 gap-1.5">
-              {VECTOR_CATEGORIES.map(c => {
-                const active = c.id === vectorCategory;
+              {LIGHTFX_CATEGORIES.map(c => {
+                const active = c.id === lightFxCategory;
                 return (
                   <button
                     key={c.id}
-                    onClick={() => setVectorCategory(c.id)}
+                    onClick={() => setLightFxCategory(c.id)}
                     className={`flex items-center gap-2.5 px-2.5 py-2 rounded-md border transition-colors text-left ${active ? 'bg-zinc-800 border-zinc-600' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700 hover:bg-[#17171a]'}`}
                   >
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.accent }} />
@@ -653,12 +732,12 @@ export default function ForgeSidebar({ forge }) {
               <span className="text-[10px] font-bold text-zinc-500 tabular-nums">02</span> 스타일
             </h3>
             <div className="grid grid-cols-2 gap-1.5">
-              {VECTOR_STYLES.map(s => {
-                const active = s.id === vectorStyle;
+              {LIGHTFX_STYLES.map(s => {
+                const active = s.id === lightFxStyle;
                 return (
                   <button
                     key={s.id}
-                    onClick={() => setVectorStyle(s.id)}
+                    onClick={() => setLightFxStyle(s.id)}
                     title={s.hint}
                     className={`flex flex-col items-start gap-0.5 px-2.5 py-2 rounded-md border transition-colors text-left ${active ? 'bg-zinc-800 border-zinc-600' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
                   >
@@ -670,23 +749,23 @@ export default function ForgeSidebar({ forge }) {
             </div>
           </section>
 
-          {/* 03 — 팔레트 */}
+          {/* 03 — 컬러 */}
           <section>
             <h3 className="text-[12px] font-semibold text-zinc-300 mb-2.5 flex items-center gap-2">
-              <span className="text-[10px] font-bold text-zinc-500 tabular-nums">03</span> 팔레트
+              <span className="text-[10px] font-bold text-zinc-500 tabular-nums">03</span> 컬러
             </h3>
-            <div className="grid grid-cols-5 gap-1.5">
-              {VECTOR_PALETTES.map(p => {
-                const active = p.id === vectorPalette;
+            <div className="grid grid-cols-3 gap-1.5">
+              {LIGHTFX_COLORS.map(c => {
+                const active = c.id === lightFxColor;
                 return (
                   <button
-                    key={p.id}
-                    onClick={() => setVectorPalette(p.id)}
-                    title={p.label}
-                    className={`flex flex-col items-center gap-1 px-1 py-2 rounded-md border transition-colors ${active ? 'bg-zinc-800 border-zinc-600' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
+                    key={c.id}
+                    onClick={() => setLightFxColor(c.id)}
+                    title={c.label}
+                    className={`flex items-center gap-2 px-2 py-2 rounded-md border transition-colors ${active ? 'bg-zinc-800 border-zinc-600' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
                   >
-                    <span className="w-5 h-5 rounded-full border border-black/40" style={{ background: p.swatch }} />
-                    <span className={`text-[9px] font-semibold truncate w-full text-center ${active ? 'text-white' : 'text-zinc-400'}`}>{p.label}</span>
+                    <span className="w-4 h-4 rounded-full border border-black/40 shrink-0" style={{ background: c.swatch }} />
+                    <span className={`text-[10px] font-semibold truncate ${active ? 'text-white' : 'text-zinc-400'}`}>{c.label}</span>
                   </button>
                 );
               })}
@@ -699,26 +778,101 @@ export default function ForgeSidebar({ forge }) {
               <span className="text-[10px] font-bold text-zinc-500 tabular-nums">04</span> 무엇을 만들까요?
             </h3>
             <textarea
-              value={vectorText}
-              onChange={e => setVectorText(e.target.value)}
-              placeholder={VECTOR_CATEGORIES.find(c => c.id === vectorCategory)?.placeholder || '만들 모양을 한 줄로 적어주세요'}
+              value={lightFxText}
+              onChange={e => setLightFxText(e.target.value)}
+              placeholder={LIGHTFX_CATEGORIES.find(c => c.id === lightFxCategory)?.placeholder || '만들 빛효과를 한 줄로 적어주세요'}
               className="w-full h-16 bg-[#0A0A0A] border border-zinc-800 rounded-lg p-3 text-[12px] text-zinc-200 focus:outline-none focus:border-zinc-600 resize-none custom-scrollbar leading-relaxed"
             />
             <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed break-keep-all">
-              비워두면 종류 기본형으로 생성합니다. 모양·모티프만 적으면 됩니다 (색은 팔레트에서).
+              비워두면 종류 기본형으로 생성합니다. 빛의 모양·움직임만 적으면 됩니다 (색은 컬러에서).
             </p>
           </section>
+
+          {/* 형태 참고 (선택) — 빛이 감쌀 오브젝트 실루엣 */}
+          <section>
+            <h3 className="text-[12px] font-semibold text-zinc-300 mb-1 flex items-center gap-2">
+              형태 참고 <span className="text-[10px] font-normal text-zinc-500">· 선택</span>
+            </h3>
+            <p className="text-[10px] text-zinc-600 mb-2 leading-relaxed break-keep-all">
+              빛을 감쌀 오브젝트를 올리면 그 실루엣에 맞춰 후광·광선이 배치됩니다. <span className="text-zinc-400">참고 오브젝트 자체는 결과에 나오지 않습니다</span> — 빛만 순흑 위에.
+            </p>
+            <div
+              onDragOver={handleLightFxRefDragOver}
+              onDragLeave={handleLightFxRefDragLeave}
+              onDrop={handleLightFxRefDrop}
+              className={`relative border border-dashed rounded-lg h-24 flex flex-col items-center justify-center transition-colors overflow-hidden group ${
+                isDraggingLightFxRef ? 'border-zinc-500 bg-zinc-800/30' : 'border-zinc-700/60 bg-[#101012] hover:border-zinc-600'
+              }`}
+            >
+              {lightFxRef ? (
+                <div className="relative w-full h-full p-2 flex items-center justify-center">
+                  <img src={lightFxRef} alt="형태 참고" className="max-w-full max-h-full object-contain rounded-md" />
+                  <button onClick={handleClearLightFxRef} className="absolute top-1 right-1 bg-black/70 hover:bg-red-500 text-white p-1 rounded-md transition-colors" title="형태 참고 제거">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col items-center gap-1.5 text-zinc-600">
+                    <UploadCloud className="w-5 h-5" />
+                    <p className="text-[10px] font-semibold text-zinc-500">형태 참고 추가</p>
+                  </div>
+                  <input type="file" accept="image/*" onChange={handleLightFxRefUpload} className="absolute inset-0 opacity-0 cursor-pointer" />
+                </>
+              )}
+            </div>
+          </section>
+
+          {/* 생성 배경색 (광원·빛효과) */}
+          <BgColorPicker
+            value={lightFxBgColor}
+            onChange={setLightFxBgColor}
+            hint="발광 에셋이 깔릴 단색 배경입니다. 블랙은 스크린/애드 합성에 최적(단, 소프트 글로우는 누끼 시 검은 띠가 생길 수 있음). 깔끔한 누끼가 필요하면 크로마(그린·마젠타·블루)로 생성 후 마스크 포지로 보내세요."
+          />
+
+          {/* 렌더 모델 — 503 회피 / 품질 토글 */}
+          <section>
+            <div className="flex items-baseline justify-between mb-2">
+              <h3 className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">렌더 모델</h3>
+              <span className="text-[10px] text-zinc-600">503 시 다른 모델</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {IMAGEN_MODELS.map(m => {
+                const active = lightFxRenderModel === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setLightFxRenderModel(m.id)}
+                    disabled={isGeneratingLightFx}
+                    title={m.desc}
+                    className={`px-2.5 py-2 rounded-md border transition-colors text-left ${active ? 'bg-zinc-800 border-zinc-600' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'} disabled:opacity-40`}
+                  >
+                    <div className={`text-[11px] font-semibold ${active ? 'text-white' : 'text-zinc-300'}`}>{m.label}</div>
+                    <div className="text-[9px] text-zinc-500 truncate">{m.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 출력 해상도 — Pro 선택 시 2K/4K */}
+          <ResolutionToggle
+            modelId={lightFxRenderModel}
+            value={lightFxImageSize}
+            onChange={setLightFxImageSize}
+            disabled={isGeneratingLightFx}
+          />
 
           {/* 생성 수 */}
           <section>
             <h3 className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 mb-2">한 번에 생성</h3>
             <div className="grid grid-cols-3 gap-1.5">
-              {VECTOR_COUNTS.map(n => {
-                const active = n === vectorCount;
+              {LIGHTFX_COUNTS.map(n => {
+                const active = n === lightFxCount;
                 return (
                   <button
                     key={n}
-                    onClick={() => setVectorCount(n)}
+                    onClick={() => setLightFxCount(n)}
                     className={`px-2.5 py-2 rounded-md border text-[11px] font-semibold transition-colors ${active ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-[#141417] border-zinc-800/80 text-zinc-300 hover:border-zinc-700'}`}
                   >
                     {n}개
@@ -731,15 +885,15 @@ export default function ForgeSidebar({ forge }) {
           {/* 생성 CTA — 유일한 강조색 */}
           <section>
             <button
-              onClick={handleGenerateVector}
-              disabled={isGeneratingVector}
+              onClick={handleGenerateLightFx}
+              disabled={isGeneratingLightFx}
               className="w-full px-4 py-3.5 rounded-lg bg-[#76cee0] text-zinc-900 hover:bg-[#8ad8e8] font-bold text-[13px] flex items-center justify-center gap-2 transition-colors disabled:bg-zinc-800 disabled:text-zinc-600 disabled:cursor-not-allowed"
             >
-              {isGeneratingVector ? <Loader2 className="w-4 h-4 animate-spin" /> : <SparkleIcon className="w-4 h-4" />}
-              {isGeneratingVector ? `${vectorCount}개 생성 중...` : `벡터 ${vectorCount}개 생성`}
+              {isGeneratingLightFx ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sun className="w-4 h-4" />}
+              {isGeneratingLightFx ? `${lightFxCount}개 생성 중...` : `빛효과 ${lightFxCount}개 생성`}
             </button>
             <p className="text-[10px] text-zinc-600 mt-2 leading-relaxed break-keep-all">
-              변형 {vectorCount}개가 SVG 로 나옵니다. 우측에서 SVG 복사 / .svg · .png 다운로드 / 개별 재생성 가능.
+              변형 {lightFxCount}개가 순흑 배경 발광 에셋으로 나옵니다. 우측에서 투명 PNG / 원본 PNG / 프롬프트 / 개별 재생성 가능.
             </p>
           </section>
 

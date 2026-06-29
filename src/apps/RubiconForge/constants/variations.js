@@ -10,6 +10,22 @@
 //   - "ornate", "elaborate", "intricate", "delicate engraved" 등 크기·복잡도 인플레이션 단어 금지
 //   - 각 hint 는 "[mood] color palette and material" 로 시작 — 모델이 컬러·재질 spec 으로 해석하도록 anchoring
 
+// ─── 생성 배경색 — 결과물이 깔릴 단색 배경 ──────────────────────────────────────
+// 기본은 블랙(발광 합성·기존 동작). 흰/회색/크로마(그린·마젠타·블루)를 고르면 그 단색 위에 렌더되어
+// 마스크 포지(remove.bg) 또는 단색 키 추출로 깔끔히 누끼낼 수 있다 — 소프트 글로우의 검은 띠 방지.
+//   hex: 프롬프트에 주입 + 투명 추출 시 키아웃할 타깃 색
+//   chroma: 채도 높은 키 컬러(피사체에 그 색이 없을 때 가장 깨끗)
+export const BG_COLORS = [
+  { id: 'black',   label: '블랙',   hex: '#000000', desc: '기본 · 발광 합성', chroma: false },
+  { id: 'white',   label: '화이트', hex: '#ffffff', desc: '밝은 단색',       chroma: false },
+  { id: 'gray',    label: '그레이', hex: '#808080', desc: '중립 회색',       chroma: false },
+  { id: 'green',   label: '그린',   hex: '#00b140', desc: '크로마키',         chroma: true  },
+  { id: 'magenta', label: '마젠타', hex: '#ff00ff', desc: '크로마키',         chroma: true  },
+  { id: 'blue',    label: '블루',   hex: '#1f4fff', desc: '크로마키',         chroma: true  },
+];
+export const BG_COLOR_BY_ID = Object.fromEntries(BG_COLORS.map(c => [c.id, c]));
+export const DEFAULT_BG = BG_COLOR_BY_ID.black;
+
 export const VARIATION_MOODS = [
   { id: 'flat',         label: '플랫',         desc: '깔끔한 벡터·미니멀',   accent: '#06b6d4' },
   { id: 'casual',       label: '캐주얼',       desc: '소프트·팝·친근',       accent: '#f9a8d4' },
@@ -265,7 +281,7 @@ export const defaultDesignVariationIds = DESIGN_VARIATIONS.slice(0, 4).map(d => 
 // 변형 강도 — 원본에서 얼마나 멀어질지. 선택한 모든 방향에 공통 적용.
 export const VARIATION_STRENGTH = [
   { id: 'subtle',   label: '미세', desc: '원본에 매우 가깝게',  accent: '#76cee0',
-    promptBlock: 'VARIATION STRENGTH: subtle — stay very close to the reference; only a gentle restyle of motif and material, reading as a near sibling of the original. Structural envelope unchanged.' },
+    promptBlock: 'VARIATION STRENGTH: subtle — this is a NEAR-MINIMAL edit. Stay extremely close to the reference: change mainly the surface material/finish and only the smallest interior motif detail, reading as the SAME asset lightly refreshed rather than a redesign. Keep ALL borders, frames, outlines, lines, and the space immediately around them essentially identical to the source — do NOT add or thicken any edge ornament. Structural envelope and every edge unchanged.' },
   { id: 'moderate', label: '중간', desc: '뚜렷하나 동일 골격',  accent: '#a78bfa',
     promptBlock: 'VARIATION STRENGTH: moderate — a clearly distinct redesign of the motif, detail, and material, yet obviously the same component on the same structural envelope (same thickness, ornament scale, aspect ratio).' },
   { id: 'bold',     label: '과감', desc: '모티프·재질만 대담히', accent: '#f472b6',

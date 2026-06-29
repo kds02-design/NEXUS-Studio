@@ -15,18 +15,19 @@ import {
   generateLore as generateLoreApi,
 } from '../services/gemini';
 import { renderDesignAlternative, renderAtlasVariation, renderVariation } from '../services/variations';
-import { renderVectorAsset, svgToPngDataUrl } from '../services/vectorGen';
+import { renderLightFx } from '../services/lightfx';
 import { renderWithImagen, IMAGEN_MODELS } from '../../../lib/imagenRender';
 import { savePromptToArc, TEMP_TTL_DAYS } from '../../../lib/promptArcSave';
 import {
   VARIATION_MOODS, STYLE_BY_ID, defaultStyleIdsFor,
   DESIGN_VARIATION_BY_ID, defaultDesignVariationIds, VARIATION_STRENGTH_BY_ID,
+  BG_COLOR_BY_ID,
 } from '../constants/variations';
-import { VECTOR_CATEGORY_BY_ID, VECTOR_STYLE_BY_ID } from '../constants/vectors';
+import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID } from '../constants/lightfx';
 
 // 결과가 자동 저장될 PromptArc 폴더 이름.
 const ARC_FOLDER_NAME = '리스킨 보관함';
-const VECTOR_FOLDER_NAME = '벡터 보관함';
+const LIGHTFX_FOLDER_NAME = '광원 보관함';
 
 export function useForgePrompt() {
   // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
@@ -92,6 +93,10 @@ export function useForgePrompt() {
   const [isDraggingBackground, setIsDraggingBackground] = useState(false);
   const [selectedVariationIds, setSelectedVariationIds] = useState(defaultDesignVariationIds);
   const [variationStrength, setVariationStrength] = useState('subtle');
+  // 주변 광원 제외(오브젝트만) — 리디자인 시 원본 주변 빛효과 제거.
+  const [variationStripGlow, setVariationStripGlow] = useState(false);
+  // 생성 배경색 — 결과가 깔릴 단색. 기본 블랙. (마스크포지·투명추출용 비-블랙 선택 가능)
+  const [variationBgColor, setVariationBgColor] = useState('black');
   const [variationResults, setVariationResults] = useState(() =>
     defaultDesignVariationIds.map(id => {
       const d = DESIGN_VARIATION_BY_ID[id];
@@ -214,6 +219,10 @@ export function useForgePrompt() {
   const [reskinTemperature, setReskinTemperature] = useState('neutral');
   const [reskinAge, setReskinAge] = useState('neutral');
   const [reskinImageSize, setReskinImageSize] = useState('2K');
+  // 주변 광원 제외(오브젝트만) — 원본이 갓레이·후광·글로우·파티클을 달고 있어도 제거하고 본체만 남김.
+  const [reskinStripGlow, setReskinStripGlow] = useState(false);
+  // 생성 배경색 — 결과가 깔릴 단색. 기본 블랙.
+  const [reskinBgColor, setReskinBgColor] = useState('black');
   // PromptArc 자동 저장 결과 알림 (성공/실패/로그인 안내). 잠시 노출 후 사라짐.
   const [reskinSaveMsg, setReskinSaveMsg] = useState(null);
 
@@ -289,8 +298,10 @@ export function useForgePrompt() {
     if (selectedReskinStyleIds.length === 0) { setErrorMsg('적용할 테마 톤을 1개 이상 선택해주세요.'); return; }
     if (isGeneratingReskin) return;
     setIsGeneratingReskin(true);
+    const bg = BG_COLOR_BY_ID[reskinBgColor];
+    const bgHex = bg?.hex || '#000000';
     const styles = selectedReskinStyleIds.map(id => STYLE_BY_ID[id]).filter(Boolean);
-    setReskinResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true })));
+    setReskinResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex })));
     const saves = [];
     let anyOk = false;
     await Promise.all(styles.map(async (style, idx) => {
@@ -301,6 +312,8 @@ export function useForgePrompt() {
         backgroundRefDataUrl: creationBgRef,
         imageSize: reskinImageSize,
         modelId: creationRenderModel,
+        stripAmbientLight: reskinStripGlow,
+        bg,
       });
       setReskinResults(prev => {
         const next = prev.slice();
@@ -310,7 +323,7 @@ export function useForgePrompt() {
           error: result.ok ? null : (result.error || '생성 실패'),
           prompt: result.prompt || null,
           compactPrompt: result.compactPrompt || null,
-          isLoading: false,
+          isLoading: false, bgHex,
         };
         return next;
       });
@@ -335,6 +348,8 @@ export function useForgePrompt() {
       next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
       return next;
     });
+    const bg = BG_COLOR_BY_ID[reskinBgColor];
+    const bgHex = bg?.hex || '#000000';
     const result = await renderVariation(creationSource, slot.theme.promptHint, {
       refinementLevel: reskinRefinementLevel,
       temperature: reskinTemperature,
@@ -342,6 +357,8 @@ export function useForgePrompt() {
       backgroundRefDataUrl: creationBgRef,
       imageSize: reskinImageSize,
       modelId: creationRenderModel,
+      stripAmbientLight: reskinStripGlow,
+      bg,
     });
     setReskinResults(prev => {
       const next = prev.slice();
@@ -351,7 +368,7 @@ export function useForgePrompt() {
         error: result.ok ? null : (result.error || '생성 실패'),
         prompt: result.prompt || null,
         compactPrompt: result.compactPrompt || null,
-        isLoading: false,
+        isLoading: false, bgHex,
       };
       return next;
     });
@@ -362,68 +379,107 @@ export function useForgePrompt() {
     }
   };
 
-  // ─── 벡터 생성(vector) 모드 — Gemini 가 <svg> 를 직접 출력 ──────────────────
-  const [vectorCategory, setVectorCategory] = useState('bullet');
-  const [vectorStyle, setVectorStyle] = useState('flat');
-  const [vectorPalette, setVectorPalette] = useState('gold');
-  const [vectorText, setVectorText] = useState('');
-  const [vectorCount, setVectorCount] = useState(4);
-  const [vectorResults, setVectorResults] = useState([]); // { id, svg, viewBox, error, isLoading }
-  const [isGeneratingVector, setIsGeneratingVector] = useState(false);
+  // ─── 광원·빛효과(lightfx) 모드 — 순흑 배경 위 발광 에셋 생성 ──────────────────
+  // 구 '벡터 생성' 탭을 대체. renderLightFx → renderWithImagen 으로 검은 배경 라이트 에셋 N장.
+  // 결과 슬롯은 변형/리스킨 셀(VariationResultCell)을 그대로 쓰도록 theme 객체 형태로 구성.
+  const [lightFxCategory, setLightFxCategory] = useState('lightSource');
+  const [lightFxStyle, setLightFxStyle] = useState('soft');
+  const [lightFxColor, setLightFxColor] = useState('gold');
+  const [lightFxText, setLightFxText] = useState('');
+  const [lightFxCount, setLightFxCount] = useState(4);
+  const [lightFxRef, setLightFxRef] = useState(null); // (선택) 형태 참고 dataURL
+  const [isDraggingLightFxRef, setIsDraggingLightFxRef] = useState(false);
+  const [lightFxRenderModel, setLightFxRenderModel] = useState(IMAGEN_MODELS[0]?.id || 'gemini-3.1-flash-image-preview');
+  const [lightFxImageSize, setLightFxImageSize] = useState('2K');
+  // 생성 배경색 — 발광 에셋이 깔릴 단색. 기본 블랙(발광 합성).
+  const [lightFxBgColor, setLightFxBgColor] = useState('black');
+  const [lightFxResults, setLightFxResults] = useState([]); // { theme:{id,label,desc,color}, dataUrl, error, prompt, compactPrompt, isLoading }
+  const [isGeneratingLightFx, setIsGeneratingLightFx] = useState(false);
 
-  // 벡터 1건 자동 저장 — SVG 를 PNG 썸네일로 래스터화 + 원본 SVG 는 content 에 보관.
-  const autoSaveVector = async (svg) => {
-    if (!user?.uid || !svg) return null;
-    let png = null;
-    try { png = await svgToPngDataUrl(svg, { width: 512, background: '#0b0b0d' }); } catch { /* 썸네일 실패해도 SVG 는 저장 */ }
-    const cat = VECTOR_CATEGORY_BY_ID[vectorCategory];
-    const st = VECTOR_STYLE_BY_ID[vectorStyle];
+  // 형태 참고 업로드 핸들러.
+  const handleLightFxRefFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setLightFxRef(reader.result);
+    reader.readAsDataURL(file);
+  };
+  const handleLightFxRefUpload = (e) => handleLightFxRefFile(e.target.files[0]);
+  const handleLightFxRefDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(true); }, []);
+  const handleLightFxRefDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(false); }, []);
+  const handleLightFxRefDrop = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(false); handleLightFxRefFile(e.dataTransfer.files[0]); }, []);
+  const handleClearLightFxRef = () => setLightFxRef(null);
+
+  // 빛효과 슬롯 빌더 — N장 모두 같은 스펙의 변형. 셀 표시용 theme 객체를 합성.
+  const buildLightFxSlots = (n) => {
+    const cat = LIGHTFX_CATEGORY_BY_ID[lightFxCategory];
+    const st = LIGHTFX_STYLE_BY_ID[lightFxStyle];
+    const col = LIGHTFX_COLOR_BY_ID[lightFxColor];
+    const bgHex = BG_COLOR_BY_ID[lightFxBgColor]?.hex || '#000000';
+    return Array.from({ length: n }, (_, i) => ({
+      theme: { id: `lightfx-${i}`, label: `${cat?.label || '빛효과'} #${i + 1}`, desc: `${st?.label || ''} · ${col?.label || ''}`.trim(), color: col?.color || '#76cee0' },
+      dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex,
+    }));
+  };
+
+  // 빛효과 1건 자동 저장.
+  const autoSaveLightFx = (slot, result) => {
+    if (!result?.ok || !user?.uid) return null;
+    const cat = LIGHTFX_CATEGORY_BY_ID[lightFxCategory];
+    const col = LIGHTFX_COLOR_BY_ID[lightFxColor];
     return savePromptToArc(user.uid, {
-      imageDataUrl: png,
-      promptText: svg,
-      title: `벡터 — ${cat?.label || ''}`.trim(),
-      tags: ['벡터', cat?.label, st?.label].filter(Boolean),
-      folderName: VECTOR_FOLDER_NAME,
-      type: '2D',
+      imageDataUrl: result.dataUrl,
+      promptText: result.compactPrompt || result.prompt || '',
+      title: `광원 — ${cat?.label || ''}`.trim(),
+      tags: ['광원', cat?.label, col?.label].filter(Boolean),
+      folderName: LIGHTFX_FOLDER_NAME,
     });
   };
 
-  const handleGenerateVector = async () => {
-    if (isGeneratingVector) return;
-    setIsGeneratingVector(true);
-    const n = vectorCount;
-    setVectorResults(Array.from({ length: n }, (_, i) => ({ id: i, svg: null, viewBox: null, error: null, isLoading: true })));
+  const renderOneLightFx = (i) => renderLightFx({
+    category: lightFxCategory, style: lightFxStyle, color: lightFxColor,
+    userText: lightFxText, index: i,
+    referenceDataUrl: lightFxRef,
+    imageSize: lightFxImageSize, modelId: lightFxRenderModel,
+    bg: BG_COLOR_BY_ID[lightFxBgColor],
+  });
+
+  const handleGenerateLightFx = async () => {
+    if (isGeneratingLightFx) return;
+    setIsGeneratingLightFx(true);
+    const n = lightFxCount;
+    setLightFxResults(buildLightFxSlots(n));
     const saves = [];
     let anyOk = false;
     await Promise.all(Array.from({ length: n }, (_, i) => (async () => {
-      const r = await renderVectorAsset({ category: vectorCategory, style: vectorStyle, palette: vectorPalette, userText: vectorText, index: i });
-      setVectorResults(prev => {
+      const r = await renderOneLightFx(i);
+      setLightFxResults(prev => {
         const next = prev.slice();
-        next[i] = { id: i, svg: r.ok ? r.svg : null, viewBox: r.ok ? r.viewBox : null, error: r.ok ? null : (r.error || '생성 실패'), isLoading: false };
+        if (next[i]) next[i] = { ...next[i], dataUrl: r.ok ? r.dataUrl : null, error: r.ok ? null : (r.error || '생성 실패'), prompt: r.prompt || null, compactPrompt: r.compactPrompt || null, isLoading: false };
         return next;
       });
-      if (r.ok) { anyOk = true; const p = autoSaveVector(r.svg); if (p) saves.push(p); }
+      if (r.ok) { anyOk = true; const p = autoSaveLightFx(null, r); if (p) saves.push(p); }
     })()));
-    setIsGeneratingVector(false);
+    setIsGeneratingLightFx(false);
     if (saves.length) {
       const okCount = (await Promise.all(saves)).filter(x => x?.ok).length;
-      flashSaveMsg(okCount ? `PromptArc '${VECTOR_FOLDER_NAME}'에 ${okCount}개 저장 · 임시 ${TEMP_TTL_DAYS}일 보관` : 'PromptArc 저장 실패 — 콘솔 확인');
+      flashSaveMsg(okCount ? `PromptArc '${LIGHTFX_FOLDER_NAME}'에 ${okCount}개 저장 · 임시 ${TEMP_TTL_DAYS}일 보관` : 'PromptArc 저장 실패 — 콘솔 확인');
     } else if (anyOk && !user?.uid) {
       flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
     }
   };
 
-  const handleRegenerateVector = async (idx) => {
-    const slot = vectorResults[idx];
+  const handleRegenerateLightFx = async (idx) => {
+    const slot = lightFxResults[idx];
     if (!slot || slot.isLoading) return;
-    setVectorResults(prev => { const next = prev.slice(); next[idx] = { ...slot, svg: null, error: null, isLoading: true }; return next; });
-    const r = await renderVectorAsset({ category: vectorCategory, style: vectorStyle, palette: vectorPalette, userText: vectorText, index: idx });
-    setVectorResults(prev => {
+    setLightFxResults(prev => { const next = prev.slice(); next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true }; return next; });
+    const r = await renderOneLightFx(idx);
+    const bgHex = BG_COLOR_BY_ID[lightFxBgColor]?.hex || '#000000';
+    setLightFxResults(prev => {
       const next = prev.slice();
-      next[idx] = { id: slot.id, svg: r.ok ? r.svg : null, viewBox: r.ok ? r.viewBox : null, error: r.ok ? null : (r.error || '생성 실패'), isLoading: false };
+      next[idx] = { ...slot, dataUrl: r.ok ? r.dataUrl : null, error: r.ok ? null : (r.error || '생성 실패'), prompt: r.prompt || null, compactPrompt: r.compactPrompt || null, isLoading: false, bgHex };
       return next;
     });
-    if (r.ok) { const p = autoSaveVector(r.svg); if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${VECTOR_FOLDER_NAME}'에 저장 · 임시 ${TEMP_TTL_DAYS}일` : 'PromptArc 저장 실패 — 콘솔 확인'); }
+    if (r.ok) { const p = autoSaveLightFx(slot, r); if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${LIGHTFX_FOLDER_NAME}'에 저장 · 임시 ${TEMP_TTL_DAYS}일` : 'PromptArc 저장 실패 — 콘솔 확인'); }
   };
 
   useEffect(() => {
@@ -506,9 +562,11 @@ export function useForgePrompt() {
     if (selectedVariationIds.length === 0) { setErrorMsg('변형 방향을 1개 이상 선택해주세요.'); return; }
     if (isGeneratingVariations) return;
     setIsGeneratingVariations(true);
+    const bg = BG_COLOR_BY_ID[variationBgColor];
+    const bgHex = bg?.hex || '#000000';
     const dirs = selectedVariationIds.map(id => DESIGN_VARIATION_BY_ID[id]).filter(Boolean);
     const strength = VARIATION_STRENGTH_BY_ID[variationStrength] || VARIATION_STRENGTH_BY_ID.moderate;
-    setVariationResults(dirs.map(d => ({ styleId: d.id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true })));
+    setVariationResults(dirs.map(d => ({ styleId: d.id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex })));
     await Promise.all(dirs.map(async (dir, idx) => {
       const result = await renderDesignAlternative(sourceAsset, {
         directionBlock: dir.promptBlock,
@@ -518,6 +576,8 @@ export function useForgePrompt() {
         backgroundRefDataUrl: backgroundRef,
         imageSize: variationImageSize,
         modelId: variationRenderModel,
+        stripAmbientLight: variationStripGlow,
+        bg,
       });
       setVariationResults(prev => {
         const next = prev.slice();
@@ -528,7 +588,7 @@ export function useForgePrompt() {
           error: result.ok ? null : (result.error || '생성 실패'),
           prompt: result.prompt || null,
           compactPrompt: result.compactPrompt || null,
-          isLoading: false,
+          isLoading: false, bgHex,
         };
         return next;
       });
@@ -542,6 +602,8 @@ export function useForgePrompt() {
     const slot = variationResults[idx];
     if (!slot || slot.isLoading) return;
     const strength = VARIATION_STRENGTH_BY_ID[variationStrength] || VARIATION_STRENGTH_BY_ID.moderate;
+    const bg = BG_COLOR_BY_ID[variationBgColor];
+    const bgHex = bg?.hex || '#000000';
     setVariationResults(prev => {
       const next = prev.slice();
       next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
@@ -555,6 +617,8 @@ export function useForgePrompt() {
       backgroundRefDataUrl: backgroundRef,
       imageSize: variationImageSize,
       modelId: variationRenderModel,
+      stripAmbientLight: variationStripGlow,
+      bg,
     });
     setVariationResults(prev => {
       const next = prev.slice();
@@ -565,7 +629,7 @@ export function useForgePrompt() {
         error: result.ok ? null : (result.error || '생성 실패'),
         prompt: result.prompt || null,
         compactPrompt: result.compactPrompt || null,
-        isLoading: false,
+        isLoading: false, bgHex,
       };
       return next;
     });
@@ -957,6 +1021,8 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     handleBackgroundUpload, handleBackgroundDragOver, handleBackgroundDragLeave, handleBackgroundDrop, handleClearBackground,
     selectedVariationIds, handleToggleVariation,
     variationStrength, setVariationStrength,
+    variationStripGlow, setVariationStripGlow,
+    variationBgColor, setVariationBgColor,
     variationResults, isGeneratingVariations,
     handleGenerateVariations, handleRegenerateVariation,
     variationRenderModel, setVariationRenderModel,
@@ -1026,14 +1092,21 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     reskinMoodId, selectedReskinStyleIds, handleSelectReskinMood, handleToggleReskinStyle,
     reskinResults, isGeneratingReskin, handleGenerateReskin, handleRegenerateReskin,
     reskinSaveMsg, setReskinSaveMsg,
-    // 벡터 생성(vector) 모드
-    vectorCategory, setVectorCategory,
-    vectorStyle, setVectorStyle,
-    vectorPalette, setVectorPalette,
-    vectorText, setVectorText,
-    vectorCount, setVectorCount,
-    vectorResults, isGeneratingVector,
-    handleGenerateVector, handleRegenerateVector,
+    reskinStripGlow, setReskinStripGlow,
+    reskinBgColor, setReskinBgColor,
+    // 광원·빛효과(lightfx) 모드
+    lightFxCategory, setLightFxCategory,
+    lightFxStyle, setLightFxStyle,
+    lightFxColor, setLightFxColor,
+    lightFxText, setLightFxText,
+    lightFxCount, setLightFxCount,
+    lightFxRef, isDraggingLightFxRef,
+    handleLightFxRefUpload, handleLightFxRefDragOver, handleLightFxRefDragLeave, handleLightFxRefDrop, handleClearLightFxRef,
+    lightFxRenderModel, setLightFxRenderModel,
+    lightFxImageSize, setLightFxImageSize,
+    lightFxBgColor, setLightFxBgColor,
+    lightFxResults, isGeneratingLightFx,
+    handleGenerateLightFx, handleRegenerateLightFx,
     reskinRefinementLevel, setReskinRefinementLevel,
     reskinTemperature, setReskinTemperature, reskinAge, setReskinAge,
     reskinImageSize, setReskinImageSize,

@@ -99,6 +99,7 @@ export default function ForgeReskinGrid({ forge }) {
           dataUrl={nineSliceSlot?.dataUrl}
           themeLabel={nineSliceSlot?.theme?.label}
           themeColor={nineSliceSlot?.theme?.color}
+          bgHex={nineSliceSlot?.bgHex}
           onClose={() => setNineSliceIdx(null)}
         />
 

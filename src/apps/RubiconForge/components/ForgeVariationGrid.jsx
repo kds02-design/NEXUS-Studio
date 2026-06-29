@@ -97,6 +97,7 @@ export default function ForgeVariationGrid({ forge }) {
           dataUrl={nineSliceSlot?.dataUrl}
           themeLabel={nineSliceSlot?.theme?.label}
           themeColor={nineSliceSlot?.theme?.color}
+          bgHex={nineSliceSlot?.bgHex}
           onClose={() => setNineSliceIdx(null)}
         />
 

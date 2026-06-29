@@ -1,47 +1,38 @@
 // AssetLibrary — 에셋 라이브러리 앱.
 // 다른 앱에서 영역 선택으로 잘라낸 이미지(타이틀/버튼/박스/아이템/아이콘)를 모아둠.
-// PromptArc 와 동일한 사이드바 + 카드 그리드 구조.
+// 레이아웃: 좌측 사이드바(가상폴더+카테고리 nav) + 메인은 NEXUS 토큰 기반 단일 컬럼 카테고리 아코디언(Figma 시안).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, X, Grip, LayoutGrid, Maximize2, ChevronDown, Sparkles } from "lucide-react";
+import { Search, X, ChevronDown, Plus, Image as ImageIcon } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobal } from "../../context/GlobalContext";
 import { useUsageGate } from "../../components/UsageGate";
 import { subscribeAssets, deleteAsset, toggleAssetLike } from "./services/firebase";
-import {
-  ASSET_CATEGORY_LIST, getCategoryMeta, isTempAsset,
-} from "./constants/categories";
-import {
-  ASSET_THEME_LIST, getThemeMeta,
-  isAutoThemeEnabled, setAutoThemeEnabled,
-} from "./constants/themes";
+import { ASSET_CATEGORY_LIST, getCategoryMeta, isTempAsset } from "./constants/categories";
 import AssetSidebar from "./components/AssetSidebar";
 import AssetCard from "./components/AssetCard";
 import AssetDetailModal from "./components/AssetDetailModal";
+import AssetUploadModal from "./components/AssetUploadModal";
 
-// source.app 사람이 읽는 라벨. 알 수 없는 키는 그대로 노출.
-const SOURCE_APP_LABEL = {
-  "banner-codex": "Banner Codex",
-  "brand-web-review": "Brand Web Library",
-  "promotion-archive": "Promotion Archive",
-  "asset-library": "Asset Library",
-};
-const sourceAppLabel = (app) => SOURCE_APP_LABEL[app] || app || "출처 미상";
-// 출처 그룹 키 — 같은 배너/프로모션에서 나온 에셋들을 묶는다.
-// app 만 있고 bannerId 가 없는 옛 데이터는 app 단위로만 묶임.
-const sourceGroupKey = (a) => {
-  const app = a?.source?.app;
-  const bid = a?.source?.bannerId;
-  if (!app) return null;
-  return bid ? `${app}:${bid}` : `${app}:`;
-};
-const sourceGroupLabel = (a) => {
-  const app = a?.source?.app;
-  const title = a?.source?.bannerTitle;
-  if (title) return title;
-  return sourceAppLabel(app);
+const APP_COLOR = "#55EFC4"; // asset-library app.color
+
+// 카테고리 표시 메타 — 약자 칩 / 영문 라벨 / 설명. 색상은 ASSET_CATEGORY_LIST 에서.
+const CAT_DISPLAY = {
+  title:      { en: "Title",      abbr: "Ti", desc: "제목·로고 타이포" },
+  button:     { en: "Button",     abbr: "Bt", desc: "CTA·탭·토글 버튼" },
+  box:        { en: "Box",        abbr: "Bx", desc: "패널·프레임·말풍선" },
+  item:       { en: "Item",       abbr: "It", desc: "아이템·일러스트" },
+  icon:       { en: "Icon",       abbr: "Ic", desc: "아이콘·심볼·뱃지" },
+  frame:      { en: "Frame",      abbr: "Fr", desc: "카드·아이템 슬롯 테두리" },
+  bullet:     { en: "Bullet",     abbr: "Bu", desc: "목록·강조 마커" },
+  lightfx:    { en: "Light FX",   abbr: "Lf", desc: "글로우·폭발·파티클" },
+  background: { en: "Background", abbr: "Bg", desc: "패널 바탕·텍스처" },
+  ornament:   { en: "Ornament",   abbr: "Or", desc: "코너·디바이더·리본" },
+  etc:        { en: "Etc",        abbr: "Et", desc: "분류 미정" },
 };
 
-// 현재 카테고리(또는 가상 필터) → 헤더 타이틀.
+const isRealCategory = (id) => ASSET_CATEGORY_LIST.some((c) => c.id === id);
+
+// 현재 선택(가상폴더 또는 카테고리) → 헤더 타이틀.
 function headerTitleFor(category) {
   if (category === "all") return "전체 에셋";
   if (category === "favorites") return "즐겨찾기";
@@ -56,29 +47,17 @@ export default function AssetLibraryApp() {
   const { ensureCanGenerate, modal: usageModal } = useUsageGate();
   const [assets, setAssets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [category, setCategory] = useState("all"); // all / favorites / temp / uploaded / title / button / ...
+  const [category, setCategory] = useState("all"); // all/favorites/temp/uploaded/<catId>
   const [searchQuery, setSearchQuery] = useState("");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [catOverride, setCatOverride] = useState({}); // 카테고리 id -> 사용자가 명시 토글한 펼침 상태
   const [toast, setToast] = useState(null);
-  const [detail, setDetail] = useState(null); // 클릭한 에셋
-  // 그리드 크기 — BannerCodex 동일 3단계.
-  const [gridSize, setGridSize] = useState('medium');
-  const gridMinPx = gridSize === 'small' ? 140 : gridSize === 'large' ? 320 : 220;
-  // 출처(source group) / 테마(theme) 다중 선택 필터. 빈 Set = 필터 OFF.
-  const [sourceFilter, setSourceFilter] = useState(() => new Set());
-  const [themeFilter, setThemeFilter] = useState(() => new Set());
-  const [sourceMenuOpen, setSourceMenuOpen] = useState(false);
-  const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  // AI 자동 추정 토글 — localStorage 영속화.
-  const [autoTheme, setAutoTheme] = useState(() => isAutoThemeEnabled());
-  const toggleAutoTheme = useCallback(() => {
-    setAutoTheme((v) => { setAutoThemeEnabled(!v); return !v; });
-  }, []);
+  const [detail, setDetail] = useState(null);
+  const [showUpload, setShowUpload] = useState(false);
 
-  // 토스트
   const showToast = useCallback((msg, type = "info") => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 2200);
+    setTimeout(() => setToast(null), 2400);
   }, []);
 
   // 실시간 구독
@@ -93,12 +72,12 @@ export default function AssetLibraryApp() {
   // 출처에서 닫고 돌아오기 — payload.params.openAssetId 가 있으면 그 asset detail 자동 오픈.
   const consumedPayloadRef = useRef(null);
   useEffect(() => {
-    if (!payload || payload.target !== 'asset-library') return;
+    if (!payload || payload.target !== "asset-library") return;
     const id = payload.params?.openAssetId;
     if (!id) return;
     if (consumedPayloadRef.current === payload.timestamp) return;
-    if (assets.length === 0) return; // 구독 응답 대기
-    const found = assets.find(a => a.id === id);
+    if (assets.length === 0) return;
+    const found = assets.find((a) => a.id === id);
     if (found) {
       setDetail(found);
       consumedPayloadRef.current = payload.timestamp;
@@ -107,8 +86,7 @@ export default function AssetLibraryApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload?.timestamp, payload?.target, assets.length]);
 
-  // detail 모달이 열려 있는 동안 구독 데이터가 갱신되면 detail 도 최신 doc 으로 따라가게 함.
-  // (원본 업로드 후 isTemp/imageUrl 등 변화가 모달에 즉시 반영되도록.)
+  // detail 모달 열린 동안 구독 갱신 따라가기.
   useEffect(() => {
     if (!detail?.id) return;
     const latest = assets.find((a) => a.id === detail.id);
@@ -122,22 +100,16 @@ export default function AssetLibraryApp() {
     }
   }, []);
 
-  // 필터링 — 카테고리 AND 출처(OR) AND 테마(OR) AND 검색.
-  // 테마 필터 적용 시 theme 가 null/undefined 인 에셋은 제외 (기존 에셋이 노이즈처럼 끼지 않도록).
+  // 가상폴더(스코프) + 검색 필터.
+  // 임시 이미지는 '임시' 폴더에서만 노출 — 전체/즐겨찾기/업로드/개별 카테고리 뷰에서는 모두 제외.
   const filtered = useMemo(() => {
     let list = assets;
-    if (category === "favorites") list = list.filter((a) => a.liked);
-    else if (category === "temp") list = list.filter((a) => isTempAsset(a));
-    else if (category === "uploaded") list = list.filter((a) => !isTempAsset(a));
-    else if (category !== "all") list = list.filter((a) => a.category === category);
-    if (sourceFilter.size > 0) {
-      list = list.filter((a) => {
-        const k = sourceGroupKey(a);
-        return k && sourceFilter.has(k);
-      });
-    }
-    if (themeFilter.size > 0) {
-      list = list.filter((a) => a.theme && themeFilter.has(a.theme));
+    if (category === "temp") {
+      list = list.filter((a) => isTempAsset(a));
+    } else {
+      list = list.filter((a) => !isTempAsset(a));
+      if (category === "favorites") list = list.filter((a) => a.liked);
+      // 'uploaded' 와 'all'·개별 카테고리는 이미 비임시만 남아 추가 필터 불필요.
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -148,58 +120,47 @@ export default function AssetLibraryApp() {
       );
     }
     return list;
-  }, [assets, category, sourceFilter, themeFilter, searchQuery]);
+  }, [assets, category, searchQuery]);
 
-  // 카테고리별 카운트
-  const countByCat = useMemo(() => {
+  // 표시할 카테고리 — 특정 카테고리 선택 시 그것만, 아니면 전체.
+  const catsToShow = useMemo(
+    () => (isRealCategory(category) ? ASSET_CATEGORY_LIST.filter((c) => c.id === category) : ASSET_CATEGORY_LIST),
+    [category]
+  );
+
+  // 카테고리별 그룹 (현재 필터 기준).
+  const byCat = useMemo(() => {
     const m = {};
-    for (const a of assets) m[a.category] = (m[a.category] || 0) + 1;
+    for (const c of ASSET_CATEGORY_LIST) m[c.id] = [];
+    for (const a of filtered) (m[a.category] || m.etc).push(a);
+    return m;
+  }, [filtered]);
+
+  const totalCount = useMemo(
+    () => catsToShow.reduce((n, c) => n + (byCat[c.id]?.length || 0), 0),
+    [catsToShow, byCat]
+  );
+
+  // 사이드바 nav 카운트 — 임시 격리 규칙 반영(임시는 '임시' 폴더에만 집계).
+  const navCounts = useMemo(() => {
+    const nonTemp = assets.filter((a) => !isTempAsset(a));
+    const m = {
+      all: nonTemp.length,
+      favorites: nonTemp.filter((a) => a.liked).length,
+      temp: assets.filter((a) => isTempAsset(a)).length,
+      uploaded: nonTemp.length,
+    };
+    for (const c of ASSET_CATEGORY_LIST) m[c.id] = nonTemp.filter((a) => a.category === c.id).length;
     return m;
   }, [assets]);
 
-  // 출처 그룹 목록 + 카운트 — 사이드바 카테고리 필터 적용 전 전체 기준으로 산출.
-  // 그래야 카테고리 좁혀도 같은 출처에서 다른 에셋이 있는지 보이는 효과.
-  const sourceGroups = useMemo(() => {
-    const m = new Map(); // key -> { key, label, app, count }
-    for (const a of assets) {
-      const k = sourceGroupKey(a);
-      if (!k) continue;
-      if (m.has(k)) {
-        m.get(k).count += 1;
-      } else {
-        m.set(k, { key: k, label: sourceGroupLabel(a), app: a.source?.app || "", count: 1 });
-      }
-    }
-    // 라벨 사전순 정렬. 빈도 높은 게 위로 가는 게 자연스럽지만 칩이 흔들리는 게 더 거슬릴 수 있어 라벨순 유지.
-    return Array.from(m.values()).sort((x, y) => x.label.localeCompare(y.label, "ko"));
-  }, [assets]);
-
-  // 테마별 카운트
-  const countByTheme = useMemo(() => {
-    const m = {};
-    for (const a of assets) if (a.theme) m[a.theme] = (m[a.theme] || 0) + 1;
-    return m;
-  }, [assets]);
-
-  const toggleSource = useCallback((key) => {
-    setSourceFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  }, []);
-  const toggleTheme = useCallback((id) => {
-    setThemeFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
-  const clearAllFilters = useCallback(() => {
-    setSourceFilter(new Set());
-    setThemeFilter(new Set());
-  }, []);
-  const hasAnyFilter = sourceFilter.size > 0 || themeFilter.size > 0;
+  // 펼침 상태 — 사용자 명시 토글 우선, 아니면 "단일 카테고리 보기는 펼침 / 그 외 매칭 있으면 펼침".
+  const isCatOpen = (id) =>
+    id in catOverride
+      ? catOverride[id]
+      : catsToShow.length === 1 || (byCat[id] || []).length > 0;
+  const toggleCat = (id) =>
+    setCatOverride((prev) => ({ ...prev, [id]: !isCatOpen(id) }));
 
   const handleDelete = async (asset) => {
     if (!confirm("이 에셋을 삭제하시겠습니까?")) return;
@@ -213,12 +174,11 @@ export default function AssetLibraryApp() {
 
   const handleJumpToSource = (a) => {
     if (!a.source?.app || !a.source?.bannerId) {
-      console.warn('[AssetLibrary] jumpToSource: missing source info', a);
       showToast(
-        !a.source ? '이 에셋에는 출처 정보가 없어요 (옛 데이터)'
-        : !a.source.app ? '출처 앱 정보가 없어요'
-        : '출처 배너 ID가 없어요',
-        'error'
+        !a.source ? "이 에셋에는 출처 정보가 없어요 (옛 데이터)"
+        : !a.source.app ? "출처 앱 정보가 없어요"
+        : "출처 배너 ID가 없어요",
+        "error"
       );
       return;
     }
@@ -238,277 +198,119 @@ export default function AssetLibraryApp() {
     setDetail(null);
   };
 
+  // "에셋 추가" — 등록 모달 오픈 (로그인 필요).
+  const handleAdd = () => {
+    if (!user) { showToast("로그인이 필요합니다", "error"); return; }
+    setShowUpload(true);
+  };
+  const handleSaved = (asset) => {
+    setShowUpload(false);
+    showToast("에셋이 등록되었습니다");
+    // 저장된 위치로 이동 — 임시면 임시 폴더, 아니면 해당 카테고리.
+    setCategory(asset?.isTemp ? "temp" : (asset?.category || "all"));
+    setSearchQuery("");
+  };
+
+  const isEmpty = !loading && assets.length === 0;
+
   return (
-    <div className="flex bg-[#0a0a0c] text-zinc-200 font-sans overflow-hidden" style={{ height: "calc(100vh - 52px)" }}>
+    <div
+      className="flex bg-[#0A0A0F] text-[#E8E6FF] font-sans overflow-hidden"
+      style={{ height: "calc(100vh - 52px)" }}
+    >
       <AssetSidebar
         isSidebarCollapsed={isSidebarCollapsed}
         handleSidebarClick={handleSidebarClick}
         category={category}
         setCategory={setCategory}
+        counts={navCounts}
       />
 
-      <main className="flex-1 my-3 mr-3 ml-3 rounded-[16px] border border-zinc-800/80 bg-[#0c0c0e] shadow-2xl overflow-hidden flex flex-col min-w-0">
+      <main className="flex-1 my-3 mr-3 ml-3 rounded-[16px] border border-[#1E1E2E] bg-[#0A0A0F] shadow-2xl overflow-hidden flex flex-col min-w-0">
         {/* Header */}
-        <header className="h-14 px-4 md:px-6 flex items-center gap-3 border-b border-white/5 shrink-0">
-          <h2 className="text-sm md:text-base font-bold text-white truncate flex items-baseline gap-2">
+        <header className="h-14 px-4 md:px-6 flex items-center gap-3 border-b border-[#1E1E2E] shrink-0">
+          <h2 className="text-sm md:text-base font-bold text-[#E8E6FF] truncate flex items-baseline gap-2">
             <span>{headerTitleFor(category)}</span>
-            {/* 카운트 — 폭 고정 (tabular-nums + min-w). */}
-            <span className="text-xs text-zinc-500 font-mono tabular-nums inline-block text-left shrink-0" style={{ minWidth: 32 }}>{filtered.length}</span>
+            <span className="text-xs text-[#7A7A9A] font-mono tabular-nums inline-block text-left shrink-0" style={{ minWidth: 32 }}>
+              {totalCount}
+            </span>
           </h2>
 
           <div className="ml-auto flex items-center gap-2 shrink-0">
-            <div className="relative w-[180px] md:w-[220px] shrink-0">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-500" strokeWidth={2} />
+            <div className="relative w-[180px] md:w-[240px] shrink-0">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#7A7A9A]" strokeWidth={2} />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="제목/태그/출처 검색..."
-                className="w-full pl-9 pr-8 py-1.5 bg-[#121212] border border-white/10 rounded-lg text-white text-xs outline-none placeholder:text-zinc-600 focus:border-white/20"
+                placeholder="제목/태그/출처 검색…"
+                className="w-full pl-9 pr-8 py-1.5 bg-[#16161F] border border-[#1E1E2E] rounded-lg text-[#E8E6FF] text-xs outline-none placeholder:text-[#7A7A9A] focus:border-[#55EFC4]/40"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery("")}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-[#7A7A9A] hover:text-white"
                 >
                   <X className="w-3 h-3" />
                 </button>
               )}
             </div>
-            {/* 그리드 토글 — BannerCodex 동일 패턴 3단계 */}
-            <div className="hidden md:flex items-center bg-white/5 rounded-lg p-0.5 shrink-0">
-              <button onClick={() => setGridSize('small')} title="작게"
-                className={`p-1.5 rounded transition-colors ${gridSize === 'small' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}>
-                <Grip className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setGridSize('medium')} title="보통"
-                className={`p-1.5 rounded transition-colors ${gridSize === 'medium' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}>
-                <LayoutGrid className="w-3.5 h-3.5" />
-              </button>
-              <button onClick={() => setGridSize('large')} title="크게"
-                className={`p-1.5 rounded transition-colors ${gridSize === 'large' ? 'bg-[#1A1A1A] text-[#d8b17e]' : 'text-zinc-500 hover:text-zinc-300'}`}>
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            <button
+              onClick={handleAdd}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-90 shrink-0"
+              style={{ background: APP_COLOR, color: "#0A0A0F" }}
+            >
+              <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+              에셋 추가
+            </button>
           </div>
         </header>
 
-        {/* Filter chips — 출처 / 테마 다중 필터 + AI 자동 추정 토글 */}
-        <div className="px-4 md:px-6 py-2 border-b border-white/5 flex items-center gap-2 flex-wrap shrink-0">
-          {/* 출처 드롭다운 */}
-          <div className="relative">
-            <button
-              onClick={() => { setSourceMenuOpen((v) => !v); setThemeMenuOpen(false); }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
-                sourceFilter.size > 0
-                  ? "bg-white/10 border-white/20 text-white"
-                  : "bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200 hover:border-white/15"
-              }`}
-            >
-              출처
-              {sourceFilter.size > 0 && (
-                <span className="text-[9px] px-1 rounded bg-white/20 text-white">{sourceFilter.size}</span>
-              )}
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {sourceMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-[40]" onClick={() => setSourceMenuOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 z-[50] min-w-[240px] max-h-[320px] overflow-y-auto bg-[#1A1A1A] border border-white/10 rounded-lg shadow-2xl py-1">
-                  {sourceGroups.length === 0 ? (
-                    <div className="px-3 py-3 text-[11px] text-zinc-500">출처 정보가 있는 에셋이 없어요</div>
-                  ) : (
-                    sourceGroups.map((g) => {
-                      const active = sourceFilter.has(g.key);
-                      return (
-                        <button
-                          key={g.key}
-                          onClick={() => toggleSource(g.key)}
-                          className={`flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-left transition-colors ${
-                            active ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5"
-                          }`}
-                        >
-                          <span
-                            className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
-                              active ? "bg-white/80 border-white/80 text-black" : "border-white/30"
-                            }`}
-                          >
-                            {active && <span className="text-[8px] leading-none">✓</span>}
-                          </span>
-                          <span className="flex-1 truncate">{g.label}</span>
-                          <span className="text-[9px] text-zinc-500 shrink-0">[{sourceAppLabel(g.app).split(" ")[0]}]</span>
-                          <span className="text-[9px] text-zinc-500 tabular-nums shrink-0">{g.count}</span>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* 테마 드롭다운 */}
-          <div className="relative">
-            <button
-              onClick={() => { setThemeMenuOpen((v) => !v); setSourceMenuOpen(false); }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-colors ${
-                themeFilter.size > 0
-                  ? "bg-white/10 border-white/20 text-white"
-                  : "bg-white/[0.03] border-white/10 text-zinc-400 hover:text-zinc-200 hover:border-white/15"
-              }`}
-            >
-              테마
-              {themeFilter.size > 0 && (
-                <span className="text-[9px] px-1 rounded bg-white/20 text-white">{themeFilter.size}</span>
-              )}
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {themeMenuOpen && (
-              <>
-                <div className="fixed inset-0 z-[40]" onClick={() => setThemeMenuOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 z-[50] min-w-[180px] bg-[#1A1A1A] border border-white/10 rounded-lg shadow-2xl py-1">
-                  {ASSET_THEME_LIST.map((t) => {
-                    const active = themeFilter.has(t.id);
-                    const cnt = countByTheme[t.id] || 0;
-                    return (
-                      <button
-                        key={t.id}
-                        onClick={() => toggleTheme(t.id)}
-                        className={`flex items-center gap-2 w-full px-3 py-1.5 text-[11px] text-left transition-colors ${
-                          active ? "bg-white/10 text-white" : "text-zinc-300 hover:bg-white/5"
-                        }`}
-                      >
-                        <span
-                          className={`w-3 h-3 rounded-sm border flex items-center justify-center shrink-0 ${
-                            active ? "bg-white/80 border-white/80 text-black" : "border-white/30"
-                          }`}
-                        >
-                          {active && <span className="text-[8px] leading-none">✓</span>}
-                        </span>
-                        <span
-                          className="w-3 h-3 rounded-full border border-white/20 shrink-0"
-                          style={{ background: t.swatch }}
-                        />
-                        <span className="flex-1">{t.name}</span>
-                        <span className="text-[9px] text-zinc-500 tabular-nums shrink-0">{cnt}</span>
-                      </button>
-                    );
-                  })}
-                  <div className="my-1 border-t border-white/5" />
-                  <label className="flex items-center gap-2 px-3 py-1.5 text-[11px] text-zinc-400 hover:bg-white/5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={autoTheme}
-                      onChange={toggleAutoTheme}
-                      className="accent-white/80"
-                    />
-                    <Sparkles className="w-3 h-3" />
-                    <span className="flex-1">새 에셋 자동 추정</span>
-                  </label>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* 선택된 출처 칩 */}
-          {Array.from(sourceFilter).map((key) => {
-            const g = sourceGroups.find((x) => x.key === key);
-            const label = g?.label || key;
-            return (
-              <span
-                key={`src-${key}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] bg-white/10 text-zinc-200 border border-white/10"
-              >
-                <span className="text-zinc-500">출처:</span>
-                <span className="truncate max-w-[160px]">{label}</span>
-                <button
-                  onClick={() => toggleSource(key)}
-                  className="ml-0.5 text-zinc-500 hover:text-white"
-                  title="필터 해제"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
-              </span>
-            );
-          })}
-
-          {/* 선택된 테마 칩 */}
-          {Array.from(themeFilter).map((id) => {
-            const meta = getThemeMeta(id);
-            if (!meta) return null;
-            return (
-              <span
-                key={`th-${id}`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] bg-white/10 text-zinc-200 border border-white/10"
-              >
-                <span className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ background: meta.swatch }} />
-                {meta.name}
-                <button
-                  onClick={() => toggleTheme(id)}
-                  className="ml-0.5 text-zinc-500 hover:text-white"
-                  title="필터 해제"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
-              </span>
-            );
-          })}
-
-          {hasAnyFilter && (
-            <button
-              onClick={clearAllFilters}
-              className="ml-1 text-[10px] text-zinc-500 hover:text-white underline-offset-2 hover:underline"
-            >
-              필터 초기화
-            </button>
-          )}
-        </div>
-
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-4 md:p-6">
           {loading && assets.length === 0 ? (
-            <div className="text-center py-20 text-zinc-500 text-sm">로딩 중...</div>
-          ) : assets.length === 0 ? (
-            <EmptyState />
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-20 text-zinc-500 text-sm">
-              조건에 맞는 에셋이 없습니다.
-            </div>
+            <div className="text-center py-24 text-[#7A7A9A] text-sm">로딩 중…</div>
+          ) : isEmpty ? (
+            <EmptyState onAdd={handleAdd} />
           ) : (
-            <>
-              {/* 카테고리별 요약 (전체 보기에서만) — 무채색 톤. */}
-              {category === "all" && !searchQuery && (
-                <div className="mb-5 flex flex-wrap gap-2">
-                  {ASSET_CATEGORY_LIST.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => setCategory(c.id)}
-                      className="px-2.5 py-1 rounded-md text-[11px] font-medium border border-white/10 bg-white/[0.04] text-zinc-300 hover:bg-white/[0.08] hover:text-white transition-colors"
-                    >
-                      {c.name}
-                      <span className="ml-1.5 text-[9px] text-zinc-500">{countByCat[c.id] || 0}</span>
-                    </button>
-                  ))}
+            <div className="space-y-4">
+              {catsToShow.map((c) => (
+                <CategoryAccordion
+                  key={c.id}
+                  cat={c}
+                  items={byCat[c.id] || []}
+                  open={isCatOpen(c.id)}
+                  onToggle={() => toggleCat(c.id)}
+                  onAssetClick={setDetail}
+                  onLike={handleLike}
+                  onDelete={handleDelete}
+                  onAdd={handleAdd}
+                />
+              ))}
+
+              {totalCount === 0 && (
+                <div className="text-center py-16 text-[#7A7A9A] text-sm">
+                  조건에 맞는 에셋이 없습니다.
                 </div>
               )}
-
-              <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${gridMinPx}px, 1fr))` }}>
-                {filtered.map((a) => (
-                  <AssetCard
-                    key={a.id}
-                    asset={a}
-                    onClick={setDetail}
-                    onLikeToggle={handleLike}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </>
+            </div>
           )}
         </div>
       </main>
 
-      {/* 상세 모달 — BannerCodex CodexDetailModal 레이아웃 */}
+      {/* 등록 모달 */}
+      {showUpload && (
+        <AssetUploadModal
+          user={user}
+          defaultCategory={isRealCategory(category) ? category : ""}
+          onClose={() => setShowUpload(false)}
+          onSaved={handleSaved}
+          showToast={showToast}
+          ensureCanGenerate={ensureCanGenerate}
+        />
+      )}
+
+      {/* 상세 모달 */}
       {detail && (
         <AssetDetailModal
           asset={detail}
@@ -529,7 +331,7 @@ export default function AssetLibraryApp() {
             className={`px-4 py-2.5 rounded-lg text-sm font-medium shadow-2xl border ${
               toast.type === "error"
                 ? "bg-rose-500/90 border-rose-400 text-white"
-                : "bg-emerald-500/90 border-emerald-400 text-white"
+                : "bg-[#16161F] border-[#1E1E2E] text-[#E8E6FF]"
             }`}
           >
             {toast.msg}
@@ -537,21 +339,103 @@ export default function AssetLibraryApp() {
         </div>
       )}
 
-      {/* 크레딧 부족 모달 (Gemini 분석용) */}
       {usageModal}
     </div>
   );
 }
 
-function EmptyState() {
+// 카테고리 아코디언 카드 — 헤더(약자 칩 + 이름 + 카운트 + 셰브론) + 펼침 시 타일 그리드.
+function CategoryAccordion({ cat, items, open, onToggle, onAssetClick, onLike, onDelete, onAdd }) {
+  const disp = CAT_DISPLAY[cat.id] || { en: cat.name, abbr: cat.name.slice(0, 2), desc: "" };
+  const count = items.length;
+  const color = cat.color;
   return (
-    <div className="flex flex-col items-center justify-center py-20 text-center gap-3">
-      <div className="text-5xl opacity-30">📦</div>
-      <div className="text-base font-bold text-zinc-400">아직 에셋이 없습니다</div>
-      <div className="text-xs text-zinc-600 max-w-md leading-relaxed">
-        Brand Web Library 또는 Banner Codex 의 상세보기에서 <b className="text-zinc-400">"에셋 추출"</b> 버튼을 누르고
-        타이틀/버튼/박스 등 원하는 영역을 드래그해서 저장하세요.
+    <div className="rounded-xl border border-[#1E1E2E] bg-[#111118] overflow-hidden">
+      {/* Header */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3.5 px-5 py-4 text-left hover:bg-white/[0.02] transition-colors"
+      >
+        <span
+          className="w-10 h-10 rounded-[10px] flex items-center justify-center text-sm font-bold shrink-0"
+          style={{ background: `${color}1f`, border: `1px solid ${color}40`, color }}
+        >
+          {disp.abbr}
+        </span>
+        <span className="flex flex-col min-w-0">
+          <span className="text-[16px] font-bold text-[#E8E6FF] leading-tight">{cat.name}</span>
+          <span className="text-[12px] text-[#7A7A9A] leading-tight mt-0.5 truncate">
+            {disp.en} · {disp.desc}
+          </span>
+        </span>
+        <span className="ml-auto flex items-center gap-3.5 shrink-0">
+          <span
+            className="px-2.5 py-1 rounded-full text-[13px] font-semibold tabular-nums"
+            style={
+              count
+                ? { background: `${color}24`, color }
+                : { background: "rgba(255,255,255,0.04)", color: "#7A7A9A" }
+            }
+          >
+            {count}
+          </span>
+          <ChevronDown
+            className={`w-4 h-4 text-[#7A7A9A] transition-transform ${open ? "rotate-0" : "-rotate-90"}`}
+          />
+        </span>
+      </button>
+
+      {/* Body */}
+      {open && (
+        <div className="px-5 pb-5 pt-0">
+          <div className="border-t border-[#1E1E2E] pt-4">
+            <div
+              className="grid gap-3.5"
+              style={{ gridTemplateColumns: "repeat(auto-fill, minmax(156px, 1fr))" }}
+            >
+              {items.map((a) => (
+                <AssetCard
+                  key={a.id}
+                  asset={a}
+                  onClick={onAssetClick}
+                  onLikeToggle={onLike}
+                  onDelete={onDelete}
+                />
+              ))}
+              <button
+                onClick={onAdd}
+                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-white/15 bg-[#0A0A0F] text-[#7A7A9A] hover:border-[#55EFC4]/40 hover:text-[#55EFC4] transition-colors"
+                style={{ aspectRatio: "16 / 10" }}
+                title="에셋 추가 안내"
+              >
+                <Plus className="w-6 h-6" strokeWidth={1.5} />
+                {count === 0 && <span className="text-[11px]">에셋 없음</span>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ onAdd }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
+      <div className="text-[#3A3A5A]"><ImageIcon size={48} /></div>
+      <div className="text-base font-bold text-[#7A7A9A]">아직 에셋이 없습니다</div>
+      <div className="text-xs text-[#7A7A9A]/70 max-w-md leading-relaxed">
+        Brand Web Library 또는 Banner Codex 의 상세보기에서{" "}
+        <b className="text-[#55EFC4]">"에셋 추출"</b> 버튼을 누르고 타이틀/버튼/박스 등
+        원하는 영역을 드래그해서 저장하세요.
       </div>
+      <button
+        onClick={onAdd}
+        className="mt-2 flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-bold"
+        style={{ background: "#55EFC4", color: "#0A0A0F" }}
+      >
+        <Plus className="w-4 h-4" strokeWidth={2.5} /> 에셋 추가 방법
+      </button>
     </div>
   );
 }

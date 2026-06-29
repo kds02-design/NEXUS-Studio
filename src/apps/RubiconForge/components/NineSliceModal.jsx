@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Copy, Check, Download, Eraser, Loader2 } from 'lucide-react';
 import { drawNineSlice, renderNineSliceToDataUrl, insetsToCssBorderImageSlice } from '../../../lib/nineSlice';
-import { blackToTransparentPng } from '../services/variations';
+import { colorToTransparentPng } from '../services/variations';
 
 const SIZE_PRESETS = [
   { id: 'btnWide',  label: '버튼 와이드',  w: 480, h: 120 },
@@ -18,7 +18,7 @@ const SIZE_PRESETS = [
   { id: 'cardV',    label: '카드 세로',    w: 260, h: 380 },
 ];
 
-export default function NineSliceModal({ open, dataUrl, themeLabel, themeColor, onClose }) {
+export default function NineSliceModal({ open, dataUrl, themeLabel, themeColor, bgHex, onClose }) {
   const [img, setImg] = useState(null);
   const [insets, setInsets] = useState({ top: 0, right: 0, bottom: 0, left: 0 });
   const [preset, setPreset] = useState('btnWide');
@@ -128,7 +128,7 @@ export default function NineSliceModal({ open, dataUrl, themeLabel, themeColor, 
     try {
       let outDataUrl = await renderNineSliceToDataUrl(img, insets, targetSize.w, targetSize.h);
       if (transparent) {
-        outDataUrl = await blackToTransparentPng(outDataUrl);
+        outDataUrl = await colorToTransparentPng(outDataUrl, bgHex || '#000000');
       }
       const a = document.createElement('a');
       a.href = outDataUrl;

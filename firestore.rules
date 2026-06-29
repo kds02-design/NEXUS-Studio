@@ -65,6 +65,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // BriefStudio 분석 기록 — 본인만 읽기/쓰기 (admin 도 읽기).
+    match /briefHistory/{uid}/{document=**} {
+      allow read:  if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isSignedIn() && request.auth.uid == uid;
+    }
+
     // 앱별 데이터
     match /artifacts/{appId} {
       // 공개 데이터(banners/prompts/patterns/competitor-*/settings/gameLogos 등)

@@ -5,9 +5,10 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Loader2, AlertCircle, Download, RefreshCcw, ImageOff, Eraser, Grid3x3, FileText, ClipboardCopy, Check, Maximize2, X,
+  Loader2, AlertCircle, Download, RefreshCcw, ImageOff, Eraser, Grid3x3, FileText, ClipboardCopy, Check, Maximize2, X, Scissors,
 } from 'lucide-react';
-import { blackToTransparentPng } from '../services/variations';
+import { colorToTransparentPng } from '../services/variations';
+import { useGlobal } from '../../../context/GlobalContext';
 
 export default function VariationResultCell({
   slot, idx, onRegenerate,
@@ -15,9 +16,11 @@ export default function VariationResultCell({
   filePrefix = 'rubicon-variation',
   sourceLoaded,
 }) {
-  const { theme, dataUrl, error, prompt, compactPrompt, isLoading } = slot;
+  const { theme, dataUrl, error, prompt, compactPrompt, isLoading, bgHex } = slot;
+  const { navigate } = useGlobal();
   const [isExtracting, setIsExtracting] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sent, setSent] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
 
   // 확대 보기 — Esc 로 닫기.
@@ -53,7 +56,8 @@ export default function VariationResultCell({
     if (!dataUrl || isExtracting) return;
     setIsExtracting(true);
     try {
-      const transparentDataUrl = await blackToTransparentPng(dataUrl);
+      // 생성 시 사용한 배경색(slot.bgHex)을 키아웃. 블랙이면 밝기 기반(기존), 그 외엔 색거리 기반.
+      const transparentDataUrl = await colorToTransparentPng(dataUrl, bgHex || '#000000');
       const a = document.createElement('a');
       a.href = transparentDataUrl;
       a.download = `${filePrefix}-${theme.id}-transparent-${Date.now()}.png`;
@@ -63,6 +67,21 @@ export default function VariationResultCell({
     } finally {
       setIsExtracting(false);
     }
+  };
+
+  // 결과물(생성 배경 포함 원본)을 마스크 포지의 '로컬 색상 키(luma)' 모드로 전송.
+  // 생성 배경색(bgHex)을 키 컬러로 미리 지정 → 톨러런스/페더를 직접 조절하는 컨트롤 가능한
+  // 투명 추출이 즉시 시작된다. RubiconForge 의 1-클릭 자동 추출과 달리 경계(검은 띠 등)를 손으로 다듬을 수 있음.
+  // (이미 투명 추출한 PNG 가 아니라 단색 배경이 살아있는 원본을 보내야 키잉이 동작)
+  const handleSendToMaskForge = () => {
+    if (!dataUrl) return;
+    navigate('mask-forge', {
+      source: 'rubicon-forge',
+      image: { url: dataUrl, metadata: { from: 'rubicon-forge', label: theme.label } },
+      params: { method: 'luma', keyColor: bgHex || '#000000' },
+    });
+    setSent(true);
+    setTimeout(() => setSent(false), 1500);
   };
 
   // 실제 전송된 프롬프트 .txt 다운로드 — 실패 슬롯에서도 가능.
@@ -143,14 +162,21 @@ export default function VariationResultCell({
               <button
                 onClick={handleDownloadTransparent}
                 disabled={isExtracting}
-                title="투명 PNG 다운로드 (검은 배경 알파 추출)"
+                title="투명 PNG 다운로드 (생성 배경색 알파 추출)"
                 className="p-1.5 rounded-md bg-zinc-800/80 hover:bg-zinc-700 text-white transition-colors disabled:opacity-50"
               >
                 {isExtracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eraser className="w-3.5 h-3.5" />}
               </button>
               <button
+                onClick={handleSendToMaskForge}
+                title="컨트롤 가능한 투명 PNG — 마스크 포지(로컬 색상 키)로 보내기. 톨러런스/페더를 직접 조절해 검은 띠 없이 추출"
+                className="p-1.5 rounded-md bg-zinc-800/80 hover:bg-[#FF3366] text-white transition-colors"
+              >
+                {sent ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Scissors className="w-3.5 h-3.5" />}
+              </button>
+              <button
                 onClick={handleDownload}
-                title="원본 PNG 다운로드 (검은 배경 포함)"
+                title="원본 PNG 다운로드 (생성 배경 포함)"
                 className="p-1.5 rounded-md bg-zinc-800/80 hover:bg-zinc-700 text-white transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -196,13 +222,17 @@ export default function VariationResultCell({
             <span className="text-[11px] text-zinc-400 truncate ml-1 hidden sm:inline">{theme.desc}</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={handleDownload} title="원본 PNG 다운로드 (검은 배경 포함)"
+            <button onClick={handleDownload} title="원본 PNG 다운로드 (생성 배경 포함)"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-white text-[12px] font-medium transition-colors">
               <Download className="w-4 h-4" /> 원본 PNG
             </button>
-            <button onClick={handleDownloadTransparent} disabled={isExtracting} title="투명 PNG 다운로드 (검은 배경 알파 추출)"
+            <button onClick={handleDownloadTransparent} disabled={isExtracting} title="투명 PNG 다운로드 (생성 배경색 알파 추출)"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-white text-[12px] font-medium transition-colors disabled:opacity-50">
               {isExtracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eraser className="w-4 h-4" />} 투명 PNG
+            </button>
+            <button onClick={handleSendToMaskForge} title="컨트롤 가능한 투명 PNG — 마스크 포지(로컬 색상 키)로 보내기. 톨러런스/페더를 직접 조절해 검은 띠 없이 추출"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-[#FF3366] text-white text-[12px] font-medium transition-colors">
+              {sent ? <Check className="w-4 h-4 text-emerald-400" /> : <Scissors className="w-4 h-4" />} 마스크 포지로 보내기
             </button>
             <button onClick={() => setZoomOpen(false)} title="닫기 (Esc)"
               className="p-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-white transition-colors">

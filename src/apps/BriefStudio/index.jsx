@@ -1,8 +1,9 @@
-// BriefStudio — 3단 레이아웃: 요청서 / 레퍼런스 / AI 분석 결과.
-// 분석 완료 후 결과를 Firestore (briefHistory) 에 저장하고, 작업 플로우 버튼으로 각 앱에 payload 전달.
+// BriefStudio — 4단 레이아웃: 분석 기록 / 요청서 / 레퍼런스 / AI 분석 결과.
+// 분석 완료 후 결과를 Firestore (briefHistory) 에 저장하고, 좌측 기록 메뉴에서 다시 불러온다.
+// 작업 플로우 버튼으로 각 앱에 payload 전달. 기본 테마는 다크모드.
 import { useEffect, useRef, useState } from "react";
 import {
-  addDoc, collection, getDocs, query, orderBy, serverTimestamp,
+  addDoc, collection, deleteDoc, doc, onSnapshot, query, getDocs, orderBy, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { GEMINI_API_KEY } from "../../lib/gemini";
@@ -12,7 +13,7 @@ import { APP_MAP } from "../../config/apps";
 import {
   Upload, FileText, Image as ImageIcon, X, Loader2, Sparkles,
   ArrowRight, Type, Box, Video, AlertCircle, Users, Check, ChevronRight,
-  Palette, Layers,
+  Palette, Layers, History, Plus, Trash2, PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { extractDocxText, extractPptxText, isDocx, isPptx } from "./officeExtract";
 import Prism from "./Prism";
@@ -51,6 +52,7 @@ const PRODUCTION_TYPE_META = {
 const SUPPORTED_DOC_EXT = /\.(pdf|txt|md|json|docx|pptx)$/i;
 const MAX_IMAGES = 10;
 const POINT = "#A29BFE";
+const SIDEBAR_STORAGE = "brief-studio:historyOpen";
 
 // ─── 파일 헬퍼 ───────────────────────────────────────────
 const fileToBase64 = (file) => new Promise((res, rej) => {
@@ -79,6 +81,13 @@ const parseGeminiJson = (raw) => {
   const a = s.indexOf("{"); const b = s.lastIndexOf("}");
   if (a === -1 || b === -1) return null;
   try { return JSON.parse(s.slice(a, b + 1)); } catch { return null; }
+};
+
+// Firestore timestamp → 짧은 한국어 날짜.
+const fmtDate = (ts) => {
+  const d = ts?.toDate?.() || (ts instanceof Date ? ts : null);
+  if (!d) return "";
+  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
 // 작업 플로우 카드용 메타.
@@ -120,6 +129,18 @@ function StudioView() {
   const [error, setError] = useState("");
   const [includeMotion, setIncludeMotion] = useState(false);
 
+  // 0단 — 분석 기록 (서버 저장)
+  const [history, setHistory] = useState([]);
+  const [historyError, setHistoryError] = useState("");
+  const [selectedId, setSelectedId] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    try { return localStorage.getItem(SIDEBAR_STORAGE) !== "0"; } catch { return true; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_STORAGE, sidebarOpen ? "1" : "0"); } catch { /* ignore */ }
+  }, [sidebarOpen]);
+
   // ─── 담당자 목록 로드 ──────────────────────────────────
   useEffect(() => {
     (async () => {
@@ -135,6 +156,26 @@ function StudioView() {
       }
     })();
   }, []);
+
+  // ─── 분석 기록 실시간 구독 ─────────────────────────────
+  useEffect(() => {
+    if (!user) return undefined;
+    const q = query(
+      collection(db, "briefHistory", user.uid, "reports"),
+      orderBy("createdAt", "desc"),
+    );
+    const unsub = onSnapshot(q,
+      (snap) => {
+        setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setHistoryError("");
+      },
+      (e) => {
+        console.warn("[BriefStudio] history 구독 실패", e);
+        setHistoryError("기록을 불러올 수 없습니다");
+      },
+    );
+    return unsub;
+  }, [user]);
 
   // ─── 문서/이미지 받기 ──────────────────────────────────
   const acceptDocs = (arr) => {
@@ -161,13 +202,45 @@ function StudioView() {
   const removeDoc = (i) => setDocFiles(prev => prev.filter((_, idx) => idx !== i));
   const removeImage = (i) => setImageFiles(prev => prev.filter((_, idx) => idx !== i));
 
+  // ─── 기록 불러오기 / 새 분석 / 삭제 ───────────────────
+  const loadHistory = (item) => {
+    setReport(item);
+    setReportId(item.id);
+    setSelectedId(item.id);
+    setIncludeMotion(false);
+    setError("");
+    if (item.genre) setGenre(item.genre);
+    if (item.platform) setPlatform(item.platform);
+    if (item.assigneeUid !== undefined) setAssigneeUid(item.assigneeUid || "");
+  };
+  const newAnalysis = () => {
+    setReport(null);
+    setReportId(null);
+    setSelectedId(null);
+    setError("");
+    setAnalysisPercent(0);
+    setAnalysisStage("");
+  };
+  const deleteHistory = async (e, id) => {
+    e.stopPropagation();
+    if (!user) return;
+    if (!window.confirm("이 분석 기록을 삭제할까요?")) return;
+    try {
+      await deleteDoc(doc(db, "briefHistory", user.uid, "reports", id));
+      if (selectedId === id) newAnalysis();
+    } catch (err) {
+      console.warn("[BriefStudio] 기록 삭제 실패", err);
+      setHistoryError("삭제하지 못했습니다");
+    }
+  };
+
   // ─── Gemini 분석 ────────────────────────────────────────
   const handleAnalyze = async () => {
     if (!GEMINI_API_KEY) { setError("Gemini API 키가 없습니다."); return; }
     if (docFiles.length === 0 && !docText.trim() && imageFiles.length === 0) {
       setError("문서·텍스트·이미지 중 최소 하나는 필요합니다."); return;
     }
-    setError(""); setReport(null); setReportId(null);
+    setError(""); setReport(null); setReportId(null); setSelectedId(null);
     setIsAnalyzing(true); setAnalysisStage("파일 준비 중…"); setAnalysisPercent(10);
 
     try {
@@ -287,6 +360,7 @@ function StudioView() {
 
       setReport(parsed);
       setReportId(savedId);
+      setSelectedId(savedId);
       setIncludeMotion(false);
       setAnalysisPercent(100); setAnalysisStage("완료");
     } catch (e) {
@@ -326,22 +400,113 @@ function StudioView() {
 
   return (
     <div
-      className="flex h-full overflow-hidden bg-slate-50 text-slate-900"
+      className="flex h-full overflow-hidden bg-[#0a0a0f] text-slate-100"
       style={{ fontFamily: "'Noto Sans KR', sans-serif", height: "100%" }}
     >
+      <style>{`
+        .bs-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+        .bs-scroll::-webkit-scrollbar-track { background: transparent; }
+        .bs-scroll::-webkit-scrollbar-thumb { background: rgba(162,155,254,0.25); border-radius: 5px; }
+        .bs-scroll:hover::-webkit-scrollbar-thumb { background: rgba(162,155,254,0.5); }
+      `}</style>
+
+      {/* PANEL 0 — 분석 기록 (서버 저장) */}
+      {sidebarOpen ? (
+        <aside className="w-[230px] shrink-0 flex flex-col overflow-hidden border-r border-white/10 bg-[#0d0d14]">
+          <header className="h-12 flex items-center px-4 border-b border-white/10 shrink-0">
+            <History size={14} style={{ color: POINT }} />
+            <span className="ml-2 text-[12px] font-bold text-slate-200 flex-1">분석 기록</span>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              title="기록 패널 접기"
+              className="text-slate-500 hover:text-slate-200 transition-colors"
+            >
+              <PanelLeftClose size={15} />
+            </button>
+          </header>
+
+          <div className="p-3 shrink-0">
+            <button
+              onClick={newAnalysis}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[11px] font-bold border border-[#A29BFE]/40 text-[#A29BFE] hover:bg-[#A29BFE]/10 transition-colors"
+            >
+              <Plus size={13} /> 새 분석
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1 bs-scroll">
+            {historyError && (
+              <div className="text-[10px] text-amber-400/80 px-2 py-1.5">{historyError}</div>
+            )}
+            {!historyError && history.length === 0 && (
+              <div className="text-[10px] text-slate-600 px-2 py-6 text-center leading-relaxed">
+                저장된 분석이 없습니다.<br />분석을 실행하면 여기 쌓입니다.
+              </div>
+            )}
+            {history.map((item) => {
+              const active = selectedId === item.id;
+              const title = item.projectName || item.gameName || "(제목 없음)";
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => loadHistory(item)}
+                  className={`group w-full text-left px-2.5 py-2 rounded-lg border transition-colors ${
+                    active
+                      ? "bg-[#A29BFE]/15 border-[#A29BFE]/40"
+                      : "bg-white/[0.02] border-transparent hover:border-white/10 hover:bg-white/[0.04]"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={`flex-1 text-[11px] font-bold truncate ${active ? "text-[#A29BFE]" : "text-slate-200"}`}>
+                      {title}
+                    </span>
+                    <span
+                      onClick={(e) => deleteHistory(e, item.id)}
+                      title="삭제"
+                      className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 transition-all shrink-0 cursor-pointer"
+                    >
+                      <Trash2 size={12} />
+                    </span>
+                  </div>
+                  {item.gameName && item.projectName && (
+                    <div className="text-[9px] text-slate-500 truncate mt-0.5">{item.gameName}</div>
+                  )}
+                  <div className="flex items-center gap-1.5 mt-1">
+                    {(item.productionTypes || []).slice(0, 4).map(t => {
+                      const m = PRODUCTION_TYPE_META[t]; if (!m) return null;
+                      return <span key={t} className="w-1.5 h-1.5 rounded-full" style={{ background: m.color }} />;
+                    })}
+                    <span className="text-[9px] text-slate-600 ml-auto">{fmtDate(item.createdAt)}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </aside>
+      ) : (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          title="기록 패널 펼치기"
+          className="w-10 shrink-0 flex flex-col items-center pt-3.5 gap-2 border-r border-white/10 bg-[#0d0d14] text-slate-500 hover:text-slate-200 transition-colors"
+        >
+          <PanelLeftOpen size={16} />
+          <History size={14} />
+        </button>
+      )}
+
       {/* PANEL 1 — 요청서 */}
-      <section className="flex-1 flex flex-col overflow-hidden border-r border-slate-200">
+      <section className="flex-1 flex flex-col overflow-hidden border-r border-white/10">
         <PanelHeader icon={<FileText size={14} />} title="요청서" subtitle="문서 / 텍스트 / 기본 설정" />
-        <div className="flex-1 overflow-y-auto p-5 space-y-5 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 space-y-5 bs-scroll">
           {/* 문서 업로드 */}
           <div>
-            <Label>요청서 문서 <span className="text-slate-400 font-normal">(PDF / DOCX / PPTX / TXT / MD / JSON)</span></Label>
+            <Label>요청서 문서 <span className="text-slate-500 font-normal">(PDF / DOCX / PPTX / TXT / MD / JSON)</span></Label>
             <label
               onDragOver={(e) => { e.preventDefault(); setIsDraggingDoc(true); }}
               onDragLeave={(e) => { e.preventDefault(); setIsDraggingDoc(false); }}
               onDrop={(e) => { e.preventDefault(); setIsDraggingDoc(false); acceptDocs(Array.from(e.dataTransfer.files || [])); }}
               className={`relative block w-full py-6 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-center ${
-                isDraggingDoc ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-slate-200 hover:border-slate-300 bg-white"
+                isDraggingDoc ? "border-[#A29BFE] bg-[#A29BFE]/10" : "border-white/10 hover:border-white/20 bg-white/[0.02]"
               }`}
             >
               <Upload size={20} className="mx-auto mb-2 text-slate-500" />
@@ -351,11 +516,11 @@ function StudioView() {
             {docFiles.length > 0 && (
               <div className="mt-2 space-y-1.5">
                 {docFiles.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-md text-[11px]">
+                  <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 bg-white/[0.03] border border-white/10 rounded-md text-[11px]">
                     <FileText size={12} className="text-slate-500 shrink-0" />
-                    <span className="flex-1 truncate text-slate-600">{f.name}</span>
+                    <span className="flex-1 truncate text-slate-300">{f.name}</span>
                     <span className="text-[9px] text-slate-500">{(f.size / 1024).toFixed(1)}KB</span>
-                    <button onClick={() => removeDoc(i)} className="text-slate-500 hover:text-slate-800 shrink-0"><X size={12} /></button>
+                    <button onClick={() => removeDoc(i)} className="text-slate-500 hover:text-slate-200 shrink-0"><X size={12} /></button>
                   </div>
                 ))}
               </div>
@@ -370,7 +535,7 @@ function StudioView() {
               onChange={(e) => setDocText(e.target.value)}
               placeholder="요청 내용을 텍스트로 입력하세요…"
               rows={5}
-              className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-[12px] text-slate-800 placeholder:text-slate-400 outline-none focus:border-[#A29BFE]/50 resize-y leading-relaxed"
+              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2.5 text-[12px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-[#A29BFE]/50 resize-y leading-relaxed"
               style={{ fontFamily: "inherit" }}
             />
           </div>
@@ -384,10 +549,10 @@ function StudioView() {
           <div>
             <Label><Users size={11} className="inline mr-1" />담당자</Label>
             {usersError ? (
-              <div className="text-[10px] text-amber-600 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded">{usersError}</div>
+              <div className="text-[10px] text-amber-400/80 px-2 py-1.5 bg-amber-500/10 border border-amber-500/30 rounded">{usersError}</div>
             ) : (
               <select value={assigneeUid} onChange={(e) => setAssigneeUid(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#A29BFE]/50">
+                className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-[#A29BFE]/50">
                 <option value="">미지정</option>
                 {users.map(u => (
                   <option key={u.uid} value={u.uid}>{u.displayName || u.email}</option>
@@ -397,21 +562,21 @@ function StudioView() {
           </div>
 
           {error && (
-            <div className="flex items-start gap-2 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[11px] text-rose-600">
+            <div className="flex items-start gap-2 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-lg text-[11px] text-rose-400">
               <AlertCircle size={12} className="shrink-0 mt-0.5" /> <span>{error}</span>
             </div>
           )}
         </div>
 
         {/* 분석 시작 */}
-        <div className="border-t border-slate-200 bg-white p-3 shrink-0">
+        <div className="border-t border-white/10 bg-[#0d0d14] p-3 shrink-0">
           <button
             onClick={handleAnalyze}
             disabled={!hasInputs || isAnalyzing}
             className={`w-full flex items-center justify-center gap-2 py-3 rounded-lg text-[12px] font-bold transition-colors ${
               hasInputs && !isAnalyzing
                 ? "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
-                : "bg-slate-100 text-slate-400 cursor-not-allowed"
+                : "bg-white/5 text-slate-600 cursor-not-allowed"
             }`}
           >
             {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -421,23 +586,23 @@ function StudioView() {
       </section>
 
       {/* PANEL 2 — 레퍼런스 */}
-      <section className="flex-1 flex flex-col overflow-hidden border-r border-slate-200">
+      <section className="flex-1 flex flex-col overflow-hidden border-r border-white/10">
         <PanelHeader
           icon={<ImageIcon size={14} />}
           title="레퍼런스"
           subtitle={`이미지 ${imageFiles.length} / ${MAX_IMAGES}장`}
         />
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
+        <div className="flex-1 overflow-y-auto p-5 space-y-4 bs-scroll">
           <label
             onDragOver={(e) => { e.preventDefault(); setIsDraggingImg(true); }}
             onDragLeave={(e) => { e.preventDefault(); setIsDraggingImg(false); }}
             onDrop={(e) => { e.preventDefault(); setIsDraggingImg(false); acceptImages(Array.from(e.dataTransfer.files || [])); }}
             className={`relative block w-full py-10 border-2 border-dashed rounded-xl cursor-pointer transition-colors text-center ${
-              isDraggingImg ? "border-[#A29BFE] bg-[#A29BFE]/5" : "border-slate-200 hover:border-slate-300 bg-white"
+              isDraggingImg ? "border-[#A29BFE] bg-[#A29BFE]/10" : "border-white/10 hover:border-white/20 bg-white/[0.02]"
             } ${imageFiles.length >= MAX_IMAGES ? "opacity-50 cursor-not-allowed" : ""}`}
           >
             <Upload size={24} className="mx-auto mb-2 text-slate-500" />
-            <div className="text-[12px] text-slate-600 font-medium">이미지 드래그 앤 드롭</div>
+            <div className="text-[12px] text-slate-300 font-medium">이미지 드래그 앤 드롭</div>
             <div className="text-[10px] text-slate-500 mt-1">최대 {MAX_IMAGES}장</div>
             <input ref={imgInputRef} type="file" accept="image/*" multiple className="hidden" onChange={onImgPick}
               disabled={imageFiles.length >= MAX_IMAGES} />
@@ -446,13 +611,13 @@ function StudioView() {
           {imageFiles.length > 0 && (
             <div className="grid grid-cols-3 gap-2">
               {imageFiles.map((it, i) => (
-                <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 bg-white">
+                <div key={i} className="relative group aspect-square rounded-lg overflow-hidden border border-white/10 bg-black/30">
                   <img src={it.preview} alt={it.name} className="w-full h-full object-cover" />
                   <button onClick={() => removeImage(i)}
                     className="absolute top-1 right-1 p-1 bg-black/70 hover:bg-rose-500 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity">
                     <X size={11} />
                   </button>
-                  <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent text-[9px] text-slate-600 truncate">
+                  <div className="absolute bottom-0 left-0 right-0 px-1.5 py-1 bg-gradient-to-t from-black/80 to-transparent text-[9px] text-slate-300 truncate">
                     {it.name}
                   </div>
                 </div>
@@ -464,11 +629,11 @@ function StudioView() {
 
       {/* PANEL 3 — AI 분석 결과 */}
       <section className="flex-1 flex flex-col overflow-hidden">
-        <PanelHeader icon={<Sparkles size={14} />} title="AI 분석 결과" subtitle={report ? "완료" : isAnalyzing ? "분석 중" : "대기"} />
-        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+        <PanelHeader icon={<Sparkles size={14} />} title="AI 분석 결과" subtitle={report ? (selectedId && !isAnalyzing ? "기록 불러옴" : "완료") : isAnalyzing ? "분석 중" : "대기"} />
+        <div className="flex-1 overflow-y-auto p-5 bs-scroll">
           {!report && !isAnalyzing && (
             <div className="text-center py-16 text-slate-500">
-              <Sparkles size={32} className="mx-auto mb-3 text-slate-300" />
+              <Sparkles size={32} className="mx-auto mb-3 text-slate-700" />
               <div className="text-[12px] leading-relaxed">
                 좌측에 요청서와 레퍼런스를 등록하고<br />
                 <span className="text-[#A29BFE]">[분석 시작]</span> 을 눌러주세요.
@@ -479,12 +644,12 @@ function StudioView() {
             <div className="py-16 px-4">
               <div className="flex flex-col items-center gap-3 mb-6">
                 <Loader2 size={32} className="animate-spin" style={{ color: POINT }} />
-                <div className="text-[12px] text-slate-600 font-medium">{analysisStage}</div>
+                <div className="text-[12px] text-slate-300 font-medium">{analysisStage}</div>
               </div>
-              <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+              <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
                 <div className="h-full transition-all duration-500" style={{ width: `${analysisPercent}%`, background: POINT }} />
               </div>
-              <div className="text-[10px] text-slate-400 mt-2 text-center">{analysisPercent}%</div>
+              <div className="text-[10px] text-slate-500 mt-2 text-center">{analysisPercent}%</div>
             </div>
           )}
           {report && (
@@ -507,11 +672,11 @@ function StudioView() {
 // ─── 공용 UI 컴포넌트 ────────────────────────────────────
 function PanelHeader({ icon, title, subtitle }) {
   return (
-    <header className="h-12 flex items-center px-5 border-b border-slate-200 bg-white shrink-0">
+    <header className="h-12 flex items-center px-5 border-b border-white/10 bg-[#0d0d14] shrink-0">
       <div className="flex items-center gap-2 text-[12px] flex-1">
         <span className="text-[#A29BFE]">{icon}</span>
-        <span className="font-bold text-slate-800">{title}</span>
-        {subtitle && <span className="text-slate-400">· {subtitle}</span>}
+        <span className="font-bold text-slate-200">{title}</span>
+        {subtitle && <span className="text-slate-500">· {subtitle}</span>}
       </div>
     </header>
   );
@@ -524,7 +689,7 @@ function SelectField({ label, value, onChange, options }) {
     <div>
       <Label>{label}</Label>
       <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-[12px] text-slate-800 outline-none focus:border-[#A29BFE]/50">
+        className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-[12px] text-slate-200 outline-none focus:border-[#A29BFE]/50">
         {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
       </select>
     </div>
@@ -560,8 +725,8 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
       <section>
         <SectionTitle>AI 컨셉 제안</SectionTitle>
         {report.directionSummary && (
-          <div className="bg-[#A29BFE]/5 border border-[#A29BFE]/20 rounded-lg p-3 mb-3">
-            <div className="text-[11px] leading-relaxed text-slate-800 whitespace-pre-wrap">{report.directionSummary}</div>
+          <div className="bg-[#A29BFE]/10 border border-[#A29BFE]/20 rounded-lg p-3 mb-3">
+            <div className="text-[11px] leading-relaxed text-slate-200 whitespace-pre-wrap">{report.directionSummary}</div>
           </div>
         )}
         {Array.isArray(report.keywords) && report.keywords.length > 0 && (
@@ -569,7 +734,7 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
             <div className="text-[10px] font-bold text-slate-500 mb-1.5">핵심 키워드</div>
             <div className="flex flex-wrap gap-1.5">
               {report.keywords.map((k, i) => (
-                <span key={i} className="px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-md text-[10px] text-slate-600">#{k}</span>
+                <span key={i} className="px-2.5 py-1 bg-white/[0.04] border border-white/10 rounded-md text-[10px] text-slate-300">#{k}</span>
               ))}
             </div>
           </div>
@@ -581,9 +746,9 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
             </div>
             <div className="flex flex-wrap gap-1.5">
               {report.colorPalette.map((c, i) => (
-                <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-200 rounded-md">
-                  <span className="w-4 h-4 rounded border border-slate-200 shrink-0" style={{ background: c.hex }} />
-                  <span className="text-[9px] text-slate-500 font-mono">{c.hex}</span>
+                <div key={i} className="flex items-center gap-1.5 px-2 py-1 bg-white/[0.03] border border-white/10 rounded-md">
+                  <span className="w-4 h-4 rounded border border-white/10 shrink-0" style={{ background: c.hex }} />
+                  <span className="text-[9px] text-slate-400 font-mono">{c.hex}</span>
                   {c.name && <span className="text-[9px] text-slate-500">· {c.name}</span>}
                 </div>
               ))}
@@ -593,7 +758,7 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
         {report.typography && (
           <div>
             <div className="text-[10px] font-bold text-slate-500 mb-1.5">타이포 방향</div>
-            <div className="bg-white border border-slate-200 rounded-lg p-2.5 space-y-1">
+            <div className="bg-white/[0.03] border border-white/10 rounded-lg p-2.5 space-y-1">
               <KV small label="weight" value={report.typography.weight} />
               <KV small label="style" value={report.typography.style} />
               <KV small label="mood" value={report.typography.mood} />
@@ -637,7 +802,7 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
       )}
 
       {!imageFiles.length && (
-        <div className="text-[10px] text-slate-400 px-1">
+        <div className="text-[10px] text-slate-500 px-1">
           <AlertCircle size={11} className="inline mr-1" />
           레퍼런스 이미지가 없으면 다음 앱에 전달되는 image 가 비어있습니다.
         </div>
@@ -653,8 +818,8 @@ function KV({ label, value, small }) {
   if (!value) return null;
   return (
     <div className={`flex items-start gap-2 ${small ? "text-[10px]" : "text-[11px]"}`}>
-      <div className={`${small ? "w-14" : "w-16"} shrink-0 text-slate-400`}>{label}</div>
-      <div className="flex-1 text-slate-800 leading-relaxed break-words">{value}</div>
+      <div className={`${small ? "w-14" : "w-16"} shrink-0 text-slate-500`}>{label}</div>
+      <div className="flex-1 text-slate-200 leading-relaxed break-words">{value}</div>
     </div>
   );
 }
@@ -662,7 +827,7 @@ function KV({ label, value, small }) {
 function WorkflowArrow({ dim }) {
   return (
     <div className={`flex justify-center ${dim ? "opacity-30" : ""}`}>
-      <ChevronRight size={14} className="text-slate-400 rotate-90" />
+      <ChevronRight size={14} className="text-slate-600 rotate-90" />
     </div>
   );
 }
@@ -670,7 +835,7 @@ function WorkflowArrow({ dim }) {
 function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }) {
   const m = FLOW_APPS[appId] || {};
   return (
-    <div className={`bg-white border rounded-lg p-3 ${disabled && !optional ? "border-slate-200 opacity-50" : "border-slate-200"}`}>
+    <div className={`bg-white/[0.03] border rounded-lg p-3 ${disabled && !optional ? "border-white/10 opacity-50" : "border-white/10"}`}>
       <div className="flex items-center gap-2.5">
         <div className="w-7 h-7 flex items-center justify-center rounded-md text-[#0a0a0f]" style={{ background: m.color }}>
           {m.icon}
@@ -678,9 +843,9 @@ function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-[9px] font-mono text-slate-500">STEP {n}</span>
-            <span className="text-[12px] font-bold text-slate-800">{m.label}</span>
+            <span className="text-[12px] font-bold text-slate-200">{m.label}</span>
             {optional && (
-              <span className="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-slate-300 text-slate-600 uppercase">선택</span>
+              <span className="text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-white/10 text-slate-400 uppercase">선택</span>
             )}
           </div>
           <div className="text-[10px] text-slate-500">{m.desc}</div>
@@ -689,8 +854,8 @@ function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }
           <button onClick={onToggle}
             className={`px-2.5 py-1 rounded text-[10px] font-bold border transition-colors ${
               included
-                ? "bg-[#A29BFE]/15 border-[#A29BFE]/40 text-[#5b4bcc]"
-                : "border-slate-300 text-slate-500 hover:text-slate-600"
+                ? "bg-[#A29BFE]/15 border-[#A29BFE]/40 text-[#A29BFE]"
+                : "border-white/15 text-slate-400 hover:text-slate-200"
             }`}>
             {included ? <><Check size={10} className="inline mr-0.5" />포함</> : "포함하기"}
           </button>
@@ -700,7 +865,7 @@ function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }
           disabled={disabled}
           className={`px-2.5 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
             disabled
-              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+              ? "bg-white/5 text-slate-600 cursor-not-allowed"
               : "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
           }`}
         >
@@ -714,12 +879,12 @@ function WorkflowStep({ n, appId, goTo, disabled, optional, onToggle, included }
 function DirectStep({ appId, goTo, disabled }) {
   const m = FLOW_APPS[appId] || {};
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3 flex items-center gap-2.5">
+    <div className="bg-white/[0.03] border border-white/10 rounded-lg p-3 flex items-center gap-2.5">
       <div className="w-7 h-7 flex items-center justify-center rounded-md text-[#0a0a0f]" style={{ background: m.color }}>
         {m.icon}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="text-[12px] font-bold text-slate-800">{m.label}</div>
+        <div className="text-[12px] font-bold text-slate-200">{m.label}</div>
         <div className="text-[10px] text-slate-500">{m.desc}</div>
       </div>
       <button
@@ -727,7 +892,7 @@ function DirectStep({ appId, goTo, disabled }) {
         disabled={disabled}
         className={`px-3 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 transition-colors ${
           disabled
-            ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+            ? "bg-white/5 text-slate-600 cursor-not-allowed"
             : "bg-[#A29BFE] text-[#0a0a0f] hover:bg-[#b3acff]"
         }`}
       >

@@ -1,7 +1,7 @@
 // 사이드바 상단 타이틀 + 뷰 전환 탭 (Component / Micro-Edit).
 // 원본 index.jsx 의 사이드바 헤더 블록을 추출.
 
-import { LayoutTemplate, Sparkles, PenTool } from 'lucide-react';
+import { LayoutTemplate, Sparkles, Sun } from 'lucide-react';
 
 export default function ForgeHeader({ currentView, setCurrentView }) {
   const tab = (id, Icon, label) => (
@@ -19,7 +19,7 @@ export default function ForgeHeader({ currentView, setCurrentView }) {
       <div className="flex bg-[#111111] p-1.5 rounded-lg border border-zinc-800/50 w-full shadow-inner gap-1">
         {tab('creation',   LayoutTemplate, '리스킨')}
         {tab('micro-edit', Sparkles,       '리디자인')}
-        {tab('vector',     PenTool,        '벡터 생성')}
+        {tab('lightfx',    Sun,            '광원·빛효과')}
       </div>
     </div>
   );

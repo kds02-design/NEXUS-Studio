@@ -5,7 +5,7 @@ import {
   onSnapshot, getDocs, query, orderBy, serverTimestamp,
 } from "firebase/firestore";
 import { db, appId } from "../../../lib/firebase";
-import { uploadBase64 } from "../../../lib/storage";
+import { uploadBase64, uploadImageFile } from "../../../lib/storage";
 import { cropImageToDataUrl } from "./cropper";
 
 const assetsColRef = () => collection(db, "artifacts", appId, "public", "data", "assets");
@@ -64,6 +64,43 @@ export async function createAsset({
   const ts = Date.now();
   const path = `users/${uid}/assets/${category}-${ts}.jpg`;
   const url = await uploadBase64(dataUrl, path);
+  if (!url) throw new Error("Cloudinary 업로드 실패");
+
+  const docData = {
+    imageUrl: url,
+    width: Number(width) || 0,
+    height: Number(height) || 0,
+    category,
+    title: title || "",
+    tags: Array.isArray(tags) ? tags : [],
+    source: source || null,
+    liked: 0,
+    isTemp: !!isTemp,
+    ownerUid: uid,
+    createdAt: serverTimestamp(),
+  };
+  const ref = await addDoc(assetsColRef(), docData);
+  return { id: ref.id, ...docData };
+}
+
+// 원본 이미지 파일(File)을 직접 등록 — 영역 추출이 아닌 사용자 업로드 경로.
+// uploadImageFile 로 원본 픽셀(투명 PNG 등)을 보존한다. 기본 isTemp:false(업로드 완료).
+export async function createAssetFromFile({
+  uid,
+  file,
+  width,
+  height,
+  category,
+  source = { app: "asset-library" },
+  title = "",
+  tags = [],
+  isTemp = false,
+}) {
+  if (!uid) throw new Error("로그인이 필요합니다.");
+  if (!file) throw new Error("이미지 파일이 없습니다.");
+  if (!category) throw new Error("카테고리를 선택하세요.");
+
+  const url = await uploadImageFile(file);
   if (!url) throw new Error("Cloudinary 업로드 실패");
 
   const docData = {

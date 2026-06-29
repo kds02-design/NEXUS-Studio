@@ -44,6 +44,37 @@ const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
 const clampZoom = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
+// 리샘플 다운로드 — 프로모션의 작은 프레임 / 블릿 소재용 고정 가로폭 프리셋.
+const RESAMPLE_PRESETS = [200, 300, 400, 600];
+const RESAMPLE_DEFAULT = 400;
+
+// 결과 PNG(투명)을 지정 가로폭으로 리샘플 → 투명 PNG blob. 세로는 비율 유지.
+// 고품질 다운스케일을 위해 imageSmoothingQuality:'high'. 트림된 컷아웃을 그대로 받으면
+// 가로폭만 맞춘 일정 크기 소재가 나온다.
+async function resampleToWidth(srcUrl, targetW) {
+  const img = await new Promise((resolve, reject) => {
+    const im = new Image();
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error('결과 이미지를 불러올 수 없습니다.'));
+    im.src = srcUrl;
+  });
+  const natW = img.naturalWidth || img.width;
+  const natH = img.naturalHeight || img.height;
+  const w = Math.max(1, Math.round(targetW));
+  const h = Math.max(1, Math.round((natH / natW) * w));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.clearRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG 변환 실패'))), 'image/png');
+  });
+  return { blob, width: w, height: h };
+}
+
 // Remove.bg API — base64 → POST /v1.0/removebg → PNG blob (alpha)
 async function removeBgWithApi(file, apiKey) {
   const base64 = await new Promise((resolve, reject) => {
@@ -97,6 +128,17 @@ function imageToData(img) {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(img, 0, 0, w, h);
   return { data: ctx.getImageData(0, 0, w, h), w, h };
+}
+
+// 헥스(#rrggbb / #rgb) → [r,g,b]. 잘못된 값이면 null. (송신 앱이 지정한 키 컬러 변환용)
+function hexToRgb(hex) {
+  if (typeof hex !== 'string') return null;
+  const h = hex.replace('#', '').trim();
+  const n = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  if (n.length !== 6) return null;
+  const int = parseInt(n, 16);
+  if (Number.isNaN(int)) return null;
+  return [(int >> 16) & 255, (int >> 8) & 255, int & 255];
 }
 
 // 테두리 링을 샘플링해 가장 빈번한 색을 배경으로 추정 (글자가 모서리에 닿아도 견고).
@@ -274,6 +316,10 @@ export default function MaskForgeApp() {
   const [bgPreset, setBgPreset] = useState('checker');
   const [customBg, setCustomBg] = useState('#3366ff');
 
+  // 리샘플 다운로드 가로폭 (프로모션 작은 프레임 / 블릿 소재용).
+  const [resampleWidth, setResampleWidth] = useState(RESAMPLE_DEFAULT);
+  const [resampling, setResampling] = useState(false);
+
   // 결과 확대/패닝 — 컷아웃 엣지를 픽셀 단위로 검수. 휠(커서 기준) + 드래그 이동.
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -413,6 +459,12 @@ export default function MaskForgeApp() {
         const ext = (blob.type && blob.type.split('/')[1]) || 'png';
         const file = new File([blob], `incoming_${payload.timestamp}.${ext}`, { type: blob.type || 'image/png' });
         loadFile(file);
+        // 송신 앱이 방식/키 컬러를 지정하면 반영 — 루비콘 포지: 로컬 색상 키(luma)로 진입하고
+        // 생성 배경색을 키 컬러로 미리 지정해 컨트롤 가능한 투명 추출이 즉시 시작되게 한다.
+        // (loadFile 이 bgColor 를 null 로 리셋하므로 그 뒤에 지정해야 자동 감지 대신 지정색이 쓰임)
+        const p = payload.params || {};
+        if (p.method === METHOD_LUMA || p.method === METHOD_API) setMethod(p.method);
+        if (p.keyColor) { const rgb = hexToRgb(p.keyColor); if (rgb) setBgColor(rgb); }
         try { clearPayload(); } catch { /* ignore */ }
       } catch (e) {
         if (!cancelled) {
@@ -570,6 +622,30 @@ export default function MaskForgeApp() {
     a.click();
     document.body.removeChild(a);
   }, [resultUrl]);
+
+  // 결과를 지정 가로폭으로 리샘플해 투명 PNG 다운로드.
+  const handleResampleDownload = useCallback(async () => {
+    if (!resultUrl) return;
+    const targetW = Math.min(4096, Math.max(16, Math.round(Number(resampleWidth) || RESAMPLE_DEFAULT)));
+    setResampling(true);
+    try {
+      const { blob, width, height } = await resampleToWidth(resultUrl, targetW);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bg_removed_${width}x${height}_${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatusMsg(`리샘플 다운로드 완료 (${width}×${height})`, 'done');
+    } catch (e) {
+      console.error('[MaskForge] resample download failed', e);
+      setStatusMsg(`리샘플 실패: ${e.message || e}`, 'error');
+    } finally {
+      setResampling(false);
+    }
+  }, [resultUrl, resampleWidth]);
 
   // 결과(투명 PNG)를 NEXUS Preview 로 타이틀로 전송.
   // blob URL 은 이 앱이 언마운트되면 revoke 되므로, 자가완결 dataURL 로 변환해 전달.
@@ -1026,6 +1102,50 @@ export default function MaskForgeApp() {
                 >
                   <Send className="w-3.5 h-3.5" /> NEXUS Preview로 보내기
                 </button>
+              </div>
+
+              {/* 리샘플 다운로드 — 프로모션 작은 프레임 / 블릿 소재용 고정 가로폭 */}
+              <div className="mt-5 pt-5 border-t border-zinc-800">
+                <div className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-1">고정 크기 리샘플</div>
+                <p className="text-[11px] text-zinc-500 mb-3">프로모션 작은 프레임 · 블릿용. 가로폭만 맞추고 세로는 비율 유지 (투명 PNG)</p>
+                <div className="flex justify-center items-center gap-2.5 flex-wrap">
+                  <div className="inline-flex items-center gap-1 bg-black/40 border border-zinc-800 rounded-lg p-1">
+                    {RESAMPLE_PRESETS.map((w) => {
+                      const active = Number(resampleWidth) === w;
+                      return (
+                        <button
+                          key={w}
+                          onClick={() => setResampleWidth(w)}
+                          className={`text-[11px] font-bold tracking-wider px-3 py-1.5 rounded-md transition-colors ${active ? 'text-black' : 'text-zinc-400 hover:text-white'}`}
+                          style={active ? { background: ACCENT } : undefined}
+                        >
+                          {w}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="inline-flex items-center gap-1.5 border border-zinc-800 bg-black/40 rounded-lg px-3 py-1.5">
+                    <input
+                      type="number"
+                      min={16}
+                      max={4096}
+                      value={resampleWidth}
+                      onChange={(e) => setResampleWidth(e.target.value)}
+                      className="w-16 bg-transparent border-none outline-none text-[12px] font-mono text-zinc-100 text-right tabular-nums"
+                    />
+                    <span className="text-[10px] font-bold text-zinc-500">px</span>
+                  </div>
+                  <button
+                    onClick={handleResampleDownload}
+                    disabled={resampling}
+                    className="text-[11px] font-bold tracking-wider px-7 py-3 rounded-lg text-black inline-flex items-center gap-2 transition-all active:scale-95 hover:brightness-110 disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: ACCENT }}
+                  >
+                    {resampling
+                      ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 리샘플 중…</>
+                      : <><Download className="w-3.5 h-3.5" /> 리샘플 다운로드</>}
+                  </button>
+                </div>
               </div>
             </div>
           )}

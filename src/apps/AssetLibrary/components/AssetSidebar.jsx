@@ -1,7 +1,7 @@
 // PromptArc ArcSidebar 패턴 — 카테고리 nav.
 import { ASSET_NAV_ITEMS } from "../constants/categories";
 
-export default function AssetSidebar({ isSidebarCollapsed, handleSidebarClick, category, setCategory }) {
+export default function AssetSidebar({ isSidebarCollapsed, handleSidebarClick, category, setCategory, counts = {} }) {
   return (
     <aside
       onClick={handleSidebarClick}
@@ -17,6 +17,7 @@ export default function AssetSidebar({ isSidebarCollapsed, handleSidebarClick, c
             return isSidebarCollapsed ? null : <div key={`div-${idx}`} className="h-px bg-white/5 my-1 mx-3" />;
           }
           const active = category === it.id;
+          const cnt = counts[it.id];
           return (
             <button
               key={it.id}
@@ -30,7 +31,17 @@ export default function AssetSidebar({ isSidebarCollapsed, handleSidebarClick, c
                 {it.icon}
               </div>
               {!isSidebarCollapsed && (
-                <span className={`text-xs truncate min-w-0 ${active ? "font-bold" : ""}`}>{it.name}</span>
+                <>
+                  <span className={`text-xs truncate min-w-0 ${active ? "font-bold" : ""}`}>{it.name}</span>
+                  {cnt != null && (
+                    <span
+                      className="ml-auto pl-2 text-[10px] font-mono tabular-nums shrink-0"
+                      style={{ color: active && it.color ? it.color : undefined }}
+                    >
+                      {cnt}
+                    </span>
+                  )}
+                </>
               )}
             </button>
           );
