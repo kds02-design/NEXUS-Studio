@@ -32,10 +32,10 @@ function BreezeViews() {
                 flex 안의 overflow 가 자식 크기로 늘어나는 문제 방지(min-h-0 + 2-layer).
                 pr-2 — 스크롤바가 안쪽에 들어와 박스 우측 border 가 가려지는 것 방지.
                 마지막에 명시적 spacer(div h-16) — 스크롤 끝까지 내려도 박스 bottom border 가 viewport 와 맞물리지 않게. */}
-            <aside className="w-[360px] shrink-0 border-r bg-[#111111] border-zinc-800/80 flex flex-col min-h-0">
+            <aside className="w-[clamp(320px,27vw,380px)] shrink-0 border-r bg-[#111111] border-zinc-800/80 flex flex-col min-h-0">
               <div className="flex-1 overflow-y-auto pl-4 pr-2 py-4 space-y-3 custom-scrollbar">
-                <BreezeEffectGallery />
                 <BreezeHeader />
+                <BreezeEffectGallery />
                 <AdvancedToggle
                   open={advancedOpen}
                   onToggle={() => setAdvancedOpen(v => !v)}

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Menu, Lock, MoreHorizontal, Eye, EyeOff, Zap, ArrowRight } from "lucide-react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { Menu, Lock, MoreHorizontal, Eye, EyeOff, Zap, ArrowRight, Type, Sparkles, Scissors, Search, ChevronDown, LayoutTemplate, CircleHelp, X } from "lucide-react";
 import { APP_MAP, APP_REGISTRY } from "../config/apps";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
@@ -18,7 +18,6 @@ import NexusLogo from "./NexusLogo";
 // import ThemeToggle from "./ThemeToggle"; // 라이트 모드 미완성 — 임시 비활성화
 import UserAvatar from "./UserAvatar";
 import ProfilePopover from "./ProfilePopover";
-import DashboardHero from "./DashboardHero";
 import DashboardRecentPrompts from "./DashboardRecentPrompts";
 import IndexSearchBar from "./IndexSearchBar";
 import CommandPalette from "./CommandPalette";
@@ -44,6 +43,8 @@ import BannerCreatorApp from "../apps/BannerCreator";
 import NexusPreviewApp from "../apps/NexusPreview";
 import PromoSkinApp from "../apps/PromoSkin";
 import MaskForgeApp from "../apps/MaskForge";
+import ThemeForgeApp from "../apps/ThemeForge";
+import FrameForgeApp from "../apps/FrameForge";
 import VectorForgeApp from "../apps/VectorForge";
 import LumKeyApp from "../apps/LumKey";
 import FigmaL10nApp from "../apps/FigmaL10n";
@@ -51,6 +52,9 @@ import BriefStudioApp from "../apps/BriefStudio";
 import NexusAdminApp from "../apps/NexusAdmin";
 import PromptAuditApp from "../apps/PromptAudit";
 import PlaceholderApp from "../apps/PlaceholderApp";
+// recharts 를 메인 번들에서 분리 — 앱 진입 시에만 로드
+const DestinyObservatoryApp = lazy(() => import("../apps/DestinyObservatory"));
+const PetPersonaApp = lazy(() => import("../apps/PetPersona"));
 
 // 인덱스 스크롤 → Topbar 배경/블러 동적 계산.
 // 0px: 완전 투명 / 50px: 페이드인 시작 / 150px: 완전 불투명 + blur 16px.
@@ -69,12 +73,41 @@ function computeIndexTopbarStyle(scrollY, T, isLight) {
   };
 }
 
+const APP_GUIDES = {
+  explore: ["찾거나 업로드할 자료를 준비하세요.", "목록에서 한 항목을 선택해 내용을 확인하세요.", "필요한 결과만 저장하거나 다음 앱으로 보내세요."],
+  generate: ["만들고 싶은 내용이나 참고 이미지를 입력하세요.", "처음에는 추천값만 고르고 세부 설정은 나중에 여세요.", "강조된 생성 버튼을 누른 뒤 결과를 확인하세요."],
+  production: ["가공할 원본이나 작업 종류를 먼저 선택하세요.", "기본값으로 미리보기를 만든 뒤 필요한 항목만 조정하세요.", "오른쪽 또는 하단 결과에서 다운로드·전송하세요."],
+  admin: ["관리할 대상을 선택하세요.", "변경 범위와 영향을 먼저 확인하세요.", "저장 후 목록에서 반영 여부를 확인하세요."],
+  life: ["필요한 항목을 가볍게 입력하세요.", "실행 버튼을 누르고 결과를 확인하세요.", "결과는 복사해 공유할 수 있어요."],
+};
+
+function AppGuide({ app, T, onClose }) {
+  const steps = APP_GUIDES[app?.group] || APP_GUIDES.generate;
+  return (
+    <div style={{ position:"fixed", top:58, right:20, zIndex:1200, width:"min(360px, calc(100vw - 24px))", padding:16, borderRadius:14, background:T.surface, border:`1px solid ${T.border}`, boxShadow:"0 18px 50px rgba(0,0,0,.45)" }}>
+      <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
+        <div style={{ width:34, height:34, borderRadius:9, display:"grid", placeItems:"center", color:app.color, background:`${app.color}18`, flexShrink:0 }}><CircleHelp size={18}/></div>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontSize:13, fontWeight:800, color:T.text }}>{app.label} 처음 사용하기</div>
+          <div style={{ marginTop:4, fontSize:11, lineHeight:1.5, color:T.textMuted }}>{app.desc}</div>
+        </div>
+        <button onClick={onClose} aria-label="가이드 닫기" style={{ width:28, height:28, display:"grid", placeItems:"center", border:0, borderRadius:7, background:"transparent", color:T.textMuted, cursor:"pointer" }}><X size={14}/></button>
+      </div>
+      <div style={{ display:"grid", gap:8, marginTop:14 }}>
+        {steps.map((step, index) => <div key={step} style={{ display:"flex", gap:9, alignItems:"flex-start", padding:"9px 10px", borderRadius:9, background:T.card, border:`1px solid ${T.border}` }}><span style={{ width:19, height:19, borderRadius:99, display:"grid", placeItems:"center", flexShrink:0, fontSize:10, fontWeight:900, color:app.color, border:`1px solid ${app.color}66`, background:`${app.color}12` }}>{index + 1}</span><span style={{ fontSize:11, lineHeight:1.55, color:T.text }}>{step}</span></div>)}
+      </div>
+      <div style={{ marginTop:10, fontSize:10.5, color:T.textDim }}>기본값으로 먼저 결과를 만든 뒤 부족한 부분만 조정하면 가장 쉽습니다.</div>
+    </div>
+  );
+}
+
 function Topbar({ scrollY = 0, onOpenPalette }) {
   const { currentApp, setCurrentApp, isLight } = useGlobal();
   const T = useTheme();
   const { user, profile, grade, openLoginModal } = useAuth();
   const { remaining, cap, used } = useWeeklyCredits();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [guideAppId, setGuideAppId] = useState(null);
   const app = currentApp ? APP_MAP[currentApp] : null;
   const isIndex = !app;
 
@@ -142,6 +175,17 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
 
       {/* RIGHT: 등급·크레딧 — 두 영역을 하나의 pill 박스로 묶어 시각 단위화. */}
       <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        {!isIndex && (
+          <button
+            type="button"
+            onClick={() => setGuideAppId((id) => id === app.id ? null : app.id)}
+            aria-expanded={guideAppId === app.id}
+            title="처음 사용 가이드"
+            style={{ display:"inline-flex", alignItems:"center", gap:6, height:30, padding:"0 10px", borderRadius:8, border:`1px solid ${guideAppId === app.id ? `${app.color}66` : T.border}`, background:guideAppId === app.id ? `${app.color}16` : T.hoverBg, color:guideAppId === app.id ? app.color : T.textMuted, fontSize:10.5, fontWeight:700, cursor:"pointer" }}
+          >
+            <CircleHelp size={14}/> <span className="hidden sm:inline">처음 사용</span>
+          </button>
+        )}
         {user && grade && (() => {
           const gColor = GRADE_COLOR[grade] || T.accent;
           const low = remaining === 0;
@@ -219,6 +263,7 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
             로그인
           </button>
         )}
+        {!isIndex && guideAppId === app.id && <AppGuide app={app} T={T} onClose={() => setGuideAppId(null)} />}
       </div>
       <ProfilePopover open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
@@ -259,7 +304,7 @@ const readSelectedVersion = (app) => {
   return app.defaultVersion || app.versions[app.versions.length - 1].key;
 };
 
-function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false, groupAccent = null }) {
+function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false, groupAccent = null, compact = false }) {
   // groupAccent 가 있으면 아이콘 칩은 그 컬러로 (인덱스에서 그룹 단위 식별).
   // 없으면 기존 app.color (admin 그룹 / 다른 호출처 호환).
   const chipColor = groupAccent || app.color;
@@ -303,6 +348,39 @@ function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false, groupAccent = 
   // 라이트/다크 disabled 색상 — 라이트에선 더 옅은 회색이 자연스러움.
   const disabledBg     = isLight ? "#ECECEF"             : "#06060C";
   const disabledBorder = isLight ? "rgba(0,0,0,0.08)"    : "rgba(122,122,154,0.25)";
+  if (compact) {
+    const version = hasVersions ? app.versions.find(v => v.key === selectedVersion) : null;
+    return (
+      <div onClick={handleClick} style={{
+        display:"flex", alignItems:"center", gap:14, minHeight:68, padding:"12px 14px",
+        background:disabled ? disabledBg : T.surface,
+        border:`1px ${hiddenFromUsers && canToggleVisibility ? "dashed" : "solid"} ${disabled ? disabledBorder : T.border}`,
+        borderRadius:10, opacity:disabled ? .55 : 1, cursor:disabled ? "not-allowed" : "pointer",
+      }}>
+        <span style={{ width:38, height:38, borderRadius:9, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:`${chipColor}1f`, color:chipColor, fontSize:13, fontWeight:800 }}>
+          {app.abbr || cardAbbr(app.sub)}
+        </span>
+        <div style={{ minWidth:0, flex:1 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:4, flexWrap:"wrap" }}>
+            <strong style={{ fontSize:13, color:disabled ? T.textMuted : T.text }}>{app.label}</strong>
+            {app.beta && <span style={{ fontSize:8, color:T.textMuted, border:`1px solid ${T.border}`, borderRadius:4, padding:"1px 5px" }}>BETA</span>}
+            {version && <span style={{ fontSize:8, color:version.color || T.textMuted }}>{version.label}</span>}
+            {disabled && <span style={{ fontSize:8, color:T.textMuted }}>준비 중</span>}
+            {hiddenFromUsers && canToggleVisibility && <span style={{ fontSize:8, color:"#E17055" }}>사용자에게 숨김</span>}
+          </div>
+          <div style={{ fontSize:11, lineHeight:1.45, color:T.textMuted, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{app.desc}</div>
+        </div>
+        {canToggleVisibility && (
+          <button type="button" onClick={toggleVisibility} disabled={visBusy} title={hiddenFromUsers ? "사용자에게 공개" : "사용자에게 숨기기"} style={{ border:0, background:"transparent", color:hiddenFromUsers ? "#E17055" : T.textDim, cursor:"pointer", padding:7 }}>
+            {hiddenFromUsers ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        )}
+        <span style={{ display:"flex", alignItems:"center", gap:5, flexShrink:0, padding:"7px 10px", borderRadius:7, background:disabled ? T.hoverBg : `${chipColor}20`, color:disabled ? T.textMuted : chipColor, fontSize:10, fontWeight:800 }}>
+          {disabled ? "준비 중" : "시작"} {!disabled && <ArrowRight size={12} />}
+        </span>
+      </div>
+    );
+  }
   return (
     <div onClick={handleClick} onMouseEnter={() => !disabled && setHov(true)} onMouseLeave={() => setHov(false)}
       title={disabled ? "준비 중인 앱입니다" : (hiddenFromUsers && canToggleVisibility ? "일반 사용자에게는 숨겨진 앱 — 우측 [숨김] 뱃지를 눌러 공개로 전환" : (adminUnlocked ? "관리자 권한으로 활성화됨" : (hasVersions ? "버전 선택 후 카드를 눌러 실행" : undefined)))}
@@ -543,12 +621,56 @@ function AutomationMenu() {
   );
 }
 
+const BEGINNER_TASKS = [
+  { id:"nexus-preview", title:"프로모션 키비주얼 만들기", desc:"프로모션 KV의 배경, 캐릭터와 타이틀 배치를 한 화면에서 구성해요.", icon:LayoutTemplate, color:"#22B8CF" },
+  { id:"typecore-breeze", title:"멋진 글자 만들기", desc:"제목이나 로고 글자를 쉽고 재미있게 만들어요.", icon:Type, color:"#74B9FF" },
+  { id:"render-metrics", title:"이미지를 더 멋지게", desc:"평면 이미지에 빛과 재질 느낌을 더해요.", icon:Sparkles, color:"#00CEC9" },
+  { id:"mask-forge", title:"배경 지우기", desc:"사진에서 필요한 그림만 깔끔하게 남겨요.", icon:Scissors, color:"#FF3366" },
+  { id:"prompt-arc", title:"아이디어 찾아보기", desc:"다른 사람이 만든 프롬프트와 결과를 구경해요.", icon:Search, color:"#6C5CE7" },
+];
+
+function BeginnerStart({ onOpen }) {
+  const T = useTheme();
+  return (
+    <section style={{ padding:"0 40px", maxWidth:1200, margin:"0 auto 36px", width:"100%", boxSizing:"border-box" }}>
+      <div style={{ marginBottom:14 }}>
+        <h2 style={{ margin:0, fontSize:20, color:T.text, letterSpacing:"-0.02em" }}>무엇을 하고 싶나요?</h2>
+        <p style={{ margin:"6px 0 0", fontSize:12, color:T.textMuted }}>하고 싶은 일을 하나 골라 바로 시작해 보세요.</p>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))", gap:12 }}>
+        {BEGINNER_TASKS.map((task) => {
+          const Icon = task.icon;
+          return (
+            <button key={task.id} onClick={() => onOpen(task.id)} style={{
+              minHeight:132, padding:"20px", textAlign:"left", cursor:"pointer",
+              background:T.surface, border:`1px solid ${T.border}`, borderRadius:14,
+              color:T.text, fontFamily:"inherit", display:"flex", flexDirection:"column", alignItems:"flex-start",
+              transition:"transform .15s ease, border-color .15s ease, background .15s ease",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform="translateY(-2px)"; e.currentTarget.style.borderColor=`${task.color}88`; e.currentTarget.style.background=T.card; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform="none"; e.currentTarget.style.borderColor=T.border; e.currentTarget.style.background=T.surface; }}>
+              <span style={{ width:38, height:38, borderRadius:10, display:"flex", alignItems:"center", justifyContent:"center", background:`${task.color}1f`, color:task.color, marginBottom:14 }}>
+                <Icon size={20} />
+              </span>
+              <strong style={{ fontSize:15, marginBottom:6 }}>{task.title}</strong>
+              <span style={{ fontSize:11, lineHeight:1.55, color:T.textMuted }}>{task.desc}</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
   const { navigate } = useGlobal();
   const { isAdmin } = useAuth();
   const overrides = useAppVisibility();
   const T = useTheme();
   const scrollRef = useRef(null);
+  const [showAllApps, setShowAllApps] = useState(false);
+  const [toolGroup, setToolGroup] = useState("all");
+  const [toolQuery, setToolQuery] = useState("");
 
   // 인덱스로 복귀 시 마지막 스크롤 위치 복원. 컨텐츠 비동기 로드 대비해 RAF 두 번 보정.
   useEffect(() => {
@@ -571,33 +693,61 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
     explore:    "#22B8CF",
     generate:   "#A29BFE",
     production: "#FDCB6E",
+    life:       "#C9A24B",
   };
   const groups = [
     { key:"explore",    label:"허브 / 평가" },
     { key:"generate",   label:"프롬프트 생성" },
     { key:"production", label:"비주얼 생성" },
+    { key:"life",       label:"생활" },
     // 관리자 그룹은 isAdmin일 때만 렌더 (아래 filter)
     ...(isAdmin ? [{ key:"admin", label:"Admin", adminLabel: true }] : []),
   ];
   return (
     <div ref={scrollRef} style={{ width:"100%", height:"100%", overflowY:"auto" }} onScroll={onScroll}>
-      <DashboardHero />
       <IndexSearchBar />
+      <BeginnerStart onOpen={(id) => navigate(id)} />
       <DashboardRecentPrompts />
-      <AutomationMenu />
       <div style={{ padding:"0 40px 60px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box" }}>
+        <button onClick={() => setShowAllApps(v => !v)} aria-expanded={showAllApps} style={{
+          width:"100%", padding:"14px 18px", borderRadius:10, cursor:"pointer", fontFamily:"inherit",
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+          background:T.surface, border:`1px solid ${T.border}`, color:T.text, fontSize:13, fontWeight:700,
+          marginBottom:showAllApps ? 28 : 0,
+        }}>
+          <span>{showAllApps ? "도구 목록 접기" : "모든 도구 보기"}</span>
+          <ChevronDown size={17} style={{ color:T.textMuted, transform:showAllApps ? "rotate(180deg)" : "none", transition:"transform .2s" }} />
+        </button>
+      {showAllApps && <>
+      <div style={{ marginBottom:24 }}>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap", marginBottom:12 }}>
+          {[
+            ["all","전체"], ["explore","자료 찾기"], ["generate","글자·이미지 만들기"], ["production","다듬기·내보내기"], ["life","생활"],
+            ...(isAdmin ? [["admin","관리"]] : []),
+          ].map(([key,label]) => (
+            <button key={key} onClick={() => setToolGroup(key)} style={{ padding:"7px 12px", borderRadius:999, cursor:"pointer", fontFamily:"inherit", fontSize:11, fontWeight:700, color:toolGroup === key ? "#fff" : T.textMuted, background:toolGroup === key ? T.accent : T.hoverBg, border:`1px solid ${toolGroup === key ? T.accent : T.border}` }}>{label}</button>
+          ))}
+        </div>
+        <div style={{ position:"relative" }}>
+          <Search size={15} style={{ position:"absolute", left:14, top:"50%", transform:"translateY(-50%)", color:T.textDim }} />
+          <input value={toolQuery} onChange={(e) => setToolQuery(e.target.value)} placeholder="도구 이름이나 하고 싶은 일을 검색하세요" style={{ width:"100%", boxSizing:"border-box", padding:"11px 14px 11px 40px", borderRadius:9, background:T.surface, border:`1px solid ${T.border}`, color:T.text, outline:"none", fontFamily:"inherit", fontSize:12 }} />
+        </div>
+      </div>
       {groups.map(g => {
         // 숨김 처리된 앱(원래 adminOnly 또는 관리자 토글)은 비-관리자에게 보이지 않음.
         // 관리자에게는 보이되 '숨김' 표시 + 토글 가능.
-        const apps = APP_REGISTRY.filter(a => a.group === g.key && (!isAppHidden(a, overrides) || isAdmin));
+        if (toolGroup !== "all" && toolGroup !== g.key) return null;
+        const query = toolQuery.trim().toLowerCase();
+        const apps = APP_REGISTRY.filter(a => a.group === g.key && (!isAppHidden(a, overrides) || isAdmin))
+          .filter(a => !query || `${a.label} ${a.sub} ${a.desc}`.toLowerCase().includes(query));
         if (!apps.length) return null;
         // Admin 그룹은 패널 wrapper 없이 기존 미니멀 톤 유지.
         if (g.adminLabel) {
           return (
             <div key={g.key} style={{ marginBottom:40 }}>
               <div style={{ fontSize:10, fontWeight:700, letterSpacing:"0.14em", color: T.accent, textTransform:"uppercase", marginBottom:14, borderLeft:"2px solid rgba(108,92,231,0.15)", paddingLeft:10 }}>{g.label}</div>
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
-                {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} onOpen={(e) => {
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {apps.map(app => <AppCard compact key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} onOpen={(e) => {
                   if (e?.ctrlKey || e?.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
                   navigate(app.id);
                 }} />)}
@@ -623,8 +773,8 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
               }} />
               {g.label}
             </div>
-            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))", gap:12 }}>
-              {apps.map(app => <AppCard key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} groupAccent={accent} onOpen={(e) => {
+            <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+              {apps.map(app => <AppCard compact key={app.id} app={app} isAdmin={isAdmin} hiddenFromUsers={isAppHidden(app, overrides)} groupAccent={accent} onOpen={(e) => {
                 if (e?.ctrlKey || e?.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
                 navigate(app.id);
               }} />)}
@@ -632,6 +782,8 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
           </div>
         );
       })}
+      <AutomationMenu />
+      </>}
       </div>
     </div>
   );
@@ -648,6 +800,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "prompt-builder":     return <PromptBuilderApp />;
     case "prompt-builder-v2":  return <PromptBuilderV2App />;
     case "rubicon-forge":      return <RubiconForgeApp />;
+    case "frame-forge":        return <FrameForgeApp />;
     case "logo-forge":         return <LogoForgeApp />;
     case "design-eval":        return <DesignEvaluatorApp />;
     case "design-lexicon":     return <DesignLexiconApp />;
@@ -660,11 +813,14 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "nexus-preview":      return <NexusPreviewApp />;
     case "promo-skin":         return <PromoSkinApp />;
     case "mask-forge":         return <MaskForgeApp />;
+    case "theme-forge":        return <ThemeForgeApp />;
     case "vector-forge":       return <VectorForgeApp />;
     case "lumkey":             return <LumKeyApp />;
     case "figma-l10n":         return <FigmaL10nApp />;
     case "brief-studio":       return <BriefStudioApp version={version} />;
     case "prompt-audit":       return <PromptAuditApp />;
+    case "destiny-observatory": return <Suspense fallback={null}><DestinyObservatoryApp /></Suspense>;
+    case "pet-persona":        return <Suspense fallback={null}><PetPersonaApp /></Suspense>;
     case "nexus-admin":        return <NexusAdminApp />;
     default:                   return <PlaceholderApp appId={appId} />;
   }
@@ -712,6 +868,8 @@ export default function Shell() {
   // 앱 전환 시 선택된 버전을 해당 앱 기준으로 다시 계산.
   // scrollY 상태: 앱 진입 시 0, 인덱스 복귀 시 보관된 위치로 복원 (Topbar 투명도 즉시 일치).
   useEffect(() => {
+    // 앱 전환이라는 외부 내비게이션 상태에 맞춰 버전/스크롤 UI를 동기화한다.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedVersionRaw(readSelectedVersion(app));
     setScrollY(currentApp ? 0 : indexScrollYRef.current);
   }, [currentApp]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -743,7 +901,21 @@ export default function Shell() {
   return (
     <div style={{ height:"100vh", background:T.bg, color:T.text, fontFamily:"'Noto Sans KR', sans-serif", display:"flex", flexDirection:"column", overflow:"hidden" }}>
       {/* 폰트 link 는 index.html <head> 에 위치 — CSS 파싱 대기 없이 즉시 다운로드 시작. */}
-      <style>{`* { box-sizing:border-box; } @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)} } ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:${T.border};border-radius:2px}`}</style>
+      <style>{`
+        * { box-sizing:border-box; }
+        @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)} }
+        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar-track{background:transparent}
+        ::-webkit-scrollbar-thumb{background:${T.border};border-radius:2px}
+        :where(button, a, input, textarea, select, [role="button"]):focus-visible {
+          outline:2px solid #22B8CF !important;
+          outline-offset:2px !important;
+        }
+        :where(button, [role="button"]):disabled { cursor:not-allowed; }
+        @media (prefers-reduced-motion:reduce) {
+          *, *::before, *::after { scroll-behavior:auto !important; animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; }
+        }
+      `}</style>
       {/* 폰트 프리로드 — Teko 5개 가중치를 각각 span 으로 명시해 Shell 마운트 시점에
           전 가중치 다운로드 trigger. lazy 로 로드되는 서브앱들이 도착할 때면 폰트 준비 완료. */}
       <div aria-hidden="true" style={{
@@ -768,6 +940,8 @@ export default function Shell() {
         <VersionSubHeader versions={app.versions} selectedVersion={selectedVersion} onSelect={setSelectedVersion} />
       )}
       <div style={{ flex:1, overflow:"hidden", paddingTop: innerPaddingTop + subHeaderHeight, minHeight:0 }}>
+        {/* 인덱스 재마운트 시 직전 스크롤 위치를 초기값으로 한 번 전달한다. */}
+        {/* eslint-disable-next-line react-hooks/refs */}
         {currentApp ? <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} /> : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={indexScrollYRef.current}/>}
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />

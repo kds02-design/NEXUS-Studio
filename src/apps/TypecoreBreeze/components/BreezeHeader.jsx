@@ -1,6 +1,7 @@
 // TypecoreBreeze 의 Creation 뷰 좌측 상단 — 초보자 5분 온보딩 패턴.
 // TypecoreSovereign 의 StepCard / FRIENDLY 패턴을 차용해 ① 텍스트 → ② 분위기 → ③ 레퍼런스 순서로 단순화.
 import { ChevronDown, Star, MessageSquare, Wand2 as Wand2Icon, Loader2, Image as ImageIcon, X, ScanLine, Type, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { directorPersonas, sliderDesc } from '../constants/categories.jsx';
 import { Tooltip } from './ui.jsx';
@@ -17,6 +18,7 @@ const FRIENDLY = {
 };
 
 export default function BreezeHeader() {
+  const [referenceOpen, setReferenceOpen] = useState(false);
   const {
     aiPersona, setAiPersona, personaDropdownOpen, setPersonaDropdownOpen,
     selectedCategory,
@@ -119,8 +121,12 @@ export default function BreezeHeader() {
         </div>
       </StepCard>
 
-      {/* Step 3 — 레퍼런스 스타일 (선택) */}
-      <StepCard step="3" accent={ACCENT} title={FRIENDLY.styleRef.label} hint={FRIENDLY.styleRef.hint} pro={FRIENDLY.styleRef.pro}>
+      {/* 선택 기능은 기본 접힘 — 처음부터 업로드 영역으로 사용자를 압도하지 않음. */}
+      <button onClick={() => setReferenceOpen((value) => !value)} className="w-full flex items-center justify-between rounded-lg border border-zinc-800 bg-[#121212] px-3 py-2.5 text-left">
+        <span><span className="text-[10px] font-bold text-zinc-300">레퍼런스 이미지 추가</span><span className="ml-2 text-[9px] text-zinc-600">선택 사항</span></span>
+        <ChevronDown className={`w-3.5 h-3.5 text-zinc-500 transition-transform ${referenceOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {referenceOpen && <StepCard step="+" accent={ACCENT} title={FRIENDLY.styleRef.label} hint={FRIENDLY.styleRef.hint} pro={FRIENDLY.styleRef.pro}>
         <div
           onDragOver={handleStyleDragOver}
           onDragLeave={handleStyleDragLeave}
@@ -147,7 +153,7 @@ export default function BreezeHeader() {
           )}
           {!styleImage && <input type="file" accept="image/*" onChange={handleStyleImageUpload} className="absolute inset-0 opacity-0 cursor-pointer" />}
         </div>
-      </StepCard>
+      </StepCard>}
     </div>
   );
 }

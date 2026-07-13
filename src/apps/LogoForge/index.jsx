@@ -250,6 +250,7 @@ export default function LogoForge() {
   const [analyzing, setAnalyzing] = useState(false);
   const [flash, setFlash] = useState("");
   const [analyzeErr, setAnalyzeErr] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const fileRef = useRef(null);
 
   const setState = (patch) => setStateRaw((s) => ({ ...s, ...patch }));
@@ -336,7 +337,7 @@ export default function LogoForge() {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", background: rootBg, color: rootText, fontFamily: "'Noto Sans KR', sans-serif" }}>
       {/* 3-PANEL BODY */}
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "320px 1fr 420px", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: showAdvanced ? "320px minmax(320px, 1fr) 420px" : "minmax(300px, 420px) minmax(420px, 1fr)", overflow: "hidden" }}>
         {/* ─── LEFT: 기본 설정 ─── */}
         <aside style={{ borderRight: `1px solid ${T.border}`, overflowY: "auto", padding: 22, background: T.surface }}>
           <Section title="1. 브랜드명" accent>
@@ -367,10 +368,14 @@ export default function LogoForge() {
           <Section title="5. 분위기/톤">
             <ChipGroup options={MOODS} value={state.mood} onChange={(v) => setState({ mood: v })} />
           </Section>
+          <button onClick={() => setShowAdvanced((open) => !open)} aria-expanded={showAdvanced}
+            style={{ width: "100%", padding: "11px 13px", borderRadius: 9, border: `1px solid ${T.border}`, background: showAdvanced ? `${T.accent}18` : T.card, color: showAdvanced ? T.accent : T.textMuted, fontSize: 12, fontWeight: 800, cursor: "pointer" }}>
+            {showAdvanced ? "세부 옵션 접기 −" : "세부 옵션 열기 +"}
+          </button>
         </aside>
 
         {/* ─── CENTER: 세부 옵션 ─── */}
-        <main style={{ overflowY: "auto", padding: 24, background: T.bg }}>
+        {showAdvanced && <main style={{ overflowY: "auto", padding: 24, background: T.bg }}>
           <Section title="6. 컬러 방향">
             <ChipGroup options={COLOR_MODES} value={state.colorMode} onChange={(v) => setState({ colorMode: v })} columns={4} />
             <input
@@ -451,7 +456,7 @@ export default function LogoForge() {
               </div>
             )}
           </Section>
-        </main>
+        </main>}
 
         {/* ─── RIGHT: 프롬프트 미리보기 ─── */}
         <aside style={{ borderLeft: `1px solid ${T.border}`, display: "flex", flexDirection: "column", background: T.surface }}>

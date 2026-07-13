@@ -14,6 +14,18 @@ import {
   getSliderText,
 } from '../constants/utils.js';
 
+async function readGeminiText(response) {
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json())?.error?.message || ''; } catch { /* noop */ }
+    throw new Error(`Gemini 요청 실패 (${response.status})${detail ? `: ${detail}` : ''}`);
+  }
+  const data = await response.json();
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (typeof text !== 'string' || !text.trim()) throw new Error('Gemini가 빈 응답을 반환했습니다.');
+  return text.trim();
+}
+
 export function useSovereignPromptCurrent({ apiKey }) {
   // 1. Context & Global States
   const { ensureCanGenerate, modal: usageModal } = useUsageGate();
@@ -52,6 +64,7 @@ export function useSovereignPromptCurrent({ apiKey }) {
     core_relic:    { deformationDamage: 'Damage_Erosion', strokeTexture: 'Tex_Subtle', letterConnection: 'Conn_Indep' },
     core_glyph:    { letterConnection: 'Conn_Full', logoDegree: 'Logo_Emblem', kerning: 'Kern_Tight' },
     core_kinetic:  { kineticVelocity: 'Vel_Swift', slantAngle: 'Slant_Forward', strokeExtension: 'Ext_Razor' },
+    core_cinema:   { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif', strokeSharpness: 'Sharp_Crisp', kerning: 'Kern_Loose', strokeTexture: 'Tex_Subtle' },
   };
   const handleCoreArchetypeChange = (id) => {
     setCoreArchetype(id);
@@ -70,29 +83,31 @@ export function useSovereignPromptCurrent({ apiKey }) {
     if (mods.strokeExtension)   setStrokeExtension(mods.strokeExtension);
   };
 
-  // v2 sidebar 호환 — "타입 프리셋" (MMO 스타일).
-  // 프리셋 선택 시 stemWeight/terminalStyle/sharpness/kinetic/damage/proportion 등 다운스트림 옵션을 자동 세팅한다.
-  // 매핑은 v2 의 handleScriptPresetChange 를 current 가 보유한 옵션 ID 에 맞춰 재구성.
-  //   (없는 값: Tex_Hologram → Tex_Clean, Vel_Warp → Vel_Swift, P_Slim → P_Condensed 로 대체)
-  const [scriptType, setScriptType] = useState('Gen_Original');
+  // "글자 모양 프리셋" — 결과물 형태 기준 (게임별 구분에서 개편, staticOptions.shapePresets 와 id 동기).
+  // 프리셋 선택 시 획/마감/동세 등 다운스트림 옵션을 한 번에 세팅하고,
+  // 선택된 프리셋의 en 토큰은 buildPromptIR 의 shapeStyleBlock 으로 프롬프트 본문에 직접 주입된다
+  // (블랙레터처럼 옵션 조합만으로 표현이 안 되는 스타일이 실제 출력에 반영되게 하는 장치).
+  const [scriptType, setScriptType] = useState('');
   const SCRIPT_PRESETS = {
-    Gen_Original:   { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Serif',  strokeTexture: 'Tex_Scorched', deformationDamage: 'Damage_Erosion' },
-    Gen_Fantasy:    { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',  strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Static' },
-    Lineage_M:      { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Chisel', strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
-    Lineage_2M:     { stemWeight: 'Stem_Light', terminalStyle: 'Term_Thorn',  strokeSharpness: 'Sharp_Razor', charProportion: 'P_Condensed' },
-    Lineage_W:      { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Blade',  deformationDamage: 'Damage_Erosion', slicingIntensity: 'Slic_Partial' },
-    Aion_Original:  { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Round',  kineticVelocity: 'Vel_Swift',   charProportion: 'P_Condensed' },
-    Aion_2:         { stemWeight: 'Stem_Light', terminalStyle: 'Term_Blade',  kineticVelocity: 'Vel_Swift',   charProportion: 'P_Condensed', strokeTexture: 'Tex_Clean' },
-    BNS:            { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Blade',  strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Swift',  slantAngle: 'Slant_Forward' },
-    Throne_Liberty: { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',  strokeSharpness: 'Sharp_Crisp', charProportion: 'P_Std',       kineticVelocity: 'Vel_Static' },
-    MMO_Saviors:    { stemWeight: 'Stem_Light', terminalStyle: 'Term_Blade',  strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Static', charProportion: 'P_Condensed' },
-    MMO_Antharas:   { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Thorn',  strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
-    MMO_Aden:       { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Chisel', strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Static', charWidth: 'Wide' },
+    Shape_Clean:       { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Clean',     strokeSharpness: 'Sharp_Std',   kineticVelocity: 'Vel_Static',   slantAngle: 'Slant_0', charProportion: 'P_Std', strokeTexture: 'Tex_Clean' },
+    Shape_Massive:     { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Slab',      strokeSharpness: 'Sharp_Std',   kineticVelocity: 'Vel_Static',   charWidth: 'Wide' },
+    Shape_Blade:       { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Blade',     strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
+    Shape_Thorn:       { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Thorn',     strokeSharpness: 'Sharp_Razor', charProportion: 'P_Condensed' },
+    Shape_Elegant:     { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',     strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Static' },
+    Shape_Round:       { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Round',     strokeSharpness: 'Sharp_Soft',  cornerStyle: 'Corner_Round' },
+    Shape_Speed:       { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Blade',     strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Swift',    slantAngle: 'Slant_Forward' },
+    Shape_Brush:       { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_BrushFray', strokeTexture: 'Tex_DryBrush',  kineticVelocity: 'Vel_Swift' },
+    Shape_Blackletter: { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Thorn',     strokeSharpness: 'Sharp_Crisp', charProportion: 'P_Condensed',   kerning: 'Kern_Tight', cornerStyle: 'Corner_Wedge' },
+    // 영화 타이틀 — Constantine/Priest 류. persona 필드로 페르소나까지 함께 전환
+    // (게임/고딕 계열 페르소나의 고가중치 조형 언어가 세리프 옵션을 덮어쓰는 문제 방지).
+    Shape_Cinema:      { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',     strokeSharpness: 'Sharp_Crisp', strokeTexture: 'Tex_Subtle',     deformationDamage: 'Damage_Erosion', kerning: 'Kern_Loose', persona: 'core_cinema' },
   };
   const handleScriptPresetChange = (id) => {
     setScriptType(id);
     const preset = SCRIPT_PRESETS[id];
     if (!preset) return;
+    // 페르소나 연동 프리셋 — 페르소나 modifier 를 먼저 적용하고, 아래 프리셋 필드가 최종 우선.
+    if (preset.persona) handleCoreArchetypeChange(preset.persona);
     if (preset.stemWeight)        setStemWeight(preset.stemWeight);
     if (preset.terminalStyle)     setTerminalStyle(preset.terminalStyle);
     if (preset.strokeTexture)     setStrokeTexture(preset.strokeTexture);
@@ -103,6 +118,8 @@ export function useSovereignPromptCurrent({ apiKey }) {
     if (preset.charProportion)    setCharProportion(preset.charProportion);
     if (preset.charWidth)         setCharWidth(preset.charWidth);
     if (preset.slantAngle)        setSlantAngle(preset.slantAngle);
+    if (preset.kerning)           setKerning(preset.kerning);
+    if (preset.cornerStyle)       setCornerStyle(preset.cornerStyle);
   };
 
   const [isAdvancedOptionsEnabled, setIsAdvancedOptionsEnabled] = useState(false);
@@ -144,6 +161,14 @@ export function useSovereignPromptCurrent({ apiKey }) {
     strokeSharpness: [], cornerStyles: [], widths: [], kerningOptions: [], kineticVelocities: [], slicingIntensities: [],
     editStrokeMods: [], editElementMods: [], editSurfaceMods: [], strokeExtensions: [], letterConnections: [], internalSpaces: [], logoDegrees: [], MMOSilhouetteFramings: [], MMOSurroundingElements: []
   });
+
+  // 세부 요구사항 직접 입력 — 드롭다운으로 세분화했던 미세 옵션(끝 모양·간격·질감·장식 등)을
+  // 대체하는 자유 텍스트. 십자가 모티프처럼 옵션에 없는 형태 요구도 여기로 받는다.
+  // Aura 와 동일한 디바운스 번역 파이프라인을 거쳐 shapeStyleBlock 으로 프롬프트에 주입.
+  const [customShapeText, setCustomShapeText] = useState("");
+  const [customShapeTextEn, setCustomShapeTextEn] = useState("");
+  const [isTranslatingShape, setIsTranslatingShape] = useState(false);
+  const lastTranslatedShapeRef = useRef("");
 
   const [customDesignInjections, setCustomDesignInjections] = useState("");
   // Aura 영문 번역본 — 최종 프롬프트(userAuraEn)에 사용. 사용자는 텍스트박스에서 한국어로 입력/편집하고,
@@ -196,6 +221,13 @@ export function useSovereignPromptCurrent({ apiKey }) {
   const [applyAiRecInEdit, setApplyAiRecInEdit] = useState(false);
   const [applyAutoRefine, setApplyAutoRefine] = useState(false);
 
+  // 느낌 미세 조절 — 리터칭 모드의 핵심 컨트롤. 축별 -2..+2, 0=유지.
+  // 0 이 아닌 축만 buildEditPrompts 에서 미세 가중치 지시어로 변환된다.
+  const FEEL_DEFAULT = { sharpness: 0, weight: 0, texture: 0, motion: 0, ornament: 0 };
+  const [editFeelAdjust, setEditFeelAdjust] = useState(FEEL_DEFAULT);
+  const setEditFeelAxis = (id, v) => setEditFeelAdjust(prev => ({ ...prev, [id]: v }));
+  const resetEditFeelAdjust = () => setEditFeelAdjust({ ...FEEL_DEFAULT });
+
   const [editStrokeMod, setEditStrokeMod] = useState("E_Stroke_None");
   const [editElementMod, setEditElementMod] = useState("E_Elem_None");
   const [editSurfaceMod, setEditSurfaceMod] = useState("E_Surf_None");
@@ -247,9 +279,9 @@ export function useSovereignPromptCurrent({ apiKey }) {
   }, [inputText]);
 
   // Change Detection
-  useEffect(() => { setIsOutdated(true); }, [activePurpose, coreArchetype, personaSliderValue, inputText, customDesignInjections, isEnhanceModeEnabled, enhanceMode, momentumActive, baseStyle, aspectRatio, occupancy, layoutType, stemWeight, charWidth, charProportion, kerning, subTitleSize, terminalStyle, strokeTexture, strokeSharpness, strokeExtension, cornerStyle, slantAngle, kineticVelocity, slicingIntensity, deformationDamage, letterConnection, internalSpace, logoDegree, mmoSilhouetteFraming, mmoSurroundingElement, isAdvancedOptionsEnabled, activeGuards]);
+  useEffect(() => { setIsOutdated(true); }, [activePurpose, coreArchetype, scriptType, customShapeText, personaSliderValue, inputText, customDesignInjections, isEnhanceModeEnabled, enhanceMode, momentumActive, baseStyle, aspectRatio, occupancy, layoutType, stemWeight, charWidth, charProportion, kerning, subTitleSize, terminalStyle, strokeTexture, strokeSharpness, strokeExtension, cornerStyle, slantAngle, kineticVelocity, slicingIntensity, deformationDamage, letterConnection, internalSpace, logoDegree, mmoSilhouetteFraming, mmoSurroundingElement, isAdvancedOptionsEnabled, activeGuards]);
 
-  useEffect(() => { setIsEditOutdated(true); }, [activePurpose, coreArchetype, personaSliderValue, editInstruction, editUploadedImage, applyAiRecInEdit, applyAutoRefine, isEnhanceModeEnabled, enhanceMode, momentumActive, layoutType, subTitleSize, kineticVelocity, slantAngle, deformationDamage, slicingIntensity, editStrokeMod, editElementMod, editSurfaceMod, mmoSilhouetteFraming, mmoSurroundingElement, cornerStyle, activeGuards]);
+  useEffect(() => { setIsEditOutdated(true); }, [activePurpose, coreArchetype, personaSliderValue, editInstruction, editUploadedImage, editFeelAdjust, applyAiRecInEdit, applyAutoRefine, isEnhanceModeEnabled, enhanceMode, momentumActive, layoutType, subTitleSize, kineticVelocity, slantAngle, deformationDamage, slicingIntensity, editStrokeMod, editElementMod, editSurfaceMod, mmoSilhouetteFraming, mmoSurroundingElement, cornerStyle, activeGuards]);
 
   useEffect(() => { if (tuningChatRef.current) tuningChatRef.current.scrollTop = tuningChatRef.current.scrollHeight; }, [tuningChatHistory, isTuningLoading]);
   useEffect(() => { if (editTuningChatRef.current) editTuningChatRef.current.scrollTop = editTuningChatRef.current.scrollHeight; }, [editTuningChatHistory, isEditTuningLoading]);
@@ -288,8 +320,7 @@ Focus on geometry, edges, contrast, mass — convert vague emotional terms into 
             generationConfig: { temperature: 0.3 },
           }),
         });
-        const data = await response.json();
-        const en = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        const en = await readGeminiText(response);
         if (en) {
           setCustomDesignInjectionsEn(en);
           lastTranslatedKoRef.current = text;
@@ -302,6 +333,51 @@ Focus on geometry, edges, contrast, mass — convert vague emotional terms into 
     }, 1500);
     return () => clearTimeout(handle);
   }, [customDesignInjections, apiKey]);
+
+  // 세부 요구사항(직접 입력) 한국어 → 영문 자동 번역 — Aura 와 동일한 디바운스 파이프라인.
+  useEffect(() => {
+    const text = (customShapeText || "").trim();
+    if (!text) {
+      setCustomShapeTextEn("");
+      lastTranslatedShapeRef.current = "";
+      return;
+    }
+    if (text === lastTranslatedShapeRef.current) return;
+    const hasKorean = /[ㄱ-힝]/.test(text);
+    if (!hasKorean) {
+      setCustomShapeTextEn(text);
+      lastTranslatedShapeRef.current = text;
+      return;
+    }
+    const handle = setTimeout(async () => {
+      setIsTranslatingShape(true);
+      try {
+        const systemPrompt = `Translate the user's Korean typography/design requirement into precise English structural prompt directives.
+Output ONLY English, comma-separated structural keywords/phrases. No quotes, no preamble.
+Maintain technical typographic terminology (stroke, terminal, kerning, weight, contrast, etc.).
+Focus on geometry, edges, contrast, mass — convert vague emotional terms into concrete shape/edge language.`;
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text }] }],
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            generationConfig: { temperature: 0.3 },
+          }),
+        });
+        const en = await readGeminiText(response);
+        if (en) {
+          setCustomShapeTextEn(en);
+          lastTranslatedShapeRef.current = text;
+        }
+      } catch (e) {
+        console.warn('[TypecoreSovereign] 세부 요구사항 자동 번역 실패', e);
+      } finally {
+        setIsTranslatingShape(false);
+      }
+    }, 1500);
+    return () => clearTimeout(handle);
+  }, [customShapeText, apiKey]);
 
   // Aura → Feature 자동 동기화.
   //   AI 가 확장한 Aura 텍스트(또는 사용자가 입력한 긴 묘사)에 "tight kerning", "interlocking
@@ -435,10 +511,11 @@ Focus on geometry, edges, contrast, mass — convert vague emotional terms into 
   const handleReset = () => {
     setDynamicOptions({ strokeTextures: [], deformationDamages: [], terminalStyles: [], stemWeights: [], strokeSharpness: [], cornerStyles: [], widths: [], kerningOptions: [], kineticVelocities: [], slicingIntensities: [], editStrokeMods: [], editElementMods: [], editSurfaceMods: [], strokeExtensions: [], letterConnections: [], internalSpaces: [], logoDegrees: [], MMOSilhouetteFramings: [], MMOSurroundingElements: [] });
     setCustomDesignInjections(""); setDramaticPrompt(""); setMjOptimizedPrompt(""); setCgEnhancedPrompt(""); setEnhanceMode("refine"); setMomentumActive(false); setIsAdvancedOptionsEnabled(false);
-    setPersonaSliderValue(50); setAiRecSummary(null); setCoreArchetype('core_fortress');
+    setPersonaSliderValue(50); setAiRecSummary(null); setCoreArchetype('core_fortress'); setScriptType(''); setCustomShapeText(''); setCustomShapeTextEn('');
     setCreationUploadedImage(null); setEditUploadedImage(null);
     setStemWeight("Stem_Heavy"); setTerminalStyle("Term_Chisel"); setStrokeTexture("Tex_Clean"); setStrokeSharpness("Sharp_Std"); setStrokeExtension("Ext_None"); setKineticVelocity("Vel_Static"); setSlicingIntensity("Slic_None"); setSubTitleSize("Sub_Small"); setLetterConnection("Conn_Indep"); setInternalSpace("Space_Std"); setLogoDegree("Logo_Std");
     setTuningReferenceImage(null); setEditTuningReferenceImage(null); setActiveGuards(['guard_mutation', 'guard_3d', 'guard_layout', 'guard_noise']);
+    setEditFeelAdjust({ ...FEEL_DEFAULT });
   };
 
   const copyToClipboard = (text, type = 'bottom') => {
@@ -508,8 +585,7 @@ Return strictly in JSON format:
   "setKerning": { "id": "...", "name": "...", "en": "..." }
 }`;
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: systemPrompt }, ...imageParts] }], generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
-      const data = await response.json();
-      const res = extractJson(data.candidates[0].content.parts[0].text);
+      const res = extractJson(await readGeminiText(response));
 
       if (res?.summary) setAiRecSummary(res.summary);
       if (res?.aura) setCustomDesignInjections(res.aura);
@@ -608,7 +684,7 @@ Write a short, friendly reply in Korean explaining what you changed and analyzed
     if (tuningReferenceImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: tuningReferenceImage } });
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
-      const data = await response.json(); const result = extractJson(data.candidates?.[0]?.content?.parts?.[0]?.text);
+      const result = extractJson(await readGeminiText(response));
       if (result?.newAura && result?.replyMessage) {
         setCurrentTunedAura(result.newAura); setTuningChatHistory(prev => [...prev, { role: 'assistant', content: result.replyMessage }]);
         if (result.updateOptions) { const opts = result.updateOptions; if (opts.setWeight) setStemWeight(updateDynamic('stemWeights', opts.setWeight)); if (opts.setTerminal) setTerminalStyle(updateDynamic('terminalStyles', opts.setTerminal)); if (opts.setTexture) setStrokeTexture(updateDynamic('strokeTextures', opts.setTexture)); if (opts.setKinetic) setKineticVelocity(updateDynamic('kineticVelocities', opts.setKinetic)); if (opts.setSharpness) setStrokeSharpness(updateDynamic('strokeSharpness', opts.setSharpness)); if (opts.setKerning) setKerning(updateDynamic('kerningOptions', opts.setKerning)); setIsAdvancedOptionsEnabled(true); }
@@ -628,7 +704,7 @@ Write a friendly response in Korean explaining the update. Tone: ${persona.tone}
     if (editTuningReferenceImage) parts.push({ inlineData: { mimeType: "image/jpeg", data: editTuningReferenceImage } });
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { responseMimeType: "application/json", temperature: 0.7 } }) });
-      const data = await response.json(); const result = extractJson(data.candidates?.[0]?.content?.parts?.[0]?.text);
+      const result = extractJson(await readGeminiText(response));
       if (result?.newAura && result?.replyMessage) {
         setCurrentTunedEditAura(result.newAura); setEditTuningChatHistory(prev => [...prev, { role: 'assistant', content: result.replyMessage }]);
         if (result.updateOptions) { const opts = result.updateOptions; if (opts.setEditStroke) setEditStrokeMod(updateDynamic('editStrokeMods', opts.setEditStroke)); if (opts.setEditElement) setEditElementMod(updateDynamic('editElementMods', opts.setEditElement)); if (opts.setEditSurface) setEditSurfaceMod(updateDynamic('editSurfaceMods', opts.setEditSurface)); if (opts.setKinetic) setKineticVelocity(updateDynamic('kineticVelocities', opts.setKinetic)); if (opts.setDamage) setDeformationDamage(updateDynamic('deformationDamages', opts.setDamage)); }
@@ -826,7 +902,7 @@ Task: 아우라 정규화 엔진 (Korean output).
 Format: 한국어로 2-3 문장의 고도로 최적화된 구조적 묘사. 쉼표 구분 가능. 영어 단어 혼용 가능 (예: "razor-sharp" 같은 전문 용어).`;
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: customDesignInjections }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
-      const data = await response.json(); if (data.candidates?.[0]?.content?.parts?.[0]?.text) setCustomDesignInjections(data.candidates[0].content.parts[0].text.trim());
+      setCustomDesignInjections(await readGeminiText(response));
     } catch (e) {} finally { setIsExpandingIntent(false); }
   };
 
@@ -841,7 +917,7 @@ Focus only on edge refinement, surface detail, or micro incisions.
 Format: ONLY English, strict structural commands.`;
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: editInstruction }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
-      const data = await response.json(); if (data.candidates?.[0]?.content?.parts?.[0]?.text) setEditInstruction(data.candidates[0].content.parts[0].text.trim());
+      setEditInstruction(await readGeminiText(response));
     } catch (e) {} finally { setIsEditExpandingIntent(false); }
   };
 
@@ -910,7 +986,12 @@ Format: ONLY English, strict structural commands.`;
     //   중복 제거: highly legible(guard_mutation), sharp geometric corners·precise structural lines·
     //   strong material contrast(페르소나 weightTags 가 더 정체성 있게 표현),
     //   best quality·insanely detailed(masterpiece/ultra highres 와 의미 중복).
-    const optimizedBase = `masterpiece, ultra highres, 8k resolution, isolated standalone typography graphic, AAA game title aesthetic`;
+    // 베이스 미학 — 상시 "AAA game title" 이 게임 로고/고딕 편향의 한 축이었음.
+    // 영화 타이틀 페르소나에선 실사 무비 타이틀 미학으로 교체.
+    const baseAesthetic = coreArchetype === 'core_cinema'
+      ? 'cinematic live-action movie title aesthetic'
+      : 'AAA game title aesthetic';
+    const optimizedBase = `masterpiece, ultra highres, 8k resolution, isolated standalone typography graphic, ${baseAesthetic}`;
 
     // 가드 fixEn 을 positive(가중치) / negative("NO X" → "(X:1.5)") 로 분리.
     // positive 는 본문 tail 에, negative 는 Negative prompt 로 — 효과 증대 + 의미 충돌 차단.
@@ -937,24 +1018,25 @@ Format: ONLY English, strict structural commands.`;
       });
     }
 
-    let cgTextInstruction = `Render EXACTLY the text "${inputText}"`;
-    let explicitTwoLineInstruction = `The text "${inputText.replace(/\n/g, ' ')}"`;
-
-    if (inputText.includes('\n') || layoutType !== "1Line") {
-      const lines = inputText.split('\n');
-      const topRow = lines[0] || "";
-      const bottomRow = lines[1] || topRow;
-
-      if (layoutType === "TitleSub") {
-        cgTextInstruction = `Render exactly 2 lines:\n- [TOP ROW]: "${topRow}" (Huge Main Title)\n- [BOTTOM ROW]: "${bottomRow}" (Explicitly smaller Subtitle)`;
-        explicitTwoLineInstruction = `(Two lines of text:1.4). Top row: "${topRow}". Bottom row: "${bottomRow}".`;
-      } else if (layoutType === "SubTitle") {
-        cgTextInstruction = `Render exactly 2 lines:\n- [TOP ROW]: "${topRow}" (Explicitly smaller Subtitle)\n- [BOTTOM ROW]: "${bottomRow}" (Huge Main Title)`;
-        explicitTwoLineInstruction = `(Two lines of text:1.4). Top row: "${topRow}". Bottom row: "${bottomRow}".`;
-      } else if (layoutType === "2Lines" || layoutType === "Center") {
-        cgTextInstruction = `Render exactly 2 lines:\n- [TOP ROW]: "${topRow}"\n- [BOTTOM ROW]: "${bottomRow}"`;
-        explicitTwoLineInstruction = `(Strictly two lines of text vertical stacked:1.5). Top row: "${topRow}". Bottom row: "${bottomRow}".`;
+    const manualLines = inputText.split('\n').map((line) => line.trim()).filter(Boolean).slice(0, 3);
+    const splitBalanced = (text) => {
+      const words = text.trim().split(/\s+/).filter(Boolean);
+      if (words.length > 1) {
+        const mid = Math.ceil(words.length / 2);
+        return [words.slice(0, mid).join(' '), words.slice(mid).join(' ')];
       }
+      const chars = Array.from(text.trim()); const mid = Math.ceil(chars.length / 2);
+      return [chars.slice(0, mid).join(''), chars.slice(mid).join('')];
+    };
+    let resolvedLines = manualLines.length > 1 ? manualLines : [inputText.trim()];
+    if (resolvedLines.length === 1 && ['2Lines', 'TitleSub', 'SubTitle'].includes(layoutType)) resolvedLines = splitBalanced(resolvedLines[0]);
+    let cgTextInstruction = `Render EXACTLY one line: "${resolvedLines[0] || ''}"`;
+    let explicitTwoLineInstruction = `(Exact single line text:1.5) "${resolvedLines[0] || ''}".`;
+    if (resolvedLines.length > 1) {
+      const roles = layoutType === 'TitleSub' ? ['Huge Main Title', 'Explicitly smaller Subtitle']
+        : layoutType === 'SubTitle' ? ['Explicitly smaller Subtitle', 'Huge Main Title'] : [];
+      cgTextInstruction = `Render exactly ${resolvedLines.length} lines:\n${resolvedLines.map((line, i) => `- [ROW ${i + 1}]: "${line}"${roles[i] ? ` (${roles[i]})` : ''}`).join('\n')}`;
+      explicitTwoLineInstruction = `(Strictly ${resolvedLines.length} stacked lines:1.5). ${resolvedLines.map((line, i) => `Row ${i + 1}: "${line}"`).join('. ')}.`;
     }
 
     // 옵션 en 자동 가중치 wrap — 무가중치 토큰을 (text:1.2) 로 감싸 모델 attention 향상.
@@ -1080,6 +1162,13 @@ Format: ONLY English, strict structural commands.`;
     const auraBlock = userAuraEn !== "Standard deployment"
       ? `(${userAuraEn}:1.35), `
       : "";
+    // 글자 모양 프리셋 + 세부 요구사항(직접 입력) 스타일 주입 — 옵션 조합(획/마감)만으로
+    // 표현이 안 되는 스타일 정체성(블랙레터·십자가 모티프 등)을 가중치 토큰으로 직접 반영.
+    // 직접 입력은 영문 번역 캐시 우선, 번역 전엔 원문 임시 사용 (userAuraEn 과 동일 원칙).
+    const activeShape = staticOptions.shapePresets.find(s => s.id === scriptType);
+    const customShapeEn = (customShapeTextEn || customShapeText || "").trim();
+    const shapeStyleEn = [activeShape?.en, customShapeEn].filter(Boolean).join(', ');
+    const shapeStyleBlock = shapeStyleEn ? `(${shapeStyleEn}:1.3), ` : "";
     let modeSpecificBlock = "";
     if (isEnhanceModeEnabled) {
       if (enhanceMode === 'refine') {
@@ -1097,6 +1186,7 @@ Format: ONLY English, strict structural commands.`;
       inputText, layoutEn, mmoSilhouetteEn, mmoSurroundingElementEn, logoDegreeEn, textureEn, occupancyEn, aspectRatio, activeCoreData, weightEn, widthEn, proportionEn, kerningEn, letterConnEn, internalSpaceEn, terminalEn, sharpnessEn, cornerEn, extensionEn, userAuraEn, personaSliderValue, modIntensityEn, readabilityFloorEn, modAllowedEn, modForbiddenEn, momentumActive, kineticEn, slantEn, slicingEn, combatVectorEn, combatImpactZoneEn, combatDeformationEn, bgDescEn, destructionEn, troubleshootingBlockEn, cgTextInstruction, explicitTwoLineInstruction, optimizedBase, solidBgPrompt, isSlicingActive, activeGuardsEn, aspectRatioEn,
       // derived (정교화)
       preservationWeight, integrityTag, auraBlock, modeSpecificBlock, scores,
+      shapeStyleEn, shapeStyleBlock,
       // derived (충돌 회피)
       surfaceEn, forbiddenWeighted,
       activeGuardsPositive, activeGuardsNegative,
@@ -1124,7 +1214,7 @@ Format: ONLY English, strict structural commands.`;
 - Aspect Ratio: ${ir.aspectRatio}
 
 [L3: MORPHOLOGY]
-- Core Archetype: ${ir.activeCoreData.shortTitle}
+- Core Archetype: ${ir.activeCoreData.shortTitle}${ir.shapeStyleEn ? `\n- Shape Preset: ${ir.shapeStyleEn}` : ""}
 [STRUCTURAL SILHOUETTE LANGUAGE]
 - ${ir.activeCoreData.language.split(', ').join('\n- ')}
 - Stroke Body: ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn} proportion.
@@ -1167,9 +1257,9 @@ Format: ONLY English, strict structural commands.`;
     const cgModeBlock = isEnhanceModeEnabled ? ` Modifier mode is ${enhanceMode.toUpperCase()} (allow: ${ir.modAllowedEn} / forbid: ${ir.modForbiddenEn}).` : "";
     const cgMomentumBlock = ir.momentumActive ? " Combat dynamics ENABLED — apply kinetic momentum and impact tension across stems." : "";
     const cgGuardsBlock = ir.activeGuardsEn.length > 0 ? ` Active safety guards: ${ir.activeGuardsEn.join('; ')}.` : "";
-    const chatGPTOutput = `Generate a masterpiece, ultra highres, insanely detailed 2D flat typography graphic for EXACTLY the text "${ir.inputText}".
+    const chatGPTOutput = `Generate a masterpiece, ultra highres, production-grade 2D flat typography graphic. ${ir.cgTextInstruction}.
 
-Aesthetic & Style: AAA game title aesthetic, pure 2D custom typography silhouette, logo-grade flat graphic (not a generic font, not a plain vector icon). ${ir.userAuraEn}.
+Aesthetic & Style: AAA game title aesthetic, pure 2D custom typography silhouette, logo-grade flat graphic (not a generic font, not a plain vector icon). ${ir.userAuraEn}.${ir.shapeStyleEn ? ` Letterform shape style: ${ir.shapeStyleEn}.` : ""}
 Morphology ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Implement ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}. Terminals should be ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}. Logo character: ${ir.logoDegreeEn}, silhouette framing: ${ir.mmoSilhouetteEn}.
 Surface & Dynamics: Apply ${ir.destructionEn} with ${ir.textureEn}. The text should show ${ir.kineticEn}, ${ir.slantEn}, and ${ir.slicingEn}.${cgMomentumBlock}
 Layout constraints: ${ir.layoutEn} Occupancy must be ${ir.occupancyEn}. Canvas size should be ${ir.aspectRatio}.
@@ -1180,7 +1270,8 @@ CRITICAL NEGATIVE PROMPT: Absolutely NO 3D extrusion, NO shading, NO lighting, N
     const mjModeBlock = isEnhanceModeEnabled ? `, ${enhanceMode} mode typography` : "";
     const mjMomentumBlock = ir.momentumActive ? ", kinetic combat momentum" : "";
     const mjGuardsBlock = ir.activeGuardsEn.length > 0 ? `, ${ir.activeGuardsEn.join(', ')}` : "";
-    const midjourneyOutput = `An epic cinematic 2D flat typography graphic, ${ir.userAuraEn}${mjModeBlock}, typography logotype for exactly the text "${ir.inputText.replace(/\n/g, ' ')}", ${ir.optimizedBase}, pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon, [${ir.activeCoreData.shortTitle}], ${ir.activeCoreData.language}, ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}, ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}, ${ir.destructionEn}, ${ir.textureEn}, ${ir.kineticEn}${mjMomentumBlock}, ${ir.slantEn}, ${ir.slicingEn}, ${ir.mmoSilhouetteEn}, ${ir.logoDegreeEn}, ${ir.mmoSurroundingElementEn}, ${ir.solidBgPrompt}, isolated on solid background, wide panoramic span, ${ir.layoutEn}, ${occupancy.replace('%', ' percent')} occupancy${mjGuardsBlock}, --ar ${ir.aspectRatio.replace(':', ':')} --no 3d, depth, shading, lighting, realistic, shadow, volumetric, bevel, emboss, texture, background elements, scenery, gradient, color, generic font, plain vector, plain svg`;
+    const mjTextureNegative = ir.hasTexture ? "" : ", texture";
+    const midjourneyOutput = `An epic 2D flat typography graphic, ${ir.userAuraEn}${ir.shapeStyleEn ? `, ${ir.shapeStyleEn}` : ""}${mjModeBlock}, typography logotype for exactly the text "${ir.inputText.replace(/\n/g, ' ')}", ${ir.explicitTwoLineInstruction}, ${ir.optimizedBase}, pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon, [${ir.activeCoreData.shortTitle}], ${ir.activeCoreData.language}, ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}, ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}, ${ir.destructionEn}, ${ir.textureEn}, ${ir.kineticEn}${mjMomentumBlock}, ${ir.slantEn}, ${ir.slicingEn}, ${ir.mmoSilhouetteEn}, ${ir.logoDegreeEn}, ${ir.mmoSurroundingElementEn}, ${ir.solidBgPrompt}, isolated on solid background, ${ir.layoutEn}, ${occupancy.replace('%', ' percent')} occupancy${mjGuardsBlock}, --ar ${ir.aspectRatio.replace(':', ':')} --no 3d, depth, shading, lighting, realistic, shadow, volumetric, bevel, emboss${mjTextureNegative}, background elements, scenery, gradient, color, generic font, plain vector, plain svg`;
 
     // holeGuard / momentum / flat-fill 모두 사용자 옵션과의 충돌을 회피하는 조건부 블록.
     //   - holeGuard: 슬라이싱이나 손상 활성 시 "intact silhouette" 모순 → 묵음.
@@ -1204,95 +1295,84 @@ CRITICAL NEGATIVE PROMPT: Absolutely NO 3D extrusion, NO shading, NO lighting, N
     //   - 글로우/할로/광 효과 always-on negative (모든 페르소나/2D-flat 의도와 충돌)
     //   - 옵션 en 자동 1.2 가중치 wrap → 무가중치 옵션도 attention 확보
     const W = ir.wrapWeight;
-    const nanoBananaOutput = `An epic cinematic 2D flat typography graphic, ${ir.auraBlock}${ir.modeSpecificBlock}${ir.integrityTag}macro photography, hyper-detailed single focal point. ${ir.aspectRatioEn}${ir.explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, ${ir.wordSpaceBlock}logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${W(ir.weightEn)}, ${W(ir.widthEn)}, ${W(ir.proportionEn)}, ${W(ir.kerningEn)}, ${W(ir.letterConnEn)}, ${W(ir.internalSpaceEn)}. Terminals: ${W(ir.terminalEn)}, ${W(ir.sharpnessEn)}, ${W(ir.cornerEn)}, ${W(ir.extensionEn)}. Logo character: ${W(ir.logoDegreeEn)}, framed as ${W(ir.mmoSilhouetteEn)}. The structure is modified by ${W(ir.kineticEn)}, ${W(ir.slantEn)}, and (${ir.slicingEn}:1.4)${momentumTag}. The surface is transformed by ${W(ir.surfaceEn)}. ${ir.optimizedBase}, ${ir.solidBgPrompt}. Surrounding: ${W(ir.mmoSurroundingElementEn)}. ${holeGuard}${ir.flatFillBlock}(pure 2D flat silhouette:${ir.preservationWeight}), ${W(ir.layoutEn)}, ${W(ir.occupancyEn)}, ${getSliderText(ir.personaSliderValue)}, ${ir.activeGuardsPositive.join(', ')}.
+    const nanoBananaOutput = `An epic cinematic 2D flat typography graphic, ${ir.auraBlock}${ir.shapeStyleBlock}${ir.modeSpecificBlock}${ir.integrityTag}macro photography, hyper-detailed single focal point. ${ir.aspectRatioEn}${ir.explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, ${ir.wordSpaceBlock}logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${W(ir.weightEn)}, ${W(ir.widthEn)}, ${W(ir.proportionEn)}, ${W(ir.kerningEn)}, ${W(ir.letterConnEn)}, ${W(ir.internalSpaceEn)}. Terminals: ${W(ir.terminalEn)}, ${W(ir.sharpnessEn)}, ${W(ir.cornerEn)}, ${W(ir.extensionEn)}. Logo character: ${W(ir.logoDegreeEn)}, framed as ${W(ir.mmoSilhouetteEn)}. The structure is modified by ${W(ir.kineticEn)}, ${W(ir.slantEn)}, and (${ir.slicingEn}:1.4)${momentumTag}. The surface is transformed by ${W(ir.surfaceEn)}. ${ir.optimizedBase}, ${ir.solidBgPrompt}. Surrounding: ${W(ir.mmoSurroundingElementEn)}. ${holeGuard}${ir.flatFillBlock}(pure 2D flat silhouette:${ir.preservationWeight}), ${W(ir.layoutEn)}, ${W(ir.occupancyEn)}, ${getSliderText(ir.personaSliderValue)}, ${ir.activeGuardsPositive.join(', ')}.
 Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (neon glow:1.7), (light bloom:1.7), (radial halo:1.7), (atmospheric haze:1.5), (luminous edge glow:1.6), ${ir.bgInvertNeg}, ${ir.surfaceNegativeTokens}${ir.wordSpaceNegative}(generic font:1.6), (standard typeface:1.5), ${ir.forbiddenWeighted}${ir.activeGuardsNegative.length > 0 ? ', ' + ir.activeGuardsNegative.join(', ') : ''}`;
 
-    return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput, nanoBananaOutput };
+    const sanitizedNanoBananaOutput = nanoBananaOutput
+      .replace('An epic cinematic 2D', 'An epic 2D')
+      .replace('macro photography, hyper-detailed single focal point', 'crisp production-grade flat graphic, single focal composition');
+    const sanitizedMidjourneyOutput = ir.hasTexture ? midjourneyOutput.replace(', texture, background elements', ', background elements') : midjourneyOutput;
+    return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput: sanitizedMidjourneyOutput, nanoBananaOutput: sanitizedNanoBananaOutput };
   };
 
   const buildEditPrompts = () => {
     const ir = buildPromptIR();
-    const instruction = editInstruction || "원본 이미지의 형태를 유지하며 디테일을 보완합니다.";
-    const autoRefineInstructionEn = applyAutoRefine ? `[SHAPE NORMALIZATION PROTOCOL] Auto-correct rough/sketched geometry into premium 2D vector forms.` : "Maintain base sketch quality.";
+    const instruction = (editInstruction || "").trim();
 
-    const generatedBaseEn = `[TYPECORE V17 MICRO-EDIT SPECIFICATION]
+    // 느낌 미세 조절 → 프롬프트 지시어. 0(유지) 축은 생략 — 아무것도 안 움직이면 블록이 비어 원본 보존.
+    //   ±1: "subtly …" (1.15) / ±2: "noticeably …" (1.35). 95% 보존 락 아래에서 미세하게만 작동.
+    const feelActive = staticOptions.editFeelAxes
+      .map(ax => ({ ax, v: editFeelAdjust[ax.id] || 0 }))
+      .filter(({ v }) => v !== 0);
+    const feelPlain = feelActive
+      .map(({ ax, v }) => `${Math.abs(v) >= 2 ? 'noticeably' : 'subtly'} ${v > 0 ? ax.posEn : ax.negEn}`)
+      .join(', ');
+    const feelBlock = feelActive
+      .map(({ ax, v }) => `(${Math.abs(v) >= 2 ? 'noticeably ' : 'subtly '}${v > 0 ? ax.posEn : ax.negEn}:${Math.abs(v) >= 2 ? '1.35' : '1.15'})`)
+      .join(', ');
+
+    // ─────────────────────────────────────────────────────────────────
+    // 리터칭 델타 수집 — "보존이 기본값, 바꾸라고 한 것만 주입".
+    //   이전 구조는 생성 모드의 지시(페르소나 골격·흑백 배경 강제·flat fill·창작 negative·
+    //   생성용 비율/레이아웃 옵션)를 그대로 물려받아, 보존 락(1.5)보다 변형 지시 총량이
+    //   압도적으로 커져 기준 이미지와 무관한 결과가 나오던 주범 → 전부 배제.
+    //   기본값(None/0/중앙)이 아닌 컨트롤만 델타로 변환해 원본 위에 얹는다.
+    // ─────────────────────────────────────────────────────────────────
+    const editStrokeEn = getOptionEn(staticOptions.editStrokeMods, editStrokeMod);
+    const editElementEn = getOptionEn(staticOptions.editElementMods, editElementMod);
+    const editSurfaceEn = getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod);
+    const deltas = [];       // SD 가중치 버전 (NanoBanana)
+    const deltasPlain = [];  // 무가중치 버전 (ChatGPT / Midjourney / Base)
+    const addDelta = (en, w) => { deltas.push(`(${en}:${w})`); deltasPlain.push(en); };
+    if (instruction) addDelta(instruction, '1.35');
+    if (feelBlock) { deltas.push(feelBlock); deltasPlain.push(feelPlain); }
+    if (editStrokeMod !== 'E_Stroke_None') addDelta(editStrokeEn, '1.2');
+    if (editElementMod !== 'E_Elem_None') addDelta(editElementEn, '1.2');
+    if (editSurfaceMod !== 'E_Surf_None') addDelta(editSurfaceEn, '1.2');
+    // 무게↔예리함 슬라이더 — 중앙(35~65)을 벗어났을 때만 미세 바이어스로 주입.
+    const sliderVal = Number(ir.personaSliderValue);
+    if (sliderVal < 35) addDelta('subtly heavier more monumental visual mass', '1.15');
+    else if (sliderVal > 65) addDelta('subtly sharper more incisive edges', '1.15');
+    // AI 조형 추천 — 명시적으로 켰을 때만 페르소나 조형 언어를 주입 (기본은 원본 스타일 유지).
+    if (applyAiRecInEdit) { deltas.push(ir.activeCoreData.weightTags); deltasPlain.push(ir.activeCoreData.language); }
+    if (applyAutoRefine) addDelta('auto-correct rough sketched geometry into clean premium vector letterforms', '1.25');
+    const hasDeltas = deltas.length > 0;
+
+    const generatedBaseEn = `[TYPECORE V18 MICRO-RETOUCH SPECIFICATION]
 
 [L1: BASE LOCK & INTEGRITY (MAX PRIORITY)]
-- Base Image: Treat as the STRICT structural foundation.
+- Base Image: STRICT structural AND stylistic foundation — preserve letterforms, layout, colors, materials, background.
 - Shape Preservation Lock: MUST preserve 95-98% of the original silhouette.
 - Readability Floor: Minimum ${ir.readabilityFloorEn}.
 - Deformation Budget: Maximum ${ir.modIntensityEn} structural shift. Outline changes FORBIDDEN.
 
-[L3: EDIT DIRECTION & MORPHOLOGY]
-- Aura (Normalized): "${instruction}"
-- Sub-Trait Focus: ${getSliderText(ir.personaSliderValue)}
-- Core Archetype: ${ir.activeCoreData.shortTitle}
-[STRUCTURAL SILHOUETTE LANGUAGE]
-- ${ir.activeCoreData.language.split(', ').join('\n- ')}
+[L2: ADJUSTMENT DELTAS — apply ONLY these, everything else stays identical]
+${hasDeltas ? deltasPlain.map(d => `- ${d}`).join('\n') : '- None — faithful reproduction with subtle quality cleanup (cleaner edges, artifact removal) only.'}
 
-[L4: MICRO-REFINEMENT MODIFIERS]
-- Framing/Alignment: ${ir.mmoSilhouetteEn}
-- Logo Character: ${ir.logoDegreeEn}
-- Scope: Edge refinement, surface detail, micro incision ONLY.
-- Stroke Mod: ${getOptionEn(staticOptions.editStrokeMods, editStrokeMod)}
-- Element Mod: ${getOptionEn(staticOptions.editElementMods, editElementMod)}
-- Surface Mod: ${getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod)}
-- Surface Texture: ${ir.textureEn}
-- Auto-Refine: ${autoRefineInstructionEn}
-- AI Recommendation: ${applyAiRecInEdit ? "ENABLED — apply persona-based auto-suggestions" : "DISABLED"}
+[L3: PROHIBITIONS]
+- NO redesign, NO restyle, NO font substitution.
+- NO text mutation, NO extra/missing letters, NO layout drift.
+- NO color scheme change, NO background change, NO added decorations — unless an adjustment delta above explicitly requests it.`.trim();
 
-[L5: KINETIC & DAMAGE]
-- Kinetic Force: ${ir.kineticEn}
-- Slant: ${ir.slantEn}
-- Slicing: ${ir.slicingEn}
-- Corner Style: ${ir.cornerEn}
-- Combat Momentum: ${ir.momentumActive ? "ENABLED" : "DISABLED"}
-- Damage: ${ir.destructionEn}
+    const chatGPTOutput = `Act as a Typography Micro-Retouch Engine. Edit the provided base image with MINIMAL intervention. Strictly preserve the original letterforms, layout, colors, materials and background (95-98% silhouette preservation lock). Maximum deformation ${ir.modIntensityEn}.
+${hasDeltas ? `Apply ONLY these adjustments: ${deltasPlain.join('; ')}.` : 'No stylistic changes requested — reproduce the base image faithfully with subtle quality cleanup (cleaner edges, artifact removal) only.'}
+Output the same composition and framing as the base image, at high fidelity.
+CRITICAL: Do NOT redesign the typography, do NOT substitute fonts, do NOT change the text, and do NOT alter the color scheme or background unless an adjustment above explicitly says so.`;
 
-[L6: STYLE GUARDRAILS - CRITICAL 2D ENFORCEMENT]
-- 2D Vector Rule: STRICTLY flat 2D vector silhouette graphic. ZERO depth. NO lighting. NO shading.
-- Background Rule: Isolated on solid background. NO scenery. NO environmental elements.
-- Material Rule: NO colors. Strict monochrome (${ir.bgDescEn}).
-- Surrounding Decoration: ${ir.mmoSurroundingElementEn}.
+    const midjourneyOutput = `[UPLOAD BASE IMAGE AS REFERENCE] image-to-image micro retouch, faithful to base image, preserve original letterforms layout colors materials and background, 95-98 percent silhouette preservation${deltasPlain.length ? `, ${deltasPlain.join(', ')}` : ', subtle quality cleanup only'}, same composition and framing, high fidelity --iw 2 --style raw --no redesign, font substitution, text change, layout change, new background, added decorations`;
 
-[NEGATIVE PROMPT (STRICT PROHIBITIONS)]
-- NO structure changes. NO layout drift.
-- NO 3D rendering. NO shading, NO volumetric lighting. NO materials. Pure Black & White ONLY.
-- NO background scenery.
-- ${ir.activeCoreData.forbidden}${ir.troubleshootingBlockEn}`.trim();
-
-    // Edit 모드의 추가 옵션 블록 — Element Mod, AI 자동, Auto-refine, 가드/모디파이어/주변 등.
-    const editElementEn = getOptionEn(staticOptions.editElementMods, editElementMod);
-    const editStrokeEn = getOptionEn(staticOptions.editStrokeMods, editStrokeMod);
-    const editSurfaceEn = getOptionEn(staticOptions.editSurfaceMods, editSurfaceMod);
-    const editModeBlock = isEnhanceModeEnabled ? ` Modifier mode is ${enhanceMode.toUpperCase()}.` : "";
-    const editMomentumBlock = ir.momentumActive ? " Combat momentum ENABLED — apply kinetic impact tension." : "";
-    const editGuardsBlock = ir.activeGuardsEn.length > 0 ? ` Guards: ${ir.activeGuardsEn.join('; ')}.` : "";
-    const editAiRecBlock = applyAiRecInEdit ? " AI persona-based auto-recommendation ENABLED." : "";
-
-    const chatGPTOutput = `Act as an expert Typography Engine (V17 Edit Mode). Redraw the provided reference image into a masterpiece, ultra highres, insanely detailed 2D flat typography graphic. STRICTLY MAINTAIN basic shape (95-98% silhouette preservation lock). Maximum deformation ${ir.modIntensityEn}.
-
-Aesthetic & Style: AAA game title aesthetic, pure 2D custom typography silhouette, logo-grade flat graphic (not generic font, not plain vector icon). ${instruction} ${getSliderText(ir.personaSliderValue)}.
-Micro-Refinements ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Apply Stroke(${editStrokeEn}), Element(${editElementEn}), Surface(${editSurfaceEn}). Logo character: ${ir.logoDegreeEn}, silhouette framing: ${ir.mmoSilhouetteEn}. Surface texture: ${ir.textureEn}.
-Dynamics: ${ir.kineticEn}, ${ir.slantEn}, ${ir.slicingEn}, corners ${ir.cornerEn}, damage ${ir.destructionEn}.${editMomentumBlock}
-Environment: ${ir.solidBgPrompt}. Surrounding decoration: ${ir.mmoSurroundingElementEn}. Readability floor ${ir.readabilityFloorEn}. Auto-refine: ${autoRefineInstructionEn}.${editAiRecBlock}${editModeBlock}${editGuardsBlock}
-CRITICAL NEGATIVE PROMPT: Absolutely NO 3D extrusion, NO shading, NO lighting, NO background scenery, NO gradients. Flawless silhouette boundary.`;
-
-    const editMjModeBlock = isEnhanceModeEnabled ? `, ${enhanceMode} mode` : "";
-    const editMjMomentumBlock = ir.momentumActive ? ", kinetic combat momentum" : "";
-    const editMjGuardsBlock = ir.activeGuardsEn.length > 0 ? `, ${ir.activeGuardsEn.join(', ')}` : "";
-    const midjourneyOutput = `[UPLOAD BASE IMAGE AS REFERENCE] An epic cinematic 2D flat typography graphic, image-to-image edit, exact structural foundation, ${ir.userAuraEn}${editMjModeBlock}, ${ir.optimizedBase}, pure 2D custom typography silhouette, logo-grade flat graphic, not generic font, not plain vector icon, [${ir.activeCoreData.shortTitle}], ${ir.activeCoreData.language}, ${ir.solidBgPrompt}, isolated on solid background, ${editStrokeEn}, ${editElementEn}, ${editSurfaceEn}, ${ir.textureEn}, ${ir.kineticEn}${editMjMomentumBlock}, ${ir.slantEn}, ${ir.slicingEn}, ${ir.cornerEn}, ${ir.destructionEn}, ${ir.logoDegreeEn}, ${ir.mmoSilhouetteEn}, ${ir.mmoSurroundingElementEn}, wide panoramic span${editMjGuardsBlock}, --ar 16:9 --iw 1.5 --style raw --no 3d, depth, shading, lighting, realistic, shadow, volumetric, bevel, emboss, texture, background elements, scenery, gradient, color, generic font, plain vector, plain svg`;
-
-    const holeGuard = ir.isSlicingActive ? "" : "perfectly intact silhouette, absolutely NO holes through text. ";
-    const momentumTag = ir.momentumActive ? ", (kinetic combat momentum:1.3)" : "";
-    // Edit 전용 auraBlock — editInstruction 을 가중치로 승격. 기본 fallback 문구면 생략.
-    const editAuraBlock = editInstruction
-      ? `(${instruction}:1.35), `
-      : "";
-    // Edit 모드 nanoBanana 도 9차 정리 동일 적용 (bg 가중치 + glow neg + 옵션 wrap).
-    const W2 = ir.wrapWeight;
-    const nanoBananaOutput = `[UPLOAD BASE IMAGE AS REFERENCE] An epic cinematic 2D flat typography graphic, ${editAuraBlock}${ir.modeSpecificBlock}${ir.integrityTag}macro photography, hyper-detailed single focal point. Image-to-image edit, strictly maintain basic shape, (95-98% silhouette preservation lock:${ir.preservationWeight}). ${ir.aspectRatioEn}The text is crafted as a pure 2D custom typography silhouette, ${ir.wordSpaceBlock}logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${W2(editStrokeEn)}, ${W2(editElementEn)}, ${W2(editSurfaceEn)}. Logo character: ${W2(ir.logoDegreeEn)}, framed as ${W2(ir.mmoSilhouetteEn)}. The structure is modified by ${W2(ir.kineticEn)}, ${W2(ir.slantEn)}, ${W2(ir.cornerEn)}, and (${ir.slicingEn}:1.4)${momentumTag}. The surface is transformed by ${W2(ir.surfaceEn)}. ${ir.optimizedBase}, ${ir.solidBgPrompt}. Surrounding: ${W2(ir.mmoSurroundingElementEn)}. ${holeGuard}${ir.flatFillBlock}(pure 2D flat silhouette:${ir.preservationWeight}), ${getSliderText(ir.personaSliderValue)}, ${ir.activeGuardsPositive.join(', ')}.
-Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (neon glow:1.7), (light bloom:1.7), (radial halo:1.7), (atmospheric haze:1.5), (luminous edge glow:1.6), ${ir.bgInvertNeg}, ${ir.surfaceNegativeTokens}${ir.wordSpaceNegative}(generic font:1.6), (standard typeface:1.5), ${ir.forbiddenWeighted}${ir.activeGuardsNegative.length > 0 ? ', ' + ir.activeGuardsNegative.join(', ') : ''}`;
+    const nanoBananaOutput = `[UPLOAD BASE IMAGE AS REFERENCE] Micro-retouch this exact base typography image. (Preserve the original letterforms, layout, colors, materials and background:1.6), (95-98% silhouette preservation lock:${ir.preservationWeight}), do not redesign, do not restyle, keep the same visual identity, same composition and framing. ${hasDeltas ? `Apply ONLY these adjustments: ${deltas.join(', ')}. Everything not mentioned stays identical to the base image.` : 'No stylistic changes — faithfully reproduce the base image with subtle quality cleanup (cleaner edges, reduced artifacts) only.'} High fidelity, production-grade output.
+Negative prompt: (redesigned letterforms:1.7), (different font:1.6), (different text:1.6), (extra letters:1.5), (missing letters:1.5), (changed layout:1.5), (unrequested color change:1.4), (unrequested background change:1.5), (added decorations:1.4), (style transfer:1.4)`;
 
     return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput, nanoBananaOutput };
   };
@@ -1369,6 +1449,7 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.
     coreArchetype, setCoreArchetype, handleCoreArchetypeChange,
     coreDropdownOpen, setCoreDropdownOpen,
     scriptType, setScriptType, handleScriptPresetChange,
+    customShapeText, setCustomShapeText, isTranslatingShape,
     isAdvancedOptionsEnabled, setIsAdvancedOptionsEnabled,
     isEnhanceModeEnabled, setIsEnhanceModeEnabled,
     enhanceMode, setEnhanceMode,
@@ -1422,6 +1503,7 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.
     editUploadedImage, setEditUploadedImage,
     isDragging,
     editInstruction, setEditInstruction,
+    editFeelAdjust, setEditFeelAxis, resetEditFeelAdjust,
     applyAiRecInEdit, setApplyAiRecInEdit,
     applyAutoRefine, setApplyAutoRefine,
     editStrokeMod, setEditStrokeMod,

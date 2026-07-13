@@ -12,7 +12,7 @@ import { serializeForFirestore } from '../../PromptArc/services/firebase';
 const pickEn = (c) => {
   if (!c) return '';
   if (typeof c === 'string') return c;
-  return c.en || c.ko || JSON.stringify(c);
+  return (typeof c.en === 'string' && c.en.trim()) || (typeof c.ko === 'string' && c.ko.trim()) || '';
 };
 
 export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditView, getPrompts, getEditPrompts }) => {
@@ -53,6 +53,14 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
 
   const handleRender = async () => {
     const useEdit = isEditView();
+    if (useEdit && !b.editUploadedImage) {
+      b.setRenderError('마이크로 편집에 사용할 기준 이미지를 먼저 업로드하세요.');
+      return;
+    }
+    if (!useEdit && !b.inputText?.trim()) {
+      b.setRenderError('렌더링할 문구를 먼저 입력하세요.');
+      return;
+    }
     const prompts = useEdit ? getEditPrompts() : getPrompts();
     const promptText = pickEn(prompts.outputContent) || pickEn(prompts.baseTechnical);
     if (!promptText) { b.setRenderError('먼저 프롬프트를 컴파일하세요.'); return; }

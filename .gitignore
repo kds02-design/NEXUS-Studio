@@ -35,3 +35,8 @@ service-account.json
 *.sw?
 
 .vercel
+
+# ThemeForge Ultra bot — 로그인 프로필(쿠키)·생성물은 커밋 금지
+.ultra-profile/
+theme-output/
+theme-prompts*.json

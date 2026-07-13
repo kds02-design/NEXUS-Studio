@@ -2,20 +2,30 @@
 // 버전 스냅샷: TypecoreSovereign current. 격리된 정적 옵션 사본.
 
 export const staticOptions = {
-  // MMO 스타일 프리셋 — v2 Sidebar 의 "타입 프리셋" 드롭다운용. 격리 원칙에 따라 v2 데이터를 copy.
-  MMOStyles: [
-    { id: "Gen_Original",   name: "오리지널",        en: "Monolithic stone-steel structure" },
-    { id: "Gen_Fantasy",    name: "하이 판타지",     en: "Elegant high-fantasy aesthetic" },
-    { id: "Lineage_M",      name: "리니지 M",        en: "Chiseled faceted Gothic structure" },
-    { id: "Lineage_2M",     name: "리니지 2M",       en: "Jewelry-precision thorn serifs" },
-    { id: "Lineage_W",      name: "리니지 W",        en: "Cruel realism with wedge terminals" },
-    { id: "Aion_Original",  name: "아이온",          en: "Vertical tower-pillar with speed terminals" },
-    { id: "Aion_2",         name: "아이온 2",        en: "Atreia-style script with fluid curves" },
-    { id: "BNS",            name: "블레이드 & 소울", en: "Oriental martial arts calligraphy" },
-    { id: "Throne_Liberty", name: "쓰론 앤 리버티",  en: "Sophisticated medieval serif" },
-    { id: "MMO_Saviors",    name: "구원자들",        en: "Clean script with sharp vertical stems" },
-    { id: "MMO_Antharas",   name: "안타라스",        en: "Demonic cursive script" },
-    { id: "MMO_Aden",       name: "아덴 대침공",     en: "Imposing monolithic structure" },
+  // 글자 모양 프리셋 — 결과물 "형태" 기준 (게임별 구분에서 개편).
+  // 선택 시 획·마감·동세 옵션을 한 번에 세팅(SCRIPT_PRESETS)하고,
+  // en 토큰이 프롬프트 본문에 스타일 힌트로 주입된다 (buildPromptIR 의 shapeStyleBlock).
+  shapePresets: [
+    { id: "Shape_Clean",       name: "깔끔 기본",     emoji: "✨",  hint: "군더더기 없는 표준형",   en: "clean modern refined letterform structure" },
+    { id: "Shape_Massive",     name: "묵직한 바위",   emoji: "🗿",  hint: "두껍고 웅장하게",        en: "monolithic massive stone-slab letterform structure" },
+    { id: "Shape_Blade",       name: "날카로운 칼날", emoji: "⚔️", hint: "베일 듯 예리한 끝",      en: "aggressive blade-sharp slashing letterforms" },
+    { id: "Shape_Thorn",       name: "가시 돋친",     emoji: "🥀",  hint: "뾰족한 가시 장식",       en: "thorn-spiked dark fantasy letterforms" },
+    { id: "Shape_Elegant",     name: "우아한 세리프", emoji: "👑",  hint: "고급스러운 클래식",      en: "elegant sophisticated serif typography" },
+    { id: "Shape_Round",       name: "둥글둥글",      emoji: "🫧",  hint: "부드럽고 친근하게",      en: "soft rounded friendly letterforms" },
+    { id: "Shape_Speed",       name: "속도감",        emoji: "💨",  hint: "달려나가는 기울기",      en: "dynamic italic speed-driven letterforms" },
+    { id: "Shape_Brush",       name: "붓글씨",        emoji: "🖌️", hint: "붓으로 그린 필체",       en: "expressive brush calligraphy strokes" },
+    { id: "Shape_Blackletter", name: "블랙레터",      emoji: "🏰",  hint: "중세 고딕 성서체",       en: "blackletter fraktur gothic script, medieval calligraphic broken strokes with angular diamond serifs" },
+    { id: "Shape_Cinema",      name: "영화 타이틀",   emoji: "🎬",  hint: "실사 영화 포스터 세리프", en: "weathered antique serif capitals, cinematic movie title lettering, wide letter spacing, subtly distressed serif edges" },
+  ],
+  // 리터칭 "느낌 미세 조절" 축 — 양방향 슬라이더 (-2..+2, 0=유지).
+  // 0 이 아닌 축만 프롬프트에 주입: ±1 → "subtly …" 1.15 가중치, ±2 → "noticeably …" 1.35 가중치.
+  // 형태 95% 보존 락과 함께 쓰여 "원본을 지키면서 느낌만 살짝" 이라는 리터칭 본연의 목적을 표현.
+  editFeelAxes: [
+    { id: "sharpness", label: "예리함",   left: "부드럽게",  right: "날카롭게",   negEn: "softer rounder stroke terminals and edges",       posEn: "sharper crisper stroke terminals and edges" },
+    { id: "weight",    label: "획 굵기",  left: "얇게",      right: "두껍게",     negEn: "thinner lighter stroke weight",                    posEn: "thicker heavier stroke weight" },
+    { id: "texture",   label: "표면 질감", left: "매끈하게",  right: "거칠게",     negEn: "cleaner smoother pristine stroke surface",         posEn: "more weathered rough eroded surface texture" },
+    { id: "motion",    label: "동세",     left: "차분하게",  right: "역동적으로", negEn: "calmer static stable letterform posture",          posEn: "more dynamic kinetic tension across strokes" },
+    { id: "ornament",  label: "장식",     left: "미니멀",    right: "화려하게",   negEn: "more minimal simplified stroke detailing",         posEn: "richer ornamental decorative stroke detailing" },
   ],
   // Purpose-Driven Presets (V18)
   purposes: [

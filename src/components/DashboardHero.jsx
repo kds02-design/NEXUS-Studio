@@ -28,9 +28,8 @@ export default function DashboardHero() {
       style={{
         position: "relative",
         width: "100%",
-        // 화면이 커져도 히어로가 무한정 늘어나지 않도록 상한 고정.
-        // 320 ~ 45vh ~ 460 — 큰 모니터에서도 타이틀 위치가 일정 거리 안으로 고정됨.
-        height: "clamp(320px, 45vh, 460px)",
+        // 초보자 홈에서는 첫 화면에 실제 시작 메뉴가 함께 보이도록 높이를 작게 유지.
+        height: "clamp(220px, 30vh, 300px)",
         background: T.surface,
         overflow: "hidden",
         flexShrink: 0,
@@ -79,7 +78,7 @@ export default function DashboardHero() {
           style={{
             margin: 0,
             fontFamily: "'Teko', sans-serif",
-            fontSize: "clamp(40px, 8vw, 88px)",
+            fontSize: "clamp(36px, 6vw, 64px)",
             lineHeight: 1,
             letterSpacing: "0.04em",
             color: "#ffffff",
@@ -99,7 +98,7 @@ export default function DashboardHero() {
             fontWeight: 500,
           }}
         >
-          NEXUS Studio · Design × Prompt × AI
+          만들고 싶은 것을 골라 바로 시작해 보세요
         </p>
       </div>
     </div>

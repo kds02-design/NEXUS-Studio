@@ -143,12 +143,21 @@ const App = ({ version, setVersion, versions } = {}) => {
   const handleRender = useCallback(async (promptText) => {
     if (!promptText) return;
     if (!canRender) { setRenderError('Imagen 렌더링은 Pro 등급 이상만 사용할 수 있습니다.'); return; }
+    // 리터칭 모드 — 대상 이미지가 있어야 image-to-image 가 성립. 없으면 렌더 차단.
+    if (rp.isEditMode && !rp.editUploadedImage) {
+      setRenderError('리터칭 모드에서는 대상 이미지를 먼저 올려주세요.');
+      return;
+    }
     const canGen = await rp.ensureCanGenerate?.('image');
     if (canGen === false) { setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)'); return; }
     setRendering(true); setRenderError(null); setRenderedImage(null);
     try {
-      // 참조 이미지 없이 텍스트 프롬프트만으로 호출.
-      const result = await renderWithImagen(promptText, selectedImagenModel, null);
+      // 생성 모드: 텍스트만 / 리터칭 모드: 업로드한 대상 이미지를 reference 로 전달 (image-to-image).
+      //   프롬프트의 "[UPLOAD BASE IMAGE AS REFERENCE]" 는 수동 복사용 안내 문구라
+      //   실제 API 호출에선 제거 — 이미지가 인라인으로 첨부되므로 텍스트 지시가 오히려 혼선.
+      const referenceImage = rp.isEditMode ? rp.editUploadedImage : null;
+      const cleanPrompt = promptText.replace(/^\[UPLOAD BASE IMAGE AS REFERENCE\]\s*/, '');
+      const result = await renderWithImagen(cleanPrompt, selectedImagenModel, referenceImage);
       setRenderedImage(result);
       // PromptArc 자동 저장 → cloudinary URL 확보(파이프라인 전송 시 재업로드 회피).
       let cloudUrl = null;

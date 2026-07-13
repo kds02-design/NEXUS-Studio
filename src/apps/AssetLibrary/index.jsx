@@ -2,7 +2,7 @@
 // 다른 앱에서 영역 선택으로 잘라낸 이미지(타이틀/버튼/박스/아이템/아이콘)를 모아둠.
 // 레이아웃: 좌측 사이드바(가상폴더+카테고리 nav) + 메인은 NEXUS 토큰 기반 단일 컬럼 카테고리 아코디언(Figma 시안).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, X, ChevronDown, Plus, Image as ImageIcon } from "lucide-react";
+import { Search, X, ChevronDown, Plus, Image as ImageIcon, FolderInput, Loader2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useGlobal } from "../../context/GlobalContext";
 import { useUsageGate } from "../../components/UsageGate";
@@ -12,6 +12,7 @@ import AssetSidebar from "./components/AssetSidebar";
 import AssetCard from "./components/AssetCard";
 import AssetDetailModal from "./components/AssetDetailModal";
 import AssetUploadModal from "./components/AssetUploadModal";
+import { importPromptArcTemporaryAssets } from "./services/promptArcImport";
 
 const APP_COLOR = "#55EFC4"; // asset-library app.color
 
@@ -54,6 +55,7 @@ export default function AssetLibraryApp() {
   const [toast, setToast] = useState(null);
   const [detail, setDetail] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [arcImport, setArcImport] = useState(null);
 
   const showToast = useCallback((msg, type = "info") => {
     setToast({ msg, type });
@@ -211,6 +213,29 @@ export default function AssetLibraryApp() {
     setSearchQuery("");
   };
 
+  const handlePromptArcImport = async () => {
+    if (!user?.uid) { showToast("로그인이 필요합니다.", "error"); return; }
+    if (arcImport) return;
+    if (!confirm("PromptArc 임시폴더의 내 이미지를 분류하고 배경을 투명화해 에셋 라이브러리에 추가할까요? 원본 이미지는 유지됩니다.")) return;
+    if (!(await ensureCanGenerate("analysis"))) return;
+    setArcImport({ current: 0, total: 0, title: "목록 확인 중" });
+    try {
+      const summary = await importPromptArcTemporaryAssets({
+        uid: user.uid,
+        existingAssets: assets,
+        onProgress: setArcImport,
+      });
+      if (!summary.total) showToast(summary.skipped ? `이미 가져온 ${summary.skipped}개를 제외하면 새 이미지가 없습니다.` : "가져올 임시 이미지가 없습니다.");
+      else if (summary.failed) showToast(`${summary.imported}개 등록, ${summary.failed}개 실패`, "error");
+      else showToast(`${summary.imported}개를 투명 에셋으로 등록했습니다.`);
+      setCategory("uploaded");
+    } catch (error) {
+      showToast(`PromptArc 가져오기 실패: ${error?.message || error}`, "error");
+    } finally {
+      setArcImport(null);
+    }
+  };
+
   const isEmpty = !loading && assets.length === 0;
 
   return (
@@ -255,6 +280,15 @@ export default function AssetLibraryApp() {
                 </button>
               )}
             </div>
+            <button
+              onClick={handlePromptArcImport}
+              disabled={!!arcImport}
+              title="PromptArc 임시폴더의 내 이미지를 투명화·분류하여 가져옵니다"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold border border-[#55EFC4]/35 text-[#55EFC4] bg-[#55EFC4]/10 hover:bg-[#55EFC4]/15 disabled:opacity-50 shrink-0"
+            >
+              {arcImport ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FolderInput className="w-3.5 h-3.5" />}
+              {arcImport ? `${arcImport.current}/${arcImport.total || "?"}` : "PromptArc 가져오기"}
+            </button>
             <button
               onClick={handleAdd}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-opacity hover:opacity-90 shrink-0"

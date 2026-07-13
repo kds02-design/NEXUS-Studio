@@ -20,6 +20,7 @@ export default function ForgeAtlasGrid({ forge }) {
     isGeneratingAtlas,
     handleGenerateAtlas,
     handleRegenerateAtlas,
+    atlasRedesign, setAtlasRedesign,
   } = forge;
 
   const hasAnyResult = atlasResults.some(s => s.dataUrl || s.error);
@@ -62,6 +63,19 @@ export default function ForgeAtlasGrid({ forge }) {
             {hasAnyResult && (
               <div className="text-[10px] text-[#76cee0] mt-1">완료 {completedCount}/{totalCount}</div>
             )}
+          </div>
+          {/* 리컬러 vs 리디자인 — 격자·개수는 어느 쪽이든 유지, 리디자인은 모티프/형태까지 재해석 */}
+          <div className="flex bg-[#111111] p-1 rounded-lg border border-zinc-800/60 shrink-0">
+            {[['recolor', '리컬러', false], ['redesign', '리디자인', true]].map(([id, lbl, val]) => (
+              <button
+                key={id}
+                onClick={() => setAtlasRedesign(val)}
+                className={`px-3 py-2 rounded-md text-[11px] font-bold transition-colors ${(!!atlasRedesign === val) ? 'bg-[#2A2A2E] text-white border border-white/5' : 'text-zinc-500 hover:text-zinc-300'}`}
+                title={val ? '모티프·형태·재질을 재해석 (격자·개수·비율은 고정)' : '색·재질만 교체 (구조 완전 보존)'}
+              >
+                {lbl}
+              </button>
+            ))}
           </div>
           <button
             onClick={handleGenerateAtlas}

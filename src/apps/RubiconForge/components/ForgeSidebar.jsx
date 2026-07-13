@@ -6,11 +6,11 @@
 import {
   ChevronDown, UploadCloud, X,
   MousePointer2,
-  Sparkle as SparkleIcon, Loader2, Sparkles, Sun,
+  Sparkle as SparkleIcon, Loader2, Sparkles, Sun, PenLine,
 } from 'lucide-react';
 import { useState } from 'react';
 import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS, ATMOSPHERE_TEMPERATURE, ATMOSPHERE_AGE, DESIGN_VARIATIONS, VARIATION_STRENGTH, BG_COLORS } from '../constants/variations';
-import { LIGHTFX_CATEGORIES, LIGHTFX_STYLES, LIGHTFX_COLORS, LIGHTFX_COUNTS } from '../constants/lightfx';
+import { LIGHTFX_CATEGORIES, LIGHTFX_FORMS, LIGHTFX_STYLES, LIGHTFX_COLORS, LIGHTFX_COUNTS } from '../constants/lightfx';
 import { IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from '../../../lib/imagenRender';
 import ForgeHeader from './ForgeHeader';
 
@@ -65,6 +65,30 @@ function StripGlowToggle({ value, onChange }) {
           </div>
           <div className="text-[10px] text-zinc-500 mt-1 leading-relaxed break-keep-all">
             원본에 갓레이·후광·글로우·파티클 같은 주변 빛효과가 있어도 제거하고 <span className="text-zinc-400">오브젝트 본체만</span> 순흑 위에 남깁니다. 본체 표면의 자체 음영·하이라이트는 유지.
+          </div>
+        </div>
+      </button>
+    </section>
+  );
+}
+
+// 외곽선만 디자인 토글 — 테두리(외곽 라인)에만 디자인·재질을 입히고 내부는 단색으로 채움.
+function OutlineOnlyToggle({ value, onChange }) {
+  return (
+    <section>
+      <button
+        onClick={() => onChange(!value)}
+        className={`w-full flex items-start gap-3 px-3.5 py-3 rounded-lg border text-left transition-colors ${value ? 'bg-[#c9b6f7]/10 border-[#c9b6f7]/50' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
+      >
+        <span className={`mt-0.5 w-9 h-5 rounded-full shrink-0 relative transition-colors ${value ? 'bg-[#c9b6f7]' : 'bg-zinc-700'}`}>
+          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${value ? 'left-[18px]' : 'left-0.5'}`} />
+        </span>
+        <div className="min-w-0">
+          <div className={`text-[11px] font-semibold flex items-center gap-1.5 ${value ? 'text-[#c9b6f7]' : 'text-zinc-300'}`}>
+            <PenLine className="w-3.5 h-3.5" /> 외곽선만 디자인 · 내부 단색
+          </div>
+          <div className="text-[10px] text-zinc-500 mt-1 leading-relaxed break-keep-all">
+            <span className="text-zinc-400">테두리(외곽 라인)에만</span> 디자인·재질을 입히고, 안쪽은 평평한 단색(기본 다크)으로 채웁니다. 내부 장식·텍스트·텍스처 없음 · 외곽 형태·비율 유지.
           </div>
         </div>
       </button>
@@ -165,10 +189,13 @@ export default function ForgeSidebar({ forge }) {
     reskinTemperature, setReskinTemperature, reskinAge, setReskinAge,
     reskinImageSize, setReskinImageSize,
     reskinStripGlow, setReskinStripGlow,
+    reskinOutlineOnly, setReskinOutlineOnly,
     reskinBgColor, setReskinBgColor,
+    customThemeHint, setCustomThemeHint,
     creationRenderModel, setCreationRenderModel,
     // 광원·빛효과 모드
     lightFxCategory, setLightFxCategory,
+    lightFxForm, setLightFxForm,
     lightFxStyle, setLightFxStyle,
     lightFxColor, setLightFxColor,
     lightFxText, setLightFxText,
@@ -187,6 +214,7 @@ export default function ForgeSidebar({ forge }) {
     selectedVariationIds, handleToggleVariation,
     variationStrength, setVariationStrength,
     variationStripGlow, setVariationStripGlow,
+    variationOutlineOnly, setVariationOutlineOnly,
     variationBgColor, setVariationBgColor,
     isGeneratingVariations, handleGenerateVariations,
     variationRenderModel, setVariationRenderModel,
@@ -230,6 +258,21 @@ export default function ForgeSidebar({ forge }) {
               원본 에셋을 올리면 형태·테두리·텍스트·비율은 그대로 두고, 고른 테마 톤마다 색·표면·재질만 갈아끼웁니다. 배경은 리얼 블랙 고정 — 투명 PNG 추출 가능. <span className="text-zinc-400">결과는 PromptArc '리스킨 보관함' 폴더에 자동 저장됩니다.</span>
             </div>
           </div>
+
+          {/* 테마 지시(선택) — KV 컴포저에서 자동 주입되거나 직접 입력 */}
+          <section>
+            <h3 className="text-[12px] font-semibold text-zinc-300 mb-2 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-zinc-500" /> 테마 · 색·재질 지시 <span className="text-[10px] font-normal text-zinc-600">(선택)</span>
+            </h3>
+            <textarea
+              value={customThemeHint || ''}
+              onChange={(e) => setCustomThemeHint(e.target.value)}
+              placeholder="예) 한여름 청량한 아쿠아 블루 + 화이트골드 프레임, 유리질 하이라이트. (KV 컴포저에서 보내면 자동 입력됩니다)"
+              rows={3}
+              className="w-full resize-y rounded-lg border border-zinc-700/60 bg-[#101012] px-3 py-2.5 text-[11px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+            />
+            <div className="text-[10px] text-zinc-600 mt-1 leading-relaxed break-keep-all">선택한 테마 톤에 이 팔레트·무드를 우선 반영합니다. 비워두면 톤만 적용.</div>
+          </section>
 
           {/* 01 — 원본 에셋 업로드 */}
           <section>
@@ -333,6 +376,9 @@ export default function ForgeSidebar({ forge }) {
 
           {/* 주변 광원 제외 — 오브젝트만 (리스킨) */}
           <StripGlowToggle value={reskinStripGlow} onChange={setReskinStripGlow} />
+
+          {/* 테두리만 그리기 (리스킨) */}
+          <OutlineOnlyToggle value={reskinOutlineOnly} onChange={setReskinOutlineOnly} />
 
           {/* 생성 배경색 (리스킨) */}
           <BgColorPicker value={reskinBgColor} onChange={setReskinBgColor} />
@@ -483,6 +529,21 @@ export default function ForgeSidebar({ forge }) {
             </div>
           </div>
 
+          {/* 테마 지시(선택) — KV 컴포저에서 자동 주입되거나 직접 입력 */}
+          <section>
+            <h3 className="text-[12px] font-semibold text-zinc-300 mb-2 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-zinc-500" /> 테마 · 색·재질 지시 <span className="text-[10px] font-normal text-zinc-600">(선택)</span>
+            </h3>
+            <textarea
+              value={customThemeHint || ''}
+              onChange={(e) => setCustomThemeHint(e.target.value)}
+              placeholder="예) 한여름 청량한 아쿠아 블루 + 화이트골드 프레임, 유리질 하이라이트. (KV 컴포저에서 보내면 자동 입력됩니다)"
+              rows={3}
+              className="w-full resize-y rounded-lg border border-zinc-700/60 bg-[#101012] px-3 py-2.5 text-[11px] leading-relaxed text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-500"
+            />
+            <div className="text-[10px] text-zinc-600 mt-1 leading-relaxed break-keep-all">각 변형 방향에 이 팔레트·무드를 공통 반영합니다. 비워두면 방향만 적용.</div>
+          </section>
+
           {/* 01 — 원본 에셋 업로드 */}
           <section>
             <h3 className="text-[12px] font-semibold text-zinc-300 mb-2.5 flex items-center gap-2">
@@ -587,6 +648,9 @@ export default function ForgeSidebar({ forge }) {
 
           {/* 주변 광원 제외 — 오브젝트만 (리디자인) */}
           <StripGlowToggle value={variationStripGlow} onChange={setVariationStripGlow} />
+
+          {/* 테두리만 그리기 (리디자인) */}
+          <OutlineOnlyToggle value={variationOutlineOnly} onChange={setVariationOutlineOnly} />
 
           {/* 생성 배경색 (리디자인) */}
           <BgColorPicker value={variationBgColor} onChange={setVariationBgColor} />
@@ -788,13 +852,41 @@ export default function ForgeSidebar({ forge }) {
             </p>
           </section>
 
+          {/* 배치 형태 — 빛이 피사체에 어떻게 붙는지 (종류와 별개 축) */}
+          <section>
+            <h3 className="text-[12px] font-semibold text-zinc-300 mb-2.5 flex items-center gap-2">
+              <span className="text-[10px] font-bold text-zinc-500 tabular-nums">05</span> 배치 형태
+            </h3>
+            <div className="grid grid-cols-1 gap-1.5">
+              {LIGHTFX_FORMS.map(f => {
+                const active = f.id === lightFxForm;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setLightFxForm(f.id)}
+                    className={`flex items-center gap-2.5 px-2.5 py-2 rounded-md border transition-colors text-left ${active ? 'bg-zinc-800 border-zinc-600' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700 hover:bg-[#17171a]'}`}
+                  >
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: f.accent }} />
+                    <div className="min-w-0 flex-1">
+                      <div className={`text-[11px] font-semibold truncate ${active ? 'text-white' : 'text-zinc-300'}`}>{f.label}</div>
+                      <div className="text-[9px] text-zinc-500 truncate">{f.desc}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed break-keep-all">
+              빛이 붙는 <span className="text-zinc-400">위치</span>를 정합니다. 아래 <span className="text-zinc-400">형태 참고</span> 이미지를 함께 올리면 그 오브젝트에 맞는 <span className="text-zinc-400">광원만</span> 순흑 위에 별도로 렌더됩니다.
+            </p>
+          </section>
+
           {/* 형태 참고 (선택) — 빛이 감쌀 오브젝트 실루엣 */}
           <section>
             <h3 className="text-[12px] font-semibold text-zinc-300 mb-1 flex items-center gap-2">
-              형태 참고 <span className="text-[10px] font-normal text-zinc-500">· 선택</span>
+              형태 참고 <span className="text-[10px] font-normal text-zinc-500">· 선택 · 광원만 추출</span>
             </h3>
             <p className="text-[10px] text-zinc-600 mb-2 leading-relaxed break-keep-all">
-              빛을 감쌀 오브젝트를 올리면 그 실루엣에 맞춰 후광·광선이 배치됩니다. <span className="text-zinc-400">참고 오브젝트 자체는 결과에 나오지 않습니다</span> — 빛만 순흑 위에.
+              샘플 이미지(아이콘·박스·캐릭터 등)를 올리면 위 <span className="text-zinc-400">배치 형태</span>대로 그 실루엣에 맞춰 <span className="text-zinc-400">빛효과만 별도 렌더</span>됩니다. <span className="text-zinc-400">참고 오브젝트 자체는 결과에 나오지 않습니다</span> — 빛만 순흑 위에.
             </p>
             <div
               onDragOver={handleLightFxRefDragOver}

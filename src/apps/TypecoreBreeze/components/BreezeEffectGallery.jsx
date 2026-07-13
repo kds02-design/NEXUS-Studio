@@ -2,7 +2,8 @@
 // 16종 캐주얼 스타일을 큰 카드(이모지 + 한 줄 태그라인)로 보여주고, 클릭 한 번에
 // applyScriptPreset(handleScriptPresetChange)으로 옵션 묶음을 일괄 적용한다.
 // 기존엔 동일 카드가 "고급 옵션"(기본 닫힘) 안에 묻혀 있어 효과 선택이 어려웠음 → 밖으로 끌어올림.
-import { Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown, Sparkles } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { staticOptions } from '../constants/presets.js';
 
@@ -35,21 +36,27 @@ const EFFECT_META = {
 
 export default function BreezeEffectGallery() {
   const b = useBreeze();
+  const [expanded, setExpanded] = useState(false);
   // 좌측 카테고리(casual / calli)로 필터 — '캘리그라피' 선택 시 붓글씨 계열만 노출.
   // cat 미지정(동적 AI 생성 스타일)은 캐주얼로 간주.
   const allEffects = [...staticOptions.CasualStyles, ...(b.dynamicOptions.CasualStyles || [])];
   const effects = allEffects.filter((s) => (s.cat || 'casual') === b.selectedCategory);
+  const activeEffect = effects.find((effect) => effect.id === b.scriptType);
+  const compactEffects = effects.slice(0, 6);
+  const visibleEffects = expanded || !activeEffect || compactEffects.includes(activeEffect)
+    ? (expanded ? effects : compactEffects)
+    : [...compactEffects, activeEffect];
   const isCalli = b.selectedCategory === 'calli';
 
   return (
     <section className="rounded-xl border border-violet-500/25 bg-gradient-to-br from-violet-950/30 to-[#0E0E0E] p-3">
       <div className="flex items-center gap-2 mb-2.5 px-0.5">
         <Sparkles className="w-3.5 h-3.5 text-violet-300" />
-        <h3 className="text-[11px] font-bold text-violet-100">{isCalli ? '붓글씨 효과' : '효과 선택'}</h3>
-        <span className="text-[10px] text-zinc-500">— 클릭 한 번에 스타일 완성</span>
+        <h3 className="text-[11px] font-bold text-violet-100">2. {isCalli ? '붓글씨 효과 고르기' : '글자 효과 고르기'}</h3>
+        <span className="text-[10px] text-zinc-500">— 먼저 대표 효과만 보여드려요</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">
-        {effects.map((s) => {
+        {visibleEffects.map((s) => {
           const active = b.scriptType === s.id;
           const meta = EFFECT_META[s.id] || { emoji: '🎨', tag: '' };
           const ko = s.name.split(/[(（]/)[0].trim();
@@ -71,6 +78,12 @@ export default function BreezeEffectGallery() {
           );
         })}
       </div>
+      {effects.length > 6 && (
+        <button onClick={() => setExpanded((value) => !value)} className="mt-2.5 w-full py-2 rounded-lg border border-violet-500/20 bg-black/20 text-[10px] font-bold text-violet-200/80 hover:text-violet-100 flex items-center justify-center gap-1.5">
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          {expanded ? '대표 효과만 보기' : `다른 효과 ${effects.length - 6}개 더 보기`}
+        </button>
+      )}
     </section>
   );
 }

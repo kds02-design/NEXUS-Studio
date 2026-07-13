@@ -13,7 +13,7 @@ export const useBreeze = () => useContext(BreezeContext);
 export const BreezeProvider = ({ children }) => {
   const { ensureCanGenerate, modal: usageModal } = useUsageGate();
   const { user, grade } = useAuth();
-  const { navigate } = useGlobal();
+  const { navigate, payload, clearPayload } = useGlobal();
   const canRender = grade === 'pro' || grade === 'pro_plus' || grade === 'expert';
 
   // ─── UI shell ──────────────────────────────────────────────
@@ -81,6 +81,22 @@ export const BreezeProvider = ({ children }) => {
   const [copiedTop, setCopiedTop] = useState(false);
   const [copiedBottom, setCopiedBottom] = useState(false);
   const [baseLangView, setBaseLangView] = useState('ko');
+
+  // ─── 외부 payload 수신 (NEXUS Preview KV 타이틀 등) ─────────
+  // payload.prompt.text → 입력 텍스트로 주입 + 에디터 뷰 전환 (timestamp 로 1회만 소비).
+  const consumedPayloadRef = useRef(null);
+  useEffect(() => {
+    if (!payload || payload.target !== "typecore-breeze" || !payload.timestamp) return;
+    if (consumedPayloadRef.current === payload.timestamp) return;
+    consumedPayloadRef.current = payload.timestamp;
+    const text = payload.prompt?.text;
+    if (text) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setInputText(text);
+      setCurrentView("editor");
+    }
+    try { clearPayload?.(); } catch { /* noop */ }
+  }, [payload, clearPayload]);
 
   // ─── Edit (Micro-Edit view) ───────────────────────────────
   const [editUploadedImage, setEditUploadedImage] = useState(null);

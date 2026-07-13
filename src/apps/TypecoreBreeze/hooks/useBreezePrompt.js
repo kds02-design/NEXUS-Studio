@@ -48,8 +48,8 @@ const resolveConflicts = (s) => {
     out.stemWeight = 'Weight_Chunky'; conflicts.push('스티커 보더 ↔ 얇은 모노라인 → 두툼한 볼륨으로 강제');
   }
 
-  if (out.internalDecoration === 'Extruded3D' && ['Tex_Watercolor', 'Tex_Chalk', 'Tex_DustyChalk'].includes(out.strokeTexture)) {
-    out.internalDecoration = 'Solid'; conflicts.push('3D 입체 ↔ 수채화/분필 텍스처 → 텍스처 우선, 3D 해제');
+  if (out.internalDecoration === 'Extruded3D') {
+    out.internalDecoration = 'Solid'; conflicts.push('2D 흑백 출력 규칙 ↔ 3D 입체 옵션 → 평면 채움으로 변경');
   }
 
   if (out.internalDecoration === 'Highlight' && ['Tex_Watercolor', 'Tex_Chalk', 'Tex_DustyChalk', 'Tex_Grunge'].includes(out.strokeTexture)) {
@@ -130,6 +130,8 @@ export const buildPrompts = (raw) => {
     : layoutLines === 3
       ? `[LAYOUT MANDATE]: Balanced Three-tier vertical stacked composition (exactly 3 rows).`
       : `[LAYOUT MANDATE]: Balanced Two-tier vertical stacked composition.`;
+  const layoutInlineEn = layoutLines === 1 ? 'strictly one horizontal row, no stacking'
+    : layoutLines === 3 ? 'exactly three stacked rows' : 'exactly two stacked rows';
   const userAuraEn = s.customDesignInjections ? `\n[USER DESIGN DIRECTION / AURA]: ${s.customDesignInjections}` : "";
 
   const layoutKo = layoutLines === 1
@@ -137,11 +139,13 @@ export const buildPrompts = (raw) => {
     : layoutLines === 3
       ? `[레이아웃 강제]: 균형잡힌 3줄 세로 적층 구성.`
       : `[레이아웃 강제]: 균형잡힌 2줄 세로 적층 구성.`;
+  const layoutInlineKo = layoutLines === 1 ? '엄격한 1줄 가로 배열, 적층 금지'
+    : layoutLines === 3 ? '정확히 3줄로 적층' : '정확히 2줄로 적층';
   const userAuraKo = s.customDesignInjections ? `\n[사용자 디자인 지시 / 아우라]: ${s.customDesignInjections}` : "";
   const subTraitContextKo = `\n[세부 속성 집중도]: ${getSliderText(s.personaSliderValue)}`;
   const subTraitContext = `\n[SUB-TRAIT FOCUS]: ${getSliderText(s.personaSliderValue)}`;
 
-  const artisticBoost = s.enhanceMode === 'wild' ? `\n[PLAYFUL CHAOS ENGINE]: ENABLED.\n- ASYMMETRY ENFORCED: Strict prohibition of boring bilateral symmetry.\n- DYNAMIC BOUNCE: Extreme size variations between letters, creating a fun, quirky rhythm.\n- SILHOUETTE HOOK: Create a charming, memorable outer shape that stands out.\n- SACRIFICE PERFECT LEGIBILITY: Allow letters to squash and overlap playfully for artistic mood.\n- NO 3D MATERIALS: Rely purely on flat, vector or illustrated structural forms.` : "";
+  const artisticBoost = s.enhanceMode === 'wild' ? `\n[PLAYFUL CHAOS ENGINE]: ENABLED.\n- ASYMMETRY ENFORCED: Strict prohibition of boring bilateral symmetry.\n- DYNAMIC BOUNCE: Use size variation while preserving every character.\n- SILHOUETTE HOOK: Create a charming, memorable outer shape that stands out.\n- CONTROLLED DISTORTION: Distort only decorative contours; keep the text fully legible and correctly spelled.\n- NO 3D MATERIALS: Rely purely on flat, vector or illustrated structural forms.` : "";
   // 스타일 암시(calligraphy / bubbly / sticker) 제거 — 스타일은 페르소나·테마가 결정. 여기서는 마감 품질만.
   const qualityBoost = s.enhanceMode === 'perfection' ? `\n[FLAWLESS VECTOR ENGINE]: ENABLED.\n- PRISTINE CURVES: Bezier curves are perfectly clean with no jitter.\n- COMMERCIAL QUALITY: Production-grade visual finish.\n- CLEAN NEGATIVE SPACE: Internal counters are balanced and uncluttered.\n- READABILITY FIRST: Text is highly legible regardless of stylistic choices.` : "";
   const transformationBoost = s.enhanceMode === 'creative' ? `\n[CALLIGRAPHIC ORNAMENT ENGINE]: ENABLED.\n- FLOWING CONNECTIONS: Maximize elegant ligatures, swashes, and beautiful flourishes.\n- UNIFIED COMPOSITION: Letters must interlock naturally like a single continuous artistic gesture.\n- ANCHOR EXAGGERATION: Emphasize the first or last letter with dramatic, gorgeous sweeping curves.` : "";
@@ -149,7 +153,7 @@ export const buildPrompts = (raw) => {
   const bgDesc = getOptionEn(staticOptions.base, s.baseStyle) || "JET BLACK Background";
   const bgDescKo = getOptionName(staticOptions.base, s.baseStyle) || "제트 블랙 배경";
 
-  const artisticBoostKo = s.enhanceMode === 'wild' ? `\n[유쾌한 혼돈 시스템]: 활성화됨.\n- 비대칭 강제: 지루한 좌우 대칭을 엄격히 금지합니다.\n- 다이나믹 바운스: 글자 간의 극단적인 크기 변화를 통해 재미있고 독특한 리듬감을 만드세요.\n- 실루엣 훅: 멀리서도 눈에 띄는 매력적이고 기억에 남는 외곽 형태를 만드세요.\n- 가독성 희생 허용: 예술적인 분위기를 위해 글자들이 장난스럽게 찌그러지거나 겹치는 것을 허용합니다.\n- 3D 재질 금지: 순수한 평면, 벡터 또는 일러스트 구조에 의존하세요.` : "";
+  const artisticBoostKo = s.enhanceMode === 'wild' ? `\n[유쾌한 혼돈 시스템]: 활성화됨.\n- 비대칭 강제: 지루한 좌우 대칭을 엄격히 금지합니다.\n- 다이나믹 바운스: 모든 글자를 보존하는 범위에서 크기 변화를 적용하세요.\n- 실루엣 훅: 멀리서도 눈에 띄는 매력적이고 기억에 남는 외곽 형태를 만드세요.\n- 통제된 왜곡: 장식 외곽만 변형하고 본문은 완전히 읽히며 철자가 정확해야 합니다.\n- 3D 재질 금지: 순수한 평면, 벡터 또는 일러스트 구조에 의존하세요.` : "";
   const qualityBoostKo = s.enhanceMode === 'perfection' ? `\n[무결점 벡터 시스템]: 활성화됨.\n- 완벽한 곡선: 떨림 없는 깔끔한 베지어 곡선.\n- 상업적 퀄리티: 프로덕션급 시각 마감.\n- 깔끔한 여백: 내부 공간(카운터)이 균형 잡히고 깔끔함.\n- 가독성 최우선: 스타일 선택과 무관하게 텍스트가 매우 잘 읽힘.` : "";
   const transformationBoostKo = s.enhanceMode === 'creative' ? `\n[캘리그라피 장식 시스템]: 활성화됨.\n- 흐르는 연결성: 우아한 합자(Ligature), 스워시, 아름다운 플로리시(Flourishes)를 극대화하세요.\n- 통합된 구성: 글자들이 마치 하나의 연속된 예술적 제스처처럼 자연스럽게 얽혀야 합니다.\n- 앵커 과장: 첫 글자나 마지막 글자를 드라마틱하고 멋지게 뻗어나가는 곡선으로 강조하세요.` : "";
   const momentumBoostKo = s.momentumActive ? `\n[리듬 바운스 시스템]: 활성화됨.\n- 춤추는 텍스트: 타이포그래피가 춤을 추거나, 점프하거나, 에너지 넘치는 움직임으로 흐르는 것처럼 보여야 합니다.\n- 액션 궤적: 역동적이고 시원하게 뻗어나가는 베이스라인을 따르세요.\n- 생동감 있는 에너지: 기울어지거나, 늘어나거나, 통통 튀는 형태를 사용해 순수한 즐거움이나 역동적인 속도감을 전달하세요.` : "";
@@ -187,11 +191,11 @@ export const buildPrompts = (raw) => {
 
   const baseTechnicalEn = `[MASTER TYPO SPECS V3.0] Text: "${s.inputText}". ${userAuraEn}${subTraitContext}
 [CORE PHILOSOPHY]: DO NOT render standard flat fonts. Create artistic custom typography.
-[CONFLICT POLICY]: When this spec implies competing directions, the PERSONA and STYLE win. Drop contradictory descriptors rather than averaging them.
+[CONFLICT POLICY]: Preserve exact TEXT, LINE BREAKS, LAYOUT, MONOCHROME, and 2D locks first; then USER DESIGN DIRECTION; then PERSONA and STYLE. Drop lower-priority contradictions rather than averaging them.
 [STRICT MONOCHROME]: NO COLORS. STRICT BLACK AND WHITE ONLY.
 [SPATIAL MANDATE]: ${occupancyEn}
 ${layoutEn}${lineBreakEn}${personaMandate}${hangulBoostEn}
-[PROPORTION SAFETY]: Force character proportion to ${proportionEn} and width to ${widthEn}. Expand horizontally. Strictly PROHIBIT vertical stretching to prevent unintended vertical text stacking.
+[PROPORTION SAFETY]: Force each character's proportion to ${proportionEn} and width to ${widthEn}. Do not stretch or rotate individual characters vertically. Multi-row stacking is allowed only when required by the LAYOUT MANDATE.
 [MORPHOLOGY]:
 - Theme: ${styleEn}.
 - Body: ${morphologyBody}${morphologyDetail}
@@ -211,8 +215,8 @@ ${layoutEn}${lineBreakEn}${personaMandate}${hangulBoostEn}
 [2D 강제]: 완벽한 평면 그래픽 실루엣. 깊이감 제로. 3D 금지.
 [공간 할당]: ${occupancyKo}
 ${layoutKo}${lineBreakKo}${personaMandateKo}${hangulBoostKo}
-[충돌 정책]: 사양 안에 상충되는 방향이 있을 때 페르소나와 스타일이 우선합니다. 모순 키워드는 평균내지 말고 제거하세요.
-[비율 안전장치]: 글자 비율을 ${proportionKo}(으)로, 자폭을 ${widthKo}(으)로 강제. 가로 확장. 세로 적층을 막기 위해 '세로로 늘리기'나 '압축된 세로 종횡비' 엄격히 금지. 강력한 수평 흐름 유지.
+[충돌 정책]: 정확한 문구·줄 분할·레이아웃·흑백·2D 규칙을 최우선으로 보존하고, 그다음 사용자 디자인 지시, 페르소나, 스타일 순으로 적용합니다. 하위 우선순위의 모순 키워드는 제거하세요.
+[비율 안전장치]: 개별 글자 비율을 ${proportionKo}(으)로, 자폭을 ${widthKo}(으)로 강제. 개별 글자를 세로로 늘이거나 회전하지 마세요. 여러 줄 적층은 위 레이아웃 강제가 요구할 때만 허용합니다.
 [형태학]:
 - 테마: ${styleKo}.
 - 뼈대: ${morphologyBodyKo}${morphologyDetailKo}
@@ -232,19 +236,21 @@ ${layoutKo}${lineBreakKo}${personaMandateKo}${hangulBoostKo}
 • Rhythm: ${rhythmEn}`;
 
   const chatGPTOutput = {
-    en: `Act as an expert Typography Engine. Render "${s.inputText}" in a 2D flat silhouette graphic. \n1. Constraints: Pure black and white. \n2. Layout: ${layoutEn}. \n3. Directing Aura: ${s.customDesignInjections}. \n4. Details: ${s.isAdvancedOptionsEnabled ? `Texture(${textureEn}), Slant(${slantEn})` : 'Aura Driven'}`,
-    ko: `전문 타이포그래피 엔진으로 동작합니다. "${s.inputText}" 텍스트를 2D 흑백 그래픽으로 렌더링하세요.\n1. 제약 조건: 완전한 흑백.\n2. 레이아웃: ${layoutKo}.\n3. 연출 방향성: ${s.customDesignInjections}.\n4. 세부사항: ${s.isAdvancedOptionsEnabled ? `텍스처(${textureKo}), 기울기(${slantKo})` : '사용자 아우라 기반'}`
+    en: `Act as an expert Typography Engine. Render "${s.inputText}" in a 2D flat silhouette graphic.\n1. Constraints: Pure black and white; preserve exact spelling.\n2. Layout: ${layoutInlineEn}.${lineBreakEn}\n3. Directing Aura: ${s.customDesignInjections || 'Use the selected persona and style settings'}.\n4. Details: ${s.isAdvancedOptionsEnabled ? `Texture(${textureEn}), Slant(${slantEn})` : 'Aura Driven'}`,
+    ko: `전문 타이포그래피 엔진으로 동작합니다. "${s.inputText}" 텍스트를 2D 흑백 그래픽으로 렌더링하세요.\n1. 제약 조건: 완전한 흑백, 정확한 철자 보존.\n2. 레이아웃: ${layoutInlineKo}.${lineBreakKo}\n3. 연출 방향성: ${s.customDesignInjections || '선택한 페르소나와 스타일 설정 사용'}.\n4. 세부사항: ${s.isAdvancedOptionsEnabled ? `텍스처(${textureKo}), 기울기(${slantKo})` : '사용자 아우라 기반'}`
   };
 
   const midjourneyOutput = {
-    en: `${s.inputText} typography logotype, ${s.customDesignInjections}, ${s.isAdvancedOptionsEnabled ? textureEn : ''} strictly single horizontal row, pure black and white, --ar ${s.aspectRatio.replace(':', ':')} --no 3d, font, color`,
-    ko: `${s.inputText} 타이포그래피 로고타입, ${s.customDesignInjections}, ${s.isAdvancedOptionsEnabled ? textureKo : ''} 완전한 1줄 수평 배열, 완전한 흑백, --ar ${s.aspectRatio.replace(':', ':')} --no 3d, font, color`
+    en: `"${s.inputText}" typography logotype, exact spelling, ${s.customDesignInjections || 'selected casual typography style'}, ${s.isAdvancedOptionsEnabled ? textureEn : ''}, ${layoutInlineEn}${lineBreakEn}, pure black and white, flat 2D silhouette --ar ${s.aspectRatio} --no 3d color gradients`,
+    ko: `"${s.inputText}" 타이포그래피 로고타입, 정확한 철자, ${s.customDesignInjections || '선택한 캐주얼 타이포 스타일'}, ${s.isAdvancedOptionsEnabled ? textureKo : ''}, ${layoutInlineKo}${lineBreakKo}, 완전한 흑백, 평면 2D 실루엣 --ar ${s.aspectRatio} --no 3d color gradients`
   };
 
   let finalOut = overview;
-  if (s.aiModel === 'NanoBanana') finalOut = s.nanoViewMode === 'optimized' ? s.optimizedPrompt : (s.dramaticPrompt || null);
-  else if (s.aiModel === 'ChatGPT') finalOut = s.cgEnhancedPrompt || chatGPTOutput;
-  else if (s.aiModel === 'Midjourney') finalOut = s.mjOptimizedPrompt || midjourneyOutput;
+  if (s.aiModel === 'NanoBanana') finalOut = s.isOutdated
+    ? baseTechnical
+    : (s.nanoViewMode === 'optimized' ? s.optimizedPrompt : (s.dramaticPrompt || baseTechnical));
+  else if (s.aiModel === 'ChatGPT') finalOut = !s.isOutdated && s.cgEnhancedPrompt ? s.cgEnhancedPrompt : chatGPTOutput;
+  else if (s.aiModel === 'Midjourney') finalOut = !s.isOutdated && s.mjOptimizedPrompt ? s.mjOptimizedPrompt : midjourneyOutput;
 
   return { baseTechnical, outputContent: finalOut || overview, overview, conflicts };
 };
@@ -293,9 +299,11 @@ export const buildEditPrompts = (s) => {
   };
 
   let finalOut = overview;
-  if (s.editAiModel === 'NanoBanana') finalOut = s.editNanoMode === 'optimized' ? s.editOptimizedPrompt : (s.editDramaticPrompt || null);
-  else if (s.editAiModel === 'ChatGPT') finalOut = s.editCgPrompt || chatGPTOutput;
-  else if (s.editAiModel === 'Midjourney') finalOut = s.editMjPrompt || midjourneyOutput;
+  if (s.editAiModel === 'NanoBanana') finalOut = s.isEditOutdated
+    ? baseTechnical
+    : (s.editNanoMode === 'optimized' ? s.editOptimizedPrompt : (s.editDramaticPrompt || baseTechnical));
+  else if (s.editAiModel === 'ChatGPT') finalOut = !s.isEditOutdated && s.editCgPrompt ? s.editCgPrompt : chatGPTOutput;
+  else if (s.editAiModel === 'Midjourney') finalOut = !s.isEditOutdated && s.editMjPrompt ? s.editMjPrompt : midjourneyOutput;
 
   return { baseTechnical, outputContent: finalOut || overview };
 };

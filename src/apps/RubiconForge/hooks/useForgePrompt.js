@@ -27,11 +27,12 @@ import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID } from
 
 // 결과가 자동 저장될 PromptArc 폴더 이름.
 const ARC_FOLDER_NAME = '리스킨 보관함';
+const REDESIGN_FOLDER_NAME = '리디자인 보관함';
 const LIGHTFX_FOLDER_NAME = '광원 보관함';
 
 export function useForgePrompt() {
   // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
-  const { isLight, user } = useGlobal();
+  const { isLight, user, payload, clearPayload } = useGlobal();
   const theme = isLight ? "light" : "dark";
   const [currentView, setCurrentView] = useState("creation");
 
@@ -95,6 +96,8 @@ export function useForgePrompt() {
   const [variationStrength, setVariationStrength] = useState('subtle');
   // 주변 광원 제외(오브젝트만) — 리디자인 시 원본 주변 빛효과 제거.
   const [variationStripGlow, setVariationStripGlow] = useState(false);
+  // 테두리만 그리기 — 채색/재질 대신 윤곽선(라인아트)만 출력.
+  const [variationOutlineOnly, setVariationOutlineOnly] = useState(false);
   // 생성 배경색 — 결과가 깔릴 단색. 기본 블랙. (마스크포지·투명추출용 비-블랙 선택 가능)
   const [variationBgColor, setVariationBgColor] = useState('black');
   const [variationResults, setVariationResults] = useState(() =>
@@ -127,6 +130,9 @@ export function useForgePrompt() {
   // 마스터 템플릿에서 송신된 명세(마크다운). 있으면 atlas 프롬프트에 ATLAS STRUCTURE SPEC 으로 주입.
   const [atlasSpec, setAtlasSpec] = useState('');
   const [atlasSpecTitle, setAtlasSpecTitle] = useState('');
+  // 아틀라스 리디자인 토글 — false=리컬러(구조·개수 완전보존), true=모티프/형태 재해석(격자·개수·비율은 고정).
+  //   NEXUS Preview 프레임 세트(몽타주)를 mode 에 따라 이 값으로 받는다.
+  const [atlasRedesign, setAtlasRedesign] = useState(false);
 
   // 신규 생성(creation) 탭의 이미지 렌더링 — 컴파일된 영문 프롬프트를 Nano Banana 에 전송.
   // creationRenderModel 은 IMAGEN_MODELS 의 id 중 하나. 기본 빠른 Flash.
@@ -221,10 +227,27 @@ export function useForgePrompt() {
   const [reskinImageSize, setReskinImageSize] = useState('2K');
   // 주변 광원 제외(오브젝트만) — 원본이 갓레이·후광·글로우·파티클을 달고 있어도 제거하고 본체만 남김.
   const [reskinStripGlow, setReskinStripGlow] = useState(false);
+  // 테두리만 그리기 — 채색/재질 대신 윤곽선(라인아트)만 출력.
+  const [reskinOutlineOnly, setReskinOutlineOnly] = useState(false);
   // 생성 배경색 — 결과가 깔릴 단색. 기본 블랙.
   const [reskinBgColor, setReskinBgColor] = useState('black');
   // PromptArc 자동 저장 결과 알림 (성공/실패/로그인 안내). 잠시 노출 후 사라짐.
   const [reskinSaveMsg, setReskinSaveMsg] = useState(null);
+  // 사용자 테마 입력 — 리스킨/리디자인 공용. KV 컴포저에서 추출한 테마 텍스트를 여기에 주입/직접 입력.
+  //   리스킨: themeHint(색·재질 지시)에 우선 팔레트로 덧붙임. 리디자인: 방향 블록에 팔레트 참조로 덧붙임.
+  const [customThemeHint, setCustomThemeHint] = useState('');
+  const composeReskinHint = (styleHint) => {
+    const c = (customThemeHint || '').trim();
+    return c ? `${styleHint}\n\nPRIORITY PALETTE & MOOD (from the key visual — bias all color/material toward this): ${c}` : styleHint;
+  };
+  const composeDirection = (dirBlock) => {
+    const c = (customThemeHint || '').trim();
+    return c ? `${dirBlock || ''}\n\nPALETTE & MOOD REFERENCE (apply this color/material throughout): ${c}` : dirBlock;
+  };
+  const composeAtlasHint = (styleHint) => {
+    const c = (customThemeHint || '').trim();
+    return c ? `${styleHint}\n\nPRIORITY THEME (from the key visual — apply this palette/material/mood to the whole sheet): ${c}` : styleHint;
+  };
 
   // 렌더 성공 결과 1건을 PromptArc '리스킨 보관함' 폴더에 자동 저장. 실패해도 렌더 흐름은 막지 않음.
   const autoSaveReskin = (style, result) => {
@@ -238,10 +261,58 @@ export function useForgePrompt() {
     });
   };
 
+  // 리디자인(변형) 렌더 성공 결과 1건을 PromptArc '리디자인 보관함' 폴더에 자동 저장.
+  const autoSaveRedesign = (dir, result) => {
+    if (!result?.ok || !user?.uid) return null;
+    return savePromptToArc(user.uid, {
+      imageDataUrl: result.dataUrl,
+      promptText: result.compactPrompt || result.prompt || '',
+      title: `리디자인 — ${dir?.label || ''}`.trim(),
+      tags: ['리디자인', dir?.label].filter(Boolean),
+      folderName: REDESIGN_FOLDER_NAME,
+    });
+  };
+
   const flashSaveMsg = (msg) => {
     setReskinSaveMsg(msg);
     setTimeout(() => setReskinSaveMsg(null), 4000);
   };
+
+  // NEXUS Preview KV 컴포저에서 "월 테마·KV" 를 보내면 배경 참조로 설정 → 그 톤에 맞춰 생성.
+  const consumedKvRef = useRef(null);
+  useEffect(() => {
+    if (!payload || payload.target !== 'rubicon-forge') return;
+    if (consumedKvRef.current === payload.timestamp) return;
+    const url = payload.image?.url;
+    if (!url) return;
+    consumedKvRef.current = payload.timestamp;
+    const ref = payload.params?.kvReference;
+    if (payload.params?.slot === 'frameSet') {
+      // 프레임 세트(격자 몽타주) → 아틀라스 모드로: 격자·개수·위치 유지하며 한 판을 일관 리테마.
+      //   mode=redesign 이면 모티프/형태까지 재해석(구조는 고정), reskin 이면 리컬러.
+      const mode = payload.params?.mode === 'redesign' ? 'redesign' : 'reskin';
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAtlasSource(url);
+      if (ref) setAtlasBackgroundRef(ref);
+      if (payload.params?.themeText) setCustomThemeHint(payload.params.themeText);
+      setAtlasRedesign(mode === 'redesign');
+      setCurrentView('atlas');
+      flashSaveMsg(`프레임 세트 수신 — KV 테마로 ${mode === 'redesign' ? '리디자인' : '리컬러'} 한 판 생성 후 결과에서 "넥서스 프리뷰로"`);
+    } else if (payload.params?.slot) {
+      // 단일 부품 소스(프레임 등) + KV 참조 → 리스킨/리디자인 모드에 소스/배경참조/테마 세팅
+      const mode = payload.params?.mode === 'redesign' ? 'redesign' : 'reskin';
+      setCreationSource(url); setSourceAsset(url);
+      if (ref) { setCreationBgRef(ref); setBackgroundRef(ref); }
+      if (payload.params?.themeText) setCustomThemeHint(payload.params.themeText);
+      setCurrentView(mode === 'redesign' ? 'micro-edit' : 'creation');
+      flashSaveMsg(`${payload.params.slotLabel || '부품'} 수신 — KV 테마로 ${mode === 'redesign' ? '리디자인' : '리스킨'} 후 결과에서 "넥서스 프리뷰로"`);
+    } else {
+      setBackgroundRef(url); setCreationBgRef(url);
+      flashSaveMsg('NEXUS Preview KV 를 배경 참조로 설정 — 이 톤·컬러에 맞춰 생성됩니다');
+    }
+    clearPayload?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payload?.timestamp]);
 
   // 빈 슬롯 빌더 — 선택한 스타일 id 배열 → 결과 슬롯 배열.
   const buildReskinSlots = (ids) => ids.map(id => {
@@ -305,7 +376,7 @@ export function useForgePrompt() {
     const saves = [];
     let anyOk = false;
     await Promise.all(styles.map(async (style, idx) => {
-      const result = await renderVariation(creationSource, style.promptHint, {
+      const result = await renderVariation(creationSource, composeReskinHint(style.promptHint), {
         refinementLevel: reskinRefinementLevel,
         temperature: reskinTemperature,
         age: reskinAge,
@@ -313,6 +384,7 @@ export function useForgePrompt() {
         imageSize: reskinImageSize,
         modelId: creationRenderModel,
         stripAmbientLight: reskinStripGlow,
+        outlineOnly: reskinOutlineOnly,
         bg,
       });
       setReskinResults(prev => {
@@ -350,7 +422,7 @@ export function useForgePrompt() {
     });
     const bg = BG_COLOR_BY_ID[reskinBgColor];
     const bgHex = bg?.hex || '#000000';
-    const result = await renderVariation(creationSource, slot.theme.promptHint, {
+    const result = await renderVariation(creationSource, composeReskinHint(slot.theme.promptHint), {
       refinementLevel: reskinRefinementLevel,
       temperature: reskinTemperature,
       age: reskinAge,
@@ -358,6 +430,7 @@ export function useForgePrompt() {
       imageSize: reskinImageSize,
       modelId: creationRenderModel,
       stripAmbientLight: reskinStripGlow,
+      outlineOnly: reskinOutlineOnly,
       bg,
     });
     setReskinResults(prev => {
@@ -383,6 +456,7 @@ export function useForgePrompt() {
   // 구 '벡터 생성' 탭을 대체. renderLightFx → renderWithImagen 으로 검은 배경 라이트 에셋 N장.
   // 결과 슬롯은 변형/리스킨 셀(VariationResultCell)을 그대로 쓰도록 theme 객체 형태로 구성.
   const [lightFxCategory, setLightFxCategory] = useState('lightSource');
+  const [lightFxForm, setLightFxForm] = useState('free'); // 배치 형태 (아이콘 뒤/박스 아웃그로우/캐릭터 아우라 등)
   const [lightFxStyle, setLightFxStyle] = useState('soft');
   const [lightFxColor, setLightFxColor] = useState('gold');
   const [lightFxText, setLightFxText] = useState('');
@@ -436,7 +510,7 @@ export function useForgePrompt() {
   };
 
   const renderOneLightFx = (i) => renderLightFx({
-    category: lightFxCategory, style: lightFxStyle, color: lightFxColor,
+    category: lightFxCategory, form: lightFxForm, style: lightFxStyle, color: lightFxColor,
     userText: lightFxText, index: i,
     referenceDataUrl: lightFxRef,
     imageSize: lightFxImageSize, modelId: lightFxRenderModel,
@@ -567,16 +641,19 @@ export function useForgePrompt() {
     const dirs = selectedVariationIds.map(id => DESIGN_VARIATION_BY_ID[id]).filter(Boolean);
     const strength = VARIATION_STRENGTH_BY_ID[variationStrength] || VARIATION_STRENGTH_BY_ID.moderate;
     setVariationResults(dirs.map(d => ({ styleId: d.id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex })));
+    const saves = [];
+    let anyOk = false;
     await Promise.all(dirs.map(async (dir, idx) => {
       const result = await renderDesignAlternative(sourceAsset, {
-        directionBlock: dir.promptBlock,
-        directionHint: dir.promptBlock,
+        directionBlock: composeDirection(dir.promptBlock),
+        directionHint: composeDirection(dir.promptBlock),
         strengthBlock: strength?.promptBlock,
         strengthHint: strength?.promptBlock,
         backgroundRefDataUrl: backgroundRef,
         imageSize: variationImageSize,
         modelId: variationRenderModel,
         stripAmbientLight: variationStripGlow,
+        outlineOnly: variationOutlineOnly,
         bg,
       });
       setVariationResults(prev => {
@@ -592,8 +669,16 @@ export function useForgePrompt() {
         };
         return next;
       });
+      if (result.ok) { anyOk = true; const p = autoSaveRedesign(dir, result); if (p) saves.push(p); }
     }));
     setIsGeneratingVariations(false);
+    // PromptArc 자동 저장 — 렌더 완료 후 백그라운드 처리하고 결과만 알림.
+    if (saves.length) {
+      const okCount = (await Promise.all(saves)).filter(r => r?.ok).length;
+      flashSaveMsg(okCount ? `PromptArc '${REDESIGN_FOLDER_NAME}'에 ${okCount}장 저장 · 임시 ${TEMP_TTL_DAYS}일 보관` : 'PromptArc 저장 실패 — 콘솔 확인');
+    } else if (anyOk && !user?.uid) {
+      flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
+    }
   };
 
   // 단일 슬롯 재시도 — 그 방향만 다시 호출 (실패하거나 마음에 안 들 때).
@@ -610,14 +695,15 @@ export function useForgePrompt() {
       return next;
     });
     const result = await renderDesignAlternative(sourceAsset, {
-      directionBlock: slot.theme.promptBlock,
-      directionHint: slot.theme.promptBlock,
+      directionBlock: composeDirection(slot.theme.promptBlock),
+      directionHint: composeDirection(slot.theme.promptBlock),
       strengthBlock: strength?.promptBlock,
       strengthHint: strength?.promptBlock,
       backgroundRefDataUrl: backgroundRef,
       imageSize: variationImageSize,
       modelId: variationRenderModel,
       stripAmbientLight: variationStripGlow,
+      outlineOnly: variationOutlineOnly,
       bg,
     });
     setVariationResults(prev => {
@@ -633,6 +719,11 @@ export function useForgePrompt() {
       };
       return next;
     });
+    if (result.ok) {
+      const p = autoSaveRedesign(slot.theme, result);
+      if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${REDESIGN_FOLDER_NAME}'에 저장 · 임시 ${TEMP_TTL_DAYS}일` : 'PromptArc 저장 실패 — 콘솔 확인');
+      else if (!user?.uid) flashSaveMsg('로그인하면 결과가 PromptArc 에 자동 저장됩니다');
+    }
   };
 
   // ─── 아틀라스(디자인 시스템) 모드 핸들러 ──────────────────────────────────
@@ -691,7 +782,7 @@ export function useForgePrompt() {
     const styles = selectedAtlasStyleIds.map(id => STYLE_BY_ID[id]).filter(Boolean);
     setAtlasResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, isLoading: true })));
     await Promise.all(styles.map(async (style, idx) => {
-      const result = await renderAtlasVariation(atlasSource, style.promptHint, {
+      const result = await renderAtlasVariation(atlasSource, composeAtlasHint(style.promptHint), {
         backgroundRefDataUrl: atlasBackgroundRef,
         refinementLevel: atlasRefinementLevel,
         atlasSpec,
@@ -699,6 +790,7 @@ export function useForgePrompt() {
         age: atlasAge,
         imageSize: atlasImageSize,
         modelId: atlasRenderModel,
+        redesign: atlasRedesign,
       });
       setAtlasResults(prev => {
         const next = prev.slice();
@@ -726,7 +818,7 @@ export function useForgePrompt() {
       next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
       return next;
     });
-    const result = await renderAtlasVariation(atlasSource, slot.theme.promptHint, {
+    const result = await renderAtlasVariation(atlasSource, composeAtlasHint(slot.theme.promptHint), {
       backgroundRefDataUrl: atlasBackgroundRef,
       refinementLevel: atlasRefinementLevel,
       atlasSpec,
@@ -734,6 +826,7 @@ export function useForgePrompt() {
       age: atlasAge,
       imageSize: atlasImageSize,
       modelId: atlasRenderModel,
+      redesign: atlasRedesign,
     });
     setAtlasResults(prev => {
       const next = prev.slice();
@@ -1022,6 +1115,7 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     selectedVariationIds, handleToggleVariation,
     variationStrength, setVariationStrength,
     variationStripGlow, setVariationStripGlow,
+    variationOutlineOnly, setVariationOutlineOnly,
     variationBgColor, setVariationBgColor,
     variationResults, isGeneratingVariations,
     handleGenerateVariations, handleRegenerateVariation,
@@ -1041,6 +1135,7 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     atlasRenderModel, setAtlasRenderModel,
     atlasImageSize, setAtlasImageSize,
     atlasSpec, setAtlasSpec, atlasSpecTitle, setAtlasSpecTitle,
+    atlasRedesign, setAtlasRedesign,
     setAtlasSource,
     // core options
     themeDna, setThemeDna, handleThemeDnaChange,
@@ -1093,9 +1188,12 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     reskinResults, isGeneratingReskin, handleGenerateReskin, handleRegenerateReskin,
     reskinSaveMsg, setReskinSaveMsg,
     reskinStripGlow, setReskinStripGlow,
+    reskinOutlineOnly, setReskinOutlineOnly,
     reskinBgColor, setReskinBgColor,
+    customThemeHint, setCustomThemeHint,
     // 광원·빛효과(lightfx) 모드
     lightFxCategory, setLightFxCategory,
+    lightFxForm, setLightFxForm,
     lightFxStyle, setLightFxStyle,
     lightFxColor, setLightFxColor,
     lightFxText, setLightFxText,

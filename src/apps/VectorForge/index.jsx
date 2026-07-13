@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Upload, Download, Image as ImageIcon, Loader2, ExternalLink, RotateCcw,
+  Upload, Download, Image as ImageIcon, Loader2, ExternalLink, RotateCcw, SlidersHorizontal,
 } from 'lucide-react';
 import { vectorize } from './services/vectorize';
 
@@ -43,6 +43,7 @@ export default function VectorForgeApp() {
   const [invert, setInvert] = useState(false);
   const [bgColor, setBgColor] = useState('#ffffff');
   const [fgColor, setFgColor] = useState('#000000');
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   // 상태
   const [loaded, setLoaded] = useState(false);
@@ -164,13 +165,15 @@ export default function VectorForgeApp() {
       <div className="h-[52px] flex items-stretch border-b border-zinc-800 bg-[#18181B] shrink-0">
         <div className="flex-1 flex items-center overflow-x-auto vector-custom-scrollbar">
           <SliderField label="임계값"     value={threshold} min={1}   max={254}  step={1}     onChange={setThreshold} format={(v) => Math.round(v)} />
-          <SliderField label="블러"       value={blur}      min={0}   max={3}    step={0.5}   onChange={setBlur}      format={(v) => v.toFixed(1)} />
-          <SliderField label="부드럽기"   value={alpha}     min={0}   max={1.34} step={0.01}  onChange={setAlpha}     format={(v) => v.toFixed(1)} />
-          <SliderField label="최적화"     value={optimize}  min={0}   max={1}    step={0.05}  onChange={setOptimize}  format={(v) => v.toFixed(1)} />
-          <SliderField label="노이즈제거" value={turd}      min={0}   max={100}  step={1}     onChange={setTurd}      format={(v) => Math.round(v)} />
+          {showAdvanced && <>
+            <SliderField label="블러" value={blur} min={0} max={3} step={0.5} onChange={setBlur} format={(v) => v.toFixed(1)} />
+            <SliderField label="부드럽기" value={alpha} min={0} max={1.34} step={0.01} onChange={setAlpha} format={(v) => v.toFixed(1)} />
+            <SliderField label="최적화" value={optimize} min={0} max={1} step={0.05} onChange={setOptimize} format={(v) => v.toFixed(1)} />
+            <SliderField label="노이즈 제거" value={turd} min={0} max={100} step={1} onChange={setTurd} format={(v) => Math.round(v)} />
+          </>}
 
           {/* 반전 토글 */}
-          <label className="flex items-center gap-2 px-3 border-r border-zinc-800 shrink-0 cursor-pointer">
+          {showAdvanced && <label className="flex items-center gap-2 px-3 border-r border-zinc-800 shrink-0 cursor-pointer">
             <input
               type="checkbox"
               checked={invert}
@@ -179,7 +182,7 @@ export default function VectorForgeApp() {
               style={{ accentColor: ACCENT }}
             />
             <span className="text-[9px] font-black uppercase tracking-widest text-zinc-500">반전</span>
-          </label>
+          </label>}
 
           {/* Color pickers */}
           <div className="flex items-center gap-2 px-3 border-r border-zinc-800 shrink-0">
@@ -198,6 +201,9 @@ export default function VectorForgeApp() {
               className="w-[22px] h-[22px] border border-zinc-700 rounded p-[1px] bg-black cursor-pointer"
             />
           </div>
+          <button onClick={() => setShowAdvanced((open) => !open)} aria-expanded={showAdvanced} className="h-full px-3 border-r border-zinc-800 text-[10px] font-bold text-zinc-500 hover:text-zinc-200 flex items-center gap-1.5 shrink-0">
+            <SlidersHorizontal size={13} /> 세부 조정 {showAdvanced ? '−' : '+'}
+          </button>
         </div>
 
         {/* 파일 액션 */}

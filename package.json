@@ -10,10 +10,13 @@
     "preview": "vite preview",
     "cors:set": "node scripts/set-cors.mjs",
     "backup:convert": "node scripts/convert-backup.mjs",
-    "prompts:reconcile": "node scripts/reconcile-prompt-images.mjs"
+    "prompts:reconcile": "node scripts/reconcile-prompt-images.mjs",
+    "theme:login": "node scripts/theme-ultra-bot.mjs --login",
+    "theme:bot": "node scripts/theme-ultra-bot.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.0",
+    "ag-psd": "^31.0.2",
     "dexie": "^4.4.2",
     "dexie-react-hooks": "^4.4.0",
     "firebase": "^12.13.0",
@@ -21,14 +24,17 @@
     "jszip": "^3.10.1",
     "lucide-react": "^1.14.0",
     "mammoth": "^1.12.0",
+    "node-vibrant": "^4.0.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "recharts": "^3.9.2",
     "tailwindcss": "^4.3.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@google-cloud/storage": "^7.19.0",
+    "@napi-rs/canvas": "^1.0.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -36,6 +42,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
+    "playwright": "^1.61.1",
     "stream-json": "^2.1.0",
     "vite": "^8.0.12"
   }

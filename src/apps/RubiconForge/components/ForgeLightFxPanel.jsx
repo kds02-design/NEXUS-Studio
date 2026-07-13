@@ -4,17 +4,18 @@
 
 import { Loader2, Sparkles } from 'lucide-react';
 import VariationResultCell from './VariationResultCell';
-import { LIGHTFX_CATEGORY_BY_ID } from '../constants/lightfx';
+import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_FORM_BY_ID } from '../constants/lightfx';
 
 const gridColsClass = (n) => (n <= 1 ? 'grid-cols-1' : n <= 4 ? 'grid-cols-2' : 'grid-cols-3');
 
 export default function ForgeLightFxPanel({ forge }) {
   const {
     lightFxResults, isGeneratingLightFx, handleGenerateLightFx, handleRegenerateLightFx,
-    lightFxCategory, lightFxCount, lightFxRef,
+    lightFxCategory, lightFxForm, lightFxCount, lightFxRef,
   } = forge;
 
   const cat = LIGHTFX_CATEGORY_BY_ID[lightFxCategory];
+  const form = LIGHTFX_FORM_BY_ID[lightFxForm];
   const total = lightFxResults.length;
   const done = lightFxResults.filter(s => s.dataUrl).length;
   const hasAny = lightFxResults.some(s => s.dataUrl || s.error);
@@ -42,7 +43,11 @@ export default function ForgeLightFxPanel({ forge }) {
             </div>
           )}
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] font-bold text-zinc-300">{cat?.label || '빛효과'}</div>
+            <div className="text-[11px] font-bold text-zinc-300">
+              {cat?.label || '빛효과'}
+              {form && form.id !== 'free' && <span className="text-zinc-500 font-normal"> · {form.label}</span>}
+              {lightFxRef && <span className="text-[#76cee0] font-normal"> · 샘플 광원만 추출</span>}
+            </div>
             <div className="text-[10px] text-zinc-500 mt-0.5 break-keep-all">
               {isGeneratingLightFx ? `${lightFxCount}개 생성 중...` : hasAny ? `완료 ${done}/${total}` : '좌측에서 종류·스타일·컬러를 고르고 생성하세요'}
             </div>
@@ -67,6 +72,7 @@ export default function ForgeLightFxPanel({ forge }) {
                 onRegenerate={handleRegenerateLightFx}
                 showNineSlice={false}
                 filePrefix="rubicon-lightfx"
+                compositeRef={lightFxRef}
                 sourceLoaded
               />
             ))}

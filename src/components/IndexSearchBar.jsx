@@ -88,10 +88,9 @@ export default function IndexSearchBar() {
 
   return (
     <div style={{
-      padding:"0 40px", maxWidth: 720, margin:"0 auto 36px", width:"100%", boxSizing:"border-box",
+      padding:"76px 40px 0", maxWidth: 720, margin:"0 auto 36px", width:"100%", boxSizing:"border-box",
       // 히어로 이미지와 썸네일 카드 사이 시각적 중심을 살짝 위로 끌어올림.
       // translateY 를 쓰면 layout flow 는 그대로라 RecentPrompts 위치는 변하지 않음.
-      transform: "translateY(-24px)",
     }}>
       {/* 검색 입력 */}
       <div style={{
@@ -107,7 +106,7 @@ export default function IndexSearchBar() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="무엇을 만들고 싶으신가요?"
+          placeholder="예: 게임 제목 글자를 만들고 싶어요"
           style={{
             flex: 1, background: "transparent", border: 0, outline: "none",
             color: T.text, fontSize: 14, padding: "10px 4px",
@@ -124,7 +123,7 @@ export default function IndexSearchBar() {
             cursor: busy || !query.trim() ? "not-allowed" : "pointer",
             transition: "background 0.12s",
           }}
-        >{busy ? "분석 중…" : "추천"}</button>
+        >{busy ? "찾는 중…" : "도구 찾기"}</button>
       </div>
 
       {/* 빠른 칩 */}

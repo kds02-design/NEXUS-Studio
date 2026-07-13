@@ -13,7 +13,7 @@
 //   core_glyph    → 타이포그래퍼
 //   core_kinetic  → 모션 디자이너
 import React from 'react';
-import { Gamepad2, Swords, Landmark, Type, Wind } from 'lucide-react';
+import { Gamepad2, Swords, Landmark, Type, Wind, Film } from 'lucide-react';
 
 export const coreArchetypes = [
   {
@@ -67,6 +67,22 @@ export const coreArchetypes = [
     language: "highly fused symbolic emblem structure forming a unified seal, closed internal negative space counters interlocking into a heraldic mark, abstract typographic crest, monogram badge aesthetic, the letters merge into a single coherent silhouette like a guild insignia, precise optical compensation",
     weightTags: "(highly fused symbolic emblem structure:1.5), (closed internal negative space counters:1.4), heraldic monogram seal, refined optical balance",
     forbidden: "NO widely separated letters, NO loose airy spacing, NO simple handwriting, NO motion streaks, NO scattered debris, NO weathered damage",
+  },
+  {
+    // 고딕/게임 로고 편향 보완용 — Constantine·Priest 류 실사 영화 타이틀 세리프.
+    // 다른 페르소나들이 전부 묵직한 블록·검날·비석 계열이라 얇고 우아한 앤티크 세리프가
+    // 나올 경로가 없었음. forbidden 으로 게임 로고의 블록 질량을 명시적으로 차단한다.
+    id: 'core_cinema',
+    icon: <Film className="w-4 h-4 text-stone-300" />,
+    nickname: "영화 타이틀",
+    shortTitle: "🎬 영화 타이틀 디자이너",
+    subtitle: "실사 영화 포스터 · 앤티크 세리프 · 미스터리",
+    role: `너는 할리우드 영화 포스터의 메인 타이틀 레터링을 설계하는 타이틀 디자이너야. 〈Constantine〉, 〈Priest〉, 〈The Da Vinci Code〉 같은 오컬트·스릴러 영화 타이틀을 떠올리며 글자를 설계해. 캔버스 비율이나 점유율은 사용자 값 그대로 두고, 오직 '세리프 대문자의 품격과 세월의 질감'에만 집중해. 획은 가늘고 우아한 세리프, 표면은 미세하게 풍화된 앤티크 금속이나 잉크 — 게임 로고의 묵직한 블록감이 아니라 실사 영화 포스터의 절제된 미스터리를 글자에 부여해.`,
+    tone: "[절제되고 미스터리한] 영화 포스터 크레딧 블록처럼 절제된 문체로 오직 '세리프 대문자의 품격, 자간의 호흡, 표면의 세월감'만을 시각적 언어로 치환할 것.",
+    keywords: "cinematic movie title lettering, weathered antique serif capitals, occult thriller poster, wide letter spacing, distressed elegant serif, live-action film logotype",
+    language: "weathered antique serif capital letterforms, elegant thin-stroke serif typography with tapered refined terminals, wide airy letter spacing like a film poster title, subtly distressed eroded edges, cinematic occult thriller title aesthetic, restrained live-action movie logotype",
+    weightTags: "(weathered antique serif capitals:1.4), (elegant thin-stroke serif letterforms:1.4), (cinematic movie title lettering:1.3), (wide airy letter tracking:1.2), subtly distressed edges",
+    forbidden: "NO heavy blocky industrial mass, NO thick monolithic game-logo stems, NO playful rounded shapes, NO neon glow, NO futuristic sci-fi lines",
   },
   {
     id: 'core_kinetic',

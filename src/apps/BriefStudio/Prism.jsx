@@ -136,6 +136,24 @@ export default function Prism() {
       .then(() => setCopyMsg((c) => ({ ...c, [key]: "복사됨 ✓" })))
       .catch(() => setCopyMsg((c) => ({ ...c, [key]: "복사 실패" })));
 
+  const applyStructure = (next) => {
+    setStructure(next);
+    setExtracted((current) => {
+      try {
+        const obj = JSON.parse(current || "{}");
+        return JSON.stringify({ ...obj, structure: next }, null, 1);
+      } catch {
+        return current;
+      }
+    });
+  };
+  const editStructureItem = (index, key, value) => {
+    applyStructure(structure.map((item, i) => i === index ? { ...item, [key]: value } : item));
+  };
+  const deleteStructureItem = (index) => {
+    applyStructure(structure.filter((_, i) => i !== index));
+  };
+
   if (promoType === "special") {
     return (
       <div className="h-full flex flex-col" style={{ background: D.bg, color: D.text, fontFamily: "'Noto Sans KR', sans-serif" }}>
@@ -232,10 +250,15 @@ export default function Prism() {
             <>
               <div className="flex flex-col gap-1.5 mb-3.5">
                 {structure.map((s, i) => (
-                  <div key={i} className="grid grid-cols-[auto_1fr_auto] gap-2.5 items-center rounded-md px-3 py-2 text-[13px]" style={{ background: D.panel2, border: `1px solid ${D.border}` }}>
-                    <span className={`font-mono text-[11px] tracking-wide rounded px-1.5 py-0.5 border ${s.pattern === "unknown" ? "text-amber-400 border-amber-500/50" : "text-[#b3acff] border-[#A29BFE]/50"}`}>{s.pattern}</span>
-                    <span className="truncate" style={{ color: D.text }}>{s.title || "(제목 없음)"}</span>
-                    <span className="text-[11px] font-mono" style={{ color: D.muted }}>{s.note || ""}</span>
+                  <div key={i} className="grid grid-cols-[120px_minmax(0,1fr)_minmax(120px,.7fr)_32px] gap-2 items-center rounded-md px-2.5 py-2 text-[13px]" style={{ background: D.panel2, border: `1px solid ${D.border}` }}>
+                    <input value={s.pattern || ""} onChange={(e) => editStructureItem(i, "pattern", e.target.value)} aria-label={`${i + 1}번 항목 유형`}
+                      className={`min-w-0 w-full font-mono text-[11px] rounded px-2 py-1.5 border outline-none bg-black/20 ${s.pattern === "unknown" ? "text-amber-400 border-amber-500/50" : "text-[#b3acff] border-[#A29BFE]/40 focus:border-[#A29BFE]"}`} />
+                    <input value={s.title || ""} onChange={(e) => editStructureItem(i, "title", e.target.value)} aria-label={`${i + 1}번 항목 제목`} placeholder="제목 없음"
+                      className="min-w-0 w-full rounded px-2 py-1.5 bg-black/20 border border-transparent focus:border-[#A29BFE]/60 outline-none text-[12px]" style={{ color: D.text }} />
+                    <input value={s.note || ""} onChange={(e) => editStructureItem(i, "note", e.target.value)} aria-label={`${i + 1}번 항목 메모`} placeholder="메모"
+                      className="min-w-0 w-full rounded px-2 py-1.5 bg-black/20 border border-transparent focus:border-[#A29BFE]/60 outline-none text-[11px] font-mono" style={{ color: D.muted }} />
+                    <button onClick={() => deleteStructureItem(i)} title="항목 삭제" aria-label={`${i + 1}번 항목 삭제`}
+                      className="w-7 h-7 rounded-md grid place-items-center text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"><Trash2 size={13}/></button>
                   </div>
                 ))}
               </div>

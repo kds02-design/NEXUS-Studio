@@ -25,12 +25,20 @@ export default function MatrixResultPanel({
   // 기본 이미지 — image-to-image 렌더링의 실제 입력.
   // 사이드바 "Image Analyzer" 의 referenceImage 와 분리된 별도 state (baseImage).
   baseImage, setBaseImage,
+  // 마이크로 에디트 뷰의 Target 이미지 — edit 뷰에서는 이것이 렌더 입력.
+  editImage,
   // 모델 선택
   imagenModels = [], selectedModel, setSelectedModel,
 }) {
   const isVfxBox = currentView === "editor" ? vfxPassMode : editVfxPassMode;
   const promptText = optimizedPrompts[aiModel] || compiledOutputs[aiModel];
   const hasOutput = !!promptText;
+  // 렌더 가능 판정용 참조 이미지 — 뷰별로 실제 렌더에 쓰이는 입력과 동일 기준.
+  // (이전엔 edit 뷰에서도 baseImage 만 보고 버튼을 잠가, Target 이미지를 올려도 렌더 불가였음)
+  const renderRefImage = currentView === 'edit' ? editImage : baseImage;
+  const renderRefHint = currentView === 'edit'
+    ? '사이드바 마이크로 에디트에 Target 이미지를 업로드하세요'
+    : '좌측 상단 "기본 이미지"에 참조 이미지를 등록하세요';
   const quickList = currentView === 'editor' ? QUICK_ADJUSTMENTS : EDIT_BUDGETS;
 
   // 기본 이미지 업로드 — 드래그앤드롭 + 클릭. dataUrl 로 변환해서 setBaseImage.
@@ -226,11 +234,11 @@ export default function MatrixResultPanel({
             {/* 1차 액션 — 렌더링만 컬러 강조. 참조 이미지 없으면 차단. */}
             <button
               onClick={() => onRender?.(promptText)}
-              disabled={rendering || !canRender || !hasOutput || !onRender || !baseImage}
+              disabled={rendering || !canRender || !hasOutput || !onRender || !renderRefImage}
               title={
                 !canRender ? `Pro 등급부터 사용할 수 있습니다 (현재: ${grade || 'general'})`
                 : !hasOutput ? '먼저 프롬프트를 생성하세요'
-                : !baseImage ? '좌측 상단 "기본 이미지"에 참조 이미지를 등록하세요'
+                : !renderRefImage ? renderRefHint
                 : undefined
               }
               className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-all active:scale-95 whitespace-nowrap bg-[#00CEC9] hover:bg-[#00CEC9]/90 text-black disabled:opacity-40 disabled:cursor-not-allowed"
@@ -239,8 +247,8 @@ export default function MatrixResultPanel({
                 <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 생성 중…</>
               ) : !canRender ? (
                 <><ImageIcon className="w-3.5 h-3.5" /> Pro 전용</>
-              ) : !baseImage ? (
-                <><AlertCircle className="w-3.5 h-3.5" /> 참조 이미지 필요</>
+              ) : !renderRefImage ? (
+                <><AlertCircle className="w-3.5 h-3.5" /> {currentView === 'edit' ? 'Target 이미지 필요' : '참조 이미지 필요'}</>
               ) : (
                 <><ImageIcon className="w-3.5 h-3.5" /> 렌더링</>
               )}
@@ -304,8 +312,8 @@ export default function MatrixResultPanel({
                 <p className="text-[12px] font-semibold leading-relaxed">
                   {!hasOutput
                     ? '좌측에서 프롬프트를 생성/최적화하세요'
-                    : !baseImage
-                      ? '좌측 상단 "기본 이미지"에 참조 이미지를 등록하세요'
+                    : !renderRefImage
+                      ? renderRefHint
                       : rendering
                         ? '이미지 생성 중입니다'
                         : '우측 상단 [렌더링] 버튼을 눌러 시작'}

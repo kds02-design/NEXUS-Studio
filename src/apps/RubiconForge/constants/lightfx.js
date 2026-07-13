@@ -35,6 +35,25 @@ export const LIGHTFX_CATEGORIES = [
 ];
 export const LIGHTFX_CATEGORY_BY_ID = Object.fromEntries(LIGHTFX_CATEGORIES.map(c => [c.id, c]));
 
+// 배치 형태 — 빛이 "무엇에 어떻게" 붙는지(적용 위치). 종류(효과 유형)와는 별개 축.
+// 형태 참고(샘플 이미지)와 함께 쓰면 그 오브젝트에 맞춰 광원만 순흑 위에 별도 렌더된다.
+// placementHint: 빛이 피사체에 대해 "어디에" 놓이는지만 기술 (오브젝트 자체는 그리지 않음).
+export const LIGHTFX_FORMS = [
+  { id: 'free',       label: '자유 · 배치 없음', desc: '위치 지정 없이 빛만', accent: '#9ca3af',
+    placementHint: '' },
+  { id: 'iconBack',   label: '아이콘 뒤 광원',   desc: '피사체 뒤쪽에서 방사', accent: '#fde68a',
+    placementHint: 'position the glow BEHIND the subject as a backlight — a radiant burst emanating from behind and around the silhouette, as if light shines out from behind an icon; brightest just outside the silhouette edge and fading outward' },
+  { id: 'boxGlow',    label: '박스 아웃그로우',  desc: '사각 외곽을 감싸는 외부광', accent: '#7dd3fc',
+    placementHint: 'render an OUTER GLOW that hugs and traces the rectangular box/panel/button silhouette edges and spills outward — a clean luminous rim following the outline, glow only ON and OUTSIDE the perimeter, no fill inside' },
+  { id: 'charAura',   label: '캐릭터 외곽 아우라', desc: '실루엣을 따라 도는 아우라', accent: '#c084fc',
+    placementHint: 'render an AURA tracing the character/figure silhouette outline — a luminous rim-light contour wrapping the body shape, brightest along the silhouette edge and softly bleeding outward, following the organic outline' },
+  { id: 'textGlow',   label: '텍스트 글로우',    desc: '글자 획을 따라 발광', accent: '#f0abfc',
+    placementHint: 'render glow that follows the letterform strokes of the referenced text — luminous emission tracing each stroke and outline, brightest along the letter edges; do NOT draw solid letters, glow only' },
+  { id: 'groundPool', label: '바닥 광 풀',       desc: '피사체 아래 고이는 빛', accent: '#a5b4fc',
+    placementHint: 'render a pool of light gathering BENEATH the subject — a bright elliptical ground glow and soft cast radiance as if the object emits light onto the floor below, brightest at the base and fading upward/outward' },
+];
+export const LIGHTFX_FORM_BY_ID = Object.fromEntries(LIGHTFX_FORMS.map(f => [f.id, f]));
+
 // 스타일 — 빛의 결.
 export const LIGHTFX_STYLES = [
   { id: 'soft',      label: '소프트 글로우', desc: '부드러운 확산',

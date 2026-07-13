@@ -18,7 +18,7 @@ export default function BreezeRenderArea() {
   const isRenderedTheRef = !!renderedImage?.dataUrl && editUploadedImage === renderedImage.dataUrl;
 
   return (
-    <div className="rounded-xl border bg-[#111111] border-zinc-800/80 overflow-hidden">
+    <div className="rounded-xl border bg-[#111111] border-zinc-800/80 overflow-hidden flex flex-col h-full min-h-[480px]">
       {/* 헤더 — 모델 선택 + 렌더 버튼 */}
       <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-800 bg-[#141414] gap-3">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
@@ -50,7 +50,7 @@ export default function BreezeRenderArea() {
         </button>
       </div>
 
-      <div className="p-4 flex flex-col gap-3">
+      <div className="p-4 flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto custom-scrollbar">
         {!canRender && (
           <div className="px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/40 text-[11px] text-zinc-400 leading-snug">
             Imagen 렌더링은 <b className="text-zinc-200">Pro 등급 이상</b>만 사용할 수 있습니다.
@@ -64,8 +64,8 @@ export default function BreezeRenderArea() {
         )}
         {renderedImage?.dataUrl ? (
           <>
-            <div className="rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center min-h-[300px]">
-              <img src={renderedImage.dataUrl} alt="Imagen render" className="max-w-full max-h-[640px] w-auto h-auto object-contain block" />
+            <div className="flex-1 min-h-[300px] rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center">
+              <img src={renderedImage.dataUrl} alt="Imagen render" className="max-w-full max-h-full w-auto h-auto object-contain block" />
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
@@ -128,7 +128,7 @@ export default function BreezeRenderArea() {
             </div>
           </>
         ) : (
-          <div className="rounded-xl border border-dashed border-zinc-800 bg-black/20 flex flex-col items-center justify-center text-zinc-600 gap-2 px-6 py-12 text-center">
+          <div className="flex-1 min-h-[300px] rounded-xl border border-dashed border-zinc-800 bg-black/20 flex flex-col items-center justify-center text-zinc-600 gap-2 px-6 py-12 text-center">
             <ImageIcon className="w-9 h-9 opacity-30" />
             <p className="text-[12px] font-semibold leading-relaxed">
               {rendering ? '이미지 생성 중입니다' : '위 [렌더링] 버튼을 눌러 시작'}

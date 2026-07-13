@@ -112,6 +112,17 @@ const STRIP_AMBIENT_LIGHT_BLOCK = `AMBIENT LIGHT REMOVAL — OBJECT ONLY (HIGHES
 
 const COMPACT_STRIP_HINT = `Also REMOVE any ambient light AROUND the object — god rays, halo/aura, backlight bloom, radial glow, floating sparkles/particles, lens flares spilling into the background. Keep ONLY the object itself on pure black (keep the object's own surface highlights; delete only the glow radiating around it).`;
 
+// ─── '외곽선만 디자인 · 내부 단색' 토글 전용 블록 ──────────────────────────────
+// 디자인/재질을 외곽 라인(테두리)에만 입히고, 내부는 평평한 단색(기본 다크)으로 채운다.
+// 실루엣(전체 단색)도 아니고 라인아트(속 빈 윤곽)도 아님 — "테두리=디자인, 내부=단색 면".
+const OUTLINE_ONLY_BLOCK = `EDGE-DESIGNED OUTLINE — FLAT SOLID INTERIOR (HIGHEST PRIORITY — this OVERRIDES and REVERSES any earlier rule about keeping edges plain or putting detail in the interior):
+- Put ALL of the design, material, color, ornament, bevel, and highlight on the OUTER EDGE / RIM / OUTLINE of the asset ONLY — the slim border band that traces the silhouette contour. The outer line is the ONLY designed element.
+- FILL the entire INTERIOR enclosed by that edge with a SINGLE FLAT SOLID color — a plain, uniform, dark near-black tone by default, kept distinctly readable against the background. The interior is completely flat: NO ornament, NO embedded text, NO inner frame or divider, NO texture, NO gradient, NO pattern, NO illustration, NO highlight or shading inside — one flat solid color only.
+- Keep the source's outer contour shape, proportions, and aspect ratio EXACTLY. The rim stays a SLIM outline tracing that contour — apply material / finish / a subtle highlight to it, but do NOT thicken it into a wide frame and do NOT let any detail bleed inward across the flat interior.
+- Target look: a solid-color plate / medallion with ONLY its outer edge lightly styled — a clean designed rim around a flat solid-color center.`;
+
+const COMPACT_OUTLINE_HINT = `Keep the asset's outer outline/contour exactly (same shape, proportions, aspect ratio) and apply ALL design / material / color / highlight to the OUTER EDGE (rim) ONLY. FILL the entire interior with a SINGLE flat solid color — a plain dark near-black tone by default — completely flat: NO interior ornament, text, divider, texture, gradient, or detail. The rim is a slim styled outline; do NOT thicken it or let detail spill inward. Result: a solid-color plate with only the outer edge designed.`;
+
 // 정제 블록 — REFINEMENT_LEVELS 에서 promptBlock 조회. source 면 빈 문자열.
 const getRefinementBlock = (refinementLevel) => {
   const lvl = REFINEMENT_BY_ID[refinementLevel || 'source'];
@@ -136,12 +147,13 @@ A second reference represents the destination background where this ${subject} w
 };
 
 // ─── 단일 에셋 변형 프롬프트 ────────────────────────────────────────────────
-export const buildVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, temperature, age, stripAmbientLight, bg }) => {
+export const buildVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, temperature, age, stripAmbientLight, outlineOnly, bg }) => {
   const refLabel = hasBackgroundRef
     ? 'TWO reference images are provided. The FIRST is the source asset to retheme. The SECOND is the destination background environment.'
     : 'Reference image is provided as the first input — it is the source asset to retheme.';
 
   const stripBlock = stripAmbientLight ? `\n\n${STRIP_AMBIENT_LIGHT_BLOCK}` : '';
+  const outlineBlock = outlineOnly ? `\n\n${OUTLINE_ONLY_BLOCK}` : '';
 
   return `${refLabel}
 
@@ -175,13 +187,13 @@ ${themeHint}${getBgContextBlock(hasBackgroundRef, false)}${getRefinementBlock(re
 
 ${FINAL_REMINDER}
 
-${RESKIN_FINAL_CHECK(bg)}`;
+${RESKIN_FINAL_CHECK(bg)}${outlineBlock}`;
 };
 
 // ─── 아틀라스(디자인 시스템) 변형 프롬프트 ───────────────────────────────────
 // atlasSpec: PromotionArchive 의 공통 템플릿 분석에서 추출한 마스터 명세(마크다운).
 // 있으면 ATLAS STRUCTURE SPEC 블록으로 주입 — 모델에게 보존해야 할 구조를 텍스트로도 명시.
-export const buildAtlasVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, atlasSpec, temperature, age, bg }) => {
+export const buildAtlasVariationPrompt = ({ themeHint, hasBackgroundRef, refinementLevel, atlasSpec, temperature, age, bg, redesign }) => {
   const refLabel = hasBackgroundRef
     ? 'TWO reference images are provided. The FIRST is the source DESIGN SYSTEM ATLAS to retheme. The SECOND is the destination background environment.'
     : 'Reference image is provided as the first input — it is a complete DESIGN SYSTEM ATLAS.';
@@ -191,40 +203,66 @@ ${atlasSpec.trim()}
 
 Preserve every region, fixed copy, and dynamic placeholder slot listed above EXACTLY as specified. The output must comply with this spec.\n` : '';
 
-  return `${refLabel}
+  // 아틀라스 격자(서브에셋 개수·위치·크기) 는 리컬러/리디자인 어느 쪽이든 반드시 유지.
+  // redesign 이면 각 서브에셋의 모티프·형태 디테일·재질을 재해석하되, 슬롯 박스·개수·비율·일관성은 고정.
+  const framing = redesign
+    ? `Treat this as a COHERENT REDESIGN PASS over the whole sheet: you may reinterpret the motif, ornament style, shape detail, and material of each sub-asset, but the sheet's STRUCTURE — how many assets, which slot each sits in, and their sizes — is a fixed template you must not alter.`
+    : OVERLAY_FRAMING;
 
-The source image is a DESIGN SYSTEM ATLAS — a single canvas containing MULTIPLE distinct UI sub-assets (buttons, frames, panels, badges, dividers, corner decorations, titles, illustrations, etc.) arranged together in a fixed layout, similar to a sprite sheet or component kit for an entire page.
-
-${OVERLAY_FRAMING}
-${specBlock}
-ATLAS PRESERVATION RULES (must remain IDENTICAL to the source):
+  const structureBlock = redesign
+    ? `ATLAS STRUCTURE LOCK (must remain IDENTICAL — this is a template, only the per-asset look is redesigned):
+- Keep the EXACT same inventory of sub-assets: same COUNT, same kinds, same order, same GRID POSITIONS, and the same relative SIZE of each slot — do NOT add, remove, merge, split, relocate, or resize any sub-asset slot
+- Atlas overall aspect ratio and canvas framing stay identical — do NOT crop, extend, pad, or recompose the sheet; do NOT pack tighter or spread wider
+- Each redrawn sub-asset MUST stay fully inside its original slot box (same footprint and center) and keep the SAME component type (a frame stays a frame, a button stays a button, a badge stays a badge)
+- Border / outline stroke thickness stays close to the source — do NOT thicken; when unsure, err THINNER`
+    : `ATLAS PRESERVATION RULES (must remain IDENTICAL to the source):
 - Mentally inventory EVERY sub-asset visible in the source before applying any change. The output must contain the EXACT same inventory — same count, same kinds, same order, same positions
 - Atlas overall aspect ratio and canvas framing — do not crop, do not extend, do not change composition
 - Every sub-asset's individual silhouette, outline shape, outline thickness, and corner radius
 - Every sub-asset's position and relative size within the atlas — do NOT rearrange, scale, or relocate any sub-asset
 - The grid / layout / spacing between sub-assets — do NOT pack tighter or spread wider
-- All text labels, badges, and embedded typography placement
+- All text labels, badges, and embedded typography placement`;
 
-${COUNT_MATCH_BLOCK}
+  // redesign: 구조선(테두리·라인) 근처 과장 억제만 재사용, recolor 락(개수/크기 완전고정) 은 뺀다.
+  const variationLocks = redesign ? EDGE_LINE_RESTRAINT_REDESIGN : `${COUNT_MATCH_BLOCK}\n\n${SIZE_LOCK_BLOCK}`;
 
-${SIZE_LOCK_BLOCK}
-
-${TEXT_PRESERVATION_BLOCK}
-
-CONSISTENCY REQUIREMENT (entire atlas must adopt the new theme COHERENTLY — single unified UI kit):
+  const consistency = redesign
+    ? `CONSISTENCY REQUIREMENT (all sub-assets must share ONE coherent new design language — a single unified UI kit):
+- EVERY sub-asset must adopt the SAME new motif family, the SAME new material, the SAME new palette, and the SAME new accent — as if one artist redrew the whole kit in one style in one sitting
+- Do NOT give different sub-assets different design languages, palettes, or materials — the whole sheet is ONE redesigned system
+- Highlights, gradients, and shadows share a consistent light direction across all sub-assets`
+    : `CONSISTENCY REQUIREMENT (entire atlas must adopt the new theme COHERENTLY — single unified UI kit):
 - EVERY sub-asset must share the SAME new color palette, the SAME new material treatment, the SAME new surface finish, and the SAME new accent color
 - The button, frame, badge, panel, divider, title — they must all look like members of one unified UI kit under the new theme
 - Do NOT theme different sub-assets with different palettes or materials — the whole atlas is ONE design system
-- Highlights, gradients, and shadows must use a consistent light direction across all sub-assets
+- Highlights, gradients, and shadows must use a consistent light direction across all sub-assets`;
+
+  const targetHeading = redesign
+    ? `TARGET DESIGN THEME (new motif + material + palette — apply the SAME one to every sub-asset; keep each in its slot):`
+    : `TARGET COLOR + MATERIAL (this is a color/material descriptor only — it does NOT add decorations):`;
+
+  return `${refLabel}
+
+The source image is a DESIGN SYSTEM ATLAS — a single canvas containing MULTIPLE distinct UI sub-assets (buttons, frames, panels, badges, dividers, corner decorations, titles, illustrations, etc.) arranged together in a fixed layout, similar to a sprite sheet or component kit for an entire page.
+
+${framing}
+${specBlock}
+${structureBlock}
+
+${variationLocks}
+
+${TEXT_PRESERVATION_BLOCK}
+
+${consistency}
 
 ${BACKGROUND_BLOCK(bg)}
-
-${ONLY_VARY_BLOCK}
-
-TARGET COLOR + MATERIAL (this is a color/material descriptor only — it does NOT add decorations):
+${redesign ? '' : `\n${ONLY_VARY_BLOCK}\n`}
+${targetHeading}
 ${themeHint}${getBgContextBlock(hasBackgroundRef, true)}${getRefinementBlock(refinementLevel)}${getAtmosphereBlock(temperature, age)}
 
-${FINAL_REMINDER}`;
+${redesign
+    ? 'FINAL: Output ONE atlas sheet with the SAME grid, sub-asset count, slot positions, and aspect ratio as the source — every sub-asset redrawn in ONE coherent new design (motif/material/palette), each kept inside its original slot, borders no thicker than the source.'
+    : FINAL_REMINDER}`;
 };
 
 // ─── 외부 Gemini / AI Studio 챗 붙여넣기용 컴팩트 프롬프트 ────────────────────
@@ -256,10 +294,14 @@ const compactExtras = (refinementLevel, temperature, age) => [
   COMPACT_REFINE_HINT[refinementLevel],
 ].filter(Boolean).map(s => `- ${s}`).join('\n');
 
-export const buildCompactVariationPrompt = ({ themeHint, refinementLevel, temperature, age, stripAmbientLight, bg }) => {
+export const buildCompactVariationPrompt = ({ themeHint, refinementLevel, temperature, age, stripAmbientLight, outlineOnly, bg }) => {
   const extras = compactExtras(refinementLevel, temperature, age);
   const b = resolveBg(bg);
   const bgRule = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} ${b.hex}`;
+  if (outlineOnly) {
+    return `${COMPACT_OUTLINE_HINT}
+Background MUST be ${bgRule}. Keep the asset's shapes, outlines, layout, and proportions exactly as the source — trace only, do not redesign. Remove any embedded text/label (leave that area empty).`;
+  }
   return `Recolor and retexture the attached UI asset (button, frame, icon, badge, etc.) IN PLACE. Keep the exact same shapes, outlines, layout, proportions, and number of elements — change ONLY color, material, and surface finish.
 Remove any embedded text/label and leave that central area as a clean EMPTY space in the new material (do NOT redraw, keep, or replace the text). Keep the frame/border the SAME thickness as the source — do NOT thicken it (when unsure, err thinner).
 Keep every edge plain: do NOT add any new ornament, inner/companion line, double-lining, beading, studs, engraving, or glint near borders, lines, or dividers — each line stays one stroke as in the source, only recolored. When unsure near an edge, leave it plain.
@@ -267,10 +309,15 @@ New color + material: ${themeHint}
 ${extras ? `${extras}\n` : ''}${stripAmbientLight ? `${COMPACT_STRIP_HINT}\n` : ''}Rules: background MUST be ${bgRule} even if the source has a different background; do NOT add, resize, or rearrange any decoration; do NOT enlarge the frame; match the source's detail level, do not exceed it.`;
 };
 
-export const buildCompactAtlasVariationPrompt = ({ themeHint, refinementLevel, temperature, age, bg }) => {
+export const buildCompactAtlasVariationPrompt = ({ themeHint, refinementLevel, temperature, age, bg, redesign }) => {
   const extras = compactExtras(refinementLevel, temperature, age);
   const b = resolveBg(bg);
   const bgRule = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} ${b.hex}`;
+  if (redesign) {
+    return `The attached image is a UI kit / design-system sheet containing multiple separate elements (buttons, frames, panels, badges, etc.) laid out in a fixed grid. REDESIGN every element into ONE coherent new design language (new motif, material, palette, accent — the same one for all). KEEP the sheet structure a fixed template: same element COUNT, same grid POSITIONS, same slot SIZES, same overall aspect ratio — do NOT add, remove, merge, relocate, or resize any slot, and keep each redrawn element inside its original slot box and same component type. Border/outline thickness stays close to the source (err thinner).
+New design theme (apply the same to every element): ${themeHint}
+${extras ? `${extras}\n` : ''}Rules: background must be ${bgRule}; every element shares ONE unified design/palette/material; keep one consistent light direction across the whole sheet.`;
+  }
   return `The attached image is a UI kit / design-system sheet containing multiple separate elements (buttons, frames, panels, badges, dividers, etc.). Recolor and retexture EVERY element IN PLACE with ONE unified theme. Keep each element's exact shape, position, size, outline, embedded text, and the total element count — change ONLY color, material, and surface finish, consistently across all elements.
 New color + material: ${themeHint}
 ${extras ? `${extras}\n` : ''}Rules: background must be ${bgRule}; do NOT add, remove, resize, or rearrange any element or decoration; do NOT redraw or alter any text; keep one consistent light direction across the whole sheet.`;
@@ -290,12 +337,13 @@ const EDGE_LINE_RESTRAINT_REDESIGN = `EDGE & LINE RESTRAINT (HIGHEST PRIORITY �
 
 const DESIGN_TEXT_RULE = `TEXT REMOVAL — LEAVE THE TEXT AREA EMPTY: If the reference contains embedded text or a label (e.g. a button caption), REMOVE it in the output. Do NOT redraw, re-render, translate, keep, or replace it with new glyphs, placeholder words, symbols, numbers, or icons. Leave the central text-safe area as a clean, EMPTY surface in the redesigned material — the same reserved zone, just blank, ready for a designer to add their own text later. Keep the asset's surface, frame, and decorations intact around that empty zone; the empty area must read as intentional negative space, not a smeared or damaged patch. (Assets that have no text — frames, ornaments, badges — are unaffected by this rule.)`;
 
-export const buildDesignAlternativePrompt = ({ directionBlock, strengthBlock, hasBackgroundRef, stripAmbientLight, bg }) => {
+export const buildDesignAlternativePrompt = ({ directionBlock, strengthBlock, hasBackgroundRef, stripAmbientLight, outlineOnly, bg }) => {
   const refLabel = hasBackgroundRef
     ? 'TWO reference images are provided. The FIRST is the source detail asset to redesign. The SECOND is the destination background environment.'
     : 'Reference image is provided as the first input — it is the source detail asset to redesign.';
 
   const stripBlock = stripAmbientLight ? `\n\n${STRIP_AMBIENT_LIGHT_BLOCK}\n` : '';
+  const outlineBlock = outlineOnly ? `\n\n${OUTLINE_ONLY_BLOCK}\n` : '';
   const b = resolveBg(bg);
   const bgName = b.id === 'black' ? 'pure solid black #000000 / RGB(0,0,0)' : `a flat uniform ${b.label} ${b.hex}`;
   const bgHeading = b.id === 'black' ? 'PURE BLACK' : `SOLID ${b.label.toUpperCase()} (${b.hex})`;
@@ -355,15 +403,20 @@ ${DESIGN_TEXT_RULE}
 ISOLATION (critical — overrides any direction that hints at a scene):
 - ONE single asset, centered on the flat ${b.label} (${b.hex}) backdrop — absolutely NO environment, NO background scenery, NO floor / wall / pillars / landscape / props, NO scene, NO duplicate copies. If a direction mentions composition or proportion, it refers ONLY to the asset's own internal layout, never to building a scene around it.
 
-${BACKGROUND_BLOCK(bg)}${getBgContextBlock(hasBackgroundRef, false)}
+${BACKGROUND_BLOCK(bg)}${getBgContextBlock(hasBackgroundRef, false)}${outlineBlock}
 
 FINAL: Output ONE single redesigned detail asset on ${bgName} background (one flat solid color, no scene), centered and isolated — same component type, a border / frame stroke NO THICKER than the reference (slimmer is fine), the same thin fine ornament line weight, same ornament scale, same aspect ratio as the reference, EVERY edge / border / line kept as plain as the source with NO added inner line, beading, or edge ornament (expressive change only in the interior field), restrained finishing effects (no added glow / shadow / particles), the central text area left EMPTY (any source text removed, not replaced), but a distinct, finely-detailed and precise interior motif and material.`;
 };
 
 // 외부 챗 붙여넣기용 컴팩트 디자인 대안 프롬프트.
-export const buildCompactDesignAlternativePrompt = ({ directionHint, strengthHint, stripAmbientLight, bg }) => {
+export const buildCompactDesignAlternativePrompt = ({ directionHint, strengthHint, stripAmbientLight, outlineOnly, bg }) => {
   const b = resolveBg(bg);
   const bgRule = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} ${b.hex}`;
+  if (outlineOnly) {
+    return `${COMPACT_OUTLINE_HINT}
+Background MUST be ${bgRule}. Keep the same outer shape, footprint, and aspect ratio as the source; the design direction applies to the RIM styling only, never to the flat interior. Remove any embedded text/label (leave the interior a flat solid color). Output one single asset only.
+${directionHint ? `Rim direction: ${directionHint}\n` : ''}`;
+  }
   return `Redesign the attached game-UI detail asset into a DESIGN ALTERNATIVE — same component type and purpose (a button stays a button, a frame stays a frame), as a single centered asset isolated on ${bgRule}. Change the design language (motif, pattern, material, internal arrangement), but KEEP the structure close to the source: trace and reproduce the SAME border/frame stroke thickness, the SAME thin ornament line weight (do NOT make ornaments thicker, bolder, or more raised), the same ornament size/scale (don't enlarge), and the same aspect ratio and footprint. "Richer" means a finer, more intricate pattern at the same thin line weight, never heavier strokes. If unsure of the source stroke width, err THINNER. Aim for a refined, precise, finely-detailed result — never thick, chunky, or bulky. Keep every edge/border/line a minimal edit: do NOT add any new inner/companion line, double-lining, beading, studs, grooves, edge engraving, corner flourish, or glint near borders, lines, or dividers — vary the INTERIOR motif/material only, not the structural lines (under-decorate near edges when unsure). The background MUST be ${bgRule} even if the new design reads clean/minimal — one flat solid color, never a card or product-shot backdrop. Keep effects restrained: match the source's glow/shadow/particles, do NOT add new or stronger ones. NO background scene, NO environment.
 ${directionHint ? `Direction: ${directionHint}\n` : ''}${strengthHint ? `Strength: ${strengthHint}\n` : ''}${stripAmbientLight ? `${COMPACT_STRIP_HINT}\n` : ''}If the source has embedded text/label, REMOVE it and leave that central area empty — do NOT redraw or replace it (assets without text are unaffected). Output one single redesigned asset only.`;
 };
@@ -390,6 +443,7 @@ export async function renderVariation(
     temperature: options.temperature,
     age: options.age,
     stripAmbientLight: options.stripAmbientLight,
+    outlineOnly: options.outlineOnly,
     bg: options.bg,
   });
   // 외부 챗 붙여넣기용 — API 실패 시에도 복사할 수 있게 항상 동봉.
@@ -399,6 +453,7 @@ export async function renderVariation(
     temperature: options.temperature,
     age: options.age,
     stripAmbientLight: options.stripAmbientLight,
+    outlineOnly: options.outlineOnly,
     bg: options.bg,
   });
 
@@ -423,12 +478,14 @@ export async function renderDesignAlternative(sourceDataUrl, options = {}) {
     strengthBlock: options.strengthBlock,
     hasBackgroundRef: !!backgroundRef,
     stripAmbientLight: options.stripAmbientLight,
+    outlineOnly: options.outlineOnly,
     bg: options.bg,
   });
   const compactPrompt = buildCompactDesignAlternativePrompt({
     directionHint: options.directionHint,
     strengthHint: options.strengthHint,
     stripAmbientLight: options.stripAmbientLight,
+    outlineOnly: options.outlineOnly,
     bg: options.bg,
   });
 
@@ -460,6 +517,7 @@ export async function renderAtlasVariation(
     temperature: options.temperature,
     age: options.age,
     bg: options.bg,
+    redesign: options.redesign,
   });
   const compactPrompt = buildCompactAtlasVariationPrompt({
     themeHint,
@@ -467,6 +525,7 @@ export async function renderAtlasVariation(
     temperature: options.temperature,
     age: options.age,
     bg: options.bg,
+    redesign: options.redesign,
   });
 
   try {
@@ -559,5 +618,35 @@ export function colorToTransparentPng(dataUrl, targetHex = '#000000', threshold 
     };
     img.onerror = () => reject(new Error('이미지 로드 실패'));
     img.src = dataUrl;
+  });
+}
+
+// 레퍼런스 이미지 위에 순흑 배경 빛효과를 스크린(가산) 블렌드로 합성 → 단일 PNG dataURL.
+// 빛효과는 #000000 위 발광이라 'screen' 블렌드에서 검정은 무시되고 빛만 더해진다 → 오브젝트 + 광원 합성본.
+// 캔버스는 레퍼런스 원본 해상도. 빛효과는 레퍼런스와 같은 비율로 렌더되므로 꽉 채워 정렬한다.
+export function compositeLightOverReference(refDataUrl, lightDataUrl) {
+  return new Promise((resolve, reject) => {
+    if (!refDataUrl || !lightDataUrl) { reject(new Error('합성할 이미지가 없습니다.')); return; }
+    const loadImg = (src) => new Promise((res, rej) => {
+      const im = new Image();
+      im.crossOrigin = 'anonymous';
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('이미지 로드 실패'));
+      im.src = src;
+    });
+    Promise.all([loadImg(refDataUrl), loadImg(lightDataUrl)])
+      .then(([ref, light]) => {
+        const w = ref.naturalWidth || ref.width;
+        const h = ref.naturalHeight || ref.height;
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(ref, 0, 0, w, h);              // 베이스: 레퍼런스
+        ctx.globalCompositeOperation = 'screen';     // 가산 블렌드 — 검정 무시, 빛만 더함
+        ctx.drawImage(light, 0, 0, w, h);            // 빛효과를 레퍼런스 크기에 맞춰 얹음
+        ctx.globalCompositeOperation = 'source-over';
+        resolve(canvas.toDataURL('image/png'));
+      })
+      .catch(reject);
   });
 }

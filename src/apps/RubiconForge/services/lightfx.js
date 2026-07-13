@@ -6,7 +6,7 @@
 // 둘 다 가능 — 변형 모드 결과와 동일한 파이프라인(투명 PNG 버튼)을 그대로 재사용한다.
 
 import { renderWithImagen } from '../../../lib/imagenRender';
-import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID } from '../constants/lightfx';
+import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID, LIGHTFX_FORM_BY_ID } from '../constants/lightfx';
 import { DEFAULT_BG } from '../constants/variations';
 
 const DEFAULT_MODEL = 'gemini-3.1-flash-image-preview';
@@ -35,17 +35,24 @@ const lightFxBackgroundBlock = (bg) => {
 
 const REF_SHAPE_BLOCK = `SHAPING REFERENCE (a reference image is attached): use it ONLY to shape and place the light — let the glow, halo, rays, or particles wrap, backlight, or emanate around the silhouette/position of the referenced subject. Do NOT draw, trace, recolor, or reproduce the referenced object itself — the OUTPUT contains light ONLY, on pure black. The reference is a placement guide that must not appear in the result.`;
 
-export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, index = 0, bg }) {
+// 배치 형태(placement) 블록 — 빛이 피사체에 대해 어디에 놓이는지. 형태 참고가 있으면 그 실루엣에 앵커.
+const placementBlock = (formHint, hasRef) => {
+  if (!formHint) return '';
+  return `PLACEMENT / FORM: ${formHint}.${hasRef ? ' Anchor this placement to the ATTACHED reference silhouette — the light wraps/backlights that exact shape and position, but the reference object itself never appears (light only, on the flat background).' : ''}`;
+};
+
+export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, index = 0, bg }) {
   const b = resolveBg(bg);
   const subject = userText && userText.trim() ? userText.trim() : categoryHint;
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
+  const place = placementBlock(formHint, hasRef);
   return `Create a single isolated LIGHT / GLOW EFFECT asset on ${bgName} background.
 
 EFFECT: ${categoryHint}.
 ${userText && userText.trim() ? `SPECIFIC REQUEST: ${userText.trim()}.` : ''}
 LIGHT QUALITY / STYLE: ${styleHint}.
 LIGHT COLOR: ${colorHint}. Keep the palette coherent around this color (subtle complementary accents are fine).
-${hasRef ? `\n${REF_SHAPE_BLOCK}\n` : ''}
+${place ? `${place}\n` : ''}${hasRef ? `\n${REF_SHAPE_BLOCK}\n` : ''}
 ${lightFxBackgroundBlock(bg)}
 
 COMPOSITION: center the effect with breathing room; balanced, production-ready, clean. This is variation #${index + 1} — make its motion/arrangement visibly distinct from other variations while keeping the same effect type, style, and color.
@@ -54,7 +61,7 @@ FINAL: output ONE light effect (${subject}) glowing on ${bgName} — light only,
 }
 
 // 외부 Gemini / AI Studio 챗 붙여넣기용 컴팩트 버전.
-export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, bg }) {
+export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, bg }) {
   const b = resolveBg(bg);
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
   const tail = b.id === 'black'
@@ -62,7 +69,7 @@ export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, 
     : `Bright luminous core with smooth glow falloff; the empty area stays a single flat ${b.label} (${b.hex}) — do NOT add any second backdrop card, vignette, gradient, or UI.`;
   return `Generate a single isolated LIGHT / GLOW EFFECT on ${bgName} background — light only, NO object, NO text, NO scene (a compositable light asset for background removal / keying).
 Effect: ${userText && userText.trim() ? userText.trim() : categoryHint}.
-Style: ${styleHint}. Color: ${colorHint}.
+Style: ${styleHint}. Color: ${colorHint}.${formHint ? `\nPlacement: ${formHint}.` : ''}
 ${tail}`;
 }
 
@@ -75,6 +82,7 @@ export async function renderLightFx(spec = {}) {
   const modelId = spec.modelId || DEFAULT_MODEL;
   const ref = spec.referenceDataUrl || null;
   const refs = ref ? [ref] : [];
+  const form = LIGHTFX_FORM_BY_ID[spec.form] || null; // 미지정/자유면 배치 힌트 없음
 
   const prompt = buildLightFxPrompt({
     categoryHint: cat.promptHint,
@@ -82,6 +90,7 @@ export async function renderLightFx(spec = {}) {
     colorHint: color.hint,
     userText: spec.userText,
     hasRef: !!ref,
+    formHint: form?.placementHint || '',
     index: spec.index || 0,
     bg: spec.bg,
   });
@@ -90,6 +99,7 @@ export async function renderLightFx(spec = {}) {
     styleHint: style.hint,
     colorHint: color.hint,
     userText: spec.userText,
+    formHint: form?.placementHint || '',
     bg: spec.bg,
   });
 

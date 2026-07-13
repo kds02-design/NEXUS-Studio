@@ -2,7 +2,7 @@
 // 경로: artifacts/{appId}/public/data/assets/{assetId}
 import {
   collection, doc, addDoc, deleteDoc, updateDoc,
-  onSnapshot, getDocs, query, orderBy, serverTimestamp,
+  onSnapshot, getDocs, query, where, orderBy, serverTimestamp,
 } from "firebase/firestore";
 import { db, appId } from "../../../lib/firebase";
 import { uploadBase64, uploadImageFile } from "../../../lib/storage";
@@ -10,6 +10,28 @@ import { cropImageToDataUrl } from "./cropper";
 
 const assetsColRef = () => collection(db, "artifacts", appId, "public", "data", "assets");
 const assetDocRef = (id) => doc(db, "artifacts", appId, "public", "data", "assets", id);
+const promptsColRef = () => collection(db, "artifacts", appId, "public", "data", "prompts");
+
+// PromptArc에서 자동 저장된 내 임시 렌더만 가져온다. 인덱스가 없는 환경도
+// 동작하도록 ownerUid 단일 조건으로 조회한 뒤 나머지 조건은 클라이언트에서 거른다.
+export async function fetchMyTemporaryPromptImages(uid) {
+  if (!uid) throw new Error("로그인이 필요합니다.");
+  const snap = await getDocs(query(promptsColRef(), where("ownerUid", "==", uid)));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }))
+    .filter((p) => p.temporary === true && p.trashed !== true)
+    .flatMap((p) => {
+      const images = Array.isArray(p.images) && p.images.length ? p.images : [p.thumbnail].filter(Boolean);
+      return images.map((imageUrl, imageIndex) => ({
+        promptId: p.id,
+        imageIndex,
+        imageUrl,
+        title: p.title || "PromptArc 임시 이미지",
+        promptTags: Array.isArray(p.tags) ? p.tags : [],
+        sourceApp: p.source || "prompt-arc",
+      }));
+    });
+}
 
 // 일회성 fetch — createdAt desc. (수동 새로고침 용으로 유지)
 export async function fetchAssetsOnce() {

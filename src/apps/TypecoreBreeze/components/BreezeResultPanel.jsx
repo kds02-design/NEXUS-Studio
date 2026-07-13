@@ -32,7 +32,7 @@ export default function BreezeResultPanel() {
     const editP = getEditPrompts();
     return (
       <div className="flex-1 flex flex-col p-8 lg:p-12 overflow-y-auto custom-scrollbar bg-[#0A0A0A]">
-        <div className="max-w-[800px] w-full mx-auto space-y-6 pb-20">
+        <div className="w-full space-y-6 pb-20">
           <div className="flex items-center gap-3 px-2">
             <Shield className="w-5 h-5 text-zinc-500" />
             <div>
@@ -87,15 +87,20 @@ export default function BreezeResultPanel() {
             )}
           </div>
 
-          <AiOutputBox modelState={editAiModel} viewModeState={editNanoMode} setViewMode={setEditNanoMode} content={editP.outputContent} isEdit={true} outdatedFlag={isEditOutdated} onCopy={copyToClipboard} copiedState={copiedBottom}/>
-
           {editUploadedImage && (
             <div className="p-6 border bg-[#18181B] border-zinc-800 rounded-md flex justify-center">
               <img src={editUploadedImage} alt="Base" className="max-h-[400px] rounded border border-zinc-700" />
             </div>
           )}
 
-          <BreezeRenderArea />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
+            <div className="min-w-0 flex flex-col [&>div]:h-full">
+              <AiOutputBox modelState={editAiModel} viewModeState={editNanoMode} setViewMode={setEditNanoMode} content={editP.outputContent} isEdit={true} outdatedFlag={isEditOutdated} onCopy={copyToClipboard} copiedState={copiedBottom}/>
+            </div>
+            <div className="min-w-0 flex flex-col">
+              <BreezeRenderArea />
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -111,7 +116,7 @@ export default function BreezeResultPanel() {
 
   return (
     <div className="flex-1 flex flex-col p-8 lg:p-12 overflow-y-auto custom-scrollbar bg-[#0A0A0A]">
-      <div className="max-w-[800px] w-full mx-auto space-y-6 pb-20">
+      <div className="w-full space-y-6 pb-20">
         <div className="flex items-center gap-3 px-2">
           <PenTool className="w-5 h-5 text-zinc-500" />
           <div>
@@ -196,9 +201,14 @@ export default function BreezeResultPanel() {
           )}
         </div>
 
-        <AiOutputBox modelState={aiModel} viewModeState={nanoViewMode} setViewMode={setNanoViewMode} content={p.outputContent} isEdit={false} outdatedFlag={isOutdated} onCopy={copyToClipboard} copiedState={copiedBottom}/>
-
-        <BreezeRenderArea />
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
+          <div className="min-w-0 flex flex-col [&>div]:h-full">
+            <AiOutputBox modelState={aiModel} viewModeState={nanoViewMode} setViewMode={setNanoViewMode} content={p.outputContent} isEdit={false} outdatedFlag={isOutdated} onCopy={copyToClipboard} copiedState={copiedBottom}/>
+          </div>
+          <div className="min-w-0 flex flex-col">
+            <BreezeRenderArea />
+          </div>
+        </div>
       </div>
     </div>
   );

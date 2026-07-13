@@ -15,9 +15,35 @@ const PREVIEW_COLOR = APP_MAP['nexus-preview']?.color || '#22B8CF';
 //  - api  : Remove.bg AI (피사체 누끼 / 무료키는 ~0.25MP preview 해상도 제한)
 //  - luma : 로컬 색상 키잉 — 감지/지정된 배경색 거리 기반 매트 (canvas · 원본 해상도 · 무료)
 //           단색·단순 배경의 타이포·로고·발광 소재에 최적. 형태 보호 + 디프린지 + 트림 포함.
+//  - sprite : 로컬 AI 세그멘테이션(RMBG-1.4 via transformers.js) + 수동 브러시 보정.
+//             복잡한 게임 스크린샷에서 캐릭터/스프라이트 누끼. 첫 실행 시 모델(~44MB) 다운로드.
 const METHOD_API = 'api';
 const METHOD_LUMA = 'luma';
+const METHOD_SPRITE = 'sprite';
 const METHOD_STORAGE = 'mask-forge:method';
+
+// transformers.js ESM (CDN). 모델은 huggingface.co 에서 캐시됨. Gemini 프록시와 무관.
+const TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2';
+
+// 스프라이트 브러시 기본값 + 다운로드 프리셋.
+const SPRITE_BRUSH_DEFAULT = 40;
+
+// 알파 매트 최소값 침식(수축) — 배경 테두리 잔여 제거. 분리형 min 필터(수평→수직).
+function spriteErode(a, r, W, H) {
+  if (r <= 0) return a;
+  const t = new Uint8ClampedArray(W * H), o = new Uint8ClampedArray(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let m = 255; for (let k = -r; k <= r; k++) { const xx = x + k; if (xx < 0 || xx >= W) continue; const v = a[y * W + xx]; if (v < m) m = v; } t[y * W + x] = m; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let m = 255; for (let k = -r; k <= r; k++) { const yy = y + k; if (yy < 0 || yy >= H) continue; const v = t[yy * W + x]; if (v < m) m = v; } o[y * W + x] = m; }
+  return o;
+}
+// 알파 매트 박스 블러 — 경계 부드럽기(feather). 분리형 평균 필터.
+function spriteBlur(a, r, W, H) {
+  if (r <= 0) return a;
+  const t = new Float32Array(W * H), o = new Uint8ClampedArray(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let s = 0, c = 0; for (let k = -r; k <= r; k++) { const xx = x + k; if (xx < 0 || xx >= W) continue; s += a[y * W + xx]; c++; } t[y * W + x] = s / c; }
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { let s = 0, c = 0; for (let k = -r; k <= r; k++) { const yy = y + k; if (yy < 0 || yy >= H) continue; s += t[yy * W + x]; c++; } o[y * W + x] = s / c; }
+  return o;
+}
 
 // 로컬 색상 키잉 기본값.
 const KEY_DEFAULTS = {
@@ -298,7 +324,11 @@ export default function MaskForgeApp() {
 
   // 배경 제거 방식 + 루마키 파라미터.
   const [method, setMethod] = useState(() => {
-    try { return localStorage.getItem(METHOD_STORAGE) || METHOD_API; } catch { return METHOD_API; }
+    try {
+      const saved = localStorage.getItem(METHOD_STORAGE);
+      if (saved === METHOD_API && !localStorage.getItem(API_KEY_STORAGE)) return METHOD_LUMA;
+      return saved || METHOD_LUMA;
+    } catch { return METHOD_LUMA; }
   });
   const [bgColor, setBgColor] = useState(null); // 감지/지정된 배경색 [r,g,b]
   const [tolerance, setTolerance] = useState(KEY_DEFAULTS.tolerance);
@@ -309,6 +339,7 @@ export default function MaskForgeApp() {
   const [trim, setTrim] = useState(KEY_DEFAULTS.trim);
   const [picking, setPicking] = useState(false); // 스포이드 모드
   const [lumaBusy, setLumaBusy] = useState(false);
+  const [fineTuneOpen, setFineTuneOpen] = useState(false);
   const lumaImgRef = useRef(null); // 디코딩된 원본 캐시 — 실시간 재처리용
   const srcDataRef = useRef(null);  // 원본 ImageData 캐시 — 키잉·감지·스포이드 공유
 
@@ -723,7 +754,9 @@ export default function MaskForgeApp() {
               배경을 <span style={{ color: ACCENT }}>완벽하게</span> 제거
             </h1>
             <p className="text-zinc-500 text-[12px] mt-2 tracking-wide">
-              Remove.bg AI — 머리카락 · 반투명 · 복잡한 배경까지 전문가 수준으로 처리
+              {method === METHOD_API && 'Remove.bg AI — 머리카락 · 반투명 · 복잡한 배경까지 전문가 수준으로 처리'}
+              {method === METHOD_LUMA && '로컬 색상 키 — 단색·단순 배경의 타이포 / 로고 / 발광 소재를 원본 해상도로'}
+              {method === METHOD_SPRITE && '로컬 AI 스프라이트 — 복잡한 게임 화면에서 캐릭터 분리 후 브러시로 마무리'}
             </p>
           </div>
 
@@ -732,6 +765,7 @@ export default function MaskForgeApp() {
             {[
               { key: METHOD_API, title: 'Remove.bg AI', desc: '피사체 누끼 · 무료키 저해상도(~0.25MP)' },
               { key: METHOD_LUMA, title: '로컬 색상 키', desc: '원본 해상도 · 무료 · 타이포 / 로고 / 단색 배경' },
+              { key: METHOD_SPRITE, title: 'AI 스프라이트', desc: '로컬 AI 누끼 + 브러시 보정 · 복잡한 게임 화면' },
             ].map((m) => {
               const active = method === m.key;
               return (
@@ -741,7 +775,10 @@ export default function MaskForgeApp() {
                   className={`flex-1 text-left rounded-lg px-4 py-3 transition-colors ${active ? '' : 'hover:bg-white/5'}`}
                   style={active ? { background: ACCENT, color: '#000' } : undefined}
                 >
-                  <div className="text-[12px] font-black tracking-wide">{m.title}</div>
+                  <div className="text-[12px] font-black tracking-wide flex items-center gap-1.5">
+                    {m.title}
+                    {m.key === METHOD_LUMA && <span className={`text-[8px] px-1.5 py-0.5 rounded-full border ${active ? 'border-black/30 text-black/70' : 'border-rose-500/30 text-rose-300'}`}>추천</span>}
+                  </div>
                   <div className={`text-[10px] mt-0.5 tracking-wide ${active ? 'text-black/70' : 'text-zinc-500'}`}>{m.desc}</div>
                 </button>
               );
@@ -828,6 +865,15 @@ export default function MaskForgeApp() {
               )}
             </div>
 
+            <button
+              type="button"
+              onClick={() => setFineTuneOpen((open) => !open)}
+              className="w-full flex items-center justify-between rounded-lg border border-zinc-800 bg-black/20 px-3 py-2.5 text-left text-[11px] font-bold text-zinc-400 hover:text-zinc-200 hover:border-zinc-700 transition-colors"
+            >
+              <span>세부 조정</span>
+              <span className="text-[10px] text-zinc-600">{fineTuneOpen ? '접기 −' : '필요할 때 열기 +'}</span>
+            </button>
+            {fineTuneOpen && <div className="flex flex-col gap-4 border-l-2 border-rose-500/30 pl-3">
             <label className="flex items-center gap-3">
               <span className="text-[11px] font-bold text-zinc-400 w-20 shrink-0">허용 범위</span>
               <input
@@ -882,9 +928,11 @@ export default function MaskForgeApp() {
             <p className="text-[11px] text-zinc-500 leading-relaxed">
               단색·단순 배경의 타이포·로고에 최적. <b className="text-zinc-300">배경색</b>은 테두리에서 자동 감지되며 잘못 잡히면 <b className="text-zinc-300">스포이드</b>로 직접 지정하세요. <b className="text-zinc-300">허용 범위</b>를 키우면 배경이 더 깔끔히 빠지고, <b className="text-zinc-300">디프린지</b>가 경계 후광을 제거합니다. 슬라이더/토글은 <b className="text-zinc-300">실시간 갱신</b>됩니다.
             </p>
+            </div>}
           </div>
           )}
 
+          {method !== METHOD_SPRITE && (<>
           {/* Status + Progress */}
           <div className="flex flex-col gap-1.5">
             <div className="bg-[#18181B] border border-zinc-800 rounded-xl px-4 py-3 flex items-center gap-3 min-h-[44px]">
@@ -1174,7 +1222,439 @@ export default function MaskForgeApp() {
             • 머리카락·반투명이 많은 일반 사진 누끼(인물·제품)는 Remove.bg AI 방식이 더 정확합니다
           </div>
           )}
+          </>)}
+
+          {/* AI 스프라이트 — 로컬 세그멘테이션 + 브러시 보정 (자가완결 뷰) */}
+          {method === METHOD_SPRITE && <SpriteView navigate={navigate} />}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI 스프라이트 뷰 — 로컬 RMBG-1.4(transformers.js) 세그멘테이션 + 수동 브러시 보정.
+// 자체 업로드/캔버스/컨트롤/다운로드를 가진 자가완결 서브뷰. api/luma 흐름과 상태를 공유하지 않음.
+//  파이프라인: AI 알파(modelAlpha) ⊕ 브러시(강제 fg/bg) → 침식 → 블러 → 디프린지 → 캔버스 합성.
+function SpriteView({ navigate }) {
+  const viewRef = useRef(null);      // 결과 캔버스 (원본 해상도)
+  const cursorRef = useRef(null);    // 브러시 커서 원
+  const shellRef = useRef(null);     // 캔버스 래퍼 (배경 미리보기)
+  const fileRef = useRef(null);
+
+  const srcCanvasRef = useRef(null); // 원본 캔버스 (모델 입력용 toDataURL)
+  const srcDataRef = useRef(null);   // 원본 ImageData (색상 소스)
+  const wRef = useRef(0), hRef = useRef(0);
+  const modelAlphaRef = useRef(null);// AI 매트 Uint8ClampedArray(N) 또는 null
+  const brushRef = useRef(null);     // Uint8Array(N): 0 없음, 1 강제 캐릭터, 2 강제 배경
+  const historyRef = useRef([]);
+  const paintingRef = useRef(false);
+  const lastPtRef = useRef(null);
+  const rafRef = useRef(null);
+  const srcURLRef = useRef(null);
+
+  const libRef = useRef(null);       // transformers.js 모듈
+  const modelRef = useRef(null);
+  const processorRef = useRef(null);
+  const modelReadyRef = useRef(false);
+
+  const [hasImage, setHasImage] = useState(false);
+  const [fileName, setFileName] = useState('');
+  const [dragging, setDragging] = useState(false);
+  const [prog, setProg] = useState('게임 스크린샷을 불러오세요');
+  const [barPct, setBarPct] = useState(null); // null = 숨김
+  const [busy, setBusy] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+
+  const [brushMode, setBrushMode] = useState(1); // 1 복원(+캐릭터) / 2 지우기(−배경)
+  const [brushSize, setBrushSize] = useState(SPRITE_BRUSH_DEFAULT);
+  const [erodeV, setErodeV] = useState(1);
+  const [featherV, setFeatherV] = useState(1);
+  const [defringe, setDefringe] = useState(true);
+  const [bgMode, setBgMode] = useState('check'); // check / dark / light
+  const [resampleWidth, setResampleWidth] = useState(RESAMPLE_DEFAULT);
+
+  // 포인터 핸들러가 최신값을 읽도록 ref 미러링.
+  const brushModeRef = useRef(1); useEffect(() => { brushModeRef.current = brushMode; }, [brushMode]);
+  const brushSizeRef = useRef(SPRITE_BRUSH_DEFAULT); useEffect(() => { brushSizeRef.current = brushSize; }, [brushSize]);
+  const erodeRef = useRef(1); useEffect(() => { erodeRef.current = erodeV; }, [erodeV]);
+  const featherRef = useRef(1); useEffect(() => { featherRef.current = featherV; }, [featherV]);
+  const defringeRef = useRef(true); useEffect(() => { defringeRef.current = defringe; }, [defringe]);
+
+  useEffect(() => () => { if (srcURLRef.current) URL.revokeObjectURL(srcURLRef.current); }, []);
+
+  // AI 매트 + 브러시 → 엣지 다듬기 + 디프린지 → 캔버스 합성.
+  const render = () => {
+    const srcData = srcDataRef.current, view = viewRef.current;
+    if (!srcData || !view) return;
+    const W = wRef.current, H = hRef.current, N = W * H;
+    const s = srcData.data, brush = brushRef.current, modelAlpha = modelAlphaRef.current;
+
+    let a = new Uint8ClampedArray(N);
+    for (let i = 0; i < N; i++) a[i] = brush[i] === 1 ? 255 : brush[i] === 2 ? 0 : (modelAlpha ? modelAlpha[i] : 255);
+    a = spriteErode(a, erodeRef.current, W, H);
+    a = spriteBlur(a, featherRef.current, W, H);
+
+    const col = new Uint8ClampedArray(N * 3);
+    for (let p = 0; p < N; p++) { col[p * 3] = s[p * 4]; col[p * 3 + 1] = s[p * 4 + 1]; col[p * 3 + 2] = s[p * 4 + 2]; }
+
+    // 디프린지 — 반투명 경계색을 인접한 불투명 캐릭터색으로 링 단위 전파 (배경 후광 제거).
+    if (defringeRef.current) {
+      let valid = new Uint8Array(N);
+      for (let p = 0; p < N; p++) if (a[p] >= 250) valid[p] = 1;
+      const band = Math.max(2, erodeRef.current + featherRef.current + 3);
+      for (let it = 0; it < band; it++) {
+        const next = valid.slice(); let changed = false;
+        for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+          const p = y * W + x;
+          if (valid[p] || a[p] === 0) continue;
+          let b = -1;
+          if (x > 0 && valid[p - 1]) b = p - 1; else if (x < W - 1 && valid[p + 1]) b = p + 1;
+          else if (y > 0 && valid[p - W]) b = p - W; else if (y < H - 1 && valid[p + W]) b = p + W;
+          if (b >= 0) { col[p * 3] = col[b * 3]; col[p * 3 + 1] = col[b * 3 + 1]; col[p * 3 + 2] = col[b * 3 + 2]; next[p] = 1; changed = true; }
+        }
+        valid = next; if (!changed) break;
+      }
+    }
+
+    const ctx = view.getContext('2d');
+    const out = ctx.createImageData(W, H), o = out.data;
+    for (let p = 0; p < N; p++) { const i = p * 4; o[i] = col[p * 3]; o[i + 1] = col[p * 3 + 1]; o[i + 2] = col[p * 3 + 2]; o[i + 3] = a[p]; }
+    ctx.putImageData(out, 0, 0);
+  };
+  const schedule = () => { if (rafRef.current) return; rafRef.current = requestAnimationFrame(() => { rafRef.current = null; render(); }); };
+
+  const loadFile = (file) => {
+    if (!file || !file.type?.startsWith('image/')) { setProg('이미지 파일만 가능합니다'); return; }
+    if (srcURLRef.current) URL.revokeObjectURL(srcURLRef.current);
+    srcURLRef.current = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const W = img.naturalWidth, H = img.naturalHeight;
+      wRef.current = W; hRef.current = H;
+      const sc = document.createElement('canvas'); sc.width = W; sc.height = H;
+      const sctx = sc.getContext('2d', { willReadFrequently: true });
+      sctx.drawImage(img, 0, 0);
+      srcCanvasRef.current = sc;
+      srcDataRef.current = sctx.getImageData(0, 0, W, H);
+      const view = viewRef.current; view.width = W; view.height = H;
+      brushRef.current = new Uint8Array(W * H);
+      modelAlphaRef.current = null; historyRef.current = []; setCanUndo(false);
+      setHasImage(true); setFileName(file.name);
+      setProg('STEP 1 — AI 분리를 실행하세요');
+      render();
+    };
+    img.onerror = () => setProg('이미지를 불러올 수 없습니다');
+    img.src = srcURLRef.current;
+  };
+
+  const reset = () => {
+    if (srcURLRef.current) URL.revokeObjectURL(srcURLRef.current);
+    srcURLRef.current = null; srcCanvasRef.current = srcDataRef.current = modelAlphaRef.current = brushRef.current = null;
+    historyRef.current = [];
+    setHasImage(false); setCanUndo(false); setFileName('');
+    setProg('게임 스크린샷을 불러오세요'); setBarPct(null);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  // AI 세그멘테이션 — 첫 실행 시 모델 로드(CDN), 이후 캐시.
+  const runSegment = async () => {
+    if (!srcCanvasRef.current) return;
+    setBusy(true); setBarPct(0);
+    try {
+      if (!modelReadyRef.current) {
+        setProg('모델 불러오는 중…');
+        const lib = libRef.current || await import(/* @vite-ignore */ TRANSFORMERS_CDN);
+        libRef.current = lib; lib.env.allowLocalModels = false;
+        const pc = (p) => { if (p.status === 'progress' && p.total) { const pct = Math.round(p.progress); setBarPct(pct); setProg(`모델 다운로드 ${pct}%`); } };
+        modelRef.current = await lib.AutoModel.from_pretrained('briaai/RMBG-1.4', { config: { model_type: 'custom' }, progress_callback: pc });
+        processorRef.current = await lib.AutoProcessor.from_pretrained('briaai/RMBG-1.4', { config: {
+          do_normalize: true, do_pad: false, do_rescale: true, do_resize: true,
+          image_mean: [0.5, 0.5, 0.5], image_std: [1, 1, 1], resample: 2,
+          rescale_factor: 0.00392156862745098, size: { width: 1024, height: 1024 },
+        }, progress_callback: pc });
+        modelReadyRef.current = true;
+      }
+      setProg('캐릭터 분석 중… (수 초 소요)'); setBarPct(100);
+      const lib = libRef.current;
+      const image = await lib.RawImage.fromURL(srcCanvasRef.current.toDataURL());
+      const { pixel_values } = await processorRef.current(image);
+      const result = await modelRef.current({ input: pixel_values });
+      const tensor = result.output ?? Object.values(result)[0];
+      const W = wRef.current, H = hRef.current;
+      const mask = await lib.RawImage.fromTensor(tensor[0].mul(255).to('uint8')).resize(W, H);
+      modelAlphaRef.current = new Uint8ClampedArray(mask.data.length === W * H ? mask.data : mask.data.filter((_, i) => i % mask.channels === 0));
+      setProg('완료 — 브러시로 다듬으세요');
+      render();
+    } catch (err) {
+      console.error('[MaskForge/Sprite] segmentation failed', err);
+      setProg('⚠ 모델 로드 실패 — 네트워크(huggingface.co) 확인 필요');
+    } finally {
+      setTimeout(() => setBarPct(null), 600);
+      setBusy(false);
+    }
+  };
+
+  // 브러시 좌표 변환 + 스탬프.
+  const toImg = (ev) => {
+    const r = viewRef.current.getBoundingClientRect();
+    return { x: Math.round((ev.clientX - r.left) / r.width * wRef.current), y: Math.round((ev.clientY - r.top) / r.height * hRef.current) };
+  };
+  const stamp = (cx, cy) => {
+    const W = wRef.current, H = hRef.current, brush = brushRef.current;
+    const rect = viewRef.current.getBoundingClientRect();
+    const rad = brushSizeRef.current / 2 * (W / rect.width), r2 = rad * rad;
+    const x0 = Math.max(0, Math.floor(cx - rad)), x1 = Math.min(W - 1, Math.ceil(cx + rad));
+    const y0 = Math.max(0, Math.floor(cy - rad)), y1 = Math.min(H - 1, Math.ceil(cy + rad));
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const dx = x - cx, dy = y - cy; if (dx * dx + dy * dy <= r2) brush[y * W + x] = brushModeRef.current; }
+  };
+  const moveCursor = (ev) => {
+    const cur = cursorRef.current, view = viewRef.current, shell = shellRef.current;
+    if (!cur || !view || !shell) return;
+    const r = view.getBoundingClientRect(), s = shell.getBoundingClientRect();
+    cur.style.display = 'block';
+    cur.style.width = cur.style.height = brushSizeRef.current * (r.width / wRef.current) + 'px';
+    cur.style.left = (ev.clientX - s.left) + 'px';
+    cur.style.top = (ev.clientY - s.top) + 'px';
+  };
+
+  const onPointerDown = (ev) => {
+    if (!srcDataRef.current) return;
+    viewRef.current.setPointerCapture?.(ev.pointerId);
+    historyRef.current.push(brushRef.current.slice());
+    if (historyRef.current.length > 25) historyRef.current.shift();
+    setCanUndo(true);
+    paintingRef.current = true;
+    const p = toImg(ev); lastPtRef.current = p; stamp(p.x, p.y); schedule();
+  };
+  const onPointerMove = (ev) => {
+    moveCursor(ev);
+    if (!paintingRef.current) return;
+    const p = toImg(ev), lp = lastPtRef.current;
+    if (lp) { const steps = Math.hypot(p.x - lp.x, p.y - lp.y) / 3 | 0; for (let i = 1; i <= steps; i++) stamp(lp.x + (p.x - lp.x) * i / steps, lp.y + (p.y - lp.y) * i / steps); }
+    stamp(p.x, p.y); lastPtRef.current = p; schedule();
+  };
+  const onPointerUp = () => { paintingRef.current = false; lastPtRef.current = null; };
+  const onPointerLeave = () => { if (cursorRef.current) cursorRef.current.style.display = 'none'; };
+
+  const undo = () => {
+    const h = historyRef.current;
+    if (!h.length) return;
+    brushRef.current = h.pop();
+    if (!h.length) setCanUndo(false);
+    render();
+  };
+
+  const downloadPng = () => {
+    viewRef.current?.toBlob((b) => {
+      if (!b) return;
+      const a = document.createElement('a'); a.href = URL.createObjectURL(b);
+      a.download = `sprite_${Date.now()}.png`; document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(a.href);
+    }, 'image/png');
+  };
+  const downloadResample = async () => {
+    if (!viewRef.current) return;
+    const targetW = Math.min(4096, Math.max(16, Math.round(Number(resampleWidth) || RESAMPLE_DEFAULT)));
+    try {
+      const { blob, width, height } = await resampleToWidth(viewRef.current.toDataURL('image/png'), targetW);
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `sprite_${width}x${height}_${Date.now()}.png`; document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(a.href);
+    } catch (e) { setProg(`리샘플 실패: ${e.message || e}`); }
+  };
+  const sendToPreview = () => {
+    if (!viewRef.current) return;
+    try { navigate('nexus-preview', { source: 'mask-forge', image: { url: viewRef.current.toDataURL('image/png'), metadata: {} } }); }
+    catch (e) { setProg(`보내기 실패: ${e.message || e}`); }
+  };
+
+  const shellBg = bgMode === 'dark' ? '#0a0c0e' : bgMode === 'light' ? '#eef2f4' : undefined;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-5">
+      {/* 컨트롤 컬럼 */}
+      <div className="flex flex-col gap-4">
+        {/* STEP 1 — AI */}
+        <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">AI 자동 분리</span>
+            <span className="text-[9px] font-mono" style={{ color: ACCENT }}>STEP 1</span>
+          </div>
+          <button
+            onClick={runSegment}
+            disabled={!hasImage || busy}
+            className="w-full text-[12px] font-bold tracking-wider py-3 rounded-lg text-black inline-flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+            style={{ background: ACCENT }}
+          >
+            {busy ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 분석 중…</> : <><Sparkles className="w-3.5 h-3.5" /> 오브젝트 분리</>}
+          </button>
+          <div className="text-[11px] font-mono text-zinc-400 min-h-[16px]">{prog}</div>
+          {barPct !== null && (
+            <div className="h-[3px] bg-zinc-800 rounded-full overflow-hidden">
+              <div className="h-full transition-all duration-200" style={{ width: `${barPct}%`, background: ACCENT }} />
+            </div>
+          )}
+          <div className="text-[10px] text-zinc-600 leading-relaxed">첫 실행 시 모델(약 44MB)을 내려받습니다. 인터넷(huggingface.co) 접속 필요, 이후 캐시됩니다.</div>
+        </div>
+
+        {/* STEP 2 — 브러시 */}
+        <div className={`bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3 ${hasImage ? '' : 'opacity-40 pointer-events-none'}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">수동 보정 브러시</span>
+            <span className="text-[9px] font-mono" style={{ color: ACCENT }}>STEP 2</span>
+          </div>
+          <div className="flex gap-2">
+            {[{ m: 1, t: '복원', k: '+ 캐릭터' }, { m: 2, t: '지우기', k: '− 배경' }].map((b) => (
+              <button
+                key={b.m}
+                onClick={() => setBrushMode(b.m)}
+                className={`flex-1 rounded-lg py-2 border transition-colors flex flex-col items-center gap-0.5 ${brushMode === b.m ? 'text-black' : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+                style={brushMode === b.m ? { background: ACCENT, borderColor: ACCENT } : undefined}
+              >
+                <span className="text-[12px] font-bold">{b.t}</span>
+                <span className={`text-[9px] font-mono ${brushMode === b.m ? 'text-black/60' : 'text-zinc-600'}`}>{b.k}</span>
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center gap-3">
+            <span className="text-[11px] font-bold text-zinc-400 w-16 shrink-0">브러시</span>
+            <input type="range" min={4} max={200} value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="flex-1 accent-[#FF3366]" />
+            <span className="text-[11px] font-mono text-zinc-300 w-8 text-right tabular-nums">{brushSize}</span>
+          </label>
+          <div className="text-[10px] text-zinc-600 leading-relaxed">AI가 놓친 부분은 <b className="text-zinc-400">복원</b>으로 칠하고, 이펙트·UI가 남으면 <b className="text-zinc-400">지우기</b>로 지우세요.</div>
+        </div>
+
+        {/* STEP 3 — 엣지 */}
+        <div className={`bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3 ${hasImage ? '' : 'opacity-40 pointer-events-none'}`}>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">엣지 다듬기</span>
+            <span className="text-[9px] font-mono" style={{ color: ACCENT }}>STEP 3</span>
+          </div>
+          <label className="flex items-center gap-3">
+            <span className="text-[11px] font-bold text-zinc-400 w-16 shrink-0">수축</span>
+            <input type="range" min={0} max={10} value={erodeV} onChange={(e) => { setErodeV(Number(e.target.value)); schedule(); }} className="flex-1 accent-[#FF3366]" />
+            <span className="text-[11px] font-mono text-zinc-300 w-8 text-right tabular-nums">{erodeV}</span>
+          </label>
+          <label className="flex items-center gap-3">
+            <span className="text-[11px] font-bold text-zinc-400 w-16 shrink-0">부드럽기</span>
+            <input type="range" min={0} max={12} value={featherV} onChange={(e) => { setFeatherV(Number(e.target.value)); schedule(); }} className="flex-1 accent-[#FF3366]" />
+            <span className="text-[11px] font-mono text-zinc-300 w-8 text-right tabular-nums">{featherV}</span>
+          </label>
+          <button
+            onClick={() => { setDefringe((v) => !v); schedule(); }}
+            className={`text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-full border transition-colors inline-flex items-center gap-1.5 self-start ${defringe ? 'text-black' : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+            style={defringe ? { background: ACCENT, borderColor: ACCENT } : undefined}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${defringe ? 'bg-black' : 'bg-zinc-600'}`} /> 디프린지 (색 번짐 제거)
+          </button>
+          <div className="text-[10px] text-zinc-600 leading-relaxed">배경 테두리가 남으면 <b className="text-zinc-400">수축</b>을 키우고, 경계는 <b className="text-zinc-400">부드럽기</b>로 완화하세요.</div>
+        </div>
+
+        {/* 액션 */}
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button onClick={undo} disabled={!canUndo} className="flex-1 text-[11px] font-bold tracking-wider py-2.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5">
+              <RotateCcw className="w-3.5 h-3.5" /> 실행취소
+            </button>
+            <button onClick={reset} disabled={!hasImage} className="flex-1 text-[11px] font-bold tracking-wider py-2.5 rounded-lg border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+              새 이미지
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 스테이지 컬럼 */}
+      <div className="flex flex-col gap-3">
+        <div className="relative min-h-[360px] bg-[#101012] border border-zinc-800 rounded-xl flex items-center justify-center overflow-hidden p-4">
+          {/* 파일명 라벨 */}
+          {hasImage && fileName && (
+            <div className="absolute top-3 left-3 z-10 text-[10px] font-black uppercase tracking-widest text-zinc-500 bg-black/85 border border-zinc-800 rounded px-2 py-1 max-w-[45%] truncate">
+              {fileName}
+            </div>
+          )}
+          {/* 배경 미리보기 칩 */}
+          {hasImage && (
+            <div className="absolute top-3 right-3 z-10 flex gap-1.5">
+              {[{ k: 'check', t: '투명' }, { k: 'dark', t: '어두운' }, { k: 'light', t: '밝은' }].map((c) => (
+                <button
+                  key={c.k}
+                  onClick={() => setBgMode(c.k)}
+                  className={`text-[9px] font-bold tracking-wider px-2.5 py-1 rounded-full border transition-colors ${bgMode === c.k ? 'text-black' : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+                  style={bgMode === c.k ? { background: ACCENT, borderColor: ACCENT } : undefined}
+                >
+                  {c.t}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!hasImage && (
+            <div
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files?.[0]; if (f) loadFile(f); }}
+              className={`w-full max-w-md aspect-[4/3] border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-colors ${dragging ? 'border-[#FF3366] bg-[#FF3366]/5' : 'border-zinc-800 hover:border-zinc-600'}`}
+            >
+              <Upload className="w-9 h-9 text-zinc-700" />
+              <div className="text-center">
+                <div className="text-[13px] font-bold text-zinc-300">게임 스크린샷 끌어다 놓기</div>
+                <div className="text-[11px] text-zinc-600 mt-1">또는 클릭해서 선택 · PNG / JPG</div>
+                <div className="text-[11px] text-zinc-600">복잡한 배경에서 캐릭터를 분리합니다</div>
+              </div>
+            </div>
+          )}
+
+          {/* 캔버스는 항상 마운트 (ref 유지) — 이미지 없을 땐 숨김 */}
+          <div
+            ref={shellRef}
+            className={`relative ${bgMode === 'check' ? 'bg-maskforge-checker' : ''} ${hasImage ? '' : 'hidden'}`}
+            style={{ background: shellBg }}
+          >
+            <canvas
+              ref={viewRef}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerLeave}
+              className="block max-w-full select-none"
+              style={{ maxHeight: '62vh', touchAction: 'none', cursor: hasImage ? 'none' : 'default' }}
+            />
+            <div ref={cursorRef} className="absolute rounded-full border-2 border-white pointer-events-none hidden" style={{ transform: 'translate(-50%,-50%)', mixBlendMode: 'difference' }} />
+          </div>
+        </div>
+
+        {/* 다운로드 / 보내기 */}
+        {hasImage && (
+          <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4">
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              <button onClick={downloadPng} className="text-[11px] font-bold tracking-wider px-6 py-2.5 rounded-lg text-black inline-flex items-center gap-2 transition-all active:scale-95 hover:brightness-110" style={{ background: ACCENT }}>
+                <Download className="w-3.5 h-3.5" /> PNG 저장 (투명)
+              </button>
+              <button onClick={sendToPreview} className="text-[11px] font-bold tracking-wider px-6 py-2.5 rounded-lg inline-flex items-center gap-2 transition-all active:scale-95 hover:brightness-110 border" style={{ color: PREVIEW_COLOR, borderColor: `${PREVIEW_COLOR}66`, background: `${PREVIEW_COLOR}1A` }}>
+                <Send className="w-3.5 h-3.5" /> NEXUS Preview로 보내기
+              </button>
+            </div>
+            <div className="mt-4 pt-4 border-t border-zinc-800 flex flex-wrap items-center justify-center gap-2.5">
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">고정 크기</span>
+              <div className="inline-flex items-center gap-1 bg-black/40 border border-zinc-800 rounded-lg p-1">
+                {RESAMPLE_PRESETS.map((w) => (
+                  <button key={w} onClick={() => setResampleWidth(w)} className={`text-[11px] font-bold tracking-wider px-3 py-1.5 rounded-md transition-colors ${Number(resampleWidth) === w ? 'text-black' : 'text-zinc-400 hover:text-white'}`} style={Number(resampleWidth) === w ? { background: ACCENT } : undefined}>{w}</button>
+                ))}
+              </div>
+              <div className="inline-flex items-center gap-1.5 border border-zinc-800 bg-black/40 rounded-lg px-3 py-1.5">
+                <input type="number" min={16} max={4096} value={resampleWidth} onChange={(e) => setResampleWidth(e.target.value)} className="w-16 bg-transparent border-none outline-none text-[12px] font-mono text-zinc-100 text-right tabular-nums" />
+                <span className="text-[10px] font-bold text-zinc-500">px</span>
+              </div>
+              <button onClick={downloadResample} className="text-[11px] font-bold tracking-wider px-6 py-2.5 rounded-lg text-black inline-flex items-center gap-2 transition-all active:scale-95 hover:brightness-110" style={{ background: ACCENT }}>
+                <Download className="w-3.5 h-3.5" /> 리샘플 저장
+              </button>
+            </div>
+          </div>
+        )}
+
+        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => { if (e.target.files?.[0]) loadFile(e.target.files[0]); e.target.value = ''; }} />
       </div>
     </div>
   );

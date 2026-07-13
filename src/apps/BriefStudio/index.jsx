@@ -3,7 +3,7 @@
 // 작업 플로우 버튼으로 각 앱에 payload 전달. 기본 테마는 다크모드.
 import { useEffect, useRef, useState } from "react";
 import {
-  addDoc, collection, deleteDoc, doc, onSnapshot, query, getDocs, orderBy, serverTimestamp,
+  collection, deleteDoc, doc, onSnapshot, query, getDocs, orderBy, serverTimestamp, setDoc, updateDoc,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import { GEMINI_API_KEY } from "../../lib/gemini";
@@ -13,7 +13,8 @@ import { APP_MAP } from "../../config/apps";
 import {
   Upload, FileText, Image as ImageIcon, X, Loader2, Sparkles,
   ArrowRight, Type, Box, Video, AlertCircle, Users, Check, ChevronRight,
-  Palette, Layers, History, Plus, Trash2, PanelLeftClose, PanelLeftOpen,
+  Palette, Layers, History, Plus, Trash2, PanelLeftClose, PanelLeftOpen, Pencil, Save,
+  Move, ZoomIn, ZoomOut, Grid3X3, Maximize2,
 } from "lucide-react";
 import { extractDocxText, extractPptxText, isDocx, isPptx } from "./officeExtract";
 import Prism from "./Prism";
@@ -54,6 +55,68 @@ const MAX_IMAGES = 10;
 const POINT = "#A29BFE";
 const SIDEBAR_STORAGE = "brief-studio:historyOpen";
 
+const DRAFT_STAGE_META = {
+  form: { label: "1단계 · 형태", short: "형태", color: "#74B9FF" },
+  render: { label: "2단계 · 렌더링", short: "렌더링", color: "#FDCB6E" },
+};
+
+async function detectDraftStage(dataUrl) {
+  return new Promise((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      const size = 160;
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(image, 0, 0, size, size);
+      const pixels = ctx.getImageData(0, 0, size, size).data;
+      let dark = 0; let light = 0; let neutral = 0; let samples = 0;
+      for (let i = 0; i < pixels.length; i += 16) {
+        if (pixels[i + 3] < 40) continue;
+        const r = pixels[i]; const g = pixels[i + 1]; const b = pixels[i + 2];
+        const max = Math.max(r, g, b); const min = Math.min(r, g, b); const value = (r + g + b) / 3;
+        if (value < 45) dark += 1;
+        if (value > 205) light += 1;
+        if (max - min < 24) neutral += 1;
+        samples += 1;
+      }
+      const stage = samples && dark / samples > 0.48 && light / samples > 0.008 && neutral / samples > 0.78 ? "form" : "render";
+      resolve({ stage, confidence: stage === "form" ? "high" : "medium" });
+    };
+    image.onerror = () => resolve({ stage: "render", confidence: "low" });
+    image.src = dataUrl;
+  });
+}
+
+async function evaluateDesignDraft(report, dataUrl, stage = "render") {
+  if (!GEMINI_API_KEY) throw new Error("Gemini API 키가 없습니다.");
+  const base64 = String(dataUrl || "").split(",")[1];
+  const brief = JSON.stringify({
+    type: report.designIdeas?.primaryType || report.productionTypes?.[0],
+    title: report.projectName,
+    concept: report.designIdeas?.visualDirection || report.directionSummary,
+    requiredElements: report.requiredElements || [],
+    checkpoints: report.designIdeas?.checkpoints || [],
+  });
+  const stageInstruction = stage === "form"
+    ? `이 이미지는 1단계 형태 시안이다. 블랙 배경과 흰색 타이포를 기준으로 글자 실루엣, 비례, 자간, 획의 균형, 가독성, 컨셉을 표현하는 형태만 평가하라. 재질, 조명, 색상, 3D 완성도는 절대 감점하거나 요구하지 마라. JSON만 출력: {"stage":"form","conceptFit":0~100,"formQuality":0~100,"readability":0~100,"summary":"한 문장 총평","strengths":["강점"],"improvements":["형태 수정점"],"nextIdeas":["2단계 렌더 전 발전 방향"]}`
+    : `이 이미지는 2단계 렌더링 시안이다. 1단계에서 확정된 타이포 형태를 훼손하지 않았는지, 재질·조명·입체감·디테일이 컨셉과 맞는지 평가하라. 형태 자체를 불필요하게 다시 설계하라고 하지 마라. JSON만 출력: {"stage":"render","conceptFit":0~100,"formPreservation":0~100,"renderQuality":0~100,"summary":"한 문장 총평","strengths":["강점"],"improvements":["렌더 수정점"],"nextIdeas":["렌더 발전 방향"]}`;
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [
+        { text: `당신은 게임 타이포그래피 아트 디렉터입니다. 브리프와 제작 시안을 비교해 짧고 실행 가능하게 평가하세요.\n[브리프]\n${brief}\n[단계별 평가 규칙]\n${stageInstruction}` },
+        { inlineData: { mimeType: String(dataUrl).match(/^data:([^;]+)/)?.[1] || "image/png", data: base64 } },
+      ] }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0.35 },
+    }),
+  });
+  if (!response.ok) throw new Error(`Gemini ${response.status}`);
+  const json = await response.json();
+  return JSON.parse(json?.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
+}
+
 // ─── 파일 헬퍼 ───────────────────────────────────────────
 const fileToBase64 = (file) => new Promise((res, rej) => {
   const r = new FileReader();
@@ -66,6 +129,26 @@ const fileToDataUrl = (file) => new Promise((res, rej) => {
   r.onload = () => res(String(r.result));
   r.onerror = rej;
   r.readAsDataURL(file);
+});
+const makeStoredDraftImage = (dataUrl) => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => {
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    let quality = 0.86;
+    let result = canvas.toDataURL("image/jpeg", quality);
+    while (result.length > 850000 && quality > 0.42) {
+      quality -= 0.08;
+      result = canvas.toDataURL("image/jpeg", quality);
+    }
+    resolve(result);
+  };
+  image.onerror = reject;
+  image.src = dataUrl;
 });
 const fileToText = (file) => new Promise((res, rej) => {
   const r = new FileReader();
@@ -128,11 +211,20 @@ function StudioView() {
   const [reportId, setReportId] = useState(null);
   const [error, setError] = useState("");
   const [includeMotion, setIncludeMotion] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(true);
+  const [referenceOpen, setReferenceOpen] = useState(true);
+  const [resultOpen, setResultOpen] = useState(true);
+  const [drafts, setDrafts] = useState([]);
+  const [draftEvaluation, setDraftEvaluation] = useState(null);
+  const [evaluatingDraft, setEvaluatingDraft] = useState(false);
 
   // 0단 — 분석 기록 (서버 저장)
   const [history, setHistory] = useState([]);
   const [historyError, setHistoryError] = useState("");
+  const [resetNotice, setResetNotice] = useState("");
+  const resetNoticeTimer = useRef(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try { return localStorage.getItem(SIDEBAR_STORAGE) !== "0"; } catch { return true; }
   });
@@ -140,6 +232,10 @@ function StudioView() {
   useEffect(() => {
     try { localStorage.setItem(SIDEBAR_STORAGE, sidebarOpen ? "1" : "0"); } catch { /* ignore */ }
   }, [sidebarOpen]);
+
+  useEffect(() => () => {
+    if (resetNoticeTimer.current) clearTimeout(resetNoticeTimer.current);
+  }, []);
 
   // ─── 담당자 목록 로드 ──────────────────────────────────
   useEffect(() => {
@@ -159,14 +255,22 @@ function StudioView() {
 
   // ─── 분석 기록 실시간 구독 ─────────────────────────────
   useEffect(() => {
-    if (!user) return undefined;
+    if (!user) {
+      // 로그아웃 시 직전 사용자의 메모리 목록과 선택 결과를 즉시 제거한다.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHistory([]);
+      setSelectedId(null);
+      setReport(null);
+      setReportId(null);
+      return undefined;
+    }
     const q = query(
       collection(db, "briefHistory", user.uid, "reports"),
       orderBy("createdAt", "desc"),
     );
     const unsub = onSnapshot(q,
       (snap) => {
-        setHistory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setHistory(snap.docs.map(d => ({ id: d.id, ...d.data(), syncState: d.metadata.hasPendingWrites ? "saving" : "saved" })));
         setHistoryError("");
       },
       (e) => {
@@ -203,7 +307,8 @@ function StudioView() {
   const removeImage = (i) => setImageFiles(prev => prev.filter((_, idx) => idx !== i));
 
   // ─── 기록 불러오기 / 새 분석 / 삭제 ───────────────────
-  const loadHistory = (item) => {
+  const loadHistory = async (item) => {
+    setResetNotice("");
     setReport(item);
     setReportId(item.id);
     setSelectedId(item.id);
@@ -212,30 +317,121 @@ function StudioView() {
     if (item.genre) setGenre(item.genre);
     if (item.platform) setPlatform(item.platform);
     if (item.assigneeUid !== undefined) setAssigneeUid(item.assigneeUid || "");
+    try {
+      const draftSnap = await getDocs(collection(db, "briefHistory", user.uid, "reports", item.id, "drafts"));
+      setDrafts(draftSnap.docs.map((draftDoc) => ({ id: draftDoc.id, ...draftDoc.data() })).sort((a, b) => (a.createdAtMs || 0) - (b.createdAtMs || 0)));
+    } catch (draftError) {
+      console.warn("[BriefStudio] 시안 불러오기 실패", draftError);
+      setDrafts([]);
+      setHistoryError(`시안을 불러오지 못했습니다: ${draftError?.code || draftError?.message || "연결 오류"}`);
+    }
   };
   const newAnalysis = () => {
+    if (isAnalyzing) return;
     setReport(null);
     setReportId(null);
     setSelectedId(null);
     setError("");
     setAnalysisPercent(0);
     setAnalysisStage("");
+    setDocFiles([]);
+    setDocText("");
+    setImageFiles([]);
+    setGenre("rpg");
+    setPlatform("mobile");
+    setAssigneeUid("");
+    setDrafts([]);
+    setDraftEvaluation(null);
+    setRequestOpen(true);
+    setReferenceOpen(true);
+    setResultOpen(true);
+    setResetNotice("새 분석 준비 완료 · 요청서나 레퍼런스를 추가하세요");
+    if (resetNoticeTimer.current) clearTimeout(resetNoticeTimer.current);
+    resetNoticeTimer.current = setTimeout(() => setResetNotice(""), 3500);
+  };
+
+  const addDraftFiles = async (files) => {
+    const images = Array.from(files || []).filter((file) => file.type.startsWith("image/")).slice(0, 8 - drafts.length);
+    const next = await Promise.all(images.map(async (file) => {
+      const originalDataUrl = await fileToDataUrl(file);
+      const dataUrl = await makeStoredDraftImage(originalDataUrl);
+      const detected = await detectDraftStage(dataUrl);
+      return { id: `${Date.now()}-${crypto.randomUUID()}`, name: file.name, dataUrl, stage: detected.stage, stageConfidence: detected.confidence, createdAtMs: Date.now() };
+    }));
+    setDrafts((prev) => [...prev, ...next].slice(0, 8));
+    if (!user || !reportId) {
+      setHistoryError("시안은 현재 화면에만 추가됐습니다. 저장된 분석 기록을 선택한 뒤 추가해 주세요");
+      return;
+    }
+    next.forEach((draft) => {
+      setDoc(doc(db, "briefHistory", user.uid, "reports", reportId, "drafts", draft.id), draft).catch((saveError) => {
+        console.warn("[BriefStudio] 시안 저장 실패", saveError);
+        setHistoryError(`시안을 저장하지 못했습니다: ${saveError?.code || saveError?.message || "연결 오류"}`);
+      });
+    });
+  };
+  const updateDraftStage = (id, stage) => {
+    setDrafts((prev) => prev.map((item) => item.id === id ? { ...item, stage, stageConfidence: "manual" } : item));
+    if (user && reportId) updateDoc(doc(db, "briefHistory", user.uid, "reports", reportId, "drafts", id), { stage, stageConfidence: "manual" }).catch((stageError) => setHistoryError(`시안 단계를 저장하지 못했습니다: ${stageError?.code || stageError?.message}`));
+  };
+  const deleteDraft = (id) => {
+    setDrafts((prev) => prev.filter((item) => item.id !== id));
+    if (user && reportId) deleteDoc(doc(db, "briefHistory", user.uid, "reports", reportId, "drafts", id)).catch((draftError) => setHistoryError(`시안을 삭제하지 못했습니다: ${draftError?.code || draftError?.message}`));
+  };
+  const evaluateLatestDraft = async (selectedDraftId) => {
+    const target = drafts.find((item) => item.id === selectedDraftId) || drafts[drafts.length - 1];
+    if (!target || !report || evaluatingDraft) return;
+    setEvaluatingDraft(true);
+    try {
+      const evaluation = { ...(await evaluateDesignDraft(report, target.dataUrl, target.stage)), draftId: target.id, draftName: target.name };
+      setDraftEvaluation(evaluation);
+      setDrafts((prev) => prev.map((item) => item.id === target.id ? { ...item, evaluation } : item));
+      if (user && reportId) updateDoc(doc(db, "briefHistory", user.uid, "reports", reportId, "drafts", target.id), { evaluation }).catch((evaluationError) => setHistoryError(`평가를 저장하지 못했습니다: ${evaluationError?.code || evaluationError?.message}`));
+    }
+    catch (err) { setError(`시안 평가 실패: ${err.message || err}`); }
+    finally { setEvaluatingDraft(false); }
   };
   const deleteHistory = async (e, id) => {
     e.stopPropagation();
-    if (!user) return;
+    if (!user) { setHistoryError("로그인해야 분석 기록을 삭제할 수 있습니다"); return; }
     if (!window.confirm("이 분석 기록을 삭제할까요?")) return;
+    const deleted = history.find((item) => item.id === id);
+    setHistory((prev) => prev.filter((item) => item.id !== id));
+    if (selectedId === id) newAnalysis();
+    setHistoryError("");
     try {
       await deleteDoc(doc(db, "briefHistory", user.uid, "reports", id));
-      if (selectedId === id) newAnalysis();
     } catch (err) {
       console.warn("[BriefStudio] 기록 삭제 실패", err);
-      setHistoryError("삭제하지 못했습니다");
+      if (deleted) setHistory((prev) => prev.some((item) => item.id === id) ? prev : [deleted, ...prev]);
+      setHistoryError(`삭제하지 못했습니다: ${err?.code || err?.message || "서버 연결 오류"}`);
+    }
+  };
+  const saveHistoryEdit = async (patch) => {
+    if (!user || !editingItem?.id) { setHistoryError("로그인해야 분석 기록을 저장할 수 있습니다"); return; }
+    const targetId = editingItem.id;
+    const previous = editingItem;
+    setHistory((items) => items.map((item) => item.id === targetId ? { ...item, ...patch, syncState: "saving" } : item));
+    if (selectedId === targetId) setReport((prev) => prev ? { ...prev, ...patch } : prev);
+    setEditingItem(null);
+    setHistoryError("");
+    try {
+      await updateDoc(doc(db, "briefHistory", user.uid, "reports", targetId), {
+        ...patch,
+        updatedAt: serverTimestamp(),
+      });
+      setHistory((items) => items.map((item) => item.id === targetId ? { ...item, syncState: "saved" } : item));
+    } catch (err) {
+      console.warn("[BriefStudio] 기록 수정 실패", err);
+      setHistory((items) => items.map((item) => item.id === targetId ? previous : item));
+      if (selectedId === targetId) setReport((prev) => prev ? { ...prev, ...previous } : prev);
+      setHistoryError(`수정 내용을 저장하지 못했습니다: ${err?.code || err?.message || "서버 연결 오류"}`);
     }
   };
 
   // ─── Gemini 분석 ────────────────────────────────────────
   const handleAnalyze = async () => {
+    setResetNotice("");
     if (!GEMINI_API_KEY) { setError("Gemini API 키가 없습니다."); return; }
     if (docFiles.length === 0 && !docText.trim() && imageFiles.length === 0) {
       setError("문서·텍스트·이미지 중 최소 하나는 필요합니다."); return;
@@ -317,6 +513,15 @@ function StudioView() {
     "style": "serif|sans|display|script",
     "mood": "한국어 분위기 키워드 2~3개",
     "recommendations": "추천 폰트 또는 폰트 패밀리 (영문)"
+  },
+  "requiredElements": ["다음 제작 단계에서도 반드시 유지할 필수 요소 3~6개"],
+  "designIdeas": {
+    "primaryType": "typography|banner|promotion|brandweb 중 가장 우선인 작업 한 개",
+    "conceptTitle": "아이디어 보드 제목",
+    "visualDirection": "형태·구도·재질·색·조명까지 포함한 구체적인 제작 방향 3~5문장",
+    "ideaCards": [{"title":"아이디어 이름","description":"실제 제작 가능한 구체적 설명","keywords":["키워드"],"priority":"core|option"}],
+    "checkpoints": ["시안 검토 체크 항목"],
+    "nextDevelopment": ["완성 시안을 더 발전시키는 방향"]
   }
 }`;
 
@@ -342,20 +547,27 @@ function StudioView() {
       // Firestore 저장
       let savedId = null;
       if (user) {
-        try {
-          const ref = await addDoc(collection(db, "briefHistory", user.uid, "reports"), {
-            ...parsed,
-            genre, platform,
-            assigneeUid: assignee?.uid || "",
-            assigneeName: assignee?.displayName || assignee?.email || "",
-            docFiles: docSummaries,
-            imageCount: imageFiles.length,
-            createdAt: serverTimestamp(),
-          });
-          savedId = ref.id;
-        } catch (e) {
-          console.warn("[BriefStudio] 저장 실패", e);
-        }
+        const ref = doc(collection(db, "briefHistory", user.uid, "reports"));
+        const savedReport = {
+          ...parsed, genre, platform,
+          assigneeUid: assignee?.uid || "",
+          assigneeName: assignee?.displayName || assignee?.email || "",
+          docFiles: docSummaries,
+          imageCount: imageFiles.length,
+          createdAt: serverTimestamp(),
+        };
+        savedId = ref.id;
+        setHistory((prev) => [{ id: ref.id, ...savedReport, createdAt: new Date(), syncState: "saving" }, ...prev.filter((item) => item.id !== ref.id)]);
+        setDoc(ref, savedReport).then(() => {
+          setHistory((prev) => prev.map((item) => item.id === ref.id ? { ...item, syncState: "saved" } : item));
+          setHistoryError("");
+        }).catch((saveError) => {
+          console.warn("[BriefStudio] 저장 실패", saveError);
+          setHistory((prev) => prev.map((item) => item.id === ref.id ? { ...item, syncState: "failed" } : item));
+          setHistoryError(`분석 결과를 서버에 저장하지 못했습니다: ${saveError?.code || saveError?.message || "연결 오류"}`);
+        });
+      } else {
+        setHistoryError("분석은 완료됐지만 기록 저장에는 로그인이 필요합니다");
       }
 
       setReport(parsed);
@@ -393,6 +605,15 @@ function StudioView() {
     },
   });
   const goToApp = (target) => { navigate(target, buildPayload(target)); };
+  const sendDraftToRender = () => {
+    const latest = drafts[drafts.length - 1];
+    if (!latest) return;
+    navigate("render-metrics", {
+      ...buildPayload("render-metrics"),
+      image: { url: latest.dataUrl, metadata: { from: "brief-studio-board", name: latest.name } },
+      params: { ...buildPayload("render-metrics").params, designEvaluation: draftEvaluation || null },
+    });
+  };
 
   const hasInputs = docFiles.length > 0 || docText.trim() || imageFiles.length > 0;
   const hasType = (t) => report?.productionTypes?.includes(t);
@@ -400,7 +621,7 @@ function StudioView() {
 
   return (
     <div
-      className="flex h-full overflow-hidden bg-[#0a0a0f] text-slate-100"
+      className="flex flex-col h-full overflow-hidden bg-[#0a0a0f] text-slate-100"
       style={{ fontFamily: "'Noto Sans KR', sans-serif", height: "100%" }}
     >
       <style>{`
@@ -409,6 +630,9 @@ function StudioView() {
         .bs-scroll::-webkit-scrollbar-thumb { background: rgba(162,155,254,0.25); border-radius: 5px; }
         .bs-scroll:hover::-webkit-scrollbar-thumb { background: rgba(162,155,254,0.5); }
       `}</style>
+
+      {report && <CoreBriefBar report={report} />}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
       {/* PANEL 0 — 분석 기록 (서버 저장) */}
       {sidebarOpen ? (
@@ -428,7 +652,8 @@ function StudioView() {
           <div className="p-3 shrink-0">
             <button
               onClick={newAnalysis}
-              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[11px] font-bold border border-[#A29BFE]/40 text-[#A29BFE] hover:bg-[#A29BFE]/10 transition-colors"
+              disabled={isAnalyzing}
+              className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-lg text-[11px] font-bold border border-[#A29BFE]/40 text-[#A29BFE] hover:bg-[#A29BFE]/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Plus size={13} /> 새 분석
             </button>
@@ -447,9 +672,12 @@ function StudioView() {
               const active = selectedId === item.id;
               const title = item.projectName || item.gameName || "(제목 없음)";
               return (
-                <button
+                <div
                   key={item.id}
                   onClick={() => loadHistory(item)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") loadHistory(item); }}
+                  role="button"
+                  tabIndex={0}
                   className={`group w-full text-left px-2.5 py-2 rounded-lg border transition-colors ${
                     active
                       ? "bg-[#A29BFE]/15 border-[#A29BFE]/40"
@@ -460,12 +688,25 @@ function StudioView() {
                     <span className={`flex-1 text-[11px] font-bold truncate ${active ? "text-[#A29BFE]" : "text-slate-200"}`}>
                       {title}
                     </span>
-                    <span
+                    <span className="flex items-center gap-0.5 shrink-0">
+                    {item.syncState === "saving" && <Loader2 size={10} className="animate-spin text-amber-300" aria-label="서버에 저장 중" />}
+                    {item.syncState === "failed" && <AlertCircle size={10} className="text-rose-400" aria-label="저장 실패" />}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setEditingItem(item); }}
+                      title="편집"
+                      className="text-slate-500 hover:text-[#A29BFE] transition-colors cursor-pointer p-1"
+                    >
+                      <Pencil size={11} />
+                    </button>
+                    <button
+                      type="button"
                       onClick={(e) => deleteHistory(e, item.id)}
                       title="삭제"
-                      className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 transition-all shrink-0 cursor-pointer"
+                      className="text-slate-500 hover:text-rose-400 transition-colors cursor-pointer p-1"
                     >
                       <Trash2 size={12} />
+                    </button>
                     </span>
                   </div>
                   {item.gameName && item.projectName && (
@@ -478,7 +719,7 @@ function StudioView() {
                     })}
                     <span className="text-[9px] text-slate-600 ml-auto">{fmtDate(item.createdAt)}</span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -495,8 +736,9 @@ function StudioView() {
       )}
 
       {/* PANEL 1 — 요청서 */}
-      <section className="flex-1 flex flex-col overflow-hidden border-r border-white/10">
-        <PanelHeader icon={<FileText size={14} />} title="요청서" subtitle="문서 / 텍스트 / 기본 설정" />
+      <section className={`${requestOpen ? "flex-1 min-w-[280px]" : "w-11"} flex flex-col overflow-hidden border-r border-white/10 transition-[width]`}>
+        <PanelHeader icon={<FileText size={14} />} title="요청서" subtitle="문서 / 텍스트 / 기본 설정" collapsed={!requestOpen} onCollapse={() => setRequestOpen((v) => !v)} />
+        {requestOpen && <>
         <div className="flex-1 overflow-y-auto p-5 space-y-5 bs-scroll">
           {/* 문서 업로드 */}
           <div>
@@ -566,6 +808,11 @@ function StudioView() {
               <AlertCircle size={12} className="shrink-0 mt-0.5" /> <span>{error}</span>
             </div>
           )}
+          {resetNotice && (
+            <div className="flex items-start gap-2 p-2.5 bg-[#A29BFE]/10 border border-[#A29BFE]/30 rounded-lg text-[11px] text-[#c8c3ff]">
+              <Check size={12} className="shrink-0 mt-0.5" /> <span>{resetNotice}</span>
+            </div>
+          )}
         </div>
 
         {/* 분석 시작 */}
@@ -583,15 +830,19 @@ function StudioView() {
             {isAnalyzing ? "분석 중…" : "분석 시작"}
           </button>
         </div>
+        </>}
       </section>
 
       {/* PANEL 2 — 레퍼런스 */}
-      <section className="flex-1 flex flex-col overflow-hidden border-r border-white/10">
+      <section className={`${referenceOpen ? "flex-1 min-w-[260px]" : "w-11"} flex flex-col overflow-hidden border-r border-white/10 transition-[width]`}>
         <PanelHeader
           icon={<ImageIcon size={14} />}
           title="레퍼런스"
           subtitle={`이미지 ${imageFiles.length} / ${MAX_IMAGES}장`}
+          collapsed={!referenceOpen}
+          onCollapse={() => setReferenceOpen((v) => !v)}
         />
+        {referenceOpen && <>
         <div className="flex-1 overflow-y-auto p-5 space-y-4 bs-scroll">
           <label
             onDragOver={(e) => { e.preventDefault(); setIsDraggingImg(true); }}
@@ -625,11 +876,13 @@ function StudioView() {
             </div>
           )}
         </div>
+        </>}
       </section>
 
       {/* PANEL 3 — AI 분석 결과 */}
-      <section className="flex-1 flex flex-col overflow-hidden">
-        <PanelHeader icon={<Sparkles size={14} />} title="AI 분석 결과" subtitle={report ? (selectedId && !isAnalyzing ? "기록 불러옴" : "완료") : isAnalyzing ? "분석 중" : "대기"} />
+      <section className={`${resultOpen ? "flex-1 min-w-[320px]" : "w-11"} flex flex-col overflow-hidden transition-[width]`}>
+        <PanelHeader icon={<Sparkles size={14} />} title="디자인 아이디어 보드" subtitle={report ? (selectedId && !isAnalyzing ? "기록 불러옴" : "완료") : isAnalyzing ? "분석 중" : "대기"} collapsed={!resultOpen} onCollapse={() => setResultOpen((v) => !v)} />
+        {resultOpen && <>
         <div className="flex-1 overflow-y-auto p-5 bs-scroll">
           {!report && !isAnalyzing && (
             <div className="text-center py-16 text-slate-500">
@@ -653,7 +906,7 @@ function StudioView() {
             </div>
           )}
           {report && (
-            <ResultView
+            <><ResultView
               report={report}
               imageFiles={imageFiles}
               includeMotion={includeMotion}
@@ -661,23 +914,219 @@ function StudioView() {
               goToApp={goToApp}
               isAppDisabled={isAppDisabled}
               hasType={hasType}
-            />
+            /><ProductionBoard report={report} drafts={drafts} onFiles={addDraftFiles} onDelete={deleteDraft} onStageChange={updateDraftStage} evaluation={draftEvaluation} evaluating={evaluatingDraft} onEvaluate={evaluateLatestDraft} onRender={sendDraftToRender} /></>
           )}
         </div>
+        </>}
       </section>
+      </div>
+      {editingItem && <HistoryEditModal item={editingItem} onClose={() => setEditingItem(null)} onSave={saveHistoryEdit} />}
+    </div>
+  );
+}
+
+function CoreBriefBar({ report }) {
+  const primary = report.designIdeas?.primaryType || report.productionTypes?.[0] || "작업";
+  const typeLabel = PRODUCTION_TYPE_META[primary]?.label || primary;
+  return (
+    <div className="shrink-0 min-h-12 px-4 py-2 border-b border-[#A29BFE]/25 bg-[#111118] flex items-center gap-3 overflow-x-auto">
+      <span className="shrink-0 px-2 py-1 rounded-md bg-[#A29BFE]/15 border border-[#A29BFE]/35 text-[#A29BFE] text-[10px] font-black">{typeLabel}</span>
+      <div className="shrink-0"><div className="text-[10px] text-slate-500">타이틀명</div><div className="text-[12px] font-bold text-white">{report.projectName || report.gameName || "제목 미정"}</div></div>
+      <div className="w-px h-7 bg-white/10 shrink-0" />
+      <div className="min-w-[240px] flex-1"><div className="text-[10px] text-slate-500">핵심 컨셉</div><div className="text-[11px] text-slate-300 truncate">{report.designIdeas?.conceptTitle || report.directionSummary}</div></div>
+      {(report.requiredElements || []).slice(0, 4).map((item) => <span key={item} className="shrink-0 text-[9.5px] px-2 py-1 rounded-full border border-white/10 bg-white/[.03] text-slate-400">{item}</span>)}
+    </div>
+  );
+}
+
+function ProductionBoard({ report, drafts, onFiles, onDelete, onStageChange, evaluation, evaluating, onEvaluate, onRender }) {
+  const inputRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [layout, setLayout] = useState("grid");
+  const [selectedDraft, setSelectedDraft] = useState(null);
+  const [placements, setPlacements] = useState({});
+  const [isDraggingUpload, setIsDraggingUpload] = useState(false);
+
+  const arrangeDrafts = (mode = layout) => {
+    const count = Math.max(1, drafts.length);
+    const columns = mode === "grid" ? Math.min(3, Math.ceil(Math.sqrt(count))) : Math.min(2, count);
+    const width = mode === "grid" ? Math.max(24, Math.min(42, 88 / columns)) : 42;
+    const next = {};
+    drafts.forEach((item, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      next[item.id] = { x: 4 + column * (92 / columns), y: 5 + row * 32, width };
+    });
+    setPlacements(next);
+  };
+
+  const resizeSelected = (delta) => {
+    if (!selectedDraft) return;
+    setPlacements((prev) => ({
+      ...prev,
+      [selectedDraft]: { ...prev[selectedDraft], width: Math.max(18, Math.min(72, (prev[selectedDraft]?.width || 42) + delta)) },
+    }));
+  };
+
+  const beginDrag = (event, id) => {
+    if (!canvasRef.current) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSelectedDraft(id);
+    const rect = canvasRef.current.getBoundingClientRect();
+    const start = placements[id] || { x: 5, y: 5, width: 42 };
+    const origin = { x: event.clientX, y: event.clientY };
+    const move = (moveEvent) => {
+      const dx = ((moveEvent.clientX - origin.x) / rect.width) * 100;
+      const dy = ((moveEvent.clientY - origin.y) / rect.height) * 100;
+      setPlacements((prev) => ({ ...prev, [id]: { ...start, x: Math.max(0, Math.min(100 - start.width, start.x + dx)), y: Math.max(0, Math.min(78, start.y + dy)) } }));
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+  };
+
+  const beginResize = (event, id, fallback) => {
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setSelectedDraft(id);
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const start = placements[id] || fallback;
+    const startX = event.clientX;
+    const move = (moveEvent) => {
+      const width = Math.max(18, Math.min(72, start.width + ((moveEvent.clientX - startX) / rect.width) * 100));
+      setPlacements((prev) => ({ ...prev, [id]: { ...start, width } }));
+    };
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+  };
+
+  const hasDraggedFiles = (event) => Array.from(event.dataTransfer?.types || []).includes("Files");
+  const handleCanvasDragOver = (event) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDraggingUpload(true);
+  };
+  const handleCanvasDrop = (event) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    setIsDraggingUpload(false);
+    const files = Array.from(event.dataTransfer.files || []).filter((file) => file.type.startsWith("image/"));
+    if (files.length) onFiles(files);
+  };
+
+  const selectedItem = drafts.find((item) => item.id === selectedDraft);
+  const visibleEvaluation = selectedDraft ? selectedItem?.evaluation : evaluation;
+
+  return (
+    <section className="mt-7 pt-6 border-t border-white/10">
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+        <div><SectionTitle>시안 비교 캔버스</SectionTitle><p className="text-[11px] text-slate-500 mt-1">{report.projectName || "현재 브리프"} · <span className="text-sky-300">1단계 형태 {drafts.filter((item) => item.stage === "form").length}</span> · <span className="text-amber-300">2단계 렌더링 {drafts.filter((item) => item.stage !== "form").length}</span></p></div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => { setLayout("grid"); setTimeout(() => arrangeDrafts("grid"), 0); }} className={`px-2.5 py-2 rounded-lg border text-[10px] font-bold flex items-center gap-1.5 ${layout === "grid" ? "border-[#A29BFE]/60 bg-[#A29BFE]/15 text-[#c8c3ff]" : "border-white/10 text-slate-400"}`}><Grid3X3 size={12}/>자동 비교</button>
+          <button onClick={() => setLayout("free")} className={`px-2.5 py-2 rounded-lg border text-[10px] font-bold flex items-center gap-1.5 ${layout === "free" ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-300" : "border-white/10 text-slate-400"}`}><Move size={12}/>자유 배치</button>
+          <button onClick={() => arrangeDrafts(layout)} disabled={!drafts.length} title="화면에 모두 맞추기" className="p-2 rounded-lg border border-white/10 text-slate-400 hover:text-white disabled:opacity-30"><Maximize2 size={13}/></button>
+          <button onClick={() => resizeSelected(-5)} disabled={!selectedDraft} title="선택 시안 축소" className="p-2 rounded-lg border border-white/10 text-slate-400 hover:text-white disabled:opacity-30"><ZoomOut size={13}/></button>
+          <button onClick={() => resizeSelected(5)} disabled={!selectedDraft} title="선택 시안 확대" className="p-2 rounded-lg border border-white/10 text-slate-400 hover:text-white disabled:opacity-30"><ZoomIn size={13}/></button>
+          {drafts.length < 8 && <button onClick={() => inputRef.current?.click()} className="px-3 py-2 rounded-lg bg-[#A29BFE] text-[#101018] text-[10px] font-black flex items-center gap-1.5"><Plus size={13}/>시안 추가</button>}
+        </div>
+      </div>
+      <div ref={canvasRef} onPointerDown={(e) => { if (e.target === e.currentTarget) setSelectedDraft(null); }} onDragEnter={handleCanvasDragOver} onDragOver={handleCanvasDragOver} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setIsDraggingUpload(false); }} onDrop={handleCanvasDrop} className={`relative h-[clamp(360px,52vh,620px)] overflow-hidden rounded-xl border bg-[#0b0b11] transition-colors ${isDraggingUpload ? "border-[#A29BFE] ring-2 ring-[#A29BFE]/25" : "border-white/10"}`} style={{ backgroundImage: "radial-gradient(circle, rgba(162,155,254,.16) 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
+        {isDraggingUpload && <div className="absolute inset-3 z-50 rounded-xl border-2 border-dashed border-[#A29BFE]/70 bg-[#0b0b11]/90 backdrop-blur-sm grid place-items-center pointer-events-none"><span className="flex flex-col items-center gap-2 text-[12px] font-bold text-[#c8c3ff]"><Upload size={24}/>여기에 놓으면 시안으로 추가됩니다<span className="text-[10px] font-normal text-slate-500">여러 이미지를 한 번에 놓을 수 있습니다</span></span></div>}
+        {!drafts.length && <button onClick={() => inputRef.current?.click()} className="absolute inset-5 rounded-xl border border-dashed border-white/15 grid place-items-center text-slate-500 hover:border-[#A29BFE]/50 hover:text-[#A29BFE]"><span className="flex flex-col items-center gap-2 text-[11px]"><Upload size={22}/>첫 시안을 올려 비교를 시작하세요</span></button>}
+        {drafts.map((item, index) => {
+          const place = placements[item.id] || { x: 5 + (index % 2) * 46, y: 6 + Math.floor(index / 2) * 34, width: 42 };
+          const selected = selectedDraft === item.id;
+          const stage = item.stage || "render";
+          const stageMeta = DRAFT_STAGE_META[stage];
+          return <div key={item.id} onPointerDown={(e) => beginDrag(e, item.id)} className={`group absolute select-none rounded-lg overflow-hidden border bg-black/70 shadow-xl cursor-grab active:cursor-grabbing ${selected ? "border-[#A29BFE] ring-2 ring-[#A29BFE]/25 z-20" : "border-white/15 z-10"}`} style={{ left: `${place.x}%`, top: `${place.y}%`, width: `${place.width}%`, touchAction: "none" }}>
+            <div className="relative aspect-video bg-black/40"><img draggable="false" src={item.dataUrl} alt={item.name} className="w-full h-full object-contain pointer-events-none"/><span className="absolute left-2 top-2 px-2 py-1 rounded-md border bg-black/75 text-[9px] font-black" style={{ color: stageMeta.color, borderColor: `${stageMeta.color}66` }}>{stageMeta.label}{item.stageConfidence !== "manual" && " · 자동"}</span></div>
+            <div className="min-h-8 px-2 flex items-center gap-2 bg-[#15151d]"><Move size={10} className="text-slate-600"/><span className="flex-1 text-[9px] text-slate-300 truncate">{item.name}</span><select onPointerDown={(e) => e.stopPropagation()} value={stage} onChange={(e) => onStageChange(item.id, e.target.value)} aria-label={`${item.name} 시안 단계`} className="h-6 rounded border border-white/10 bg-black/40 px-1 text-[9px] text-slate-300 outline-none"><option value="form">1단계 형태</option><option value="render">2단계 렌더링</option></select><button onPointerDown={(e) => e.stopPropagation()} onClick={() => onDelete(item.id)} className="p-1 text-slate-600 hover:text-rose-400" aria-label={`${item.name} 삭제`}><Trash2 size={11}/></button></div>
+            <button type="button" onPointerDown={(e) => beginResize(e, item.id, place)} className="absolute right-0 bottom-0 z-30 w-5 h-5 cursor-se-resize text-[#A29BFE] grid place-items-center bg-[#A29BFE]/15 rounded-tl" title="드래그하여 시안 크기 조절" aria-label={`${item.name} 크기 조절`}><span className="block w-2 h-2 border-r border-b border-current"/></button>
+          </div>;
+        })}
+        {!!drafts.length && <div className="absolute left-3 bottom-3 z-30 px-2 py-1 rounded-md bg-black/70 border border-white/10 text-[9px] text-slate-500">이미지 파일을 캔버스에 놓아 추가 · 시안 선택 후 드래그로 배치</div>}
+      </div>
+      <input ref={inputRef} type="file" accept="image/*" multiple hidden onChange={(e) => { onFiles(e.target.files); e.target.value = ""; }} />
+      <div className="flex gap-2 mt-3">
+        <button onClick={() => onEvaluate(selectedDraft)} disabled={!drafts.length || evaluating} className="flex-1 py-2.5 rounded-lg bg-[#A29BFE] text-[#0a0a0f] text-[11px] font-black flex items-center justify-center gap-1.5 disabled:opacity-40">{evaluating ? <Loader2 size={13} className="animate-spin"/> : <Sparkles size={13}/>} {selectedDraft ? "선택 시안 단계별 평가" : "최근 시안 단계별 평가"}</button>
+        <button onClick={onRender} disabled={!drafts.length} className="flex-1 py-2.5 rounded-lg border border-cyan-500/35 bg-cyan-500/10 text-cyan-300 text-[11px] font-bold disabled:opacity-40">렌더링 단계로 이동</button>
+      </div>
+      {visibleEvaluation && <div className="mt-3 rounded-xl border border-white/10 bg-black/20 p-3 space-y-3"><div className="flex items-center gap-2"><span className={`px-2 py-1 rounded-md text-[9px] font-black ${visibleEvaluation.stage === "form" ? "bg-sky-400/10 text-sky-300" : "bg-amber-400/10 text-amber-300"}`}>{DRAFT_STAGE_META[visibleEvaluation.stage || "render"].label} 평가</span><span className="text-[10px] text-slate-500 truncate">{visibleEvaluation.draftName}</span></div>{visibleEvaluation.stage === "form" ? <div className="grid grid-cols-3 gap-2"><Score label="컨셉 형태" value={visibleEvaluation.conceptFit}/><Score label="형태 완성도" value={visibleEvaluation.formQuality}/><Score label="가독성" value={visibleEvaluation.readability}/></div> : <div className="grid grid-cols-3 gap-2"><Score label="컨셉 충실도" value={visibleEvaluation.conceptFit}/><Score label="형태 보존" value={visibleEvaluation.formPreservation}/><Score label="렌더 완성도" value={visibleEvaluation.renderQuality}/></div>}<div className="text-[11px] text-slate-300 leading-relaxed">{visibleEvaluation.summary}</div><IdeaList title="잘 표현된 점" items={visibleEvaluation.strengths}/><IdeaList title="보완할 점" items={visibleEvaluation.improvements}/><IdeaList title={visibleEvaluation.stage === "form" ? "2단계 전에 발전할 점" : "렌더 발전 아이디어"} items={visibleEvaluation.nextIdeas} accent/></div>}
+      {selectedDraft && !visibleEvaluation && <div className="mt-3 rounded-xl border border-dashed border-white/10 bg-white/[.02] p-4 text-center text-[10px] text-slate-500">선택한 시안은 아직 평가하지 않았습니다. 위의 ‘선택 시안 단계별 평가’를 눌러주세요.</div>}
+    </section>
+  );
+}
+
+function Score({ label, value }) { return <div className="rounded-lg border border-white/10 bg-white/[.03] p-2.5"><div className="text-[9px] text-slate-500">{label}</div><div className="text-xl font-black text-[#A29BFE] mt-0.5">{Number(value) || 0}<span className="text-[10px] text-slate-600">/100</span></div></div>; }
+function IdeaList({ title, items, accent = false }) { if (!Array.isArray(items) || !items.length) return null; return <div><div className={`text-[10px] font-bold mb-1 ${accent ? "text-[#A29BFE]" : "text-slate-500"}`}>{title}</div><ul className="space-y-1 text-[10.5px] text-slate-400">{items.map((item, i) => <li key={i}>• {item}</li>)}</ul></div>; }
+
+function HistoryEditModal({ item, onClose, onSave }) {
+  const [draft, setDraft] = useState(() => ({
+    gameName: item.gameName || "",
+    projectName: item.projectName || "",
+    directionSummary: item.directionSummary || "",
+    keywordsText: Array.isArray(item.keywords) ? item.keywords.join(", ") : "",
+  }));
+  const [saving, setSaving] = useState(false);
+  const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
+  const submit = async () => {
+    if (saving || !draft.projectName.trim()) return;
+    setSaving(true);
+    await onSave({
+      gameName: draft.gameName.trim(),
+      projectName: draft.projectName.trim(),
+      directionSummary: draft.directionSummary.trim(),
+      keywords: draft.keywordsText.split(",").map((v) => v.trim()).filter(Boolean).slice(0, 12),
+    });
+    setSaving(false);
+  };
+  const fieldClass = "w-full rounded-lg border border-white/10 bg-black/30 px-3 py-2.5 text-[12px] text-slate-200 outline-none focus:border-[#A29BFE]/60";
+  return (
+    <div className="fixed inset-0 z-[2300] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#111118] shadow-2xl overflow-hidden">
+        <header className="flex items-center gap-2 px-5 py-4 border-b border-white/10">
+          <Pencil size={14} className="text-[#A29BFE]" />
+          <div className="flex-1">
+            <div className="text-[13px] font-bold text-slate-100">분석 기록 편집</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">목록과 AI 분석 결과에 함께 반영됩니다.</div>
+          </div>
+          <button onClick={onClose} aria-label="닫기" className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-white/5"><X size={14}/></button>
+        </header>
+        <div className="p-5 space-y-4">
+          <label className="block"><Label>게임명</Label><input value={draft.gameName} onChange={(e) => update("gameName", e.target.value)} className={fieldClass} placeholder="게임명" /></label>
+          <label className="block"><Label>프로젝트명 *</Label><input value={draft.projectName} onChange={(e) => update("projectName", e.target.value)} className={fieldClass} placeholder="프로젝트명" autoFocus /></label>
+          <label className="block"><Label>디자인 방향</Label><textarea value={draft.directionSummary} onChange={(e) => update("directionSummary", e.target.value)} rows={5} className={`${fieldClass} resize-y leading-relaxed`} placeholder="분석된 디자인 방향" /></label>
+          <label className="block"><Label>핵심 키워드</Label><input value={draft.keywordsText} onChange={(e) => update("keywordsText", e.target.value)} className={fieldClass} placeholder="판타지, 웅장함, 금속" /><div className="mt-1 text-[10px] text-slate-600">쉼표로 구분해 최대 12개까지 저장됩니다.</div></label>
+        </div>
+        <footer className="flex justify-end gap-2 px-5 py-4 border-t border-white/10 bg-[#0d0d14]">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-white/10 text-[11px] font-bold text-slate-400 hover:text-white">취소</button>
+          <button onClick={submit} disabled={saving || !draft.projectName.trim()} className="px-4 py-2 rounded-lg bg-[#A29BFE] text-[#0a0a0f] text-[11px] font-black flex items-center gap-1.5 disabled:opacity-40">
+            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} {saving ? "저장 중…" : "변경 저장"}
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }
 
 // ─── 공용 UI 컴포넌트 ────────────────────────────────────
-function PanelHeader({ icon, title, subtitle }) {
+function PanelHeader({ icon, title, subtitle, collapsed = false, onCollapse }) {
   return (
-    <header className="h-12 flex items-center px-5 border-b border-white/10 bg-[#0d0d14] shrink-0">
+    <header className={`h-12 flex items-center ${collapsed ? "justify-center px-0" : "px-4"} border-b border-white/10 bg-[#0d0d14] shrink-0`}>
       <div className="flex items-center gap-2 text-[12px] flex-1">
         <span className="text-[#A29BFE]">{icon}</span>
-        <span className="font-bold text-slate-200">{title}</span>
-        {subtitle && <span className="text-slate-500">· {subtitle}</span>}
+        {!collapsed && <><span className="font-bold text-slate-200">{title}</span>{subtitle && <span className="text-slate-500">· {subtitle}</span>}</>}
       </div>
+      {onCollapse && <button onClick={onCollapse} title={collapsed ? `${title} 펼치기` : `${title} 접기`} className="p-1.5 rounded-md text-slate-500 hover:text-white hover:bg-white/5 shrink-0">{collapsed ? <ChevronRight size={14}/> : <PanelLeftClose size={14}/>}</button>}
     </header>
   );
 }
@@ -698,6 +1147,7 @@ function SelectField({ label, value, onChange, options }) {
 
 // ─── 분석 결과 뷰 ────────────────────────────────────────
 function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToApp, isAppDisabled, hasType }) {
+  const ideas = report.designIdeas || {};
   return (
     <div className="space-y-6">
       {/* 자동 분석 */}
@@ -720,6 +1170,21 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
           })}
         </div>
       </section>
+
+      {(ideas.visualDirection || ideas.ideaCards?.length) && (
+        <section>
+          <SectionTitle>디자인 아이디어 보드</SectionTitle>
+          <div className="rounded-xl border border-[#A29BFE]/25 bg-[#A29BFE]/[.06] p-3 mb-3">
+            <div className="text-[13px] font-black text-[#A29BFE]">{ideas.conceptTitle || "추천 제작 방향"}</div>
+            {ideas.visualDirection && <p className="text-[11px] leading-relaxed text-slate-300 mt-1.5 whitespace-pre-wrap">{ideas.visualDirection}</p>}
+          </div>
+          <div className="space-y-2">
+            {(ideas.ideaCards || []).map((idea, index) => <div key={`${idea.title}-${index}`} className="rounded-lg border border-white/10 bg-white/[.025] p-3"><div className="flex items-center gap-2"><span className="w-5 h-5 rounded-full grid place-items-center text-[9px] font-black bg-[#A29BFE]/15 text-[#A29BFE]">{index + 1}</span><div className="text-[11px] font-bold text-slate-200">{idea.title}</div>{idea.priority === "core" && <span className="ml-auto text-[8px] rounded px-1.5 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-300">필수</span>}</div><p className="text-[10.5px] text-slate-400 leading-relaxed mt-2">{idea.description}</p><div className="flex flex-wrap gap-1 mt-2">{(idea.keywords || []).map((keyword) => <span key={keyword} className="text-[9px] text-slate-500">#{keyword}</span>)}</div></div>)}
+          </div>
+          <IdeaList title="시안 검토 기준" items={ideas.checkpoints} />
+          <IdeaList title="완성 후 발전 방향" items={ideas.nextDevelopment} accent />
+        </section>
+      )}
 
       {/* 컨셉 제안 */}
       <section>
@@ -778,13 +1243,13 @@ function ResultView({ report, imageFiles, includeMotion, setIncludeMotion, goToA
             <div className="space-y-2 mb-3">
               <WorkflowStep n={1} appId="typecore-sovereign" goTo={goToApp} disabled={isAppDisabled("typecore-sovereign")} />
               <WorkflowArrow />
-              <WorkflowStep n={2} appId="render-matrix" goTo={goToApp} disabled={isAppDisabled("render-matrix")} />
+              <WorkflowStep n={2} appId="render-metrics" goTo={goToApp} disabled={isAppDisabled("render-metrics")} />
               <WorkflowArrow dim={!includeMotion} />
               <WorkflowStep
                 n={3}
-                appId="motion-matrix"
+                appId="motion-metrics"
                 goTo={goToApp}
-                disabled={isAppDisabled("motion-matrix") || !includeMotion}
+                disabled={isAppDisabled("motion-metrics") || !includeMotion}
                 optional
                 onToggle={() => setIncludeMotion(v => !v)}
                 included={includeMotion}

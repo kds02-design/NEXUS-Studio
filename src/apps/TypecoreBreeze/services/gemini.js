@@ -33,13 +33,28 @@ const callGemini = async ({ systemPrompt, userText, imageData, mimeType, tempera
     }
   };
   const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!response.ok) {
+    let detail = '';
+    try { detail = (await response.json())?.error?.message || ''; } catch { /* noop */ }
+    throw new Error(`Gemini 요청 실패 (${response.status})${detail ? `: ${detail}` : ''}`);
+  }
   const data = await response.json();
-  return data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const result = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if (!result.trim()) throw new Error('Gemini가 빈 응답을 반환했습니다.');
+  return result;
+};
+
+const requirePromptResult = (result, label) => {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error(`${label} 응답 형식이 올바르지 않습니다.`);
+  const en = typeof result.en === 'string' ? result.en.trim() : '';
+  const ko = typeof result.ko === 'string' ? result.ko.trim() : '';
+  if (!en) throw new Error(`${label} 영문 프롬프트가 비어 있습니다.`);
+  return { en, ko: ko || en };
 };
 
 export const auditPromptLogic = async (currentStateStr) => {
   const systemPrompt = `Act as an Elite Typography Logic Auditor. Find and fix contradictions in the user's prompt configuration.
-CRITICAL RULE: The engine enforces STRICT 2D FLAT (unless 3D Extruded is picked or requested).
+CRITICAL RULE: Typecore Breeze is STRICTLY 2D FLAT. Extruded 3D and all depth/material exceptions are prohibited; convert them to a flat solid treatment.
 Return JSON strictly: {
   "auditLog": "발견된 충돌 사항과 논리적 교정 내역 요약 (Korean, 1-2 lines. e.g. '3D 키워드를 감지하여 내부 질감을 3D 입체로 변경했습니다.')",
   "fixedAura": "Cleaned Aura string",
@@ -115,7 +130,7 @@ export const generateDramaticPrompt = async (baseTechnicalEn) => {
 
 CRITICAL — CONFLICT RESOLUTION:
 - The input spec MAY contain semantically contradictory descriptors (e.g. "elegant" + "K-variety pop", "smooth bezier" + "thick sticker border", "bouncy rhythm" + "straight baseline", "contained simple strokes" + "extruded 3D shadows").
-- Detect these contradictions and RESOLVE them by picking the dominant intent (Persona > Style > rest).
+- Resolve by this priority: exact text/spelling and explicit line breaks/layout/monochrome/2D locks > user design direction > Persona > Style > remaining details.
 - Do NOT preserve both sides "for safety". Drop the loser entirely.
 
 CRITICAL — NO REDUNDANCY:
@@ -133,7 +148,7 @@ Return STRICTLY a JSON object in this format:
   "ko": "1. # 무드: (충돌 해결 후 한 줄)\\n2. # 형태: (지배적 조형 언어 한 줄)\\n3. # 제약: (가독성/비율/단색화 한 줄)\\n4. # 최고 명령어: (전체 통합 프롬프트 한글 번역)"
 }`;
   const text = await callGemini({ systemPrompt, userText: baseTechnicalEn, temperature: 0.6 });
-  return extractJson(text);
+  return requirePromptResult(extractJson(text), 'Nano Banana 보강');
 };
 
 export const generateEditDramaticPrompt = async (baseTechnicalEn) => {
@@ -144,7 +159,7 @@ Return STRICTLY a JSON object in this format:
   "ko": "1. # 구조적 보존\\n(위 1번 한글 설명)\\n2. # 마이크로 에디팅 타겟: (변경점에 대한 명확한 한글 설명)\\n3. # 최고 명령어: (영문 3번 프롬프트의 한글 번역)"
 }`;
   const text = await callGemini({ systemPrompt, userText: baseTechnicalEn, temperature: 0.7 });
-  return extractJson(text);
+  return requirePromptResult(extractJson(text), '마이크로 편집 보강');
 };
 
 export const generateOptimizedTags = async (baseTechnicalEn) => {
@@ -155,7 +170,7 @@ Return STRICTLY a JSON object in this format:
   "ko": "<위 영문 태그들을 사용자가 직관적으로 이해할 수 있도록 한글 단어 태그로 번역한 문자열>"
 }`;
   const text = await callGemini({ systemPrompt, userText: baseTechnicalEn, temperature: 0.2 });
-  return extractJson(text);
+  return requirePromptResult(extractJson(text), '태그 최적화');
 };
 
 export const generateMidjourneyPrompt = async (baseTechnicalEn) => {
@@ -166,7 +181,7 @@ Return STRICTLY a JSON object in this format:
   "ko": "<Midjourney prompt translated into descriptive Korean for user understanding>"
 }`;
   const text = await callGemini({ systemPrompt, userText: baseTechnicalEn, temperature: 0.2 });
-  return extractJson(text);
+  return requirePromptResult(extractJson(text), 'Midjourney 최적화');
 };
 
 export const generateChatGPTPrompt = async (baseTechnicalEn) => {
@@ -177,5 +192,5 @@ Return STRICTLY a JSON object in this format:
   "ko": "<DALL-E 3 instructions translated to Korean>"
 }`;
   const text = await callGemini({ systemPrompt, userText: baseTechnicalEn, temperature: 0.7 });
-  return extractJson(text);
+  return requirePromptResult(extractJson(text), 'ChatGPT 보강');
 };

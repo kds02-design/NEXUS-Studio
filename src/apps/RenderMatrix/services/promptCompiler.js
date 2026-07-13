@@ -418,12 +418,22 @@ export const compileEditNanoBanana = (ir, state) => {
     return `${posTags}\n\nNegative prompt: ${negTags}`;
   }
   const editTone = getTone(ir._meta?.persona?.id);
+  // 평면 유지 모드 — 후면 돌출(None)이 기본값. 이때는 입체화를 유발하던 상시 토큰
+  // (전면 릴리프 요구·측면 그림자·스펙큘러·메탈 하드서피스)을 끄고 "베이스 이미지의
+  // 차원감 보존"을 명시한다. frontVolumeModifier 는 에디트 UI 에 없는 생성 탭 상태
+  // (frontRelief, 기본 MicroChiseled)가 새어 들어와 평면 입력에 표면 조각 볼륨을
+  // 항상 요구하던 주범 — 돌출을 명시적으로 허용했을 때만 적용.
+  const isFlatEdit = ir.constraints.extrusionId === "None";
   const frontVolumeModifier = frontVolumeModifierFor(ir.reliefId);
-  const projectionTag = ir.constraints.extrusion.includes("MINIMAL") ? `${FLAT_POSITIVE}, BUT ${frontVolumeModifier}` : "allow 3d extrusion";
+  const projectionTag = isFlatEdit
+    ? `${FLAT_POSITIVE}, (preserve the original dimensionality and front-face relief of the base image exactly:1.4), do NOT add new carving, bevels, embossing or surface sculpting`
+    : `allow 3d extrusion, ${frontVolumeModifier}`;
   const posTags = [
     "masterpiece, best quality, ultra highres, 8k resolution, perfectly exposed, bright base material",
     "isolated standalone typography graphic, clear cutout text shape against background",
-    "clean and readable typography, rich luminous midtones, elegant material finish, crisp specular highlights, clearly lit front face, deep shadowed side walls",
+    isFlatEdit
+      ? "clean and readable typography, rich luminous midtones, faithful to the original material and shading style of the base image"
+      : "clean and readable typography, rich luminous midtones, elegant material finish, crisp specular highlights, clearly lit front face, deep shadowed side walls",
     `highly saturated, punchy vibrant colors, ${editTone.colorGrading}, rich deep colors`,
     "infinite depth of field, entirely in focus, edge-to-edge sharp focus, zero background blur, crisp and clear entire frame",
     `${editTone.remixTag}, ${ir.budget.en}`,
@@ -441,7 +451,11 @@ export const compileEditNanoBanana = (ir, state) => {
     "text mutation, shape drift, stroke swell, extra letters, hallucinated text, floating decal, material sticker, distorted stroke proportions, altered spacing",
     "(runes, hieroglyphs, symbols, written text on surface, watermark, gibberish:1.6), (merged letters, illegible blob, melted together, fused typography:1.5)",
     "(filigree, floral patterns, decorative ornaments, ornate engravings:1.5)",
-    "(background plate:1.9), (plaque:1.9), (signboard:1.9), (engraved on a wall:1.9), (solid metal block background:1.9), (framed:1.8), (box around text:1.8), text engraved on surface, shield, baseplate, flat paper cutout, flat 2d sticker, mounted metal plate, vector graphic",
+    // 평면 유지 모드에선 "flat paper cutout / flat 2d sticker / vector graphic" 금지를 제외 —
+    // 평면 그래픽 룩 자체를 배척해 모델을 입체 쪽으로 밀던 토큰들.
+    isFlatEdit
+      ? "(background plate:1.9), (plaque:1.9), (signboard:1.9), (engraved on a wall:1.9), (solid metal block background:1.9), (framed:1.8), (box around text:1.8), text engraved on surface, shield, baseplate, mounted metal plate"
+      : "(background plate:1.9), (plaque:1.9), (signboard:1.9), (engraved on a wall:1.9), (solid metal block background:1.9), (framed:1.8), (box around text:1.8), text engraved on surface, shield, baseplate, flat paper cutout, flat 2d sticker, mounted metal plate, vector graphic",
     ir.constraints.extrusionId === "None" ? FLAT_NEGATIVE : ir.constraints.extrusionId === "Shallow" ? "(thick extrusion:1.8), (heavy 3d block:1.8), (massive depth:1.8), (deep rear extrusion:1.8), (chunky text:1.8)" : "(thick extrusion:1.4), (heavy 3d block:1.4)",
     "(uniform stroke:1.9), (even border thickness:1.9), (artificial outline:1.9), (unnatural outline:1.5), (glowing border:1.5), cheap 3d effect, wordart, 2d border, (low poly, jagged edges, messy bevel, crunchy artifacts, unrefined sculpt:1.5)",
     "(photoshop bevel and emboss:1.9), (cheap v-carve:1.9), (uniform V-shape depth:1.9), (inner shadow layer style:1.9), (inner stroke:1.9), (fake 2d deboss:1.9), (flat paper with bevel:1.9)",
@@ -454,6 +468,8 @@ export const compileEditNanoBanana = (ir, state) => {
   if (ir.constraints.extrusionId === "None") {
     posTags.push(`perfectly straight-on front facing view, dead center orthographic layout, strict 2D planar composition, ${FLAT_POSITIVE}`);
     negTags.push("(angled view:1.9), (side view:1.9), (isometric:1.9), (3d perspective:1.9), (tilt:1.9), diagonal, skewed");
+    // FLAT_NEGATIVE 는 후면 돌출만 금지 — 전면 볼륨(베벨/엠보싱/조각) 추가도 명시적으로 차단.
+    negTags.push("(added bevel:1.7), (new embossed relief:1.7), (deep carving:1.6), (sculpted 3d surface:1.6), (letterpress depth:1.5)");
   } else if (ir.constraints.extrusionId === "Shallow") {
     posTags.push("straight-on front facing view, dead center, very shallow thin 3d extrusion");
     negTags.push("(extreme angled view:1.5), (side view:1.5), tilt");
@@ -461,7 +477,9 @@ export const compileEditNanoBanana = (ir, state) => {
     posTags.push("straight-on front facing view, dead center");
     negTags.push("(extreme angled view:1.5), (side view:1.5), tilt");
   }
-  if (ir.reliefId !== "ChunkyToy") {
+  // 메탈 하드서피스 강제는 재질 변경을 명시적으로 켰을 때만 — 평면 유지 모드에서
+  // 원본이 부드러운/납작한 스타일이어도 금속 입체로 밀어붙이던 상시 토큰이었음.
+  if (ir.intents.material && ir.reliefId !== "ChunkyToy") {
     posTags.push("rigid hard-surface, sharp geometric corners, precise metallic structure");
     negTags.push("(plastic, toy, balloon, inflatable, bubble text, play-doh, soft rounded edges, marshmallow, squishy, 3d render style:1.6), (soft rounded bevels, blunt corners, smooth edges:1.5)");
   }
@@ -495,11 +513,16 @@ export const compileEditChatGPT = (ir) => {
   if (ir.details.lighting) intentsArr.push(`Lighting Enhance: ${ir.details.lighting}`);
   if (ir.details.vfx) intentsArr.push(`Contained VFX: ${ir.details.vfx}`);
   let extrConstraint = ir.constraints.extrusion;
-  if (ir.constraints.extrusionId === "MINIMAL" || ir.constraints.extrusionId === "None") extrConstraint = "CRITICAL RULE: The typography must remain a perfectly front-facing orthographic silhouette. The outer contour must read as a flat 2D cutout shape. Absolutely no rear extrusion, no visible side planes, and no object thickness. All dimensionality must exist only inside the front face as surface relief and shading. The camera MUST be positioned perfectly straight-on, dead center. Absolutely NO angled views, NO side views, NO isometric angles.";
+  if (ir.constraints.extrusionId === "MINIMAL" || ir.constraints.extrusionId === "None") extrConstraint = "CRITICAL RULE: The typography must remain a perfectly front-facing orthographic silhouette. The outer contour must read as a flat 2D cutout shape. Absolutely no rear extrusion, no visible side planes, and no object thickness. Preserve the original dimensionality of the base image — do NOT add new bevels, embossing, carving or surface relief that the base image does not already have. The camera MUST be positioned perfectly straight-on, dead center. Absolutely NO angled views, NO side views, NO isometric angles.";
   else if (ir.constraints.extrusionId === "Shallow") extrConstraint = "CRITICAL RULE: The typography must have ONLY a very shallow, thin 3D extrusion. Absolutely NO thick heavy 3D blocks. Keep the depth minimal.";
   const lensDirective = `\n- **Lens & Perspective**: ${ir.camera}. CRITICAL: Use infinite depth of field. Every part of the text must be entirely in focus. Absolutely NO background blur, NO bokeh, NO blurry edges.`;
   let antiToyRule = " AVOID decorative filigree, floral patterns, or ornate engravings. Ensure high legibility and perfectly intact silhouette. Do NOT melt the shape.";
-  if (ir.reliefId !== "ChunkyToy") antiToyRule += " The object must have a rigid hard-surface with sharp metallic corners. It MUST NOT look like a plastic toy, a balloon, soft rounded bevels, or an inflatable bubble text.";
+  // 메탈 하드서피스 강제는 재질 변경 의도가 켜졌을 때만 (평면 원본 입체화 방지).
+  if (ir.intents.material && ir.reliefId !== "ChunkyToy") antiToyRule += " The object must have a rigid hard-surface with sharp metallic corners. It MUST NOT look like a plastic toy, a balloon, soft rounded bevels, or an inflatable bubble text.";
+  // 라이팅/재질 의도가 없으면 새 림라이트·스펙큘러·드라마틱 셰도우를 추가하지 않도록.
+  const opticalRule = (ir.intents.material || ir.intents.lighting)
+    ? "Edge highlights and rim lights MUST be physically integrated into the surface. Strictly NO floating glow, detached halos, or separated stroke lines. Ensure a clearly lit and well-exposed subject. Deep controlled shadows, clean high-value highlights, strong material contrast. Avoid unnatural or uniform glowing borders."
+    : "Preserve the original lighting and shading style of the base image. Do NOT add new rim lights, edge highlights, specular effects or dramatic shadows that the base image does not already have.";
   return `Create a Shape-Locked Image-to-Image Remix based on the exact specifications below.
 
 ### 1. Structure Lock (CRITICAL)
@@ -512,7 +535,7 @@ export const compileEditChatGPT = (ir) => {
 ### 2. Constraints & Integrity
 - **Anti-Mutation**: ${ir.constraints.anti_mutation}
 - **Material Integration**: ${ir.constraints.material_integration} Must look highly organic, authentic, and photorealistic (PBR). STRICTLY AVOID cheap plastic, fake gold foil, or tacky over-shiny CGI look. Ensure extreme sharpness and intricate micro-details on the facets. STRICTLY FORBIDDEN: Do NOT use cheap photoshop bevel and emboss effects, and avoid uniform V-shaped carving. AVOID fake inner shadow or inner stroke layer styles.${antiToyRule} Ensure straight linear brushed lines, NO circular brushing.
-- **Optical Integration**: Edge highlights and rim lights MUST be physically integrated into the surface. Strictly NO floating glow, detached halos, or separated stroke lines. Ensure a clearly lit and well-exposed subject. Deep controlled shadows, clean high-value highlights, strong material contrast. Avoid unnatural or uniform glowing borders.
+- **Optical Integration**: ${opticalRule}
 - **Color Grading**: Highly saturated, punchy vibrant colors, rich deep colors. Never washed out or dull.
 - **FX Containment**: ${ir.constraints.fx_containment}
 - **Depth/Extrusion**: ${extrConstraint}${lensDirective} Ensure side planes (thickness) fall into deep shadow and do NOT glow brightly.
@@ -540,7 +563,11 @@ export const compileEditMidjourney = (ir, state) => {
   let subject = `${editMjTone.subjectKind} remix, isolated standalone typography graphic, strict shape lock, exact silhouette preservation, Use the input image as the exact structural reference, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.camera}, ${ir.budget.en}`;
   const scope = intentsArr.length > 0 ? intentsArr.join(", ") : "surface polish";
   const custom = ir.customIntent !== "subtle surface enhancement" ? `, ${ir.customIntent}` : "";
-  const constraints = `${ir.constraints.extrusion}, ${ir.constraints.material_integration}, ${ir.constraints.fx_containment}, physically attached specular highlights, deep controlled shadows, clean high-value highlights, strong material contrast, highly saturated, punchy vibrant colors`;
+  // 스펙큘러·드라마틱 셰도우 푸시는 재질/라이팅 의도가 켜졌을 때만 (평면 원본 입체화 방지).
+  const mjOptical = (ir.intents.material || ir.intents.lighting)
+    ? ", physically attached specular highlights, deep controlled shadows, clean high-value highlights, strong material contrast"
+    : ", preserve the original lighting and shading style of the base image";
+  const constraints = `${ir.constraints.extrusion}, ${ir.constraints.material_integration}, ${ir.constraints.fx_containment}${mjOptical}, highly saturated, punchy vibrant colors`;
   let mjNegatives = "--no background plate, plaque, signboard, engraved on a wall, solid metal block background, text mutation, shape drift, stroke swell, floating FX, background noise, material sticker, extra letters, runes, hieroglyphs, symbols, written text on surface, watermark, gibberish, merged letters, illegible blob, melted together, filigree, floral patterns, decorative ornaments, ornate engravings, uniform stroke, photoshop bevel and emboss, cheap v-carve, wordart, disconnected rim light, floating edge light, artificial halo, separated highlight, dull gray midtones, framed, box around text, shield, emblem, baseplate, drop shadow, cast shadow revealing thickness, inner shadow layer style, inner stroke, fake 2d deboss, flat paper with bevel, washed out, desaturated, faded, unnatural outline, glowing border, depth of field, bokeh, background blur, lens blur, out of focus, soft focus, blurred foreground, blurry edges, smudged, melted shape, illegible, transparent text blending into background, excessive glow destroying shape, loss of silhouette, bright side walls, overlit extrusion, glowing thickness, washed out sides, circular brushing, radial metal grain, anisotropic reflection, curved scratches, ";
   if (ir.constraints.extrusionId === "None" || ir.constraints.extrusionId === "MINIMAL") {
     subject += `, perfectly straight-on front facing view, dead center orthographic layout, 2D flat composition, ${FLAT_POSITIVE}`;
@@ -552,8 +579,11 @@ export const compileEditMidjourney = (ir, state) => {
     subject += ", straight-on front facing view, dead center";
     mjNegatives += "extreme angled view, side view, tilt, ";
   }
-  let lightingFx = "dramatic directional lighting, clearly lit front face, dark shadowed side walls, deep ambient occlusion on extrusion";
-  if (ir.reliefId !== "ChunkyToy") {
+  // 평면 유지 모드(후면 돌출 None)에선 드라마틱 라이팅·측면 셰도우 대신 원본 차원감 보존.
+  let lightingFx = (ir.constraints.extrusionId === "None" || ir.constraints.extrusionId === "MINIMAL")
+    ? "flat graphic front-face rendering, preserve the original dimensionality and shading style of the base image, no added bevel or embossing"
+    : "dramatic directional lighting, clearly lit front face, dark shadowed side walls, deep ambient occlusion on extrusion";
+  if (ir.intents.material && ir.reliefId !== "ChunkyToy") {
     lightingFx += ", rigid hard-surface, sharp geometric corners, precise metallic structure";
     mjNegatives += "plastic, toy, balloon, inflatable, bubble text, play-doh, soft rounded edges, marshmallow, squishy, 3d render style, soft rounded bevels, blunt corners, smooth edges, ";
   }

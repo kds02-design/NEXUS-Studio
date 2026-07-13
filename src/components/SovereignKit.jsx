@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 // SovereignKit — TypecoreSovereign 의 "초보자 5분 온보딩" UI 패턴을 다른 앱에서 재사용하기 위한 공용 컴포넌트.
 //
 // 핵심 디자인 원칙:
@@ -12,7 +13,6 @@
 //   <AdvancedToggle open={open} onToggle={() => setOpen(v => !v)}>
 //     <SectionGroup>...</SectionGroup>
 //   </AdvancedToggle>
-import React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 
 // Quick Start 카드 — 항상 펼쳐진 강조 카드. 좌측 단계 번호 배지.
@@ -61,6 +61,7 @@ export const AdvancedToggle = ({ open, onToggle, label = '고급 옵션', sublab
     <button
       type="button"
       onClick={onToggle}
+      aria-expanded={open}
       className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left transition-colors hover:bg-zinc-900/60"
     >
       <div className="min-w-0">

@@ -40,14 +40,14 @@ async function ensureFolder(uid, name) {
 /**
  * 렌더 결과 1건을 PromptArc 에 저장.
  * @param {string} uid 로그인 사용자 uid
- * @param {{imageDataUrl:string, promptText?:string, title?:string, tags?:string[], folderName?:string, type?:string}} payload
+ * @param {{imageDataUrl:string, promptText?:string, title?:string, tags?:string[], folderName?:string, type?:string, source?:string, temporary?:boolean}} payload
  * @returns {Promise<{ok:boolean, id?:string, error?:string}>}
  */
 export async function savePromptToArc(uid, payload = {}) {
   if (!uid) return { ok: false, error: "로그인이 필요합니다." };
   const col = promptsCol();
   if (!col) return { ok: false, error: "Firestore 가 초기화되지 않았습니다." };
-  const { imageDataUrl, promptText = "", title, tags = [], folderName, type = "3D/렌더링" } = payload;
+  const { imageDataUrl, promptText = "", title, tags = [], folderName, type = "3D/렌더링", source = "rubicon-forge", temporary = true } = payload;
   try {
     // dataURL 이면 Cloudinary 업로드 → URL 저장(Firestore 1MB 한도 회피). 이미 URL 이면 그대로.
     let imageUrl = imageDataUrl || "";
@@ -70,10 +70,9 @@ export async function savePromptToArc(uid, payload = {}) {
       visibility: "private",
       likeCount: 0,
       type,
-      source: "rubicon-forge",
-      // 임시 파일 — 10일 뒤 자동 삭제 대상(클라이언트 스윕). sweepExpiredTempPrompts 참조.
-      temporary: true,
-      expiresAt: now + TEMP_TTL_MS,
+      source,
+      temporary,
+      ...(temporary ? { expiresAt: now + TEMP_TTL_MS } : {}),
       parentId: null,
       relatedIds: [],
       createdAt: now,

@@ -17,11 +17,12 @@ const matches = (app, q) => {
   );
 };
 
-const GROUP_ORDER = ["explore", "generate", "production", "admin"];
+const GROUP_ORDER = ["explore", "generate", "production", "life", "admin"];
 const GROUP_LABELS = {
   explore: "허브 / 평가",
   generate: "프롬프트 생성",
   production: "비주얼 생성",
+  life: "생활",
   admin: "Admin",
 };
 

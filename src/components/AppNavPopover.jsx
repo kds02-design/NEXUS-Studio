@@ -9,6 +9,7 @@ const GROUPS = [
   { key: "explore",    label: "허브 / 평가" },
   { key: "generate",   label: "프롬프트 생성" },
   { key: "production", label: "비주얼 생성" },
+  { key: "life",       label: "생활" },
   { key: "admin",      label: "관리자" },
 ];
 
@@ -19,6 +20,7 @@ const GROUP_ACCENTS = {
   explore:    "#22B8CF",
   generate:   "#A29BFE",
   production: "#FDCB6E",
+  life:       "#C9A24B",
 };
 
 export default function AppNavPopover({ open, onClose }) {

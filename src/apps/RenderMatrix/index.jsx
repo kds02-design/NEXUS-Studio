@@ -107,10 +107,15 @@ export default function RenderMatrixApp() {
       setRenderError('Imagen 렌더링은 Pro 등급 이상만 사용할 수 있습니다.');
       return;
     }
-    // 기본 이미지 필수 — 사이드바 레퍼런스(역분석용) 와 분리된 별도 입력.
-    // 우측 상단 "기본 이미지" 패널에 직접 업로드된 시안만 image-to-image 입력으로 사용한다.
-    if (!rp.baseImage) {
-      const msg = '기본 이미지를 먼저 등록해주세요. (우측 상단 "기본 이미지" 영역에 직접 업로드)';
+    // 뷰별 image-to-image 입력 — editor(생성): baseImage / edit(마이크로 에디트): editImage.
+    // 이전엔 뷰와 무관하게 baseImage 만 사용해, 에디트 뷰에서 Target 이미지를 올려도
+    // "기본 이미지 등록" 에러가 나거나(외부 앱 mode:'edit' 진입 케이스), 생성 뷰에 남아 있던
+    // 다른 이미지가 참조로 들어가던 버그.
+    const referenceImage = rp.currentView === 'edit' ? rp.editImage : rp.baseImage;
+    if (!referenceImage) {
+      const msg = rp.currentView === 'edit'
+        ? 'Target 이미지를 먼저 업로드해주세요. (사이드바 마이크로 에디트의 Target 이미지)'
+        : '기본 이미지를 먼저 등록해주세요. (우측 상단 "기본 이미지" 영역에 직접 업로드)';
       setRenderError(msg);
       rp.showToast?.(msg);
       return;
@@ -125,11 +130,11 @@ export default function RenderMatrixApp() {
     setRenderError(null);
     setRenderedImage(null);
     try {
-      // 기본 이미지(baseImage)가 dataURL 로 들어있으면 함께 전달 → image-to-image 렌더링.
+      // 뷰에 맞는 대상 이미지(dataURL)를 함께 전달 → image-to-image 렌더링.
       const result = await renderWithImagen(
         promptText,
         selectedModel,
-        rp.baseImage,
+        referenceImage,
       );
       setRenderedImage(result);
       // 렌더 완료 즉시 PromptArc 내 폴더에 자동 등록 — 사용자 클릭 없이 백그라운드 진행.
@@ -142,7 +147,7 @@ export default function RenderMatrixApp() {
     } finally {
       setRendering(false);
     }
-  }, [canRender, selectedModel, rp.baseImage, user, saveRenderToPromptArc]);
+  }, [canRender, selectedModel, rp.baseImage, rp.editImage, rp.currentView, user, saveRenderToPromptArc]);
 
   const handleDownloadRendered = useCallback(() => {
     if (!renderedImage?.dataUrl) return;
@@ -317,6 +322,7 @@ export default function RenderMatrixApp() {
           qualityScores={rp.qualityScores}
           baseImage={rp.baseImage}
           setBaseImage={rp.setBaseImage}
+          editImage={rp.editImage}
           activeTroubleshoots={rp.activeTroubleshoots}
           onApplyTroubleshoot={applyAction}
           aiModel={rp.aiModel} setAiModel={rp.setAiModel}

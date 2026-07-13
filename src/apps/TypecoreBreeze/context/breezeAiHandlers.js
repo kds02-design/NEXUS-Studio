@@ -4,6 +4,7 @@
 import { buildPrompts, buildEditPrompts } from '../hooks/useBreezePrompt.js';
 import * as gemini from '../services/gemini.js';
 import { directorPersonas, getSliderText } from '../constants/categories.jsx';
+import { staticOptions } from '../constants/presets.js';
 
 export const createAiHandlers = (b, { upsertDynamic }) => {
   const getStateSnapshot = () => ({
@@ -18,6 +19,7 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
     isAdvancedOptionsEnabled: b.isAdvancedOptionsEnabled, aiPersona: b.aiPersona, aiModel: b.aiModel,
     nanoViewMode: b.nanoViewMode, dramaticPrompt: b.dramaticPrompt, optimizedPrompt: b.optimizedPrompt,
     mjOptimizedPrompt: b.mjOptimizedPrompt, cgEnhancedPrompt: b.cgEnhancedPrompt,
+    isOutdated: b.isOutdated, isEditOutdated: b.isEditOutdated,
     editTargetCategory: b.editTargetCategory, editTexStyle: b.editTexStyle, editEdgeStyle: b.editEdgeStyle,
     editExtStyle: b.editExtStyle, editRhythmStyle: b.editRhythmStyle, editObjLetter: b.editObjLetter,
     editObjItem: b.editObjItem, editInstruction: b.editInstruction, editAiModel: b.editAiModel,
@@ -38,13 +40,16 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
       if (res.fixedAura) b.setCustomDesignInjections(res.fixedAura);
       if (res.fixedOptions) {
         const f = res.fixedOptions;
-        if (f.stemWeight) b.setStemWeight(f.stemWeight);
-        if (f.terminalStyle) b.setTerminalStyle(f.terminalStyle);
-        if (f.strokeTexture) b.setStrokeTexture(f.strokeTexture);
-        if (f.strokeSharpness) b.setStrokeSharpness(f.strokeSharpness);
-        if (f.rhythmDynamic) b.setRhythmDynamic(f.rhythmDynamic);
-        if (f.playfulDistortion) b.setPlayfulDistortion(f.playfulDistortion);
-        if (f.internalDecoration) b.setInternalDecoration(f.internalDecoration);
+        const valid = (value, base, dynamicKey) => !!value && [
+          ...(base || []), ...(b.dynamicOptions[dynamicKey] || []),
+        ].some((option) => option.id === value);
+        if (valid(f.stemWeight, staticOptions.strokeWeights, 'strokeWeights')) b.setStemWeight(f.stemWeight);
+        if (valid(f.terminalStyle, staticOptions.strokeEnds, 'strokeEnds')) b.setTerminalStyle(f.terminalStyle);
+        if (valid(f.strokeTexture, staticOptions.strokeTextures, 'strokeTextures')) b.setStrokeTexture(f.strokeTexture);
+        if (valid(f.strokeSharpness, staticOptions.strokeSharpness, 'strokeSharpness')) b.setStrokeSharpness(f.strokeSharpness);
+        if (valid(f.rhythmDynamic, staticOptions.rhythmDynamics, 'rhythmDynamics')) b.setRhythmDynamic(f.rhythmDynamic);
+        if (valid(f.playfulDistortion, staticOptions.playfulDistortions, 'playfulDistortions')) b.setPlayfulDistortion(f.playfulDistortion);
+        if (valid(f.internalDecoration, staticOptions.InternalDecorations, 'InternalDecorations')) b.setInternalDecoration(f.internalDecoration);
       }
     } catch (e) { console.error("Audit failed", e); } finally { b.setIsVerifyingLogic(false); }
   };
