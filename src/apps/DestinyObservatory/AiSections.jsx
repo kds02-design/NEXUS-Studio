@@ -30,7 +30,7 @@ export function OracleSection({ brief, summary, onText }) {
       {!oracle.text && (
         <button onClick={run} disabled={oracle.loading} style={{
           width: "100%", padding: "13px 0", borderRadius: 12, cursor: oracle.loading ? "wait" : "pointer",
-          border: `1px solid ${C.gold}`, background: "rgba(201,162,75,0.10)", color: C.goldSoft,
+          border: `1px solid ${C.gold}`, background: "rgba(245,135,15,0.10)", color: C.goldSoft,
           fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1,
           opacity: oracle.loading ? 0.7 : 1,
         }}>{oracle.loading ? "관측사가 별을 읽는 중…" : "✦ AI 관측사의 심층 예언 듣기 (1c)"}</button>
@@ -73,7 +73,7 @@ export function TarotAiSection({ brief, card, todayStr }) {
       {!tarotAi.text && (
         <button onClick={run} disabled={tarotAi.loading} style={{
           padding: "10px 20px", borderRadius: 10, cursor: tarotAi.loading ? "wait" : "pointer",
-          border: `1px solid ${C.gold}`, background: "rgba(201,162,75,0.10)", color: C.goldSoft,
+          border: `1px solid ${C.gold}`, background: "rgba(245,135,15,0.10)", color: C.goldSoft,
           fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 600, fontSize: 12.5,
           opacity: tarotAi.loading ? 0.7 : 1,
         }}>{tarotAi.loading ? "카드를 명식에 비추는 중…" : "내 명식으로 카드 풀이 (AI · 1c)"}</button>
@@ -83,7 +83,7 @@ export function TarotAiSection({ brief, card, todayStr }) {
         <p className="destiny-reveal" style={{
           fontSize: 13, color: C.ink, margin: "4px auto 0", lineHeight: 1.8, maxWidth: 340,
           whiteSpace: "pre-line", textAlign: "left", padding: "12px 14px",
-          borderRadius: 10, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.4)",
+          borderRadius: 10, border: `1px solid ${C.line}`, background: "rgba(24,24,22,0.4)",
         }}>{tarotAi.text}</p>
       )}
       {modal}
@@ -120,12 +120,12 @@ export function TalismanPanel({ yong, coined }) {
         <div className="destiny-reveal">
           <img src={talisman.url} alt={`${OH_EASY[yong].n}(${yong}) 행운 부적`} style={{
             width: 220, maxWidth: "80%", borderRadius: 14, border: `2px solid ${C.gold}`,
-            display: "block", margin: "0 auto 12px", boxShadow: "0 10px 30px rgba(201,162,75,0.25)",
+            display: "block", margin: "0 auto 12px", boxShadow: "0 10px 30px rgba(245,135,15,0.25)",
           }} />
           <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
             <a href={talisman.url} download={`행운부적_${OH_EASY[yong].n}.png`} style={{
               padding: "10px 20px", borderRadius: 10, textDecoration: "none",
-              background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a",
+              background: C.gold, color: "#141412",
               fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 12.5,
             }}>부적 다운로드</a>
             <button onClick={run} disabled={talisman.loading} style={{
@@ -142,7 +142,7 @@ export function TalismanPanel({ yong, coined }) {
           </p>
           <button onClick={run} disabled={talisman.loading} style={{
             padding: "13px 32px", borderRadius: 12, cursor: talisman.loading ? "wait" : "pointer", border: "none",
-            background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a",
+            background: C.gold, color: "#141412",
             fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1,
             opacity: talisman.loading ? 0.7 : 1,
           }}>{talisman.loading ? "부적을 그리는 중… (최대 1분)" : `☾ ${OH_GLYPH[yong]} 부적 생성하기 (10c)`}</button>
@@ -186,10 +186,10 @@ export function ConsultPanel({ brief }) {
           {chat.map((c, i) => (
             <div key={i} className="destiny-reveal">
               <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
-                <span style={{ maxWidth: "85%", padding: "9px 13px", borderRadius: "12px 12px 3px 12px", background: "rgba(201,162,75,0.14)", border: `1px solid ${C.line}`, color: C.goldSoft, fontSize: 13, lineHeight: 1.6 }}>{c.q}</span>
+                <span style={{ maxWidth: "85%", padding: "9px 13px", borderRadius: "12px 12px 3px 12px", background: "rgba(245,135,15,0.14)", border: `1px solid ${C.line}`, color: C.goldSoft, fontSize: 13, lineHeight: 1.6 }}>{c.q}</span>
               </div>
               <div style={{ display: "flex" }}>
-                <span style={{ maxWidth: "92%", padding: "11px 14px", borderRadius: "12px 12px 12px 3px", background: "rgba(12,15,43,0.5)", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, lineHeight: 1.75, whiteSpace: "pre-line" }}>{c.a}</span>
+                <span style={{ maxWidth: "92%", padding: "11px 14px", borderRadius: "12px 12px 12px 3px", background: "rgba(24,24,22,0.5)", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, lineHeight: 1.75, whiteSpace: "pre-line" }}>{c.a}</span>
               </div>
             </div>
           ))}
@@ -206,7 +206,7 @@ export function ConsultPanel({ brief }) {
         />
         <button onClick={submit} disabled={chatBusy || !chatInput.trim()} style={{
           flex: "0 0 92px", borderRadius: 10, cursor: chatBusy ? "wait" : "pointer", border: "none",
-          background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a",
+          background: C.gold, color: "#141412",
           fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 13,
           opacity: (chatBusy || !chatInput.trim()) ? 0.55 : 1,
         }}>{chatBusy ? "읽는 중…" : "묻기 (1c)"}</button>

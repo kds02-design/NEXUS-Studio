@@ -1,12 +1,14 @@
 // 운명 관측소 — 본체(index.jsx)와 AI 섹션(AiSections.jsx)이 함께 쓰는 토큰·데이터.
 // (컴포넌트 조각 Panel/Eyebrow 는 ./ui.jsx — react-refresh 규칙상 상수와 파일 분리)
 
-/* ───────── 토큰 — 신비주의 무드(네이비×골드), 의도적 독자 팔레트 ───────── */
+/* ───────── 토큰 — 브루탈리스트 에디토리얼(블랙×크림×오렌지×코랄), 의도적 독자 팔레트 ─────────
+   키 이름(gold/goldSoft 등)은 리스킨 전 역할명 그대로 유지 — 호출부 전면 수정 회피.
+   gold=주황(CTA/액센트), goldSoft=코랄(강조 텍스트). */
 export const C = {
-  bg: "#0C0F2B", bg2: "#12173C", panel: "rgba(28,35,78,0.55)",
-  gold: "#C9A24B", goldSoft: "#E7CB84", ink: "#ECE7D8", dim: "#8B90BC",
-  line: "rgba(201,162,75,0.20)",
-  목: "#3FA98A", 화: "#E0654A", 토: "#D2A24B", 금: "#C6CEDE", 수: "#4C74C4",
+  bg: "#161614", bg2: "#201F1C", panel: "#1D1C19",
+  gold: "#F5870F", goldSoft: "#F04E45", ink: "#E9E4D6", dim: "#8F8A7E",
+  line: "rgba(233,228,214,0.16)",
+  목: "#3FA98A", 화: "#F04E45", 토: "#D2A24B", 금: "#C6CEDE", 수: "#4C74C4",
 };
 
 export const OH_GLYPH = { 목: "木", 화: "火", 토: "土", 금: "金", 수: "水" };
@@ -28,7 +30,7 @@ export const LUCK_COLOR = {
   수: { name: "블랙 · 네이비", hex: ["#1B2233", "#2C3E6B", "#4C74C4"] },
 };
 
-export const inp = { flex: 1, padding: "13px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.6)", color: C.ink, fontFamily: "'Noto Sans KR',sans-serif", fontSize: 15, colorScheme: "dark" };
+export const inp = { flex: 1, padding: "13px 14px", border: `1px solid ${C.line}`, background: "rgba(24,24,22,0.7)", color: C.ink, fontFamily: "'Noto Sans KR',sans-serif", fontSize: 15, colorScheme: "dark" };
 
 /* ───────── 명식 요약 — AI 프롬프트 공통 주입 블록 (순수 포매터) ─────────
    services/gemini.js 가 아닌 여기 두는 이유: services 는 lib/gemini(→firebase) 를 끌고 와

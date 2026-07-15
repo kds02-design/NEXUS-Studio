@@ -2,7 +2,7 @@
 import { C } from "./shared";
 
 export function Panel({ children, style }) {
-  return <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, padding: 18, backdropFilter: "blur(6px)", ...style }}>{children}</div>;
+  return <div style={{ background: C.panel, border: `1px solid ${C.line}`, padding: 18, ...style }}>{children}</div>;
 }
 
 export function Eyebrow({ children }) {

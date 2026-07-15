@@ -419,12 +419,12 @@ function Seg({ children, on, onClick, mono, serif, big }) {
     flex: 1, padding: big ? "14px 0" : "12px 0", borderRadius: 10, cursor: "pointer",
     fontFamily: mono ? "'Noto Sans KR',sans-serif" : serif ? "'Noto Sans KR',sans-serif" : "inherit",
     fontSize: big ? 18 : 16, fontWeight: 500,
-    border: `1px solid ${on ? C.gold : C.line}`, background: on ? "rgba(201,162,75,0.14)" : "transparent",
+    border: `1px solid ${on ? C.gold : C.line}`, background: on ? "rgba(245,135,15,0.14)" : "transparent",
     color: on ? C.goldSoft : C.dim, transition: "all .15s",
   }}>{children}</button>;
 }
-const btnGold = { padding: "17px 0", borderRadius: 12, cursor: "pointer", border: "none", background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 17, letterSpacing: 2, boxShadow: "0 8px 28px rgba(201,162,75,0.25)" };
-const tip = { background: "#0C0F2B", border: `1px solid ${C.line}`, borderRadius: 8, color: "#ECE7D8", fontFamily: "'Noto Sans KR',sans-serif", fontSize: 12 };
+const btnGold = { padding: "17px 20px", cursor: "pointer", border: "none", background: C.gold, color: "#141412", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 1 };
+const tip = { background: C.bg2, border: `1px solid ${C.line}`, color: C.ink, fontFamily: "'Noto Sans KR',sans-serif", fontSize: 12 };
 
 /* ═══════════════════════ 메인 ═══════════════════════ */
 // standalone: destiny.html 독립 PWA 모드 — Shell/로그인이 없어 AI 섹션(크레딧 필요) 제외.
@@ -466,21 +466,32 @@ export default function App({ standalone = false }) {
   };
 
   return (
-    <div style={{ height: "100%", overflowY: "auto", background: `radial-gradient(120% 80% at 50% -10%, ${C.bg2} 0%, ${C.bg} 55%)`, color: C.ink, fontFamily: "'Noto Sans KR', system-ui, sans-serif", padding: "26px 15px 56px" }}>
+    <div className="destiny-root" style={{ height: "100%", overflowY: "auto", background: C.bg, color: C.ink, fontFamily: "'Noto Sans KR', system-ui, sans-serif", padding: "calc(26px + env(safe-area-inset-top)) 15px calc(56px + env(safe-area-inset-bottom))" }}>
       <style>{`
         @keyframes destinySpin{to{transform:rotate(360deg)}}
         @keyframes destinyFloatUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
         @keyframes destinyGp{0%,100%{opacity:.35}50%{opacity:1}}
         .destiny-reveal{animation:destinyFloatUp .55s cubic-bezier(.2,.7,.2,1) both}
+        /* 브루탈리스트 리스킨 — 모든 모서리 각지게 (원형 유지가 필요한 요소만 .keep-round) */
+        .destiny-root *{border-radius:0 !important}
+        .destiny-root .keep-round{border-radius:50% !important}
+        .destiny-display{font-family:'Anton','Teko','Noto Sans KR',sans-serif;font-weight:900;text-transform:uppercase;letter-spacing:.02em;line-height:.95}
         @media(prefers-reduced-motion:reduce){.destiny-reveal{animation:none}}
       `}</style>
 
       <div style={{ maxWidth: 480, margin: "0 auto" }}>
-        {/* NEXUS 안에선 앱 이름을 Shell Topbar가 표시 — 독립 PWA에서만 타이틀 노출 */}
-        <header style={{ textAlign: "center", marginBottom: 24 }}>
-          <div style={{ fontSize: 11, letterSpacing: 5, color: C.gold }}>五行 · 相生相剋 融合</div>
-          {standalone && <h1 style={{ fontSize: 29, fontWeight: 700, margin: "9px 0 0", color: C.ink }}>운명 관측소</h1>}
-          <p style={{ color: C.dim, fontSize: 12.5, margin: "9px 0 0" }}>네 기운을 오행으로 겹쳐, 조합에서 태어나는 당신을 읽습니다</p>
+        {/* NEXUS 안에선 앱 이름을 Shell Topbar가 표시 — 독립 PWA에서만 대형 타이틀 노출 */}
+        <header style={{ textAlign: "left", marginBottom: 26 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <span className="destiny-display" style={{ fontSize: 15, color: C.goldSoft, letterSpacing: 2 }}>五行</span>
+            <span style={{ fontSize: 10, letterSpacing: 3, color: C.dim }}>相生相剋 融合</span>
+          </div>
+          {standalone && (
+            <h1 className="destiny-display" style={{ fontSize: 58, margin: "16px 0 0", color: C.ink }}>
+              운명을<br />관측할<br />준비 됐나?
+            </h1>
+          )}
+          <p style={{ color: C.dim, fontSize: 12.5, margin: "12px 0 0", lineHeight: 1.6 }}>네 기운을 오행으로 겹쳐, 조합에서 태어나는 당신을 읽습니다</p>
         </header>
 
         {phase === "input" && (
@@ -530,7 +541,7 @@ export default function App({ standalone = false }) {
                         return (
                           <button key={idx} onClick={() => setEnv({ ...env, [q.key]: idx })} style={{
                             flex: 1, padding: "10px 2px", borderRadius: 9, cursor: "pointer", fontSize: 12.5,
-                            border: `1px solid ${on ? C.gold : C.line}`, background: on ? "rgba(201,162,75,0.14)" : "transparent",
+                            border: `1px solid ${on ? C.gold : C.line}`, background: on ? "rgba(245,135,15,0.14)" : "transparent",
                             color: on ? C.goldSoft : C.dim, transition: "all .15s",
                           }}>{o[0]}{o[1] && <span style={{ color: on ? C[o[1]] : C.dim, marginLeft: 3 }}>{OH_GLYPH[o[1]]}</span>}</button>
                         );
@@ -574,7 +585,7 @@ export default function App({ standalone = false }) {
                   return (
                     <button key={i} onClick={() => setHobbies(on ? hobbies.filter((x) => x !== i) : [...hobbies, i])} style={{
                       padding: "8px 12px", borderRadius: 20, cursor: "pointer", fontSize: 12.5,
-                      border: `1px solid ${on ? C.gold : C.line}`, background: on ? "rgba(201,162,75,0.14)" : "transparent",
+                      border: `1px solid ${on ? C.gold : C.line}`, background: on ? "rgba(245,135,15,0.14)" : "transparent",
                       color: on ? C.goldSoft : C.dim, transition: "all .15s",
                     }}>{label}<span style={{ color: on ? C[el] : C.dim, marginLeft: 4 }}>{OH_GLYPH[el]}</span></button>
                   );
@@ -588,8 +599,11 @@ export default function App({ standalone = false }) {
               <p style={{ color: C.dim, fontSize: 11, margin: "10px 0 0" }}>취미·공간의 기운이 용신을 채우는지 봐서, 생활 개운 조언을 드려요.</p>
             </Panel>
 
-            {err && <p style={{ textAlign: "center", color: "#E0654A", fontSize: 12.5, margin: "0 0 -4px", fontWeight: 600 }}>{err}</p>}
-            <button onClick={observe} style={btnGold}>운명 관측하기</button>
+            {err && <p style={{ textAlign: "center", color: C.goldSoft, fontSize: 12.5, margin: "0 0 -4px", fontWeight: 600 }}>{err}</p>}
+            <button onClick={observe} style={{ ...btnGold, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span className="destiny-display" style={{ fontSize: 19 }}>운명 관측하기</span>
+              <span style={{ fontSize: 22, lineHeight: 1 }}>→</span>
+            </button>
             <p style={{ textAlign: "center", color: C.dim, fontSize: 11, margin: 0, lineHeight: 1.6 }}>
               ※ 재미로 보는 콘텐츠입니다. 사주는 절기·간지 규칙 기반 간이 계산이며 만세력 정밀도와는 차이가 있습니다.
             </p>
@@ -601,7 +615,7 @@ export default function App({ standalone = false }) {
             <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 26 }}>
               {OH_ORDER.map((e, i) => <span key={e} style={{ fontSize: 27, color: C[e], animation: `destinyGp 1.1s ${i * 0.12}s infinite` }}>{OH_GLYPH[e]}</span>)}
             </div>
-            <div style={{ width: 40, height: 40, margin: "0 auto 18px", borderRadius: "50%", border: `2px solid ${C.line}`, borderTopColor: C.gold, animation: "destinySpin .8s linear infinite" }} />
+            <div className="keep-round" style={{ width: 40, height: 40, margin: "0 auto 18px", borderRadius: "50%", border: `2px solid ${C.line}`, borderTopColor: C.gold, animation: "destinySpin .8s linear infinite" }} />
             <p style={{ color: C.gold, letterSpacing: 3, fontSize: 13 }}>상생상극을 셈하는 중…</p>
           </div>
         )}
@@ -802,9 +816,9 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
 
   return (
     <div className="destiny-reveal" style={{ display: "grid", gap: 16 }}>
-      <Panel style={{ textAlign: "center", background: "rgba(201,162,75,0.07)" }}>
+      <Panel style={{ textAlign: "center", background: "rgba(245,135,15,0.07)" }}>
         <div style={{ fontSize: 10, letterSpacing: 3, color: C.dim }}>융합 아키타입 · MBTI × 혈액형</div>
-        <div style={{ fontSize: 26, fontWeight: 700, color: C.goldSoft, margin: "8px 0 6px" }}>{F.coined}</div>
+        <div className="destiny-display" style={{ fontSize: 34, color: C.goldSoft, margin: "10px 0 8px" }}>{F.coined}</div>
         <div style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13 }}>
           <OhTag el={F.eMbti} /> <span style={{ color: C.dim }}>{F.synergy.t === "증폭형" ? "≡" : F.synergy.t === "조화형" ? "→" : "✕"}</span> <OhTag el={F.eBlood} />
           <span style={{ marginLeft: 6, padding: "2px 10px", borderRadius: 20, border: `1px solid ${C.line}`, color: C.goldSoft, fontSize: 12 }}>{F.synergy.t}</span>
@@ -816,7 +830,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
         <Eyebrow>네 기운의 오행 환산</Eyebrow>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8 }}>
           {[["MBTI", mbti, F.eMbti], ["혈액형", blood + "형", F.eBlood], ["별자리", zodiac.sym, F.eZod], ["사주", saju.tti + "띠", F.eSaju]].map(([t, s, e]) => (
-            <div key={t} style={{ textAlign: "center", padding: "12px 4px", borderRadius: 12, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.4)" }}>
+            <div key={t} style={{ textAlign: "center", padding: "12px 4px", borderRadius: 12, border: `1px solid ${C.line}`, background: "rgba(24,24,22,0.4)" }}>
               <div style={{ fontSize: 9, color: C.dim, letterSpacing: 1 }}>{t}</div>
               <div style={{ fontSize: 15, margin: "3px 0", color: C.ink }}>{s}</div>
               <div style={{ fontSize: 22, color: C[e] }}>{OH_GLYPH[e]}</div>
@@ -831,7 +845,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
           {OH_ORDER.map((e) => (
             <div key={e} style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ width: 62, color: C[e], fontSize: 13 }}>{OH_GLYPH[e]} {OH_EASY[e].n}<span style={{ fontSize: 10, color: C.dim }}>({e})</span></span>
-              <div style={{ flex: 1, height: 10, borderRadius: 6, background: "rgba(12,15,43,0.6)", overflow: "hidden" }}>
+              <div style={{ flex: 1, height: 10, borderRadius: 6, background: "rgba(24,24,22,0.6)", overflow: "hidden" }}>
                 <div style={{ width: `${(F.dist[e] / maxDist) * 100}%`, height: "100%", background: C[e], borderRadius: 6, transition: "width .6s" }} />
               </div>
               {e === F.yong && <span style={{ fontSize: 10, color: C.goldSoft }}>힘이 됨</span>}
@@ -845,7 +859,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
         </p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {relText.map((r, i) => <span key={i} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: `1px solid ${C.line}`, color: r.includes("→") ? C.목 : C.화 }}>{r}</span>)}
-          <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, background: "rgba(201,162,75,0.14)", color: C.goldSoft }}>조화도 {F.harmony}</span>
+          <span style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, background: "rgba(245,135,15,0.14)", color: C.goldSoft }}>조화도 {F.harmony}</span>
         </div>
       </Panel>
 
@@ -878,7 +892,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
           {saju.pillars.map((p) => (
             <div key={p.key} style={{ flex: 1, textAlign: "center" }}>
               <div style={{ fontSize: 10, color: C.dim, marginBottom: 6 }}>{p.key}</div>
-              <div style={{ padding: "10px 0", borderRadius: 12, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.4)" }}>
+              <div style={{ padding: "10px 0", borderRadius: 12, border: `1px solid ${C.line}`, background: "rgba(24,24,22,0.4)" }}>
                 <div style={{ fontSize: 22, fontWeight: 600, color: C[GAN_OH[p.gan]] }}>{p.gan}</div>
                 <div style={{ fontSize: 22, fontWeight: 600, color: C[JI_OH[p.jiI]] }}>{p.ji}</div>
               </div>
@@ -891,9 +905,9 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
           <span>양 {saju.yang} · 음 {saju.eum}</span>
           {saju.pillars.length < 4 && <span style={{ color: C.dim }}>시주 없음(시각 미입력)</span>}
         </div>
-        <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 12, background: "rgba(201,162,75,0.08)", border: `1px solid ${C.line}` }}>
+        <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 12, background: "rgba(245,135,15,0.08)", border: `1px solid ${C.line}` }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: "rgba(201,162,75,0.14)", color: C.goldSoft }}>{F.strength}</span>
+            <span style={{ fontSize: 12, padding: "2px 10px", borderRadius: 20, background: "rgba(245,135,15,0.14)", color: C.goldSoft }}>{F.strength}</span>
             <span style={{ fontSize: 11, color: C.dim }}>일간을 돕는 기운 {Math.round(F.ratio * 100)}%</span>
           </div>
           <p style={{ fontSize: 12.5, color: C.ink, margin: 0, lineHeight: 1.7 }}>{F.reason}.</p>
@@ -943,7 +957,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
         <Eyebrow>인생 12영역 · 자미두수의 틀</Eyebrow>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 7 }}>
           {gungCards.map((g) => (
-            <div key={g.kn} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 10, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.4)" }}>
+            <div key={g.kn} style={{ textAlign: "center", padding: "10px 4px", borderRadius: 10, border: `1px solid ${C.line}`, background: "rgba(24,24,22,0.4)" }}>
               <div style={{ fontSize: 17, color: C[g.el] }}>{g.hz}</div>
               <div style={{ fontSize: 11.5, color: C.ink, margin: "3px 0 2px" }}>{g.kn}</div>
               <div style={{ fontSize: 10, color: C.dim }}>{g.dom}</div>
@@ -973,7 +987,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
             <CartesianGrid stroke={C.line} strokeDasharray="3 3" vertical={false} />
             <XAxis dataKey="name" tick={{ fill: C.ink, fontSize: 11 }} axisLine={{ stroke: C.line }} tickLine={false} />
             <YAxis domain={[0, 100]} tick={{ fill: C.dim, fontSize: 10 }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={tip} cursor={{ fill: "rgba(201,162,75,0.06)" }} formatter={(v, _k, { payload }) => [`${v} · ${payload.sip}(${payload.el})`, payload.name]} />
+            <Tooltip contentStyle={tip} cursor={{ fill: "rgba(245,135,15,0.06)" }} formatter={(v, _k, { payload }) => [`${v} · ${payload.sip}(${payload.el})`, payload.name]} />
             <Bar dataKey="value" radius={[6, 6, 0, 0]}>
               {F.cats.map((c) => <Cell key={c.name} fill={C[c.el]} fillOpacity={0.85} />)}
             </Bar>
@@ -1006,14 +1020,14 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
         <Eyebrow>오늘의 타로 · {todayStr}</Eyebrow>
         {!tarotOpen ? (
           <div style={{ textAlign: "center", padding: "6px 0" }}>
-            <div onClick={() => setTarotOpen(true)} style={{ cursor: "pointer", width: 120, height: 180, margin: "0 auto 14px", borderRadius: 14, background: `linear-gradient(155deg, ${C.bg2}, #1c1140)`, border: `2px solid ${C.gold}`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 24px rgba(201,162,75,0.2)" }}>
+            <div onClick={() => setTarotOpen(true)} style={{ cursor: "pointer", width: 120, height: 180, margin: "0 auto 14px", background: "#571714", border: `2px solid ${C.gold}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <span className="serif" style={{ fontSize: 44, color: C.gold, opacity: 0.9 }}>✦</span>
             </div>
-            <button onClick={() => setTarotOpen(true)} style={{ padding: "12px 28px", borderRadius: 12, border: "none", background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>오늘의 카드 뽑기</button>
+            <button onClick={() => setTarotOpen(true)} style={{ padding: "12px 28px", borderRadius: 12, border: "none", background: C.gold, color: "#141412", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 15, cursor: "pointer" }}>오늘의 카드 뽑기</button>
           </div>
         ) : (
           <div className="destiny-reveal" style={{ textAlign: "center", padding: "4px 0" }}>
-            <div style={{ width: 128, height: 188, margin: "0 auto 14px", borderRadius: 14, background: "linear-gradient(155deg, #201643, #120b2e)", border: `2px solid ${C.gold}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, boxShadow: "0 8px 24px rgba(201,162,75,0.25)" }}>
+            <div style={{ width: 128, height: 188, margin: "0 auto 14px", background: "#571714", border: `2px solid ${C.gold}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8 }}>
               <span className="mono" style={{ fontSize: 13, color: C.gold, letterSpacing: 2 }}>{todayCard[0]}</span>
               <span className="serif" style={{ fontSize: 34, color: C.goldSoft }}>✦</span>
               <span className="serif" style={{ fontSize: 19, color: C.ink, fontWeight: 600 }}>{todayCard[1]}</span>
@@ -1060,7 +1074,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
         </Panel>
       )}
 
-      <Panel style={{ background: "rgba(201,162,75,0.06)" }}>
+      <Panel style={{ background: "rgba(245,135,15,0.06)" }}>
         <Eyebrow>운명은 이렇게 말한다</Eyebrow>
         <p className="serif" style={{ fontSize: 15, lineHeight: 1.95, margin: 0, whiteSpace: "pre-line", letterSpacing: "0.01em" }}>{summary}</p>
         <p style={{ fontSize: 10.5, color: C.dim, margin: "14px 0 0", textAlign: "right" }}>※ 니체의 문체를 흉내 낸 창작이며, 실제 인용은 아니에요.</p>
@@ -1103,13 +1117,13 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
 
       <Panel>
         <Eyebrow>이런 사람과 가까이 · {OH_EASY[F.yong].n}({F.yong}) 기운</Eyebrow>
-        <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.4)" }}>
+        <div style={{ padding: 14, borderRadius: 12, border: `1px solid ${C.line}`, background: "rgba(24,24,22,0.4)" }}>
           <div className="serif" style={{ fontSize: 17, fontWeight: 600, color: C[F.yong], marginBottom: 6 }}>{PERSON[F.yong].t}</div>
           <p style={{ fontSize: 13, color: C.ink, margin: "0 0 11px", lineHeight: 1.7 }}>{PERSON[F.yong].d}</p>
           <div style={{ fontSize: 11, color: C.dim, marginBottom: 6, fontFamily: "'Noto Sans KR',sans-serif" }}>부족한 에너지를 채워주는 유형</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {PERSON_MBTI[F.yong].map((m) => (
-              <span key={m} className="mono" style={{ fontSize: 12.5, padding: "5px 10px", borderRadius: 7, background: "rgba(201,162,75,0.14)", color: C.goldSoft }}>{m}</span>
+              <span key={m} className="mono" style={{ fontSize: 12.5, padding: "5px 10px", borderRadius: 7, background: "rgba(245,135,15,0.14)", color: C.goldSoft }}>{m}</span>
             ))}
           </div>
         </div>
@@ -1133,7 +1147,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
       }}>{shared ? "링크가 복사됐어요 ✓" : hasKakaoKey ? "💬 카카오톡으로 공유하기" : "💬 친구에게 공유하기"}</button>
 
       <div style={{ display: "flex", gap: 10 }}>
-        <button onClick={handleCopy} style={{ flex: 1, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none", background: copied ? "rgba(63,169,138,0.92)" : `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: copied ? "#fff" : "#20180a", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 15, letterSpacing: 1, transition: "background .2s" }}>{copied ? "복사됐어요 ✓" : "결과 복사"}</button>
+        <button onClick={handleCopy} style={{ flex: 1, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none", background: copied ? "rgba(63,169,138,0.92)" : C.gold, color: copied ? "#fff" : "#141412", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 15, letterSpacing: 1, transition: "background .2s" }}>{copied ? "복사됐어요 ✓" : "결과 복사"}</button>
         <button onClick={onReset} style={{ flex: 1, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: `1px solid ${C.gold}`, background: "transparent", color: C.goldSoft, fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 600, fontSize: 15, letterSpacing: 1 }}>다시 관측하기</button>
       </div>
     </div>
