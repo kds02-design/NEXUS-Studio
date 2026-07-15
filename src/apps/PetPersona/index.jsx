@@ -1,9 +1,12 @@
 // 반려동물 MBTI — 고양이/강아지 성격 유형 테스트 (재미용).
 // 유형 판정·궁합은 결정론 로직, AI 심층 리포트만 Gemini(분석 1c) 사용.
-import { useState } from "react";
-import { useUsageGate } from "../../components/UsageGate";
+// standalone 모드(pet.html 독립 PWA): AI 패널(로그인·크레딧 필요)을 뺀 전체 기능.
+import { Suspense, lazy, useState } from "react";
 import { SPECIES, MBTI_LIST, ownerCompat, loadHistory, saveHistory, removeHistory } from "./constants";
-import { generatePetReport } from "./services/gemini";
+import { sharePetResult, hasKakaoKey } from "./share";
+
+// AI 패널만 별도 청크 — firebase/AuthContext 의존성이 독립 PWA 번들에 섞이지 않게 lazy.
+const AiReportPanel = lazy(() => import("./AiReportPanel"));
 
 /* ───────── 팔레트 — 따뜻한 크림 톤 (앱 고유 무드, 의도적 독자 팔레트) ───────── */
 const C = {
@@ -13,7 +16,7 @@ const C = {
 
 const card = { background: C.card, borderRadius: 20, padding: 20, boxShadow: "0 8px 30px rgba(160,130,90,0.12)", textAlign: "left" };
 
-export default function App() {
+export default function App({ standalone = false }) {
   const [species, setSpecies] = useState("cat");
   const [phase, setPhase] = useState("intro");
   const [name, setName] = useState("");
@@ -21,9 +24,9 @@ export default function App() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [history, setHistory] = useState(loadHistory);
-  const { ensureCanGenerate, modal: usageModal } = useUsageGate();
-  const [ai, setAi] = useState({ loading: false, text: "", error: "" });
+  const [aiText, setAiText] = useState(""); // AI 리포트 본문 — 공유 텍스트에 포함용
 
   const SP = SPECIES[species];
   const QUESTIONS = SP.questions;
@@ -46,13 +49,13 @@ export default function App() {
   };
   const back = () => { if (step > 0) { setAnswers(answers.slice(0, -1)); setStep(step - 1); } };
   const restart = () => {
-    setPhase("intro"); setStep(0); setAnswers([]); setCopied(false);
-    setAi({ loading: false, text: "", error: "" });
+    setPhase("intro"); setStep(0); setAnswers([]); setCopied(false); setShared(false);
+    setAiText("");
   };
   const loadEntry = (e) => {
     setSpecies(e.species); setName(e.name || ""); setOwnerMbti(e.ownerMbti || "");
-    setAnswers(e.answers); setStep(e.answers.length - 1); setCopied(false);
-    setAi({ loading: false, text: "", error: "" });
+    setAnswers(e.answers); setStep(e.answers.length - 1); setCopied(false); setShared(false);
+    setAiText("");
     setPhase("result");
   };
 
@@ -74,7 +77,7 @@ export default function App() {
     `${SP.emoji} 우리 ${SP.label} MBTI\n\n${who}는 ${type} 「${T?.n}」!\n${T?.d}\n\n` +
     `잘 맞는 집사 MBTI: ${T?.owner.join(", ")}\n집사 꿀팁: ${T?.tip}\n` +
     (compat ? `\n집사(${ownerMbti})와의 궁합: ${compat.score}점 · ${compat.t}\n${compat.c}\n` : "") +
-    (ai.text ? `\n[ AI 심층 리포트 ]\n${ai.text}\n` : "") +
+    (aiText ? `\n[ AI 심층 리포트 ]\n${aiText}\n` : "") +
     `\n— 재미로 보는 반려동물 테스트 🐾`;
 
   const copy = async () => {
@@ -89,28 +92,14 @@ export default function App() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const runAiReport = async () => {
-    if (ai.loading) return;
-    if (!(await ensureCanGenerate("analysis"))) return;
-    setAi({ loading: true, text: "", error: "" });
-    try {
-      const observations = answers.map((p, i) => {
-        const q = QUESTIONS[i];
-        const chosen = q.a.p === p ? q.a : q.b;
-        return { q: q.q, a: chosen.t };
-      });
-      const axisSummary = SP.axes
-        .map(([l, r]) => `${l} ${score[l]} : ${score[r]} ${r}`)
-        .join(" · ");
-      const text = await generatePetReport({
-        speciesLabel: SP.label, callName: SP.callName, name: who,
-        type, typeName: T.n, typeDesc: T.d, axisSummary, observations,
-        ownerMbti: ownerMbti || null, compat,
-      });
-      setAi({ loading: false, text, error: "" });
-    } catch (e) {
-      setAi({ loading: false, text: "", error: e?.message || String(e) });
-    }
+  // 공유 링크는 항상 독립 PWA 페이지 — 받은 사람이 로그인 없이 바로 테스트 가능.
+  const doShare = async () => {
+    const r = await sharePetResult({
+      title: `${SP.emoji} 우리 ${SP.label} MBTI`,
+      text: shareText,
+      url: `${window.location.origin}/pet.html`,
+    });
+    if (r === "copied") { setShared(true); setTimeout(() => setShared(false), 2000); }
   };
 
   return (
@@ -275,37 +264,23 @@ export default function App() {
               <p style={{ fontSize: 14, lineHeight: 1.7, margin: 0, color: C.ink }}>{T.tip}</p>
             </div>
 
-            {/* AI 심층 리포트 */}
-            <div style={{ ...card, marginTop: 14 }}>
-              <div className="pet-jua" style={{ fontSize: 16, color: C.accent, marginBottom: 10 }}>🤖 AI 심층 리포트</div>
-              {!ai.text && (
-                <>
-                  <p style={{ fontSize: 13, lineHeight: 1.65, margin: "0 0 12px", color: C.dim }}>
-                    12개 관찰 응답을 AI가 읽고 {who}만의 속마음·맞춤 케어 꿀팁·집사 케미를 풀어드려요.
-                  </p>
-                  <button onClick={runAiReport} disabled={ai.loading} style={{
-                    width: "100%", padding: "14px 0", borderRadius: 14, border: "none", cursor: ai.loading ? "wait" : "pointer",
-                    background: C.accent, color: "#fff", fontFamily: "'Jua','Noto Sans KR',sans-serif", fontSize: 16,
-                    boxShadow: "0 6px 18px rgba(232,121,94,0.35)", opacity: ai.loading ? 0.7 : 1,
-                  }}>{ai.loading ? `${SP.emoji} 리포트 쓰는 중…` : `${SP.emoji} 심층 리포트 받기 (1c)`}</button>
-                </>
-              )}
-              {ai.error && <p style={{ fontSize: 12.5, color: C.accent, margin: "10px 0 0" }}>{ai.error}</p>}
-              {ai.text && (
-                <div className="pet-pop">
-                  <p style={{ fontSize: 14, lineHeight: 1.8, margin: 0, color: C.ink, whiteSpace: "pre-line" }}>{ai.text}</p>
-                  <button onClick={runAiReport} disabled={ai.loading} style={{
-                    marginTop: 12, padding: "8px 14px", borderRadius: 10, cursor: "pointer", fontSize: 12,
-                    border: `1.5px solid ${C.line}`, background: "transparent", color: C.dim, fontFamily: "inherit",
-                  }}>{ai.loading ? "쓰는 중…" : "다시 받기 (1c)"}</button>
-                </div>
-              )}
-              <p style={{ fontSize: 10.5, color: C.dim, margin: "12px 0 0", lineHeight: 1.6 }}>
-                ※ AI 리포트 사용 시 이름·관찰 응답이 Gemini API로 전송돼요. 의학적 진단이 아닌 재미용 해석입니다.
-              </p>
-            </div>
+            {/* AI 심층 리포트 — 독립 PWA(standalone)에선 로그인·크레딧이 없어 제외 */}
+            {!standalone && (
+              <Suspense fallback={null}>
+                <AiReportPanel SP={SP} who={who} type={type} T={T} score={score}
+                  answers={answers} ownerMbti={ownerMbti} compat={compat} onText={setAiText} />
+              </Suspense>
+            )}
 
-            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            {/* 카카오톡 공유 — SDK 키 없으면 OS 공유시트/클립보드 폴백 */}
+            <button onClick={doShare} style={{
+              width: "100%", marginTop: 16, padding: "15px 0", borderRadius: 14, border: "none",
+              background: shared ? "#7CB342" : "#FEE500", color: shared ? "#fff" : "#191919",
+              fontFamily: "'Jua','Noto Sans KR',sans-serif", fontSize: 16, cursor: "pointer",
+              transition: "background .2s", boxShadow: "0 6px 18px rgba(242,180,65,0.3)",
+            }}>{shared ? "링크가 복사됐어요 ✓" : hasKakaoKey ? "💬 카카오톡으로 공유하기" : "💬 친구에게 공유하기"}</button>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
               <button onClick={copy} style={{ flex: 1, padding: "15px 0", borderRadius: 14, border: "none", background: copied ? "#7CB342" : C.accent, color: "#fff", fontFamily: "'Jua','Noto Sans KR',sans-serif", fontSize: 16, cursor: "pointer", transition: "background .2s" }}>{copied ? "복사됐어요 ✓" : "결과 복사"}</button>
               <button onClick={restart} style={{ flex: 1, padding: "15px 0", borderRadius: 14, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontFamily: "'Jua','Noto Sans KR',sans-serif", fontSize: 16, cursor: "pointer" }}>다시 하기</button>
             </div>
@@ -313,7 +288,6 @@ export default function App() {
           </div>
         )}
       </div>
-      {usageModal}
     </div>
   );
 }

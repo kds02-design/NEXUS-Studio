@@ -4,9 +4,10 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Tailwind v4 토큰 — font-sans는 Noto Sans KR(본문), font-display는 Teko(타이틀 전용) */
+/* Tailwind v4 토큰 — font-sans 는 Apple 시스템 폰트 스택(SF Pro 계열) 우선, 한글은 Noto Sans KR 폴백.
+   font-display 는 Teko(타이틀 전용) 유지. */
 @theme {
-  --font-sans: 'Noto Sans KR', sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', 'Noto Sans KR', sans-serif;
   --font-display: 'Teko', sans-serif;
 }
 
@@ -19,14 +20,16 @@
 /* 각 앱 내부 헤더 타이틀 전용 — Teko */
 .app-title { font-family: 'Teko', sans-serif; letter-spacing: 0.5px; line-height: 1; }
 
-/* NEXUS 표준 팝오버 — 한국어 라벨 + 영문 부제, 활성 항목 좌측 체크 패턴 */
+/* NEXUS 표준 팝오버 — macOS 컨텍스트 메뉴 스타일 (유리 패널 + 액센트 하이라이트) */
 .nx-popover-panel {
-  background: #18181B;                   /* zinc-900 */
-  border: 1px solid #27272a;             /* zinc-800 */
-  border-radius: 10px;
-  box-shadow: 0 20px 60px -10px rgba(0,0,0,0.6);
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px -10px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08);
+  backdrop-filter: saturate(160%) blur(28px);
+  -webkit-backdrop-filter: saturate(160%) blur(28px);
   overflow: hidden;
-  padding: 4px;
+  padding: 5px;
 }
 .nx-popover-section-label {
   font-size: 10px;
@@ -52,14 +55,16 @@
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
-.nx-popover-item:hover { background: #27272a; color: #fafafa; }
-/* 활성 항목 — 첨부 디자인: 파란색 배경 + 흰색 글자 + 흰색 체크. */
+/* macOS 메뉴 관례: hover = 액센트 블루 배경 + 흰 글자 */
+.nx-popover-item:hover { background: var(--nx-accent); color: #ffffff; }
+.nx-popover-item:hover .nx-popover-sub { color: rgba(255,255,255,0.75); }
+/* 활성 항목 — 시스템 액센트 블루 */
 .nx-popover-item.is-active {
-  background: #2563eb;                   /* blue-600 */
+  background: var(--nx-accent);
   color: #ffffff;
   font-weight: 600;
 }
-.nx-popover-item.is-active:hover { background: #1d4ed8; color: #ffffff; }   /* blue-700 */
+.nx-popover-item.is-active:hover { background: var(--nx-accent); color: #ffffff; filter: brightness(0.94); }
 /* 좌측 체크 아이콘 자리 — 활성 여부와 관계 없이 자리 reserved (정렬 흔들리지 않음). */
 .nx-popover-check {
   width: 14px;
@@ -84,20 +89,69 @@
 /* ───── NEXUS 디자인 토큰 ─────
    토큰 변수 (각 앱의 인라인 컬러 대신 사용 권장) */
 :root {
-  --nx-bg: #0A0A0F;
-  --nx-surface: #111118;
-  --nx-card: #16161F;
-  --nx-border: #1E1E2E;
-  --nx-border-strong: #3f3f46;          /* zinc-700 */
-  --nx-accent: #6C5CE7;
-  --nx-accent-soft: #2D2A4A;
-  --nx-text: #E8E6FF;
-  --nx-text-muted: #7A7A9A;
-  --nx-text-dim: #3A3A5A;
-  --nx-radius: 10px;
-  --nx-radius-sm: 6px;
-  --nx-radius-lg: 14px;
+  --nx-bg: #0B0C10;
+  --nx-surface: rgba(31,32,38,0.78);
+  --nx-card: rgba(49,50,58,0.72);
+  --nx-border: rgba(255,255,255,0.11);
+  --nx-border-strong: rgba(255,255,255,0.22);
+  --nx-accent: #0A84FF;
+  --nx-accent-soft: rgba(10,132,255,0.18);
+  --nx-text: #F5F5F7;
+  --nx-text-muted: #A1A1AA;
+  --nx-text-dim: #686872;
+  --nx-radius: 14px;
+  --nx-radius-sm: 10px;
+  --nx-radius-lg: 20px;
+  --nx-glass-blur: 24px;
+  --nx-shadow: 0 18px 50px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.08);
 }
+
+[data-theme="light"] {
+  --nx-bg: #ECECF1;
+  --nx-surface: rgba(255,255,255,0.76);
+  --nx-card: rgba(255,255,255,0.62);
+  --nx-border: rgba(0,0,0,0.10);
+  --nx-border-strong: rgba(0,0,0,0.20);
+  --nx-accent: #007AFF;
+  --nx-accent-soft: rgba(0,122,255,0.12);
+  --nx-text: #1D1D1F;
+  --nx-text-muted: #6E6E73;
+  --nx-text-dim: #98989D;
+  --nx-shadow: 0 18px 50px rgba(34,34,50,.14), inset 0 1px 0 rgba(255,255,255,.85);
+}
+
+/* macOS 데스크톱 월페이퍼 — Tahoe 류 흐르는 블루 웨이브를 그라데이션으로 재현.
+   서브앱 패널들이 이 위에 유리(vibrancy)로 떠 있는 구조 = "운영체제 위의 창" 착시의 바탕. */
+.nexus-shell {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(115% 85% at 80% 112%, rgba(94, 92, 230, 0.26), transparent 56%),
+    radial-gradient(135% 100% at 8% -12%, rgba(10, 132, 255, 0.20), transparent 54%),
+    radial-gradient(70% 55% at 95% 4%, rgba(191, 90, 242, 0.12), transparent 46%),
+    radial-gradient(60% 45% at 42% 52%, rgba(64, 156, 255, 0.08), transparent 60%),
+    linear-gradient(162deg, #080B1F 0%, #0C1434 40%, #050711 100%) !important;
+}
+[data-theme="light"] .nexus-shell {
+  background:
+    radial-gradient(115% 85% at 80% 112%, rgba(120, 160, 255, 0.45), transparent 58%),
+    radial-gradient(135% 100% at 8% -12%, rgba(255, 214, 170, 0.40), transparent 50%),
+    radial-gradient(70% 55% at 95% 4%, rgba(150, 200, 255, 0.35), transparent 48%),
+    linear-gradient(162deg, #E8F0FB 0%, #CFE0F6 45%, #B9CFF0 100%) !important;
+}
+.nexus-shell::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: -1;
+  background: linear-gradient(145deg, rgba(255,255,255,.035), transparent 36%);
+}
+.nx-glass, .nx-card, .nx-modal-panel, .nx-popover-panel {
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  backdrop-filter: saturate(145%) blur(var(--nx-glass-blur));
+  -webkit-backdrop-filter: saturate(145%) blur(var(--nx-glass-blur));
+  box-shadow: var(--nx-shadow);
+}
+.nexus-shell :where(input, textarea, select) { border-radius: var(--nx-radius-sm); }
+.nexus-shell :where(button, [role="button"]) { -webkit-tap-highlight-color: transparent; }
 
 /* 버튼 */
 .nx-btn {
@@ -110,7 +164,7 @@
 }
 .nx-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .nx-btn-primary   { background: var(--nx-accent); color: #fff; }
-.nx-btn-primary:hover:not(:disabled)   { background: #5849d4; }
+.nx-btn-primary:hover:not(:disabled)   { filter: brightness(1.08); }
 .nx-btn-secondary { background: transparent; border-color: var(--nx-border); color: var(--nx-text-muted); }
 .nx-btn-secondary:hover:not(:disabled) { border-color: var(--nx-border-strong); color: var(--nx-text); background: rgba(255,255,255,0.03); }
 .nx-btn-ghost     { background: transparent; color: var(--nx-text-muted); }
@@ -124,12 +178,14 @@
   border: 1px solid var(--nx-border);
   border-radius: var(--nx-radius);
   padding: 16px;
+  box-shadow: var(--nx-shadow);
+  backdrop-filter: saturate(145%) blur(var(--nx-glass-blur));
 }
 
 /* 인풋 / 텍스트에어리어 */
 .nx-input, .nx-textarea {
   width: 100%;
-  background: #0A0A0A;
+  background: color-mix(in srgb, var(--nx-bg) 72%, transparent);
   border: 1px solid var(--nx-border);
   border-radius: var(--nx-radius-sm);
   padding: 10px 12px;
@@ -146,8 +202,8 @@
 /* 모달 */
 .nx-modal-overlay {
   position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,0.8);
-  backdrop-filter: blur(4px);
+  background: rgba(0,0,0,0.46);
+  backdrop-filter: blur(18px);
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
 }
@@ -171,6 +227,47 @@
   box-shadow: 0 10px 40px rgba(108,92,231,0.3);
 }
 
+/* ───── macOS Dock — 인덱스 하단 고정 유리 패널 ───── */
+.nx-dock {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+  z-index: 900;
+  display: flex; align-items: flex-end; gap: 6px;
+  padding: 7px 10px;
+  border-radius: 24px;
+  background: var(--nx-surface);
+  border: 1px solid var(--nx-border);
+  box-shadow: 0 18px 50px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12);
+  backdrop-filter: saturate(170%) blur(30px);
+  -webkit-backdrop-filter: saturate(170%) blur(30px);
+}
+.nx-dock-item {
+  position: relative;
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  display: grid; place-items: center;
+  transition: transform 0.16s cubic-bezier(.2,.8,.2,1);
+}
+.nx-dock-item:hover { transform: translateY(-8px) scale(1.16); }
+.nx-dock-item:active { transform: translateY(-4px) scale(1.08); }
+.nx-dock-icon {
+  width: 46px; height: 46px; border-radius: 13px;
+  display: grid; place-items: center;
+  color: #fff; font-size: 16px; font-weight: 800; letter-spacing: -0.01em;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.35);
+  user-select: none;
+}
+/* 라벨 툴팁 — macOS 독 라벨처럼 아이콘 위에 */
+.nx-dock-label {
+  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  padding: 4px 10px; border-radius: 8px; white-space: nowrap;
+  background: var(--nx-surface); border: 1px solid var(--nx-border);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  color: var(--nx-text); font-size: 11px; font-weight: 600;
+  opacity: 0; pointer-events: none; transition: opacity 0.12s;
+}
+.nx-dock-item:hover .nx-dock-label { opacity: 1; }
+/* 독 구분선 */
+.nx-dock-sep { width: 1px; align-self: stretch; margin: 4px 3px; background: var(--nx-border-strong); }
+
 html, body, #root {
   margin: 0;
   height: 100%;
@@ -178,7 +275,11 @@ html, body, #root {
 }
 
 body {
-  font-family: 'Noto Sans KR', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Helvetica Neue', 'Noto Sans KR', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* macOS 텍스트 셀렉션 — 시스템 액센트 블루 */
+::selection { background: rgba(10, 132, 255, 0.35); }
+[data-theme="light"] ::selection { background: rgba(0, 122, 255, 0.25); }

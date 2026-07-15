@@ -84,11 +84,14 @@ export async function renderKvBackground(opts = {}, outScale = 1) {
   return canvas;
 }
 
-// ─── KV 썸네일(배경+캐릭터 합성) — 월 테마 분석용 저해상 dataURL ──────────────
+// ─── KV 썸네일(배경+캐릭터 합성) — 저해상 dataURL ────────────────────────────
+// 용도 2가지:
+//   1) 월 테마 분석/포지 전송 — opts 에 title 을 넣지 않음 (타이포가 팔레트를 오염시키지 않게)
+//   2) 목록 썸네일(클라우드 저장) — opts.title 포함 → 실제 KV 구성과 일치하는 썸네일
 export async function renderKvThumb(opts = {}, outScale = 0.26) {
   const canvas = await renderKvBackground(opts, outScale); // 배경색+패턴+배경이미지 (출력영역)
   const ctx = canvas.getContext("2d");
-  for (const key of ["female", "male"]) {
+  for (const key of ["female", "male", "title"]) {
     const L = opts[key];
     if (L?.src && L.visible !== false) {
       const img = await loadImage(L.src);

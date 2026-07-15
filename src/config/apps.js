@@ -1,18 +1,18 @@
 // 다크 — 기존 토큰. 모든 셸/앱이 기본으로 참조.
 export const THEME_DARK = {
-  bg: "#0A0A0F", surface: "#111118", card: "#16161F",
-  border: "#1E1E2E", accent: "#6C5CE7", accentSoft: "#2D2A4A",
-  text: "#E8E6FF", textMuted: "#7A7A9A", textDim: "#3A3A5A",
+  bg: "#0B0C10", surface: "rgba(31,32,38,0.78)", card: "rgba(49,50,58,0.72)",
+  border: "rgba(255,255,255,0.11)", accent: "#0A84FF", accentSoft: "rgba(10,132,255,0.18)",
+  text: "#F5F5F7", textMuted: "#A1A1AA", textDim: "#686872",
   // 다크 전용 보조(라이트와 톤이 다른 곳에서 사용)
-  hoverBg: "rgba(255,255,255,0.05)",
+  hoverBg: "rgba(255,255,255,0.075)",
 };
 
 // 라이트 — Vercel / Linear 스타일 화이트 톤. surface=흰색, card=살짝 회색.
 export const THEME_LIGHT = {
-  bg: "#F7F7FA", surface: "#FFFFFF", card: "#F2F2F6",
-  border: "#E4E4EC", accent: "#6C5CE7", accentSoft: "#EFEDFE",
-  text: "#1A1A24", textMuted: "#6B6B80", textDim: "#9696A8",
-  hoverBg: "rgba(0,0,0,0.04)",
+  bg: "#ECECF1", surface: "rgba(255,255,255,0.76)", card: "rgba(255,255,255,0.62)",
+  border: "rgba(0,0,0,0.10)", accent: "#007AFF", accentSoft: "rgba(0,122,255,0.12)",
+  text: "#1D1D1F", textMuted: "#6E6E73", textDim: "#98989D",
+  hoverBg: "rgba(0,0,0,0.055)",
 };
 
 // 하위 호환 — 기존 `THEME` 참조는 다크를 가리킴.

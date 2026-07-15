@@ -60,6 +60,13 @@ export function GlobalProvider({ children }) {
     setThemeRaw((prev) => (prev === "light" ? "dark" : "light"));
   }, []);
 
+  // 테마 → <html data-theme> 동기화 — index.css 의 [data-theme="light"] CSS 변수 활성화.
+  // 이전엔 아무도 설정하지 않아 라이트 모드에서도 다크 CSS 변수가 쓰이고 있었음.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+
   // 첫 마운트: 현재 URL의 history state를 표준화 (replaceState).
   useEffect(() => {
     if (typeof window === "undefined") return;

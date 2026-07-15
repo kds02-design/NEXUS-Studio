@@ -1,33 +1,24 @@
-import { useState } from "react";
+import { Suspense, lazy, useState } from "react";
 import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell,
   LineChart, Line, ResponsiveContainer, Tooltip, ReferenceLine, Legend,
 } from "recharts";
-import { useUsageGate } from "../../components/UsageGate";
-import { buildChartBrief, generateOracleSummary, askOracle, generateTarotReading, generateTalisman } from "./services/gemini";
+import { C, OH_GLYPH, OH_EASY, LUCK_COLOR, inp, buildChartBrief } from "./shared";
+import { Panel, Eyebrow } from "./ui";
+import { shareResult, hasKakaoKey } from "../../lib/kakaoShare";
 
-/* ═══════════════════════ 토큰 ═══════════════════════ */
-// 앱 고유의 신비주의 무드(네이비×골드) — 글로벌 테마 토큰 대신 의도적 독자 팔레트.
-const C = {
-  bg: "#0C0F2B", bg2: "#12173C", panel: "rgba(28,35,78,0.55)",
-  gold: "#C9A24B", goldSoft: "#E7CB84", ink: "#ECE7D8", dim: "#8B90BC",
-  line: "rgba(201,162,75,0.20)",
-  목: "#3FA98A", 화: "#E0654A", 토: "#D2A24B", 금: "#C6CEDE", 수: "#4C74C4",
-};
-const OH_GLYPH = { 목: "木", 화: "火", 토: "土", 금: "金", 수: "水" };
+// AI 섹션 4종 — firebase/AuthContext 의존이라 lazy 분리. 독립 PWA(destiny.html)에선 로드되지 않음.
+const OracleSection = lazy(() => import("./AiSections").then((m) => ({ default: m.OracleSection })));
+const TarotAiSection = lazy(() => import("./AiSections").then((m) => ({ default: m.TarotAiSection })));
+const TalismanPanel = lazy(() => import("./AiSections").then((m) => ({ default: m.TalismanPanel })));
+const ConsultPanel = lazy(() => import("./AiSections").then((m) => ({ default: m.ConsultPanel })));
+
+/* ═══════════════════════ 상수 (토큰·OH_EASY·LUCK_COLOR·Panel 등은 ./shared) ═══════════════════════ */
 const OH_ORDER = ["목", "화", "토", "금", "수"];
 const OH_DESC = {
   목: "성장·확장·기획의 기운", 화: "열정·표현·관계의 기운",
   토: "안정·신뢰·중심의 기운", 금: "원칙·결단·정제의 기운", 수: "지혜·직관·유연의 기운",
-};
-// 오행을 일상어로: n=쉬운 이름, v=한 줄 느낌
-const OH_EASY = {
-  목: { n: "새싹", v: "새로운 걸 시작하고 쭉쭉 뻗어나가는" },
-  화: { n: "불꽃", v: "밝고 뜨겁게 타오르며 사람들과 어울리는" },
-  토: { n: "땅", v: "든든하게 중심을 잡고 꾸준히 밀고 가는" },
-  금: { n: "칼", v: "딱 부러지게 결정하고 깔끔하게 정리하는" },
-  수: { n: "물", v: "깊이 생각하고 유연하게 흐르는" },
 };
 const REMEDY = {
   목: { 색: "초록·청록", 방위: "동쪽", 음식: "신맛 · 새싹채소 · 보리", 활동: "아침 산책 · 새로운 배움 · 식물 기르기", 소재: "목재 가구 · 화분 · 책" },
@@ -49,13 +40,6 @@ const PERSON_MBTI = {
   토: ["ISTJ", "ISFJ", "ESTJ", "ESFJ"],
   금: ["ESTJ", "ISTP", "INTJ", "ENTJ"],
   수: ["INFJ", "INFP", "ENFJ", "INTP"],
-};
-const LUCK_COLOR = {
-  목: { name: "초록 · 청록", hex: ["#3FA98A", "#2E7D5B", "#8ED0B4"] },
-  화: { name: "빨강 · 자주", hex: ["#E0654A", "#C0392B", "#A83B63"] },
-  토: { name: "노랑 · 베이지 · 황토", hex: ["#D2A24B", "#CBB682", "#E6D2A0"] },
-  금: { name: "화이트 · 실버 · 골드", hex: ["#ECEEF3", "#C6CEDE", "#D4AF37"] },
-  수: { name: "블랙 · 네이비", hex: ["#1B2233", "#2C3E6B", "#4C74C4"] },
 };
 const EXERCISE = {
   목: "요가 · 필라테스 · 등산 · 클라이밍 — 몸을 길게 뻗고 유연하게 쓰는 운동",
@@ -426,13 +410,7 @@ function getZodiac(m, d) {
   return ZODIAC[0];
 }
 
-/* ═══════════════════════ UI 조각 ═══════════════════════ */
-function Panel({ children, style }) {
-  return <div style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 16, padding: 18, backdropFilter: "blur(6px)", ...style }}>{children}</div>;
-}
-function Eyebrow({ children }) {
-  return <div style={{ fontFamily: "'Noto Sans KR', sans-serif", fontSize: 11, letterSpacing: 3, color: C.gold, textTransform: "uppercase", marginBottom: 12 }}>{children}</div>;
-}
+/* ═══════════════════════ UI 조각 (Panel·Eyebrow·inp 는 ./shared) ═══════════════════════ */
 function OhTag({ el }) {
   return <span style={{ color: C[el], fontFamily: "'Noto Sans KR', sans-serif" }}>{OH_GLYPH[el]}<span style={{ fontSize: 12, marginLeft: 2 }}>{el}</span></span>;
 }
@@ -445,12 +423,12 @@ function Seg({ children, on, onClick, mono, serif, big }) {
     color: on ? C.goldSoft : C.dim, transition: "all .15s",
   }}>{children}</button>;
 }
-const inp = { flex: 1, padding: "13px 14px", borderRadius: 10, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.6)", color: C.ink, fontFamily: "'Noto Sans KR',sans-serif", fontSize: 15, colorScheme: "dark" };
 const btnGold = { padding: "17px 0", borderRadius: 12, cursor: "pointer", border: "none", background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 17, letterSpacing: 2, boxShadow: "0 8px 28px rgba(201,162,75,0.25)" };
 const tip = { background: "#0C0F2B", border: `1px solid ${C.line}`, borderRadius: 8, color: "#ECE7D8", fontFamily: "'Noto Sans KR',sans-serif", fontSize: 12 };
 
 /* ═══════════════════════ 메인 ═══════════════════════ */
-export default function App() {
+// standalone: destiny.html 독립 PWA 모드 — Shell/로그인이 없어 AI 섹션(크레딧 필요) 제외.
+export default function App({ standalone = false }) {
   const [ei, setEi] = useState("E"), [ns, setNs] = useState("N"), [tf, setTf] = useState("F"), [jp, setJp] = useState("P");
   const [blood, setBlood] = useState("O");
   const [gender, setGender] = useState("남");
@@ -498,9 +476,10 @@ export default function App() {
       `}</style>
 
       <div style={{ maxWidth: 480, margin: "0 auto" }}>
-        {/* 앱 이름은 Shell Topbar가 표시 — 무드 카피만 남김 */}
+        {/* NEXUS 안에선 앱 이름을 Shell Topbar가 표시 — 독립 PWA에서만 타이틀 노출 */}
         <header style={{ textAlign: "center", marginBottom: 24 }}>
           <div style={{ fontSize: 11, letterSpacing: 5, color: C.gold }}>五行 · 相生相剋 融合</div>
+          {standalone && <h1 style={{ fontSize: 29, fontWeight: 700, margin: "9px 0 0", color: C.ink }}>운명 관측소</h1>}
           <p style={{ color: C.dim, fontSize: 12.5, margin: "9px 0 0" }}>네 기운을 오행으로 겹쳐, 조합에서 태어나는 당신을 읽습니다</p>
         </header>
 
@@ -627,27 +606,20 @@ export default function App() {
           </div>
         )}
 
-        {phase === "result" && R && <Results R={R} mbti={mbti} blood={blood} gender={gender} onReset={() => { setPhase("input"); setR(null); }} />}
+        {phase === "result" && R && <Results R={R} mbti={mbti} blood={blood} gender={gender} standalone={standalone} onReset={() => { setPhase("input"); setR(null); }} />}
       </div>
     </div>
   );
 }
 
 /* ═══════════════════════ 결과 ═══════════════════════ */
-function Results({ R, mbti, blood, gender, onReset }) {
+function Results({ R, mbti, blood, gender, standalone, onReset }) {
   const { zodiac, saju, daewoon, F } = R;
   const maxDist = Math.max(...OH_ORDER.map((k) => F.dist[k]));
   const [copied, setCopied] = useState(false);
+  const [shared, setShared] = useState(false);
   const [tarotOpen, setTarotOpen] = useState(false);
-  // ── AI(Gemini) 상태 — 계산은 로컬 로직, Gemini 는 해석·이미지만 담당 ──
-  const { ensureCanGenerate, modal: usageModal } = useUsageGate();
-  const [oracle, setOracle] = useState({ loading: false, text: "", error: "" });
-  const [tarotAi, setTarotAi] = useState({ loading: false, text: "", error: "" });
-  const [talisman, setTalisman] = useState({ loading: false, url: "", error: "" });
-  const [chat, setChat] = useState([]); // [{ q, a }]
-  const [chatInput, setChatInput] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
-  const [chatErr, setChatErr] = useState("");
+  const [oracleText, setOracleText] = useState(""); // AI 심층 예언 — 공유/복사 텍스트 포함용
 
   // 대운 길흉: 억부용신 기준 + 원국 일지 대비 충·합(변동)까지 반영
   const scoreOh = (oh) => {
@@ -779,7 +751,7 @@ function Results({ R, mbti, blood, gender, onReset }) {
     `[ 삼재 ]\n${sj.inSamjae ? `지금 삼재 기간(${sj.years[0]}~${sj.years[2]}년, 올해는 ${sj.phase})` : `지금은 삼재 아님 · 다음 삼재 ${sj.years[0]}~${sj.years[2]}년`}\n\n` +
     `[ 오늘의 타로 ]\n${todayCard[1]} (${todayCard[0]}) · ${todayCard[2]}\n${todayCard[3]}\n\n` +
     `[ 운명은 이렇게 말한다 ]\n${summary}\n\n` +
-    (oracle.text ? `[ AI 관측사의 심층 예언 ]\n${oracle.text}\n\n` : "") +
+    (oracleText ? `[ AI 관측사의 심층 예언 ]\n${oracleText}\n\n` : "") +
     `— 재미로 보는 콘텐츠 · 실제 만세력과 차이가 있어요`;
 
   const handleCopy = async () => {
@@ -818,62 +790,14 @@ function Results({ R, mbti, blood, gender, onReset }) {
     petLine, relLine, lifeLine, nameLine,
   });
 
-  const runOracle = async () => {
-    if (oracle.loading) return;
-    if (!(await ensureCanGenerate("analysis"))) return;
-    setOracle({ loading: true, text: "", error: "" });
-    try {
-      const text = await generateOracleSummary(brief, summary);
-      setOracle({ loading: false, text, error: "" });
-    } catch (e) {
-      setOracle({ loading: false, text: "", error: e?.message || String(e) });
-    }
-  };
-
-  const runTarotAi = async () => {
-    if (tarotAi.loading) return;
-    if (!(await ensureCanGenerate("analysis"))) return;
-    setTarotAi({ loading: true, text: "", error: "" });
-    try {
-      const text = await generateTarotReading(brief,
-        { no: todayCard[0], name: todayCard[1], keyword: todayCard[2], base: todayCard[3] }, todayStr);
-      setTarotAi({ loading: false, text, error: "" });
-    } catch (e) {
-      setTarotAi({ loading: false, text: "", error: e?.message || String(e) });
-    }
-  };
-
-  const runTalisman = async () => {
-    if (talisman.loading) return;
-    if (!(await ensureCanGenerate("image"))) return;
-    setTalisman((prev) => ({ ...prev, loading: true, error: "" }));
-    try {
-      const url = await generateTalisman({
-        yongGlyph: OH_GLYPH[F.yong],
-        luckColorNames: LUCK_COLOR[F.yong].name,
-        luckColorHex: LUCK_COLOR[F.yong].hex.join(", "),
-        archetype: F.coined,
-      });
-      setTalisman({ loading: false, url, error: "" });
-    } catch (e) {
-      setTalisman((prev) => ({ ...prev, loading: false, error: e?.message || String(e) }));
-    }
-  };
-
-  const submitChat = async () => {
-    const q = chatInput.trim();
-    if (!q || chatBusy) return;
-    if (!(await ensureCanGenerate("analysis"))) return;
-    setChatBusy(true); setChatErr("");
-    try {
-      const a = await askOracle(brief, q, chat.slice(-4));
-      setChat((prev) => [...prev, { q, a }]);
-      setChatInput("");
-    } catch (e) {
-      setChatErr(e?.message || String(e));
-    } finally {
-      setChatBusy(false);
-    }
+  // 공유 링크는 항상 독립 PWA 페이지 — 받은 사람이 로그인 없이 바로 관측 가능.
+  const doShare = async () => {
+    const r = await shareResult({
+      title: "🔮 운명 관측소",
+      text: shareText,
+      url: `${window.location.origin}/destiny.html`,
+    });
+    if (r === "copied") { setShared(true); setTimeout(() => setShared(false), 2000); }
   };
 
   return (
@@ -1097,24 +1021,12 @@ function Results({ R, mbti, blood, gender, onReset }) {
             <div className="mono" style={{ fontSize: 11.5, color: C.gold, letterSpacing: 1, marginBottom: 8 }}>{todayCard[2]}</div>
             <p style={{ fontSize: 14.5, color: C.ink, margin: 0, lineHeight: 1.7, maxWidth: 320, marginLeft: "auto", marginRight: "auto" }}>{todayCard[3]}</p>
             {/* AI 맞춤 풀이 — 뽑힌 카드 × 본인 명식 × 오늘 날짜 */}
-            <div style={{ marginTop: 14 }}>
-              {!tarotAi.text && (
-                <button onClick={runTarotAi} disabled={tarotAi.loading} style={{
-                  padding: "10px 20px", borderRadius: 10, cursor: tarotAi.loading ? "wait" : "pointer",
-                  border: `1px solid ${C.gold}`, background: "rgba(201,162,75,0.10)", color: C.goldSoft,
-                  fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 600, fontSize: 12.5,
-                  opacity: tarotAi.loading ? 0.7 : 1,
-                }}>{tarotAi.loading ? "카드를 명식에 비추는 중…" : "내 명식으로 카드 풀이 (AI · 1c)"}</button>
-              )}
-              {tarotAi.error && <p style={{ fontSize: 11.5, color: C.화, margin: "8px 0 0" }}>{tarotAi.error}</p>}
-              {tarotAi.text && (
-                <p className="destiny-reveal" style={{
-                  fontSize: 13, color: C.ink, margin: "4px auto 0", lineHeight: 1.8, maxWidth: 340,
-                  whiteSpace: "pre-line", textAlign: "left", padding: "12px 14px",
-                  borderRadius: 10, border: `1px solid ${C.line}`, background: "rgba(12,15,43,0.4)",
-                }}>{tarotAi.text}</p>
-              )}
-            </div>
+            {!standalone && (
+              <Suspense fallback={null}>
+                <TarotAiSection brief={brief} todayStr={todayStr}
+                  card={{ no: todayCard[0], name: todayCard[1], keyword: todayCard[2], base: todayCard[3] }} />
+              </Suspense>
+            )}
           </div>
         )}
       </Panel>
@@ -1153,27 +1065,11 @@ function Results({ R, mbti, blood, gender, onReset }) {
         <p className="serif" style={{ fontSize: 15, lineHeight: 1.95, margin: 0, whiteSpace: "pre-line", letterSpacing: "0.01em" }}>{summary}</p>
         <p style={{ fontSize: 10.5, color: C.dim, margin: "14px 0 0", textAlign: "right" }}>※ 니체의 문체를 흉내 낸 창작이며, 실제 인용은 아니에요.</p>
         {/* AI 심층 예언 — 위 템플릿 예언은 그대로 두고(폴백), 명식 전체를 근거로 한 생성 예언을 아래에 추가 */}
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: `1px solid ${C.line}` }}>
-          {!oracle.text && (
-            <button onClick={runOracle} disabled={oracle.loading} style={{
-              width: "100%", padding: "13px 0", borderRadius: 12, cursor: oracle.loading ? "wait" : "pointer",
-              border: `1px solid ${C.gold}`, background: "rgba(201,162,75,0.10)", color: C.goldSoft,
-              fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1,
-              opacity: oracle.loading ? 0.7 : 1,
-            }}>{oracle.loading ? "관측사가 별을 읽는 중…" : "✦ AI 관측사의 심층 예언 듣기 (1c)"}</button>
-          )}
-          {oracle.error && <p style={{ fontSize: 11.5, color: C.화, margin: "8px 0 0", textAlign: "center" }}>{oracle.error}</p>}
-          {oracle.text && (
-            <div className="destiny-reveal">
-              <div style={{ fontSize: 11, letterSpacing: 3, color: C.gold, marginBottom: 10 }}>AI 관측사의 심층 예언</div>
-              <p className="serif" style={{ fontSize: 14.5, lineHeight: 1.95, margin: 0, whiteSpace: "pre-line", letterSpacing: "0.01em" }}>{oracle.text}</p>
-              <button onClick={runOracle} disabled={oracle.loading} style={{
-                marginTop: 12, padding: "7px 14px", borderRadius: 8, cursor: "pointer", fontSize: 11.5,
-                border: `1px solid ${C.line}`, background: "transparent", color: C.dim,
-              }}>{oracle.loading ? "다시 읽는 중…" : "다시 예언 듣기 (1c)"}</button>
-            </div>
-          )}
-        </div>
+        {!standalone && (
+          <Suspense fallback={null}>
+            <OracleSection brief={brief} summary={summary} onText={setOracleText} />
+          </Suspense>
+        )}
       </Panel>
 
       <Panel>
@@ -1199,42 +1095,11 @@ function Results({ R, mbti, blood, gender, onReset }) {
         </div>
       </Panel>
 
-      <Panel style={{ textAlign: "center" }}>
-        <Eyebrow>행운 부적 · AI 생성</Eyebrow>
-        {talisman.url ? (
-          <div className="destiny-reveal">
-            <img src={talisman.url} alt={`${OH_EASY[F.yong].n}(${F.yong}) 행운 부적`} style={{
-              width: 220, maxWidth: "80%", borderRadius: 14, border: `2px solid ${C.gold}`,
-              display: "block", margin: "0 auto 12px", boxShadow: "0 10px 30px rgba(201,162,75,0.25)",
-            }} />
-            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-              <a href={talisman.url} download={`행운부적_${OH_EASY[F.yong].n}.png`} style={{
-                padding: "10px 20px", borderRadius: 10, textDecoration: "none",
-                background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a",
-                fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 12.5,
-              }}>부적 다운로드</a>
-              <button onClick={runTalisman} disabled={talisman.loading} style={{
-                padding: "10px 16px", borderRadius: 10, cursor: "pointer", fontSize: 12,
-                border: `1px solid ${C.line}`, background: "transparent", color: C.dim,
-              }}>{talisman.loading ? "그리는 중…" : "다시 생성 (10c)"}</button>
-            </div>
-          </div>
-        ) : (
-          <>
-            <p style={{ fontSize: 12.5, color: C.dim, margin: "0 0 12px", lineHeight: 1.65 }}>
-              용신 '{OH_EASY[F.yong].n}({F.yong})' 문양과 행운 컬러({LUCK_COLOR[F.yong].name})를 담은
-              나만의 부적 카드를 AI가 그려드려요.
-            </p>
-            <button onClick={runTalisman} disabled={talisman.loading} style={{
-              padding: "13px 32px", borderRadius: 12, cursor: talisman.loading ? "wait" : "pointer", border: "none",
-              background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a",
-              fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: 1,
-              opacity: talisman.loading ? 0.7 : 1,
-            }}>{talisman.loading ? "부적을 그리는 중… (최대 1분)" : `☾ ${OH_GLYPH[F.yong]} 부적 생성하기 (10c)`}</button>
-          </>
-        )}
-        {talisman.error && <p style={{ fontSize: 11.5, color: C.화, margin: "10px 0 0" }}>{talisman.error}</p>}
-      </Panel>
+      {!standalone && (
+        <Suspense fallback={null}>
+          <TalismanPanel yong={F.yong} coined={F.coined} />
+        </Suspense>
+      )}
 
       <Panel>
         <Eyebrow>이런 사람과 가까이 · {OH_EASY[F.yong].n}({F.yong}) 기운</Eyebrow>
@@ -1253,50 +1118,24 @@ function Results({ R, mbti, blood, gender, onReset }) {
         </p>
       </Panel>
 
-      <Panel>
-        <Eyebrow>관측소에 물어보기 · AI 상담</Eyebrow>
-        {chat.length > 0 && (
-          <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
-            {chat.map((c, i) => (
-              <div key={i} className="destiny-reveal">
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 6 }}>
-                  <span style={{ maxWidth: "85%", padding: "9px 13px", borderRadius: "12px 12px 3px 12px", background: "rgba(201,162,75,0.14)", border: `1px solid ${C.line}`, color: C.goldSoft, fontSize: 13, lineHeight: 1.6 }}>{c.q}</span>
-                </div>
-                <div style={{ display: "flex" }}>
-                  <span style={{ maxWidth: "92%", padding: "11px 14px", borderRadius: "12px 12px 12px 3px", background: "rgba(12,15,43,0.5)", border: `1px solid ${C.line}`, color: C.ink, fontSize: 13, lineHeight: 1.75, whiteSpace: "pre-line" }}>{c.a}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            value={chatInput}
-            onChange={(e) => setChatInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.nativeEvent.isComposing) submitChat(); }}
-            placeholder="고민을 한 줄로 적어보세요 (예: 올해 이직해도 될까요?)"
-            maxLength={200} disabled={chatBusy}
-            style={{ ...inp, width: "auto" }}
-          />
-          <button onClick={submitChat} disabled={chatBusy || !chatInput.trim()} style={{
-            flex: "0 0 92px", borderRadius: 10, cursor: chatBusy ? "wait" : "pointer", border: "none",
-            background: `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: "#20180a",
-            fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 13,
-            opacity: (chatBusy || !chatInput.trim()) ? 0.55 : 1,
-          }}>{chatBusy ? "읽는 중…" : "묻기 (1c)"}</button>
-        </div>
-        {chatErr && <p style={{ fontSize: 11.5, color: C.화, margin: "8px 0 0" }}>{chatErr}</p>}
-        <p style={{ fontSize: 10.5, color: C.dim, margin: "10px 0 0", lineHeight: 1.6 }}>
-          ※ AI 기능(예언·타로 풀이·상담·부적)을 사용하면 생년월일·이름 등 명식 정보가 Gemini API로 전송돼요.
-          답변은 재미로만 참고해 주세요. 크레딧: 텍스트 1c · 부적 이미지 10c.
-        </p>
-      </Panel>
+      {!standalone && (
+        <Suspense fallback={null}>
+          <ConsultPanel brief={brief} />
+        </Suspense>
+      )}
+
+      {/* 카카오톡 공유 — SDK 키 없으면 OS 공유시트/클립보드 폴백 */}
+      <button onClick={doShare} style={{
+        padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none",
+        background: shared ? "rgba(63,169,138,0.92)" : "#FEE500", color: shared ? "#fff" : "#191919",
+        fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 15, letterSpacing: 1,
+        transition: "background .2s",
+      }}>{shared ? "링크가 복사됐어요 ✓" : hasKakaoKey ? "💬 카카오톡으로 공유하기" : "💬 친구에게 공유하기"}</button>
 
       <div style={{ display: "flex", gap: 10 }}>
         <button onClick={handleCopy} style={{ flex: 1, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: "none", background: copied ? "rgba(63,169,138,0.92)" : `linear-gradient(100deg, ${C.gold}, ${C.goldSoft})`, color: copied ? "#fff" : "#20180a", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 700, fontSize: 15, letterSpacing: 1, transition: "background .2s" }}>{copied ? "복사됐어요 ✓" : "결과 복사"}</button>
         <button onClick={onReset} style={{ flex: 1, padding: "15px 0", borderRadius: 12, cursor: "pointer", border: `1px solid ${C.gold}`, background: "transparent", color: C.goldSoft, fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 600, fontSize: 15, letterSpacing: 1 }}>다시 관측하기</button>
       </div>
-      {usageModal}
     </div>
   );
 }

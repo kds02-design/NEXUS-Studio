@@ -84,7 +84,7 @@ const APP_GUIDES = {
 function AppGuide({ app, T, onClose }) {
   const steps = APP_GUIDES[app?.group] || APP_GUIDES.generate;
   return (
-    <div style={{ position:"fixed", top:58, right:20, zIndex:1200, width:"min(360px, calc(100vw - 24px))", padding:16, borderRadius:14, background:T.surface, border:`1px solid ${T.border}`, boxShadow:"0 18px 50px rgba(0,0,0,.45)" }}>
+    <div className="nx-glass" style={{ position:"fixed", top:62, right:20, zIndex:1200, width:"min(360px, calc(100vw - 24px))", padding:18, borderRadius:20, background:T.surface, border:`1px solid ${T.border}`, boxShadow:"0 24px 70px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.1)" }}>
       <div style={{ display:"flex", alignItems:"flex-start", gap:10 }}>
         <div style={{ width:34, height:34, borderRadius:9, display:"grid", placeItems:"center", color:app.color, background:`${app.color}18`, flexShrink:0 }}><CircleHelp size={18}/></div>
         <div style={{ flex:1, minWidth:0 }}>
@@ -101,6 +101,23 @@ function AppGuide({ app, T, onClose }) {
   );
 }
 
+// macOS 메뉴바 우측 시계 — "7월 13일 (월) 오후 2:15". 30초 간격 갱신.
+function MenuBarClock({ color }) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(t);
+  }, []);
+  const days = ["일", "월", "화", "수", "목", "금", "토"];
+  const h = now.getHours();
+  const label = `${now.getMonth() + 1}월 ${now.getDate()}일 (${days[now.getDay()]}) ${h < 12 ? "오전" : "오후"} ${h % 12 || 12}:${String(now.getMinutes()).padStart(2, "0")}`;
+  return (
+    <span className="hidden md:inline" style={{ fontSize: 12, fontWeight: 500, color, whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums", userSelect: "none", letterSpacing: "-0.01em" }}>
+      {label}
+    </span>
+  );
+}
+
 function Topbar({ scrollY = 0, onOpenPalette }) {
   const { currentApp, setCurrentApp, isLight } = useGlobal();
   const T = useTheme();
@@ -113,21 +130,21 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
 
   const dynamicStyle = isIndex
     ? computeIndexTopbarStyle(scrollY, T, isLight)
-    : { background: T.surface, backdropFilter: "none", WebkitBackdropFilter: "none", borderColor: T.border };
+    : { background: T.surface, backdropFilter: "saturate(150%) blur(24px)", WebkitBackdropFilter: "saturate(150%) blur(24px)", borderColor: T.border };
 
   return (
     <div style={{
       display:"flex", alignItems:"center", justifyContent:"space-between",
       padding:"0 20px", height:52, minHeight:52, maxHeight:52,
-      borderBottom: "none",
+      borderBottom: `1px solid ${isIndex && scrollY < 55 ? "transparent" : dynamicStyle.borderColor}`,
       background: dynamicStyle.background,
       backdropFilter: dynamicStyle.backdropFilter,
       WebkitBackdropFilter: dynamicStyle.WebkitBackdropFilter,
-      fontFamily:"'Noto Sans KR', sans-serif",
+      fontFamily:"inherit",
       position:"fixed", top:0, left:0, right:0, zIndex:1000,
       transition: "background 0.3s ease, border-color 0.3s ease, backdrop-filter 0.3s ease",
     }}>
-      {/* LEFT: [햄버거] [NEXUS STUDIO 로고] [(서브앱일 때) 앱 이름] */}
+      {/* LEFT: [햄버거] [NEXUS Studio 워드마크] [(서브앱일 때) 앱 이름] */}
       <div style={{ display:"flex", alignItems:"center", gap:10, position:"relative" }}>
         {/* 햄버거 — Command Palette 오픈. 인덱스/서브앱 모두 노출. */}
         <button
@@ -136,7 +153,7 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
           title="앱 검색 (Command Palette)"
           style={{
             display:"inline-flex", alignItems:"center", justifyContent:"center",
-            width:32, height:32, padding:0, border:0, borderRadius:6,
+            width:32, height:32, padding:0, border:0, borderRadius:9,
             background:"transparent", color: T.textMuted, cursor:"pointer",
             transition:"background 0.15s, color 0.15s",
           }}
@@ -154,10 +171,10 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
           title="홈으로 (Ctrl/⌘+클릭 → 새 창)"
           style={{ display:"inline-flex", alignItems:"center", gap:8, cursor:"pointer", userSelect:"none" }}
         >
-          <NexusLogo height={18} color={T.text} />
-          <span style={{ display:"inline-flex", alignItems:"baseline", gap:6, fontFamily:"'Teko', sans-serif", fontSize:22, lineHeight:1, letterSpacing:"0.5px", whiteSpace:"nowrap", transform:"translateY(2px)" }}>
-            <span style={{ color: T.text, fontWeight:600 }}>NEXUS</span>
-            <span style={{ color: T.text, fontWeight:600 }}>STUDIO</span>
+          <NexusLogo height={16} color={T.text} />
+          {/* macOS 메뉴바의 앱 이름처럼 — 시스템 폰트 13px 세미볼드 */}
+          <span style={{ fontSize:13, fontWeight:700, color:T.text, lineHeight:1, letterSpacing:"-0.01em", whiteSpace:"nowrap" }}>
+            NEXUS Studio
           </span>
         </div>
         {/* 서브앱일 때만: 앱 이름 (클릭 불가, 앱 포인트 컬러).
@@ -166,15 +183,16 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
           const display = (app.sub && String(app.sub).trim()) || app.label || "";
           if (!display) return null;
           return (
-            <span style={{ fontFamily:"'Teko', sans-serif", fontSize:16, fontWeight:600, color: app.color, lineHeight:1, letterSpacing:"0.4px", whiteSpace:"nowrap", display:"inline-block", transform:"translateY(4px)", userSelect:"none", pointerEvents:"none" }}>
+            <span style={{ fontSize:13, fontWeight:600, color: app.color, lineHeight:1, letterSpacing:"-0.01em", whiteSpace:"nowrap", display:"inline-block", userSelect:"none", pointerEvents:"none" }}>
               {display}
             </span>
           );
         })()}
       </div>
 
-      {/* RIGHT: 등급·크레딧 — 두 영역을 하나의 pill 박스로 묶어 시각 단위화. */}
-      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+      {/* RIGHT: 등급·크레딧 pill + 시계 + 아바타 — macOS 메뉴바 우측 상태 영역. */}
+      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+        <MenuBarClock color={isIndex ? (isLight ? "rgba(29,29,31,0.75)" : "rgba(255,255,255,0.85)") : T.textMuted} />
         {!isIndex && (
           <button
             type="button"
@@ -202,7 +220,7 @@ function Topbar({ scrollY = 0, onOpenPalette }) {
               display:"inline-flex", alignItems:"stretch",
               background: isIndex ? "rgba(24,24,27,0.78)" : T.hoverBg,
               border: `1px solid ${isIndex ? "rgba(255,255,255,0.08)" : T.border}`,
-              borderRadius: 999,
+            borderRadius: 12,
               padding: "1px 2px",
               userSelect:"none",
               backdropFilter: isIndex ? "blur(8px)" : "none",
@@ -355,7 +373,9 @@ function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false, groupAccent = 
         display:"flex", alignItems:"center", gap:14, minHeight:68, padding:"12px 14px",
         background:disabled ? disabledBg : T.surface,
         border:`1px ${hiddenFromUsers && canToggleVisibility ? "dashed" : "solid"} ${disabled ? disabledBorder : T.border}`,
-        borderRadius:10, opacity:disabled ? .55 : 1, cursor:disabled ? "not-allowed" : "pointer",
+        borderRadius:14, opacity:disabled ? .55 : 1, cursor:disabled ? "not-allowed" : "pointer",
+        boxShadow: disabled ? "none" : "0 12px 32px rgba(0,0,0,.16), inset 0 1px 0 rgba(255,255,255,.06)",
+        backdropFilter:"saturate(140%) blur(18px)", WebkitBackdropFilter:"saturate(140%) blur(18px)",
       }}>
         <span style={{ width:38, height:38, borderRadius:9, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background:`${chipColor}1f`, color:chipColor, fontSize:13, fontWeight:800 }}>
           {app.abbr || cardAbbr(app.sub)}
@@ -389,12 +409,14 @@ function AppCard({ app, onOpen, isAdmin, hiddenFromUsers = false, groupAccent = 
         // 숨김 카드 (admin 시점): 점선 보더로 "공개 안 됨" 시각화
         background: disabled ? disabledBg : (hov ? T.card : T.surface),
         border: disabled ? `1px dashed ${disabledBorder}` : (hiddenFromUsers && canToggleVisibility ? `1px dashed rgba(225,112,85,0.45)` : `1px solid ${T.border}`),
-        borderRadius: 10, padding: "18px 20px",
+        borderRadius: 16, padding: "18px 20px",
         cursor: disabled ? "not-allowed" : "pointer",
         opacity: disabled ? 0.55 : (adminUnlocked ? 0.85 : (hiddenFromUsers && canToggleVisibility ? 0.85 : 1)),
         filter: disabled ? "grayscale(0.8)" : "none",
-        transition: "all 0.2s",
+        transition: "transform 0.22s cubic-bezier(.2,.8,.2,1), background .2s, border-color .2s, box-shadow .2s",
         transform: (!disabled && hov) ? "translateY(-2px)" : "none",
+        boxShadow: disabled ? "none" : (hov ? "0 20px 48px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.1)" : "0 10px 30px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.06)"),
+        backdropFilter:"saturate(140%) blur(20px)", WebkitBackdropFilter:"saturate(140%) blur(20px)",
         position: "relative",
         // 버전 팝오버 열린 카드는 형제 카드들 위로. transform 으로 stacking context 가
         // 이미 형성되어 있어서 zIndex 만 올리면 grid 안에서 최상위로 떠 가려짐 방지.
@@ -662,6 +684,38 @@ function BeginnerStart({ onOpen }) {
   );
 }
 
+// macOS Dock — 인덱스 하단 고정 유리 패널. 자주 쓰는 앱 바로가기 + 호버 확대/라벨 툴팁.
+// 스타일은 index.css .nx-dock*. 서브앱에서는 작업 영역을 가리므로 인덱스에서만 렌더.
+const DOCK_APP_IDS = ["nexus-preview", "typecore-sovereign", "typecore-breeze", "render-metrics", "motion-metrics", "mask-forge", "prompt-arc", "banner-codex"];
+function MacDock() {
+  const { navigate } = useGlobal();
+  const { isAdmin } = useAuth();
+  const overrides = useAppVisibility();
+  const apps = DOCK_APP_IDS
+    .map((id) => APP_MAP[id])
+    .filter((a) => a && !a.disabled && (!isAppHidden(a, overrides) || isAdmin));
+  if (!apps.length) return null;
+  return (
+    <nav className="nx-dock" aria-label="독">
+      {apps.map((app) => (
+        <span key={app.id} style={{ display: "inline-flex", alignItems: "flex-end" }}>
+          {/* 생성 그룹과 허브 그룹 사이 구분선 — macOS 독의 앱/문서 구분선처럼 */}
+          {app.id === "prompt-arc" && <span className="nx-dock-sep" aria-hidden="true" />}
+          <button type="button" className="nx-dock-item" onClick={(e) => {
+            if (e.ctrlKey || e.metaKey) { window.open(`/${app.id}`, "_blank", "noopener,noreferrer"); return; }
+            navigate(app.id);
+          }}>
+            <span className="nx-dock-icon" style={{ background: `linear-gradient(145deg, ${app.color} 0%, ${app.color}99 100%)` }}>
+              {app.abbr || cardAbbr(app.sub)}
+            </span>
+            <span className="nx-dock-label">{app.label}</span>
+          </button>
+        </span>
+      ))}
+    </nav>
+  );
+}
+
 function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
   const { navigate } = useGlobal();
   const { isAdmin } = useAuth();
@@ -708,11 +762,13 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
       <IndexSearchBar />
       <BeginnerStart onOpen={(id) => navigate(id)} />
       <DashboardRecentPrompts />
-      <div style={{ padding:"0 40px 60px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box" }}>
+      {/* 하단 여백 140 — 고정 Dock 이 마지막 콘텐츠를 가리지 않도록 */}
+      <div style={{ padding:"0 40px 140px", maxWidth:1200, margin:"0 auto", width:"100%", boxSizing:"border-box" }}>
         <button onClick={() => setShowAllApps(v => !v)} aria-expanded={showAllApps} style={{
-          width:"100%", padding:"14px 18px", borderRadius:10, cursor:"pointer", fontFamily:"inherit",
+          width:"100%", padding:"14px 18px", borderRadius:14, cursor:"pointer", fontFamily:"inherit",
           display:"flex", alignItems:"center", justifyContent:"space-between",
           background:T.surface, border:`1px solid ${T.border}`, color:T.text, fontSize:13, fontWeight:700,
+          boxShadow:"0 10px 30px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.07)", backdropFilter:"blur(20px)",
           marginBottom:showAllApps ? 28 : 0,
         }}>
           <span>{showAllApps ? "도구 목록 접기" : "모든 도구 보기"}</span>
@@ -785,6 +841,7 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
       <AutomationMenu />
       </>}
       </div>
+      <MacDock />
     </div>
   );
 }
@@ -843,8 +900,8 @@ function VersionSubHeader({ versions, selectedVersion, onSelect }) {
                 padding:"4px 12px", borderRadius:999, border:0, cursor:"pointer",
                 background: active ? `${v.color}22` : "transparent",
                 color: active ? v.color : T.textMuted,
-                fontSize:11, fontWeight:700, letterSpacing:"0.04em",
-                fontFamily:"'Noto Sans KR', sans-serif", transition:"all 0.12s",
+                fontSize:11, fontWeight:700, letterSpacing:"0.01em",
+                fontFamily:"inherit", transition:"all 0.12s",
               }}>{v.label}</button>
           );
         })}
@@ -899,16 +956,16 @@ export default function Shell() {
   const innerPaddingTop = currentApp ? 52 : 0;
 
   return (
-    <div style={{ height:"100vh", background:T.bg, color:T.text, fontFamily:"'Noto Sans KR', sans-serif", display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div className="nexus-shell" style={{ height:"100vh", background:T.bg, color:T.text, fontFamily:"-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Noto Sans KR', sans-serif", display:"flex", flexDirection:"column", overflow:"hidden" }}>
       {/* 폰트 link 는 index.html <head> 에 위치 — CSS 파싱 대기 없이 즉시 다운로드 시작. */}
       <style>{`
         * { box-sizing:border-box; }
         @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)} }
-        ::-webkit-scrollbar{width:4px;height:4px}
+        ::-webkit-scrollbar{width:6px;height:6px}
         ::-webkit-scrollbar-track{background:transparent}
-        ::-webkit-scrollbar-thumb{background:${T.border};border-radius:2px}
+        ::-webkit-scrollbar-thumb{background:${T.border};border-radius:999px}
         :where(button, a, input, textarea, select, [role="button"]):focus-visible {
-          outline:2px solid #22B8CF !important;
+          outline:2px solid ${T.accent} !important;
           outline-offset:2px !important;
         }
         :where(button, [role="button"]):disabled { cursor:not-allowed; }

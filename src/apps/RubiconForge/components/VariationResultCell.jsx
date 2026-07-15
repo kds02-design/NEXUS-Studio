@@ -5,7 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import {
-  Loader2, AlertCircle, Download, RefreshCcw, ImageOff, Eraser, Grid3x3, FileText, ClipboardCopy, Check, Maximize2, X, Scissors, LayoutTemplate, Layers,
+  Loader2, AlertCircle, Download, RefreshCcw, ImageOff, Eraser, Grid3x3, FileText, ClipboardCopy, Check, Maximize2, X, Scissors, Layers,
 } from 'lucide-react';
 import { colorToTransparentPng, compositeLightOverReference } from '../services/variations';
 import { useGlobal } from '../../../context/GlobalContext';
@@ -15,6 +15,7 @@ export default function VariationResultCell({
   onOpenNineSlice, showNineSlice = true,
   filePrefix = 'rubicon-variation',
   sourceLoaded,
+  fitViewport = false,
   compositeRef = null, // (lightfx) 레퍼런스 dataURL — 있으면 "효과+레퍼런스 합성" 토글 노출
 }) {
   const { theme, dataUrl, error, prompt, compactPrompt, isLoading, bgHex } = slot;
@@ -22,7 +23,6 @@ export default function VariationResultCell({
   const [isExtracting, setIsExtracting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [sent, setSent] = useState(false);
-  const [sentPreview, setSentPreview] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [compositeUrl, setCompositeUrl] = useState(null);   // 레퍼런스+효과 합성본 (지연 생성 후 캐시)
   const [compositeForUrl, setCompositeForUrl] = useState(null); // 합성본이 계산된 대상 dataUrl (재생성 시 무효 판정)
@@ -115,21 +115,6 @@ export default function VariationResultCell({
     setTimeout(() => setSent(false), 1500);
   };
 
-  // 결과(리스킨된 프레임 등)를 NEXUS Preview 부품 슬롯(프레임)으로 적용. 생성 배경색을 투명 추출 후 전송.
-  const handleSendToPreview = async () => {
-    if (!dataUrl) return;
-    let out = dataUrl;
-    try { out = await colorToTransparentPng(dataUrl, bgHex || '#000000'); } catch { /* 원본 그대로 전송 */ }
-    navigate('nexus-preview', {
-      source: 'rubicon-forge', target: 'nexus-preview',
-      image: { url: '', metadata: {} },
-      params: { slot: 'frame', frameImage: out, applyToKv: true, label: theme.label },
-      timestamp: Date.now(),
-    });
-    setSentPreview(true);
-    setTimeout(() => setSentPreview(false), 1500);
-  };
-
   // 실제 전송된 프롬프트 .txt 다운로드 — 실패 슬롯에서도 가능.
   const handleDownloadPrompt = () => {
     if (!prompt) return;
@@ -145,7 +130,7 @@ export default function VariationResultCell({
   return (
     <>
     <div
-      className="relative rounded-xl overflow-hidden bg-[#0F0F12] border border-zinc-800/60 aspect-square group"
+      className={`relative rounded-xl overflow-hidden bg-[#0F0F12] border border-zinc-800/60 group ${fitViewport ? 'w-full h-full min-h-0' : 'aspect-square'}`}
       style={{ boxShadow: dataUrl ? `inset 0 0 0 1px ${theme.color}30` : undefined }}
     >
       {/* 헤더 — 테마 색 + 라벨 */}
@@ -193,7 +178,7 @@ export default function VariationResultCell({
 
       {/* 호버 액션 바 */}
       {!isLoading && (dataUrl || error) && (
-        <div className="absolute bottom-0 left-0 right-0 z-10 px-2 py-2 flex items-center justify-end gap-1 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="absolute bottom-0 left-0 right-0 z-10 px-2 py-2 flex flex-wrap items-center justify-end gap-1 bg-gradient-to-t from-black/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
           {dataUrl && (
             <>
               <button
@@ -236,13 +221,6 @@ export default function VariationResultCell({
                 className="p-1.5 rounded-md bg-zinc-800/80 hover:bg-[#FF3366] text-white transition-colors"
               >
                 {sent ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Scissors className="w-3.5 h-3.5" />}
-              </button>
-              <button
-                onClick={handleSendToPreview}
-                title="NEXUS Preview 프레임 슬롯으로 적용 (투명 추출 후 전송)"
-                className="p-1.5 rounded-md bg-zinc-800/80 hover:bg-[#22B8CF] text-white transition-colors"
-              >
-                {sentPreview ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <LayoutTemplate className="w-3.5 h-3.5" />}
               </button>
               <button
                 onClick={handleDownload}
@@ -310,10 +288,6 @@ export default function VariationResultCell({
             <button onClick={handleSendToMaskForge} title="컨트롤 가능한 투명 PNG — 마스크 포지(로컬 색상 키)로 보내기. 톨러런스/페더를 직접 조절해 검은 띠 없이 추출"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-[#FF3366] text-white text-[12px] font-medium transition-colors">
               {sent ? <Check className="w-4 h-4 text-emerald-400" /> : <Scissors className="w-4 h-4" />} 마스크 포지로 보내기
-            </button>
-            <button onClick={handleSendToPreview} title="NEXUS Preview 프레임 슬롯으로 적용 (투명 추출 후 전송)"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-[#22B8CF] text-white text-[12px] font-medium transition-colors">
-              {sentPreview ? <Check className="w-4 h-4 text-emerald-400" /> : <LayoutTemplate className="w-4 h-4" />} 넥서스 프리뷰로
             </button>
             <button onClick={() => setZoomOpen(false)} title="닫기 (Esc)"
               className="p-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-white transition-colors">

@@ -530,7 +530,9 @@ export default function KvComposer({ T, accent, promotion, area = "promo" }) {
     setCloudSaving(true); setStatus(null);
     try {
       let thumbDataUrl = null;
-      try { thumbDataUrl = await renderKvThumb(kvThumbOpts(), 0.2); } catch { /* 썸네일 실패는 무시 */ }
+      // 목록 썸네일은 타이틀 레이어까지 포함 — 테마 분석용(kvThumbOpts 기본)과 달리
+      // 실제 KV 구성과 일치해야 함 ("썸네일과 내용이 다르다" 수정).
+      try { thumbDataUrl = await renderKvThumb({ ...kvThumbOpts(), title: layersRef.current.title }, 0.2); } catch { /* 썸네일 실패는 무시 */ }
       await savePromotionSession(promotion?.id || "default", {
         bgColor, pattern, fadeStart, sideFade, guideVis, showParts, layout: layoutKey, titleText, titleDim, menuDim, dateText, buttonText,
         layers: layersRef.current, frames, theme, thumbDataUrl,

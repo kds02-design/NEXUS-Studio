@@ -58,7 +58,7 @@ export const generateIR = (state, appOptions) => {
     : getOptionEn(appOptions.backgrounds, background);
   const ir = {
     _meta: { version: "19.34", persona: DIRECTOR_PERSONAS.find(p => p.id === directorPersona), complexityLevel: complexity },
-    subject: { type: "typography graphic", scale: getOptionEn(appOptions.typographyScales, typographyScale), fidelity_enforcement: "STRICT RULE: 95% shape preservation. EXACT ORIGINAL SILHOUETTE. NO TEXT MUTATION. NO extra letters. Ensure high legibility.", intent: userIntent || null },
+    subject: { type: "typography graphic", scale: getOptionEn(appOptions.typographyScales, typographyScale), fidelity_enforcement: "STRICT RULE: Use the input image as the exact structural reference. 95% shape preservation. EXACT ORIGINAL SILHOUETTE — same letterforms, same proportions, same spacing. NO TEXT MUTATION. NO extra letters. NO font substitution. Ensure high legibility.", intent: userIntent || null },
     camera_and_depth: { projectionId: projectionDepth, projection: getOptionEn(appOptions.projectionDepths, projectionDepth), isMinimal: projectionDepth === "None", lens: getOptionEn(appOptions.cameraLenses, cameraLens) },
     surface_morphology: { reliefId: frontRelief, relief: getOptionEn(appOptions.frontReliefs, frontRelief), treatment: getOptionEn(appOptions.surfaceTreatments, surfaceTreatment), wear: getOptionEn(appOptions.wearLevels, wearLevel) },
     material_stack: { base: getOptionEn(appOptions.materials, material), intensity: getOptionEn(appOptions.intensities, materialInt), internal_texture: dramaticTex === "Auto" ? "organically embedded dynamic textures" : getOptionEn(appOptions.dramaticTextures, dramaticTex), surface_detail: getOptionEn(appOptions.surfaceDetails, surfaceDetail), integration_rule: "Textures MUST be physically carved or etched INTO the base material. NO floating decals." },
@@ -235,6 +235,10 @@ export const compileNanoBanana = (ir, state) => {
     "infinite depth of field, entirely in focus, edge-to-edge sharp focus, zero background blur, crisp and clear entire frame",
     "deep shadowed side walls, dark unlit extrusion, heavy ambient occlusion on thickness",
     ir.subject.fidelity_enforcement.replace("STRICT RULE: ", ""),
+    // 가중치 형태 락 — 무가중치 fidelity 문장만으로는 페르소나의 고밀도 연출 문맥
+    // ("AAA game title"·"structural perfection")에 밀려 레터폼이 재설계되던 문제 보강.
+    "(exact original letterform silhouette from the input image:1.5), (strict shape preservation lock:1.4), (same letter proportions and spacing as the input image:1.3)",
+    ir._meta.persona.shapeLockEn || "",
     ir._meta.persona.mj_tags.split(" --no ")[0],
     ir.environment.background,
     ir.environment.engine,
@@ -243,6 +247,7 @@ export const compileNanoBanana = (ir, state) => {
   if (ir.edge_and_lighting.shadow) posTags.push("grounded with realistic drop shadow, soft cast shadow on backdrop, deep contact shadow anchoring the text");
   const negTags = [
     "(worst quality, low quality:1.4), text mutation, extra letters, hallucinated text, floating decal",
+    "(redesigned letterforms:1.6), (different font:1.6), (idealized letter shapes:1.5), (altered letter proportions:1.5), (simplified letterforms:1.4), (restyled logo design:1.5)",
     "(runes, hieroglyphs, symbols, written text on surface, watermark, gibberish:1.6), (merged letters, illegible blob, melted together, fused typography:1.5)",
     "(filigree, floral patterns, decorative ornaments, ornate engravings:1.5)",
     "(background plate:1.9), (plaque:1.9), (signboard:1.9), (engraved on a wall:1.9), (solid metal block background:1.9), (framed:1.8), (box around text:1.8), text engraved on surface, shield, baseplate, mounted metal plate, flat paper cutout, flat 2d sticker, dull shading, vector graphic",
@@ -331,7 +336,7 @@ export const compileChatGPT = (ir, state) => {
 ### 1. Core Directives
 - **Type**: Isolated standalone typography graphic. ${ir.subject.scale}.
 - **Vibe**: ${ir._meta.persona.discipline}
-- **Constraint**: ${ir.subject.fidelity_enforcement}
+- **Constraint**: ${ir.subject.fidelity_enforcement}${ir._meta.persona.shapeLockEn ? ` ${ir._meta.persona.shapeLockEn}.` : ""}
 
 ### 2. Camera & Depth
 - **Perspective**: ${depthStr}${lensDirective}
@@ -372,14 +377,14 @@ export const compileMidjourney = (ir, state) => {
   const mjFlat = ir.camera_and_depth.isMinimal
     ? FLAT_POSITIVE
     : ir.camera_and_depth.projection;
-  let subject = `${mjTone.subjectKind}, isolated standalone typography graphic, clear cutout text shape against background, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.subject.scale}, ${lensTag}, ${ir.subject.fidelity_enforcement}, ${mjFlat}, ${ir.surface_morphology.relief}`;
+  let subject = `${mjTone.subjectKind}, isolated standalone typography graphic, clear cutout text shape against background, highly legible, infinite depth of field, entirely in focus, crisp and clear entire frame, ${ir.subject.scale}, ${lensTag}, ${ir.subject.fidelity_enforcement}${ir._meta.persona.shapeLockEn ? `, ${ir._meta.persona.shapeLockEn}` : ""}, ${mjFlat}, ${ir.surface_morphology.relief}`;
   let detailTag = "";
   if (state.surfaceDetail === "Clean") detailTag = "perfectly smooth flawless clean surface, ";
   else if (state.surfaceDetail === "High") detailTag = "intense micro-details, fine hairline scratches, rich surface noise, ";
   const materialMood = `${ir._meta.persona.discipline}, ${ir._meta.persona.mj_tags}, highly saturated, punchy vibrant colors, ${detailTag}${ir.material_stack.base} material with ${ir.material_stack.internal_texture}, ${ir.surface_morphology.wear} surface`;
   let lightingFx = `${fxPhrase}, (dramatic directional lighting:1.4), clearly lit front face, dark shadowed side walls, deep ambient occlusion on extrusion, ${ir.edge_and_lighting.outline}, ${ir.edge_and_lighting.rim_light}, (physically attached crisp specular highlights:1.4), ${ir.edge_and_lighting.glint}, deep controlled shadows, clean high-value highlights, (strong material contrast:1.3), (high-end PBR physically-based shading, lustrous reflective surface, photorealistic material depth:1.4), ${ir.environment.background}`.replace(/^,\s*/, '');
   if (ir.edge_and_lighting.shadow) lightingFx += ", grounded with realistic drop shadow, soft cast shadow on backdrop, deep contact shadow anchoring the text";
-  let mjNegatives = "--no background plate, plaque, signboard, engraved on a wall, solid metal block background, floating effects, background clutter, text mutation, extra letters, altered silhouette, random text, runes, hieroglyphs, symbols, written text on surface, watermark, gibberish, merged letters, illegible blob, melted together, filigree, floral patterns, decorative ornaments, ornate engravings, uniform stroke, photoshop bevel and emboss, cheap v-carve, wordart, disconnected rim light, floating edge light, artificial halo, separated highlight, dull gray midtones, framed, box around text, shield, emblem, baseplate, flat paper cutout, flat 2d sticker, inner shadow layer style, inner stroke, fake 2d deboss, flat paper with bevel, washed out, desaturated, faded, unnatural outline, glowing border, depth of field, bokeh, background blur, lens blur, out of focus, soft focus, blurred foreground, blurry edges, smudged, melted shape, illegible, transparent text blending into background, excessive glow destroying shape, loss of silhouette, bright side walls, overlit extrusion, glowing thickness, washed out sides, circular brushing, radial metal grain, anisotropic reflection, curved scratches, ";
+  let mjNegatives = "--no background plate, plaque, signboard, engraved on a wall, solid metal block background, floating effects, background clutter, text mutation, extra letters, altered silhouette, redesigned letterforms, different font, idealized letter shapes, random text, runes, hieroglyphs, symbols, written text on surface, watermark, gibberish, merged letters, illegible blob, melted together, filigree, floral patterns, decorative ornaments, ornate engravings, uniform stroke, photoshop bevel and emboss, cheap v-carve, wordart, disconnected rim light, floating edge light, artificial halo, separated highlight, dull gray midtones, framed, box around text, shield, emblem, baseplate, flat paper cutout, flat 2d sticker, inner shadow layer style, inner stroke, fake 2d deboss, flat paper with bevel, washed out, desaturated, faded, unnatural outline, glowing border, depth of field, bokeh, background blur, lens blur, out of focus, soft focus, blurred foreground, blurry edges, smudged, melted shape, illegible, transparent text blending into background, excessive glow destroying shape, loss of silhouette, bright side walls, overlit extrusion, glowing thickness, washed out sides, circular brushing, radial metal grain, anisotropic reflection, curved scratches, ";
   if (ir.edge_and_lighting.rimColorId === "None") mjNegatives += "bottom light, underglow, colored rim light, bright glow from below, ";
   if (!ir.edge_and_lighting.shadow) {
     subject += ", floating perfectly without floor shadows";

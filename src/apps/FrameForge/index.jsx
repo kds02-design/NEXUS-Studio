@@ -19,10 +19,9 @@ import { savePromptToArc } from '../../lib/promptArcSave';
 
 const ACCENT = APP_MAP['frame-forge']?.color || '#4BCFFA';
 const OPTION_ACTIVE = {
-  background:'linear-gradient(135deg, #087EA4, #0E9FAD)',
-  borderColor:'#4BCFFA',
-  color:'#F2FDFF',
-  boxShadow:'0 0 0 1px rgba(75,207,250,0.22), 0 4px 14px rgba(8,126,164,0.28)',
+  background:'rgba(75,207,250,0.16)',
+  borderColor:'rgba(75,207,250,0.28)',
+  color:'#C9F3FF',
 };
 const THEME_COLOR = APP_MAP['theme-forge']?.color || '#FF9F1C';
 const FORM_STORAGE = 'frame-forge:form';
@@ -371,13 +370,18 @@ export default function FrameForgeApp() {
   const [stage, setStage] = useState('complete');
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#0A0A0A] text-zinc-100 overflow-hidden font-sans">
+    <div className="flex flex-col h-full w-full bg-[#101113] text-zinc-100 overflow-hidden font-sans">
       {usageModal}
       <style>{`
         .ff-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
         .ff-scroll::-webkit-scrollbar-track { background: transparent; }
         .ff-scroll::-webkit-scrollbar-thumb { background: rgba(75,207,250,0.25); border-radius: 5px; }
         .ff-scroll:hover::-webkit-scrollbar-thumb { background: rgba(75,207,250,0.5); }
+        .ff-step { padding: 16px 0; border-bottom: 1px solid rgba(255,255,255,0.07); }
+        .ff-step:first-child { padding-top: 4px; }
+        .ff-step:last-child { border-bottom: 0; }
+        .ff-subtle-button { background: rgba(255,255,255,0.025); }
+        .ff-subtle-button:hover { background: rgba(255,255,255,0.055); }
       `}</style>
 
       <div className="flex-1 overflow-y-auto ff-scroll p-3 sm:p-4 lg:p-6 2xl:p-8">
@@ -594,7 +598,7 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 2xl:gap-6 items-start w-full min-w-0">
       {/* 워크플로우 배너 */}
-      <div className="lg:col-span-2 rounded-xl border px-4 py-3 flex items-start gap-2.5 text-[11px] leading-relaxed" style={{ borderColor: `${ACCENT}33`, background: `${ACCENT}0d` }}>
+      <div className="lg:col-span-2 border-b border-zinc-800 px-1 pb-4 flex items-start gap-2.5 text-[11px] leading-relaxed">
         <Info size={14} style={{ color: ACCENT }} className="shrink-0 mt-0.5" />
         {isForm ? (
           <span className="text-zinc-300">
@@ -615,7 +619,7 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
       </div>
 
       {/* 시드 설정 */}
-      <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-5 flex flex-col gap-4">
+      <div className="min-w-0 lg:pr-5 lg:border-r lg:border-zinc-800 flex flex-col gap-4">
         <div className="flex items-center gap-2">
           <Sparkles size={14} style={{ color: ACCENT }} />
           <span className="text-[11px] font-black uppercase tracking-widest text-zinc-400">{isForm ? '형태 시드' : isComplete ? '완성형 프레임 시드' : '렌더링 시드'}</span>
@@ -624,7 +628,7 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
         {/* 완성형은 모든 축을 사용자가 직접 선택. 기존 2단계는 대표축만 선택. */}
         {isComplete ? (
           <div className="flex flex-col gap-3">
-            <div className="rounded-lg border px-4 py-4" style={{ borderColor:`${ACCENT}35`, background:`${ACCENT}08` }}>
+            <div className="ff-step">
               <div className="text-[12px] font-black text-zinc-200 mb-1">1. 무엇을 만들까요?</div>
               <div className="text-[10px] text-zinc-600 mb-3">필요한 UI 종류를 하나 골라주세요.</div>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -637,7 +641,7 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                 })}
               </div>
             </div>
-            <div className="rounded-lg border border-zinc-800 bg-black/20 px-4 py-4">
+            <div className="ff-step">
               <div className="text-[12px] font-black text-zinc-200 mb-1">2. 어떤 느낌인가요?</div>
               <div className="text-[10px] text-zinc-600 mb-3">분위기를 고르면 재질과 장식을 알아서 맞춰드려요.</div>
               <div className="flex flex-wrap gap-2">
@@ -652,7 +656,7 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                 }} className={`px-3 py-2 rounded-lg border text-[10px] font-bold ${simpleMood === mood.key ? '' : 'text-zinc-400 border-zinc-700'}`} style={simpleMood === mood.key ? OPTION_ACTIVE : undefined}>{mood.ko}</button>)}
               </div>
             </div>
-            <div className="rounded-lg border border-zinc-800 bg-black/20 px-4 py-4">
+            <div className="ff-step">
               <div className="text-[12px] font-black text-zinc-200 mb-1">3. 어떻게 보일까요?</div>
               <div className="text-[10px] text-zinc-600 mb-3">결과 이미지의 표현 방식을 골라주세요.</div>
               <div className="grid grid-cols-3 gap-2">
@@ -663,12 +667,12 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                 })}
               </div>
             </div>
-            <button onClick={() => setAdvancedOpen((open) => !open)} className="w-full flex items-center justify-between rounded-lg border border-zinc-800 px-4 py-3 text-[11px] font-bold text-zinc-400 hover:text-white">
+            <button onClick={() => setAdvancedOpen((open) => !open)} className="ff-subtle-button w-full flex items-center justify-between rounded-lg px-3 py-3 text-[11px] font-bold text-zinc-400 hover:text-white">
               <span>세부 설정 직접 하기</span><span>{advancedOpen ? '접기 −' : '열기 +'}</span>
             </button>
             {advancedOpen && <div className="flex flex-col gap-3 border-l-2 pl-3" style={{ borderColor:`${ACCENT}55` }}>
               {Object.entries(axes).filter(([key]) => key !== 'assetType').map(([key, axis]) => (
-                <div key={key} className="rounded-lg border border-zinc-800 bg-black/20 px-3 py-3">
+                <div key={key} className="py-3 border-b border-zinc-800/80 last:border-0">
                   <div className="flex items-center gap-2 mb-2.5"><span className="text-[10px] font-black text-zinc-400">{key === 'silhouette' ? `${completeSelection.assetType?.ko || ''} 형태` : axis.label}</span><span className="text-[9px] font-bold rounded-full px-2 py-0.5" style={{ color:ACCENT, background:`${ACCENT}18` }}>{completeSelection[key]?.ko}</span></div>
                   <div className="flex flex-wrap gap-2">{axis.opts.filter((option) => !option.for || option.for.includes(completeSelection.assetType?.key)).map((option) => { const on=completeSelection[key]===option; return <button key={option.key || option.ko} onClick={() => { setSettingsDirty(true); setCompleteSelection((prev) => ({ ...prev, [key]:option })); }} className={`text-[10px] font-bold px-3 py-1.5 rounded-full border ${on ? '' : 'text-zinc-400 border-zinc-700'}`} style={on ? OPTION_ACTIVE : undefined}>{option.ko}</button>; })}</div>
                 </div>
@@ -713,10 +717,10 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
             ))}
           </div></>}
           <button onClick={handleGenerate}
-            className="text-[11px] font-bold tracking-wider px-6 py-2.5 rounded-lg text-black inline-flex items-center gap-2 transition-all active:scale-95 hover:brightness-110"
+            className="text-[11px] font-bold tracking-wider px-6 py-2.5 rounded-lg inline-flex items-center gap-2 transition-all active:scale-95 hover:brightness-110"
             style={settingsDirty
-              ? { background:'linear-gradient(135deg, #F59E0B, #F97316)', color:'#1A0B00', boxShadow:'0 5px 18px rgba(249,115,22,0.28)' }
-              : { background:'linear-gradient(135deg, #168A68, #20A878)', color:'#F1FFF9', boxShadow:'0 4px 14px rgba(32,168,120,0.2)' }}>
+              ? { background:ACCENT, color:'#071216' }
+              : { background:'rgba(255,255,255,0.08)', color:'#A1A1AA' }}>
             <Shuffle size={13} /> {isComplete ? (queue.length ? (settingsDirty ? '변경사항을 프롬프트에 반영' : '현재 설정 반영 완료') : '이 설정으로 프롬프트 만들기') : '큐 생성 (무료)'}
           </button>
           <button onClick={handleEnrich} disabled={!queue.length || enriching}
@@ -728,14 +732,14 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
         </div>
 
         {note && <div className="text-[11px] text-zinc-500 border-t border-zinc-800 pt-3">{note}</div>}
-        {isComplete && queue.length > 0 && settingsDirty && <div className="text-[10px] rounded-md border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-amber-200/80">옵션이 변경되었습니다. 위 버튼을 눌러야 오른쪽 프롬프트에 반영됩니다.</div>}
+        {isComplete && queue.length > 0 && settingsDirty && <div className="text-[10px] border-l-2 border-amber-400/60 pl-3 py-1 text-amber-200/80">옵션이 변경되었습니다. 위 버튼을 눌러야 오른쪽 프롬프트에 반영됩니다.</div>}
       </div>
 
       {/* 우측 · 내보내기 + 프롬프트 + 렌더 */}
       <div className="flex flex-col gap-5 min-w-0">
       {/* 내보내기 */}
       {queue.length > 0 && (
-        <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-wrap items-center gap-2.5">
+        <div className="border-b border-zinc-800 pb-3 flex flex-wrap items-center gap-2.5">
           <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{isComplete ? '내보내기 → 이미지 생성 모델에 바로 붙여넣기' : `내보내기 → Ultra${isForm ? '에서 형태 생성' : '에 형태 첨부 + 붙여넣기'}`}</span>
           <button onClick={() => copy(allText, '__all__')} className="ml-auto text-[11px] font-bold px-4 py-2 rounded-lg text-black inline-flex items-center gap-1.5 hover:brightness-110" style={{ background: ACCENT }}>
             {copiedId === '__all__' ? <><Check size={13} /> 복사됨</> : <><Copy size={13} /> 전체 복사</>}
@@ -755,9 +759,9 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
       ) : (
         <div className="grid grid-cols-1 gap-3">
           {queue.map((q, i) => (
-            <div key={q.id} className="bg-[#141417] border border-zinc-800 rounded-xl p-4 grid grid-cols-1 gap-4">
+            <div key={q.id} className="grid grid-cols-1 gap-4">
               <div className="min-w-0 flex flex-col gap-3">
-                {settingsDirty && <div className="rounded-md border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[10px] text-amber-200/80">현재 프롬프트는 변경 전 설정입니다. 왼쪽의 반영 버튼을 눌러주세요.</div>}
+                {settingsDirty && <div className="border-l-2 border-amber-400/60 pl-3 py-1 text-[10px] text-amber-200/80">현재 프롬프트는 변경 전 설정입니다. 왼쪽의 반영 버튼을 눌러주세요.</div>}
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-mono text-zinc-600 tabular-nums">#{String(i + 1).padStart(2, '0')}</span>
                   <div className="flex flex-wrap gap-1">
@@ -771,11 +775,11 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                 <p className="text-[11px] text-zinc-300 leading-relaxed font-mono whitespace-pre-wrap">{promptText(q)}</p>
                 {renderErrors[q.id] && <div className="text-[10px] text-rose-400">{renderErrors[q.id]}</div>}
               </div>
-              <div className="min-w-0 rounded-lg border border-zinc-800 bg-black/50 p-2 flex flex-col gap-2">
+              <div className="min-w-0 pt-3 border-t border-zinc-800 flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-zinc-500">렌더 미리보기</span>
                   {renderResults[q.id]?.dataUrl && <span className="text-[9px] text-zinc-600">휠로 확대·축소 · {Math.round((renderZoom[q.id] || 1) * 100)}%</span>}
-                  <div className="ml-auto flex gap-2">
+                  <div className="ml-auto flex flex-wrap justify-end gap-2">
                     {renderResults[q.id]?.dataUrl && <button onClick={() => downloadRendered(q)} className="text-[10px] font-bold px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 inline-flex items-center gap-1.5"><Download size={12} /> 원본</button>}
                     {renderResults[q.id]?.dataUrl && <button onClick={() => downloadTransparent(q)} disabled={!!transparentBusyId} className="text-[10px] font-bold px-3 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 inline-flex items-center gap-1.5 disabled:opacity-40">{transparentBusyId === q.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} 투명 PNG</button>}
                     {renderResults[q.id]?.dataUrl && <button onClick={() => sendToMaskForge(q)} className="text-[10px] font-bold px-3 py-1.5 rounded-md border border-fuchsia-500/40 text-fuchsia-300 inline-flex items-center gap-1.5"><ImageIcon size={12} /> Mask Forge</button>}

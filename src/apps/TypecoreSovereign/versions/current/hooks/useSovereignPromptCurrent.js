@@ -223,7 +223,7 @@ export function useSovereignPromptCurrent({ apiKey }) {
 
   // 느낌 미세 조절 — 리터칭 모드의 핵심 컨트롤. 축별 -2..+2, 0=유지.
   // 0 이 아닌 축만 buildEditPrompts 에서 미세 가중치 지시어로 변환된다.
-  const FEEL_DEFAULT = { sharpness: 0, weight: 0, texture: 0, motion: 0, ornament: 0 };
+  const FEEL_DEFAULT = { sharpness: 0, corner: 0, weight: 0, texture: 0, motion: 0, ornament: 0 };
   const [editFeelAdjust, setEditFeelAdjust] = useState(FEEL_DEFAULT);
   const setEditFeelAxis = (id, v) => setEditFeelAdjust(prev => ({ ...prev, [id]: v }));
   const resetEditFeelAdjust = () => setEditFeelAdjust({ ...FEEL_DEFAULT });
@@ -1008,7 +1008,12 @@ Format: ONLY English, strict structural commands.`;
     let activeGuardsPositive = [];    // 본문에 들어갈 positive 가중치 토큰들.
     let activeGuardsNegative = [];    // Negative prompt 에 들어갈 변환된 가중치 토큰들.
     if (activeGuards.length > 0) {
-      const activeTs = safetyGuards.filter(opt => activeGuards.includes(opt.id));
+      // 장식을 명시적으로 선택한 경우 noise guard의 "NO floating noise/elements"가
+      // 선택값 자체를 다시 금지하지 않도록 컴파일 단계에서만 완화한다.
+      const activeTs = safetyGuards.filter(opt => (
+        activeGuards.includes(opt.id)
+        && !(opt.id === 'guard_noise' && mmoSurroundingElement !== 'Clean')
+      ));
       troubleshootingBlockEn = `\n\n[L8: NEGATIVE ENFORCEMENT & GUARDS]\n` + activeTs.map(opt => `- ${opt.fixEn}`).join("\n");
       activeGuardsEn = activeTs.map(opt => opt.fixEn);
       activeTs.forEach(opt => {
@@ -1165,10 +1170,14 @@ Format: ONLY English, strict structural commands.`;
     // 글자 모양 프리셋 + 세부 요구사항(직접 입력) 스타일 주입 — 옵션 조합(획/마감)만으로
     // 표현이 안 되는 스타일 정체성(블랙레터·십자가 모티프 등)을 가중치 토큰으로 직접 반영.
     // 직접 입력은 영문 번역 캐시 우선, 번역 전엔 원문 임시 사용 (userAuraEn 과 동일 원칙).
+    // 한글 입력이면 enKo(한글 획 언어로 번안된 토큰) 우선 — "fraktur"·"serif capitals" 같은
+    // 라틴 전용 개념은 모델이 한글에 매핑하지 못해 평범한 한글로 나오는 문제의 해결책.
     const activeShape = staticOptions.shapePresets.find(s => s.id === scriptType);
+    const hasKoreanText = /[ㄱ-힣]/.test(inputText || '');
+    const presetShapeEn = activeShape ? ((hasKoreanText && activeShape.enKo) || activeShape.en) : "";
     const customShapeEn = (customShapeTextEn || customShapeText || "").trim();
-    const shapeStyleEn = [activeShape?.en, customShapeEn].filter(Boolean).join(', ');
-    const shapeStyleBlock = shapeStyleEn ? `(${shapeStyleEn}:1.3), ` : "";
+    const shapeStyleEn = [presetShapeEn, customShapeEn].filter(Boolean).join(', ');
+    const shapeStyleBlock = shapeStyleEn ? `(${shapeStyleEn}:${activeShape?.w || '1.3'}), ` : "";
     let modeSpecificBlock = "";
     if (isEnhanceModeEnabled) {
       if (enhanceMode === 'refine') {
@@ -1257,14 +1266,20 @@ Format: ONLY English, strict structural commands.`;
     const cgModeBlock = isEnhanceModeEnabled ? ` Modifier mode is ${enhanceMode.toUpperCase()} (allow: ${ir.modAllowedEn} / forbid: ${ir.modForbiddenEn}).` : "";
     const cgMomentumBlock = ir.momentumActive ? " Combat dynamics ENABLED — apply kinetic momentum and impact tension across stems." : "";
     const cgGuardsBlock = ir.activeGuardsEn.length > 0 ? ` Active safety guards: ${ir.activeGuardsEn.join('; ')}.` : "";
-    const chatGPTOutput = `Generate a masterpiece, ultra highres, production-grade 2D flat typography graphic. ${ir.cgTextInstruction}.
+    const cgAesthetic = coreArchetype === 'core_cinema'
+      ? 'cinematic title-design silhouette with controlled dramatic proportions'
+      : 'production-ready fantasy game title silhouette with custom-drawn letterforms';
+    const cgSurface = (ir.hasTexture || ir.hasDamage)
+      ? `Use only flat graphic surface variation: ${ir.destructionEn} with ${ir.textureEn}`
+      : 'Keep every letter as a clean, uniform, solid flat shape';
+    const chatGPTOutput = `Generate a production-grade 2D flat typography graphic. ${ir.cgTextInstruction}.
 
-Aesthetic & Style: AAA game title aesthetic, pure 2D custom typography silhouette, logo-grade flat graphic (not a generic font, not a plain vector icon). ${ir.userAuraEn}.${ir.shapeStyleEn ? ` Letterform shape style: ${ir.shapeStyleEn}.` : ""}
+Aesthetic & Style: ${cgAesthetic}, pure 2D custom typography silhouette, logo-grade flat graphic (not a generic font, not a plain vector icon). ${ir.userAuraEn}.${ir.shapeStyleEn ? ` Letterform shape style: ${ir.shapeStyleEn}.` : ""}
 Morphology ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Implement ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}. Terminals should be ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}. Logo character: ${ir.logoDegreeEn}, silhouette framing: ${ir.mmoSilhouetteEn}.
-Surface & Dynamics: Apply ${ir.destructionEn} with ${ir.textureEn}. The text should show ${ir.kineticEn}, ${ir.slantEn}, and ${ir.slicingEn}.${cgMomentumBlock}
+Surface & Dynamics: ${cgSurface}. The text should show ${ir.kineticEn}, ${ir.slantEn}, and ${ir.slicingEn}.${cgMomentumBlock}
 Layout constraints: ${ir.layoutEn} Occupancy must be ${ir.occupancyEn}. Canvas size should be ${ir.aspectRatio}.
-Environment: MUST be isolated on a ${ir.solidBgPrompt}. Surrounding decoration: ${ir.mmoSurroundingElementEn}.${cgModeBlock}${cgGuardsBlock}
-CRITICAL NEGATIVE PROMPT: Absolutely NO 3D extrusion, NO shading, NO lighting, NO background scenery, NO gradients, NO realistic textures. Flawless silhouette boundary with sharp geometric corners and perfectly intact layout.`;
+Environment: Isolate the typography on ${ir.bgDescEn}. Surrounding decoration: ${ir.mmoSurroundingElementEn}.${cgModeBlock}${cgGuardsBlock}
+CRITICAL RESTRICTIONS: Keep the exact requested spelling. No extra text, 3D extrusion, bevel, embossing, perspective, material volume, realistic lighting, background scenery, gradients, glow, or mockup presentation. Preserve a crisp, readable silhouette and the requested layout.`;
 
     // Midjourney — comma list. SD-style 가중치는 사용 안 함. mode/momentum/guards/surrounding/logo 추가.
     const mjModeBlock = isEnhanceModeEnabled ? `, ${enhanceMode} mode typography` : "";
@@ -1302,7 +1317,46 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.
       .replace('An epic cinematic 2D', 'An epic 2D')
       .replace('macro photography, hyper-detailed single focal point', 'crisp production-grade flat graphic, single focal composition');
     const sanitizedMidjourneyOutput = ir.hasTexture ? midjourneyOutput.replace(', texture, background elements', ', background elements') : midjourneyOutput;
-    return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput: sanitizedMidjourneyOutput, nanoBananaOutput: sanitizedNanoBananaOutput };
+
+    // Gemini Image 전용 컴파일 결과.
+    // SD식 `(token:1.5)` / `Negative prompt:` 문법은 Gemini가 우선순위가 아닌 시각 묘사로
+    // 오해할 수 있으므로 실제 렌더에는 짧은 자연어 명령만 전달한다. 복사용 Nano/MJ/ChatGPT
+    // 프롬프트는 위에서 그대로 유지해 외부 모델 호환성을 보존한다.
+    const G = (value) => String(value || '')
+      .replace(/\(([^()]+?):\s*[\d.]+\)/g, '$1')
+      .replace(/\bNO\s+/gi, 'avoid ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const renderSurface = (ir.hasTexture || ir.hasDamage)
+      ? `Apply only this flat, ink-like surface treatment inside the letter silhouettes: ${G(ir.surfaceEn)}. It must not create lighting, depth, bevels, or realistic material volume.`
+      : 'Use a perfectly uniform, opaque, matte fill with clean vector-like edges and no surface modulation.';
+    const renderSurrounding = mmoSurroundingElement === 'Clean'
+      ? 'Keep the area around the typography completely empty. Do not add symbols, particles, debris, frames, or scenery.'
+      : `Use the selected surrounding element sparingly and keep it clearly secondary to the readable title: ${G(ir.mmoSurroundingElementEn)}.`;
+    const imagenPrompt = `Create one production-ready flat 2D typography logo asset.
+
+TEXT — highest priority:
+Render exactly this text and nothing else: "${ir.inputText}". Preserve every character, spelling, line break, and reading order. Do not add, omit, translate, or substitute characters.
+
+LETTERFORM DESIGN:
+Create custom-drawn letterforms based on ${ir.activeCoreData.shortTitle}. ${G(ir.activeCoreData.language)}. ${ir.shapeStyleEn ? `Shape direction: ${G(ir.shapeStyleEn)}.` : ''} Use ${G(ir.weightEn)}, ${G(ir.widthEn)}, ${G(ir.proportionEn)}, ${G(ir.kerningEn)}, ${G(ir.letterConnEn)}, and ${G(ir.internalSpaceEn)}. Edge treatment: ${G(ir.terminalEn)}, ${G(ir.sharpnessEn)}, ${G(ir.cornerEn)}, ${G(ir.extensionEn)}. ${ir.userAuraEn !== 'Standard deployment' ? `Creative intent: ${G(ir.userAuraEn)}.` : ''}
+
+CONTROLLED MODIFICATION:
+${isEnhanceModeEnabled ? `Use ${enhanceMode} mode within a ${ir.modIntensityEn} change budget. Allowed: ${G(ir.modAllowedEn)} Forbidden: ${G(ir.modForbiddenEn)} Maintain at least ${ir.readabilityFloorEn} readability.` : 'Keep the structure controlled, coherent, and highly readable.'} ${ir.momentumActive ? `Apply controlled motion through ${G(ir.kineticEn)}, ${G(ir.slantEn)}, and ${G(ir.slicingEn)}, without changing the text.` : ''}
+
+COMPOSITION:
+${ir.cgTextInstruction}. ${G(ir.layoutEn)} ${G(ir.mmoSilhouetteEn)}. The typography occupancy is ${G(ir.occupancyEn)}. Use ${ir.aspectRatio} canvas framing and keep comfortable margins on every side.
+
+COLOR AND SURFACE:
+${ir.bgDescEn}. Use exactly two flat colors with hard separation. ${renderSurface}
+
+SURROUNDINGS:
+${renderSurrounding}
+
+ABSOLUTE RESTRICTIONS:
+This is a front-facing flat graphic, not a photograph and not a 3D render. Do not create extrusion, bevel, embossing, perspective, shadows, highlights, gradients, glow, bloom, atmospheric effects, realistic materials, environmental backgrounds, mockups, or extra text. Keep the result isolated, crisp, readable, and suitable for later material rendering.`;
+
+    return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput: sanitizedMidjourneyOutput, nanoBananaOutput: sanitizedNanoBananaOutput, imagenPrompt };
   };
 
   const buildEditPrompts = () => {
@@ -1339,12 +1393,9 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.
     if (editStrokeMod !== 'E_Stroke_None') addDelta(editStrokeEn, '1.2');
     if (editElementMod !== 'E_Elem_None') addDelta(editElementEn, '1.2');
     if (editSurfaceMod !== 'E_Surf_None') addDelta(editSurfaceEn, '1.2');
-    // 무게↔예리함 슬라이더 — 중앙(35~65)을 벗어났을 때만 미세 바이어스로 주입.
-    const sliderVal = Number(ir.personaSliderValue);
-    if (sliderVal < 35) addDelta('subtly heavier more monumental visual mass', '1.15');
-    else if (sliderVal > 65) addDelta('subtly sharper more incisive edges', '1.15');
-    // AI 조형 추천 — 명시적으로 켰을 때만 페르소나 조형 언어를 주입 (기본은 원본 스타일 유지).
-    if (applyAiRecInEdit) { deltas.push(ir.activeCoreData.weightTags); deltasPlain.push(ir.activeCoreData.language); }
+    // 무게↔예리함 슬라이더·페르소나(AI 조형 추천) 델타는 제거 —
+    //   슬라이더는 생성 모드와 상태를 공유해 생성에서 만진 값이 리터칭에 새어 들어왔고
+    //   (예리함/굵기는 느낌 미세 조절 축과 중복), 페르소나 골격 주입은 원본 보존 목적과 충돌.
     if (applyAutoRefine) addDelta('auto-correct rough sketched geometry into clean premium vector letterforms', '1.25');
     const hasDeltas = deltas.length > 0;
 
@@ -1353,6 +1404,7 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.
 [L1: BASE LOCK & INTEGRITY (MAX PRIORITY)]
 - Base Image: STRICT structural AND stylistic foundation — preserve letterforms, layout, colors, materials, background.
 - Shape Preservation Lock: MUST preserve 95-98% of the original silhouette.
+- 2D Flatness Lock: The output MUST stay a strictly flat 2D graphic. ZERO depth, NO bevel, NO emboss, NO extrusion, NO drop shadow, NO perspective, NO 3D lighting.
 - Readability Floor: Minimum ${ir.readabilityFloorEn}.
 - Deformation Budget: Maximum ${ir.modIntensityEn} structural shift. Outline changes FORBIDDEN.
 
@@ -1362,19 +1414,24 @@ ${hasDeltas ? deltasPlain.map(d => `- ${d}`).join('\n') : '- None — faithful r
 [L3: PROHIBITIONS]
 - NO redesign, NO restyle, NO font substitution.
 - NO text mutation, NO extra/missing letters, NO layout drift.
+- NO 3D conversion of any kind — flat 2D in, flat 2D out.
 - NO color scheme change, NO background change, NO added decorations — unless an adjustment delta above explicitly requests it.`.trim();
 
     const chatGPTOutput = `Act as a Typography Micro-Retouch Engine. Edit the provided base image with MINIMAL intervention. Strictly preserve the original letterforms, layout, colors, materials and background (95-98% silhouette preservation lock). Maximum deformation ${ir.modIntensityEn}.
 ${hasDeltas ? `Apply ONLY these adjustments: ${deltasPlain.join('; ')}.` : 'No stylistic changes requested — reproduce the base image faithfully with subtle quality cleanup (cleaner edges, artifact removal) only.'}
 Output the same composition and framing as the base image, at high fidelity.
+2D FLATNESS LOCK: The result MUST remain a strictly flat 2D graphic. Absolutely NO 3D conversion — no depth, no bevel, no emboss, no extrusion, no drop shadows, no perspective, no volumetric lighting, no glossy 3D rendering.
 CRITICAL: Do NOT redesign the typography, do NOT substitute fonts, do NOT change the text, and do NOT alter the color scheme or background unless an adjustment above explicitly says so.`;
 
-    const midjourneyOutput = `[UPLOAD BASE IMAGE AS REFERENCE] image-to-image micro retouch, faithful to base image, preserve original letterforms layout colors materials and background, 95-98 percent silhouette preservation${deltasPlain.length ? `, ${deltasPlain.join(', ')}` : ', subtle quality cleanup only'}, same composition and framing, high fidelity --iw 2 --style raw --no redesign, font substitution, text change, layout change, new background, added decorations`;
+    const midjourneyOutput = `[UPLOAD BASE IMAGE AS REFERENCE] image-to-image micro retouch, faithful to base image, preserve original letterforms layout colors materials and background, 95-98 percent silhouette preservation, strictly flat 2D graphic, zero depth, front-face only${deltasPlain.length ? `, ${deltasPlain.join(', ')}` : ', subtle quality cleanup only'}, same composition and framing, high fidelity --iw 2 --style raw --no redesign, font substitution, text change, layout change, new background, added decorations, 3d, depth, bevel, emboss, extrusion, drop shadow, perspective, volumetric, glossy 3d render`;
 
-    const nanoBananaOutput = `[UPLOAD BASE IMAGE AS REFERENCE] Micro-retouch this exact base typography image. (Preserve the original letterforms, layout, colors, materials and background:1.6), (95-98% silhouette preservation lock:${ir.preservationWeight}), do not redesign, do not restyle, keep the same visual identity, same composition and framing. ${hasDeltas ? `Apply ONLY these adjustments: ${deltas.join(', ')}. Everything not mentioned stays identical to the base image.` : 'No stylistic changes — faithfully reproduce the base image with subtle quality cleanup (cleaner edges, reduced artifacts) only.'} High fidelity, production-grade output.
-Negative prompt: (redesigned letterforms:1.7), (different font:1.6), (different text:1.6), (extra letters:1.5), (missing letters:1.5), (changed layout:1.5), (unrequested color change:1.4), (unrequested background change:1.5), (added decorations:1.4), (style transfer:1.4)`;
+    const nanoBananaOutput = `[UPLOAD BASE IMAGE AS REFERENCE] Micro-retouch this exact base typography image. (Preserve the original letterforms, layout, colors, materials and background:1.6), (95-98% silhouette preservation lock:${ir.preservationWeight}), (strictly flat 2D graphic, zero depth:1.6), do not redesign, do not restyle, do not add any dimensionality, keep the same visual identity, same composition and framing. ${hasDeltas ? `Apply ONLY these adjustments, strictly in flat 2D: ${deltas.join(', ')}. Everything not mentioned stays identical to the base image.` : 'No stylistic changes — faithfully reproduce the base image with subtle quality cleanup (cleaner edges, reduced artifacts) only.'} High fidelity, production-grade output.
+Negative prompt: (3D rendering:1.9), (bevel:2.0), (emboss:2.0), (extrusion:1.9), (added depth:1.8), (drop shadow:1.9), (cast shadow:1.8), (perspective tilt:1.8), (volumetric lighting:1.7), (specular highlight:1.6), (glossy 3d surface:1.6), (redesigned letterforms:1.7), (different font:1.6), (different text:1.6), (extra letters:1.5), (missing letters:1.5), (changed layout:1.5), (unrequested color change:1.4), (unrequested background change:1.5), (added decorations:1.4), (style transfer:1.4)`;
+    const imagenPrompt = `Edit the provided typography image with minimal intervention. Preserve the exact text, spelling, letter silhouettes, line breaks, layout, scale, framing, colors, background, and visual identity. Do not replace the font or redesign any character.
+${hasDeltas ? `Apply only these requested changes: ${deltasPlain.join('; ')}. Do not change anything else.` : 'Only clean small generation artifacts and uneven edges. Do not make stylistic changes.'}
+The result must remain a front-facing flat 2D graphic. Do not add depth, extrusion, bevel, embossing, perspective, shadows, highlights, gradients, glow, realistic materials, new decorations, new text, or a new background. Return the same composition and aspect ratio as the input image at high fidelity.`;
 
-    return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput, nanoBananaOutput };
+    return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput, nanoBananaOutput, imagenPrompt };
   };
 
   const currentPrompts = isEditMode ? buildEditPrompts() : buildPrompts();
@@ -1387,6 +1444,7 @@ Negative prompt: (redesigned letterforms:1.7), (different font:1.6), (different 
   if (currentModel === 'NanoBanana')      currentOutputContent = currentPrompts.nanoBananaOutput || "";
   else if (currentModel === 'Midjourney') currentOutputContent = currentPrompts.midjourneyOutput || "";
   else if (currentModel === 'ChatGPT')    currentOutputContent = currentPrompts.chatGPTOutput || "";
+  const currentRenderPrompt = currentPrompts.imagenPrompt || currentOutputContent;
 
   // 컴파일 핸들러 — 이제 saved state 갱신은 부수적. API 호출이 없으므로 ensureCanGenerate 제거.
   // 버튼은 단순 "검토 완료" 표시(isOutdated → false) 역할로 남김.
@@ -1543,6 +1601,6 @@ Negative prompt: (redesigned letterforms:1.7), (different font:1.6), (different 
     extractRecipe,
     handleCompileDramatic, requestEditDramaticEnhancement, handleCompileNanoBanana,
     handleCompileMj, handleCompileCg,
-    currentPrompts, currentOutputContent,
+    currentPrompts, currentOutputContent, currentRenderPrompt,
   };
 }

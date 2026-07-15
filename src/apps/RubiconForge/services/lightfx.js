@@ -41,7 +41,10 @@ const placementBlock = (formHint, hasRef) => {
   return `PLACEMENT / FORM: ${formHint}.${hasRef ? ' Anchor this placement to the ATTACHED reference silhouette — the light wraps/backlights that exact shape and position, but the reference object itself never appears (light only, on the flat background).' : ''}`;
 };
 
-export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, index = 0, bg }) {
+const INTENSITY_HINT = { subtle: 'low intensity, restrained bloom, soft narrow falloff', medium: 'balanced medium intensity with a clear luminous core', strong: 'strong high-energy emission with a hot core, while preserving clean edges and breathing room' };
+const SHAPE_HINT = { none: '', square: 'shape the light around a clean centered SQUARE guide', circle: 'shape the light around a perfect centered CIRCLE guide', rectangle: 'shape the light around a wide horizontal RECTANGLE guide' };
+
+export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = 'medium', shape = 'none', index = 0, bg }) {
   const b = resolveBg(bg);
   const subject = userText && userText.trim() ? userText.trim() : categoryHint;
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
@@ -52,6 +55,8 @@ EFFECT: ${categoryHint}.
 ${userText && userText.trim() ? `SPECIFIC REQUEST: ${userText.trim()}.` : ''}
 LIGHT QUALITY / STYLE: ${styleHint}.
 LIGHT COLOR: ${colorHint}. Keep the palette coherent around this color (subtle complementary accents are fine).
+INTENSITY: ${INTENSITY_HINT[intensity] || INTENSITY_HINT.medium}.
+${SHAPE_HINT[shape] ? `BASIC SHAPE GUIDE: ${SHAPE_HINT[shape]}. The guide itself must not appear; render light only.\n` : ''}
 ${place ? `${place}\n` : ''}${hasRef ? `\n${REF_SHAPE_BLOCK}\n` : ''}
 ${lightFxBackgroundBlock(bg)}
 
@@ -61,7 +66,7 @@ FINAL: output ONE light effect (${subject}) glowing on ${bgName} — light only,
 }
 
 // 외부 Gemini / AI Studio 챗 붙여넣기용 컴팩트 버전.
-export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, bg }) {
+export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = 'medium', shape = 'none', bg }) {
   const b = resolveBg(bg);
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
   const tail = b.id === 'black'
@@ -69,7 +74,7 @@ export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, 
     : `Bright luminous core with smooth glow falloff; the empty area stays a single flat ${b.label} (${b.hex}) — do NOT add any second backdrop card, vignette, gradient, or UI.`;
   return `Generate a single isolated LIGHT / GLOW EFFECT on ${bgName} background — light only, NO object, NO text, NO scene (a compositable light asset for background removal / keying).
 Effect: ${userText && userText.trim() ? userText.trim() : categoryHint}.
-Style: ${styleHint}. Color: ${colorHint}.${formHint ? `\nPlacement: ${formHint}.` : ''}
+Style: ${styleHint}. Color: ${colorHint}. Intensity: ${INTENSITY_HINT[intensity] || INTENSITY_HINT.medium}.${SHAPE_HINT[shape] ? `\nShape guide: ${SHAPE_HINT[shape]}; do not draw the guide itself.` : ''}${formHint ? `\nPlacement: ${formHint}.` : ''}
 ${tail}`;
 }
 
@@ -91,6 +96,8 @@ export async function renderLightFx(spec = {}) {
     userText: spec.userText,
     hasRef: !!ref,
     formHint: form?.placementHint || '',
+    intensity: spec.intensity,
+    shape: spec.shape,
     index: spec.index || 0,
     bg: spec.bg,
   });
@@ -100,6 +107,8 @@ export async function renderLightFx(spec = {}) {
     colorHint: color.hint,
     userText: spec.userText,
     formHint: form?.placementHint || '',
+    intensity: spec.intensity,
+    shape: spec.shape,
     bg: spec.bg,
   });
 

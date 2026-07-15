@@ -24,7 +24,7 @@ const App = ({ version, setVersion, versions } = {}) => {
   const rp = useSovereignPromptCurrent({ apiKey });
   const { user, grade } = useAuth();
   const { navigate, payload } = useGlobal();
-  const canRender = grade === 'pro' || grade === 'expert';
+  const canRender = grade === 'pro' || grade === 'pro_plus' || grade === 'expert';
 
   // 완전 자동 파이프라인 모드 — 인덱스의 "타이포그래피 자동화 1단계" 메뉴로 진입했을 때만 true.
   // (payload.params.autoPipeline 은 그 메뉴에서만 주입됨 → 일반 앱 목록 진입 시엔 자동 전송 안 함.)
@@ -141,7 +141,8 @@ const App = ({ version, setVersion, versions } = {}) => {
   }, [navigate, rp]);
 
   const handleRender = useCallback(async (promptText) => {
-    if (!promptText) return;
+    const renderPrompt = rp.currentRenderPrompt || promptText;
+    if (!renderPrompt) return;
     if (!canRender) { setRenderError('Imagen 렌더링은 Pro 등급 이상만 사용할 수 있습니다.'); return; }
     // 리터칭 모드 — 대상 이미지가 있어야 image-to-image 가 성립. 없으면 렌더 차단.
     if (rp.isEditMode && !rp.editUploadedImage) {
@@ -156,19 +157,23 @@ const App = ({ version, setVersion, versions } = {}) => {
       //   프롬프트의 "[UPLOAD BASE IMAGE AS REFERENCE]" 는 수동 복사용 안내 문구라
       //   실제 API 호출에선 제거 — 이미지가 인라인으로 첨부되므로 텍스트 지시가 오히려 혼선.
       const referenceImage = rp.isEditMode ? rp.editUploadedImage : null;
-      const cleanPrompt = promptText.replace(/^\[UPLOAD BASE IMAGE AS REFERENCE\]\s*/, '');
-      const result = await renderWithImagen(cleanPrompt, selectedImagenModel, referenceImage);
+      const cleanPrompt = renderPrompt.replace(/^\[UPLOAD BASE IMAGE AS REFERENCE\]\s*/, '');
+      // Gemini Image 는 프롬프트 안의 비율 문장보다 imageConfig.aspectRatio 를 우선한다.
+      // 텍스트 전용 생성에서 옵션 비율이 실제 API로 전달되지 않아 기본 1:1로 압축되던 문제를 해결.
+      const ratioMap = { '2.76:1': '21:9', '2.39:1': '21:9' };
+      const apiAspectRatio = rp.isEditMode ? undefined : (ratioMap[rp.aspectRatio] || rp.aspectRatio);
+      const result = await renderWithImagen(cleanPrompt, selectedImagenModel, referenceImage, { aspectRatio: apiAspectRatio });
       setRenderedImage(result);
       // PromptArc 자동 저장 → cloudinary URL 확보(파이프라인 전송 시 재업로드 회피).
       let cloudUrl = null;
       if (user?.uid && result?.dataUrl) {
-        const saved = await saveRenderToPromptArc(promptText, result);
+        const saved = await saveRenderToPromptArc(renderPrompt, result);
         cloudUrl = saved?.cloudinaryUrl || null;
       }
       // 완전 자동 파이프라인 — 인덱스 메뉴로 진입한 경우(autoPipelineMode)에만 RenderMatrix 로 자동 전송 + 자동 렌더.
       // 일반 진입 시엔 전송하지 않음 — 수동 "Render Matrix 로 보내기" 버튼은 그대로 사용 가능.
       if (autoPipelineMode) {
-        await autoSendToRenderMatrix(result, promptText, cloudUrl);
+        await autoSendToRenderMatrix(result, renderPrompt, cloudUrl);
       }
     } catch (e) {
       console.error('[TypecoreSovereign] imagen failed', e);

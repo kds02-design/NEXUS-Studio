@@ -33,7 +33,7 @@ const FRIENDLY = {
   target:       { label: '대상 이미지',         hint: '리터칭할 이미지를 업로드',                    pro: 'Target Image' },
   feel:         { label: '느낌 미세 조절',      hint: '형태는 그대로, 느낌만 살짝 — 가운데가 "그대로"', pro: 'Feel Micro-Adjust' },
   direction:    { label: '바꿀 방향 (선택)',    hint: '슬라이더로 부족할 때만 글로 — 비워둬도 OK',    pro: 'Edit Direction' },
-  retouchMods:  { label: '리터칭 효과',         hint: '획·요소·표면 질감 변환',                      pro: '리터칭 모디파이어' },
+  retouchMods:  { label: '리터칭 효과',         hint: '획 꺾임·연장 / 오브제화 / 부식·질감 — 미세 변형 카테고리', pro: '리터칭 모디파이어' },
   layout:       { label: '레이아웃 · 배치',    hint: '비율·여백·배열',                             pro: '구조 배치' },
   modifier:     { label: '추가 효과',           hint: '정제 / 변주 / 해체 + 전투 동세',              pro: '모디파이어 & 전투 동세' },
 };
@@ -163,7 +163,7 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
           </div>
           <div className="mt-2 text-[9px] text-zinc-500 leading-snug">
             {isEditMode
-              ? '리터칭 모드 — 이미지를 올리고, 슬라이더로 느낌만 살짝 조절하세요. 형태는 95% 보존돼요.'
+              ? '리터칭 모드 — 형태·배치·색은 그대로, 획 각도·침식 같은 미세 효과만 더해요.'
               : '새로 만들기 모드 — ①글자 → ②분위기 → ③모양 세 가지만 고르면 바로 결과가 나와요.'}
           </div>
         </div>
@@ -309,49 +309,13 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
               </div>
             </StepCard>
 
-            {/* ② 페르소나 + 슬라이더 — 이미지 있어야 활성 */}
+            {/* 이미지 있어야 이후 단계 활성. 페르소나(스타일 분위기)는 리터칭 목적
+                ("대상 이미지 최대 유지 + 미세 효과")과 충돌해 리터칭 모드에서 제외. */}
             <div className={`${!editUploadedImage ? 'opacity-40 pointer-events-none' : ''}`}>
-              <StepCard step="2" title={FRIENDLY.persona.label} hint={FRIENDLY.persona.hint} pro={FRIENDLY.persona.pro}>
-                <div className={`relative ${coreDropdownOpen ? 'z-[9999]' : 'z-10'}`}>
-                  <button onClick={() => setCoreDropdownOpen(!coreDropdownOpen)} className="w-full flex items-center justify-between p-2.5 rounded-[10px] border border-zinc-800 bg-[#1C1C1C] hover:bg-[#262626] transition-all text-left">
-                    <div className="flex items-start gap-2.5 min-w-0">
-                      <div className="mt-0.5 opacity-80 shrink-0">{activePersona?.icon}</div>
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-bold text-zinc-200 truncate">{activePersona?.shortTitle}</div>
-                        {activePersona?.subtitle && <div className="text-[9px] text-zinc-500 mt-0.5 leading-snug">{activePersona.subtitle}</div>}
-                      </div>
-                    </div>
-                    <ChevronDown className={`w-3.5 h-3.5 text-[#a6a6a6] transition-transform shrink-0 ${coreDropdownOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  {coreDropdownOpen && (
-                    <div className="absolute top-full left-0 w-full mt-2 bg-[#1C1C1C] border border-zinc-700 rounded-[10px] overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.5)] z-[1000] flex flex-col">
-                      {coreArchetypes.map(p => (
-                        <button key={p.id} onClick={() => { (handleCoreArchetypeChange || setCoreArchetype)(p.id); setCoreDropdownOpen(false); }} className={`w-full text-left p-2.5 flex items-start gap-2.5 transition-all ${coreArchetype === p.id ? 'border-l-[3px] border-emerald-400 bg-emerald-500/10' : 'border-l-[3px] border-transparent hover:bg-[#262626]'}`}>
-                          <div className="mt-0.5 opacity-80">{p.icon}</div>
-                          <div className="flex-1">
-                            <div className={`text-[10px] font-bold ${coreArchetype === p.id ? 'text-emerald-300' : 'text-[#a6a6a6]'}`}>{p.shortTitle}</div>
-                            <div className="text-[9px] text-zinc-500 mt-1">{p.subtitle}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="bg-[#1C1C1C] rounded-[8px] p-2.5 border border-zinc-800/60">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-[9px] font-bold text-[#a6a6a6]">{sliderDesc.leftLabel}</span>
-                    <SlidersHorizontal className="w-3 h-3 text-emerald-500/60" />
-                    <span className="text-[9px] font-bold text-emerald-500">{sliderDesc.rightLabel}</span>
-                  </div>
-                  <input type="range" min="0" max="100" value={personaSliderValue} onChange={e => setPersonaSliderValue(e.target.value)} className="w-full h-1 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-emerald-500" />
-                </div>
-              </StepCard>
-
-              {/* ③ 느낌 미세 조절 — 리터칭의 핵심. 양방향 슬라이더 5축, 가운데(0)=그대로.
+              {/* ② 느낌 미세 조절 — 리터칭의 핵심. 양방향 슬라이더 5축, 가운데(0)=그대로.
                   움직인 축만 미세 가중치로 프롬프트에 반영 → "원본을 지키며 살짝만" 이라는
                   리터칭 목적이 UI 자체에서 읽히도록. */}
-              <div className="mt-3" />
-              <StepCard step="3" title={FRIENDLY.feel.label} hint={FRIENDLY.feel.hint} pro={FRIENDLY.feel.pro}>
+              <StepCard step="2" title={FRIENDLY.feel.label} hint={FRIENDLY.feel.hint} pro={FRIENDLY.feel.pro}>
                 {staticOptions.editFeelAxes.map(ax => {
                   const v = editFeelAdjust?.[ax.id] || 0;
                   const desc = v === 0 ? '그대로' : `${Math.abs(v) >= 2 ? '확실히' : '살짝'} ${v > 0 ? ax.right : ax.left}`;
@@ -382,9 +346,9 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                 )}
               </StepCard>
 
-              {/* ④ 바꿀 방향 (선택) + AI 토글 */}
+              {/* ③ 바꿀 방향 (선택) */}
               <div className="mt-3" />
-              <StepCard step="4" title={FRIENDLY.direction.label} hint={FRIENDLY.direction.hint} pro={FRIENDLY.direction.pro}>
+              <StepCard step="3" title={FRIENDLY.direction.label} hint={FRIENDLY.direction.hint} pro={FRIENDLY.direction.pro}>
                 <div className="flex items-center justify-end gap-1.5">
                   <button onClick={openEditTuningRoom} disabled={!editInstruction?.trim()} title="튜닝룸" className={`p-1.5 rounded-md transition-all flex items-center justify-center ${!editInstruction?.trim() ? 'opacity-30 cursor-not-allowed text-zinc-600' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 hover:bg-indigo-500/20'}`}>
                     <MessageSquare className="w-3 h-3" />
@@ -395,16 +359,9 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                 </div>
                 <textarea value={editInstruction} onChange={e => setEditInstruction(e.target.value)} placeholder="예: 더 차갑고 푸른 빛으로, 가장자리에 균열 추가" className="w-full bg-[#1C1C1C] text-[11px] p-2.5 rounded-[8px] border border-zinc-800 outline-none min-h-[4rem] resize-none text-zinc-300 placeholder:text-zinc-600 focus:border-emerald-500/50 transition-all" />
 
+                {/* AI 조형 추천(페르소나 골격 주입)은 "대상 이미지 최대 유지" 목적과 충돌해 제거.
+                    스케치 자동 정규화만 유지 — 러프 원본을 다듬는 건 리터칭 본연의 일. */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between bg-[#1C1C1C] rounded-[8px] border border-zinc-800/80 p-2.5">
-                    <div className="flex items-center gap-2">
-                      <Bot className={`w-3 h-3 ${applyAiRecInEdit ? 'text-indigo-400' : 'text-zinc-600'}`} />
-                      <span className={`text-[10px] font-bold ${applyAiRecInEdit ? 'text-indigo-300' : 'text-[#a6a6a6]'}`}>AI 조형 추천 적용</span>
-                    </div>
-                    <button onClick={() => setApplyAiRecInEdit(!applyAiRecInEdit)} className={`w-9 h-5 rounded-full p-1 flex items-center transition-colors ${applyAiRecInEdit ? 'bg-indigo-500' : 'bg-[#121212] border border-zinc-800'}`}>
-                      <div className={`w-3 h-3 bg-white rounded-full transition-transform ${applyAiRecInEdit ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
-                  </div>
                   <div className="flex items-center justify-between bg-[#1C1C1C] rounded-[8px] border border-zinc-800/80 p-2.5">
                     <div className="flex items-center gap-2">
                       <Wand className={`w-3 h-3 ${applyAutoRefine ? 'text-emerald-400' : 'text-zinc-600'}`} />
@@ -478,7 +435,8 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                   </SectionGroup>
                 )}
 
-                {/* 레이아웃 · 배치 */}
+                {/* 레이아웃 · 배치 (Creation only) — 리터칭은 대상 이미지의 배치를 그대로 보존하므로 제외 */}
+                {!isEditMode && (
                 <SectionGroup
                   icon={<LayoutTemplate className="w-3.5 h-3.5" />}
                   label={FRIENDLY.layout.label}
@@ -496,6 +454,7 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                   )}
                   <DropdownControl label="실루엣 프레이밍" data={staticOptions.MMOSilhouetteFramings} value={mmoSilhouetteFraming} onChange={(val) => { setMmoSilhouetteFraming(val); setLayoutPreset(''); }} />
                 </SectionGroup>
+                )}
 
                 {/* 굵기 · 비율 (Creation only) */}
                 {!isEditMode && (
@@ -513,7 +472,9 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                   </SectionGroup>
                 )}
 
-                {/* 추가 효과 (모디파이어 + 전투 동세) */}
+                {/* 추가 효과 (모디파이어 + 전투 동세) (Creation only) —
+                    리터칭의 변형 허용량은 기본 정제(5-15%)로 고정, 강도는 느낌 슬라이더(±2)가 담당 */}
+                {!isEditMode && (
                 <SectionGroup
                   icon={<Wand className="w-3.5 h-3.5" />}
                   label={FRIENDLY.modifier.label}
@@ -553,8 +514,10 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                     </div>
                   </div>
                 </SectionGroup>
+                )}
 
-                {/* 배경 & 보호 가드 — 배경 대비 + 잠금 칩. 기본 가드 4개 모두 ON. */}
+                {/* 배경 & 보호 가드 (Creation only) — 리터칭은 원본의 배경·색을 그대로 보존 */}
+                {!isEditMode && (
                 <SectionGroup
                   icon={<Shield className="w-3.5 h-3.5" />}
                   label={FRIENDLY.guards.label}
@@ -578,6 +541,7 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                     })}
                   </div>
                 </SectionGroup>
+                )}
 
               </SectionGroupAccent>
             </div>

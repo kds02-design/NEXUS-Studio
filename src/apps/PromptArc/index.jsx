@@ -13,6 +13,7 @@ import { useResponsiveColumns } from "./hooks/useResponsiveColumns";
 import { inferRelatedType } from "./constants/categories";
 import ArcSidebar from "./components/ArcSidebar";
 import ArcHeader from "./components/ArcHeader";
+import ArcFolderTabs from "./components/ArcFolderTabs";
 import ArcGrid from "./components/ArcGrid";
 import ArcEditModal from "./components/ArcEditModal";
 import ArcDetailModal from "./components/ArcDetailModal";
@@ -269,6 +270,13 @@ export default function PromptArcApp() {
             sortPopoverOpen={sortPopoverOpen} setSortPopoverOpen={setSortPopoverOpen}
             isAdmin={isAdmin} totalCount={filteredPrompts.length} totalAll={prompts.length}
           />
+          {/* 내 폴더 탭 — 내 폴더 영역(내 비공개 / folder:*)에서만 우측 상단에 노출 */}
+          {user && (category === 'my_private' || String(category).startsWith('folder:')) && (
+            <ArcFolderTabs
+              folders={folders} category={category} setCategory={setCategory}
+              onCreateFolder={createFolder} onRenameFolder={renameFolder} onDeleteFolder={deleteFolder}
+            />
+          )}
           <main ref={mainScrollRef} onScroll={e => setShowTopBtn(e.target.scrollTop > 300)}
             className="flex-1 overflow-y-auto arc-scrollbar px-6 pt-4 pb-8">
             <ArcGrid

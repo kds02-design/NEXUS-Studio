@@ -189,10 +189,13 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       rollupOptions: {
-        // 메인 앱(index.html) + 독립 TIME:TAKERS 랜딩(tt-index.html) 멀티 엔트리.
+        // 메인 앱(index.html) + 독립 TIME:TAKERS 랜딩(tt-index.html)
+        // + 반려동물 MBTI PWA(pet.html) + 운명 관측소 PWA(destiny.html) 멀티 엔트리.
         input: {
           main: 'index.html',
           ttIndex: 'tt-index.html',
+          pet: 'pet.html',
+          destiny: 'destiny.html',
         },
       },
     },

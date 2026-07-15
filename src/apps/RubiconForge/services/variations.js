@@ -182,8 +182,16 @@ ${BACKGROUND_RESKIN_EMPHASIS(bg)}${stripBlock}
 
 ${ONLY_VARY_BLOCK}
 
-TARGET COLOR + MATERIAL (this is a color/material descriptor only — it does NOT add decorations):
+PROMOTION-CONCEPT ADAPTATION (highest creative priority, subordinate only to preservation and restraint):
 ${themeHint}${getBgContextBlock(hasBackgroundRef, false)}${getRefinementBlock(refinementLevel)}${getAtmosphereBlock(temperature, age)}
+
+CONCEPT TRANSLATION RULES:
+- Express the promotion concept through palette hierarchy, controlled contrast, surface language, and at most one restrained focal accent. Do not literalize the concept by adding objects, symbols, scenery, or extra ornament.
+- Keep the frame, border, corners, and dividers slim, simple, and nearly uniform. Never make them thicker than the source; when uncertain, make them slightly thinner.
+- Decorative coverage must not exceed the source and should remain below roughly 15% of the asset. Use no more than ONE decorative layer. A plain source stays plain.
+- Keep the central usable area calm and open. Do not let decoration intrude into the text-safe or content-safe area.
+- Forbidden: dense filigree, webs, lattice, repeated spikes, bulky corner caps, double borders, stacked trims, large crests, extra gems, floating particles, and ornamental clutter.
+- Produce ONE production-ready UI asset only, not a set, contact sheet, comparison, or four-item collection.
 
 ${FINAL_REMINDER}
 
@@ -302,11 +310,11 @@ export const buildCompactVariationPrompt = ({ themeHint, refinementLevel, temper
     return `${COMPACT_OUTLINE_HINT}
 Background MUST be ${bgRule}. Keep the asset's shapes, outlines, layout, and proportions exactly as the source — trace only, do not redesign. Remove any embedded text/label (leave that area empty).`;
   }
-  return `Recolor and retexture the attached UI asset (button, frame, icon, badge, etc.) IN PLACE. Keep the exact same shapes, outlines, layout, proportions, and number of elements — change ONLY color, material, and surface finish.
+  return `Create ONE production-ready adaptation of the attached UI asset (button, bullet, framed box, frame, or arrow) for the supplied promotion concept. Keep the exact same component type, shapes, outlines, layout, proportions, and number of elements. Express the concept through palette hierarchy, controlled contrast, surface language, and at most one restrained focal accent — never by adding objects or ornament.
 Remove any embedded text/label and leave that central area as a clean EMPTY space in the new material (do NOT redraw, keep, or replace the text). Keep the frame/border the SAME thickness as the source — do NOT thicken it (when unsure, err thinner).
 Keep every edge plain: do NOT add any new ornament, inner/companion line, double-lining, beading, studs, engraving, or glint near borders, lines, or dividers — each line stays one stroke as in the source, only recolored. When unsure near an edge, leave it plain.
-New color + material: ${themeHint}
-${extras ? `${extras}\n` : ''}${stripAmbientLight ? `${COMPACT_STRIP_HINT}\n` : ''}Rules: background MUST be ${bgRule} even if the source has a different background; do NOT add, resize, or rearrange any decoration; do NOT enlarge the frame; match the source's detail level, do not exceed it.`;
+Promotion concept and adaptation direction: ${themeHint}
+${extras ? `${extras}\n` : ''}${stripAmbientLight ? `${COMPACT_STRIP_HINT}\n` : ''}Restraint rules: background MUST be ${bgRule}; keep borders slim and nearly uniform; decoration below roughly 15% coverage and no more than one decorative layer; keep the central usable area calm and open. No dense filigree, web, lattice, repeated spikes, bulky corners, stacked trims, large crest, extra gems, floating particles, or ornamental clutter. Do not enlarge, resize, or rearrange decoration. Output ONE isolated asset only, never a set or comparison sheet.`;
 };
 
 export const buildCompactAtlasVariationPrompt = ({ themeHint, refinementLevel, temperature, age, bg, redesign }) => {

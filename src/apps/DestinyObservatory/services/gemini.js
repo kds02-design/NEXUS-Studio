@@ -46,26 +46,7 @@ async function generateText(prompt, { temperature = 0.9, maxOutputTokens = 4096 
   }
 }
 
-// ─── 명식 요약 — 모든 프롬프트에 공통 주입되는 확정 데이터 블록 ─────────────────
-export function buildChartBrief(d) {
-  const L = [];
-  L.push(`아키타입: 「${d.coined}」 · MBTI×혈액형 시너지 ${d.synergy}`);
-  L.push(`기본: ${d.mbti}(${d.mbtiName}) · ${d.blood}형 · ${d.gender} · ${d.zodiac} · ${d.tti}띠 · 생일 ${d.birth}`);
-  L.push(`사주(간이 만세력): ${d.pillars} — 일간 ${d.ilOh} · ${d.strength}(일간 지원 기운 ${d.ratioPct}%)`);
-  L.push(`오행 분포(가중치 포함): ${d.dist}`);
-  L.push(`억부용신: 용신 ${d.yong} / 희신 ${d.hee} / 한신 ${d.han} / 구신 ${d.gu} / 기신 ${d.gi} — ${d.reason}`);
-  L.push(`십성 오행: ${d.sip}`);
-  L.push(`성향 상위 3: ${d.topTraits}`);
-  L.push(`다섯 갈래 운(십성 환산): ${d.cats}`);
-  L.push(`대운: ${d.daewoon}`);
-  L.push(`인생 12궁 요약: 가장 잘 풀림=${d.bestGung} · 주의=${d.warnGung}`);
-  L.push(`삼재: ${d.samjae}`);
-  if (d.petLine) L.push(`반려동물 풀이: ${d.petLine}`);
-  if (d.relLine) L.push(`관계 풀이: ${d.relLine}`);
-  if (d.lifeLine) L.push(`취미·공간 풀이: ${d.lifeLine}`);
-  if (d.nameLine) L.push(`이름 풀이: ${d.nameLine}`);
-  return L.join("\n");
-}
+// 명식 요약 포매터(buildChartBrief)는 ./shared 로 이동 — 독립 PWA 번들 분리를 위해.
 
 const GROUNDING_RULE = `아래 [명식 데이터]는 이미 계산이 끝난 확정 값이다. 간지·오행·용신을 다시 계산하거나 데이터에 없는 값을 지어내지 말고, 오직 이 데이터만 근거로 해석하라. 구체적 연도의 재난·질병·죽음·합격/불합격 같은 단정 예언은 금지.`;
 

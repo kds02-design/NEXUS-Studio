@@ -5,27 +5,38 @@ export const staticOptions = {
   // 글자 모양 프리셋 — 결과물 "형태" 기준 (게임별 구분에서 개편).
   // 선택 시 획·마감·동세 옵션을 한 번에 세팅(SCRIPT_PRESETS)하고,
   // en 토큰이 프롬프트 본문에 스타일 힌트로 주입된다 (buildPromptIR 의 shapeStyleBlock).
+  // enKo: 입력 텍스트에 한글이 있을 때 대신 쓰는 번안 토큰 — 라틴 전용 개념(fraktur·serif capitals)은
+  //       모델이 한글에 매핑하지 못해 평범한 한글로 나오므로, 스타일의 조형 원리를 한글 획 언어로 풀어쓴다.
+  // w: 주입 가중치 override (기본 1.3) — 한글 재해석처럼 강한 변환이 필요한 프리셋만 올린다.
   shapePresets: [
     { id: "Shape_Clean",       name: "깔끔 기본",     emoji: "✨",  hint: "군더더기 없는 표준형",   en: "clean modern refined letterform structure" },
     { id: "Shape_Massive",     name: "묵직한 바위",   emoji: "🗿",  hint: "두껍고 웅장하게",        en: "monolithic massive stone-slab letterform structure" },
     { id: "Shape_Blade",       name: "날카로운 칼날", emoji: "⚔️", hint: "베일 듯 예리한 끝",      en: "aggressive blade-sharp slashing letterforms" },
     { id: "Shape_Thorn",       name: "가시 돋친",     emoji: "🥀",  hint: "뾰족한 가시 장식",       en: "thorn-spiked dark fantasy letterforms" },
-    { id: "Shape_Elegant",     name: "우아한 세리프", emoji: "👑",  hint: "고급스러운 클래식",      en: "elegant sophisticated serif typography" },
+    { id: "Shape_Elegant",     name: "우아한 세리프", emoji: "👑",  hint: "고급스러운 클래식",      en: "elegant sophisticated serif typography",
+      enKo: "elegant refined Korean Myeongjo-style serif Hangul letterforms, tapered brush-derived serif terminals on every stroke, classical sophisticated Korean typography" },
     { id: "Shape_Round",       name: "둥글둥글",      emoji: "🫧",  hint: "부드럽고 친근하게",      en: "soft rounded friendly letterforms" },
     { id: "Shape_Speed",       name: "속도감",        emoji: "💨",  hint: "달려나가는 기울기",      en: "dynamic italic speed-driven letterforms" },
     { id: "Shape_Brush",       name: "붓글씨",        emoji: "🖌️", hint: "붓으로 그린 필체",       en: "expressive brush calligraphy strokes" },
-    { id: "Shape_Blackletter", name: "블랙레터",      emoji: "🏰",  hint: "중세 고딕 성서체",       en: "blackletter fraktur gothic script, medieval calligraphic broken strokes with angular diamond serifs" },
-    { id: "Shape_Cinema",      name: "영화 타이틀",   emoji: "🎬",  hint: "실사 영화 포스터 세리프", en: "weathered antique serif capitals, cinematic movie title lettering, wide letter spacing, subtly distressed serif edges" },
+    { id: "Shape_Blackletter", name: "블랙레터",      emoji: "🏰",  hint: "중세 고딕 성서체",       w: "1.45",
+      en: "blackletter fraktur gothic script, medieval calligraphic broken strokes with angular diamond serifs",
+      enKo: "Hangul letterforms reinterpreted in medieval blackletter fraktur style, every Korean stroke drawn with a gothic broad-nib pen: broken angular calligraphic strokes, sharp diamond-shaped terminals, dense heavy vertical stems with extreme thick-thin contrast, cathedral manuscript density applied to Hangul jamo structure" },
+    { id: "Shape_Cinema",      name: "영화 타이틀",   emoji: "🎬",  hint: "실사 영화 포스터 세리프",
+      en: "weathered antique serif capitals, cinematic movie title lettering, wide letter spacing, subtly distressed serif edges",
+      enKo: "weathered antique Korean Myeongjo-serif title lettering, cinematic live-action movie poster Hangul typography, thin elegant strokes with refined serif terminals, wide airy letter spacing, subtly distressed eroded stroke edges" },
   ],
   // 리터칭 "느낌 미세 조절" 축 — 양방향 슬라이더 (-2..+2, 0=유지).
   // 0 이 아닌 축만 프롬프트에 주입: ±1 → "subtly …" 1.15 가중치, ±2 → "noticeably …" 1.35 가중치.
   // 형태 95% 보존 락과 함께 쓰여 "원본을 지키면서 느낌만 살짝" 이라는 리터칭 본연의 목적을 표현.
   editFeelAxes: [
-    { id: "sharpness", label: "예리함",   left: "부드럽게",  right: "날카롭게",   negEn: "softer rounder stroke terminals and edges",       posEn: "sharper crisper stroke terminals and edges" },
-    { id: "weight",    label: "획 굵기",  left: "얇게",      right: "두껍게",     negEn: "thinner lighter stroke weight",                    posEn: "thicker heavier stroke weight" },
-    { id: "texture",   label: "표면 질감", left: "매끈하게",  right: "거칠게",     negEn: "cleaner smoother pristine stroke surface",         posEn: "more weathered rough eroded surface texture" },
-    { id: "motion",    label: "동세",     left: "차분하게",  right: "역동적으로", negEn: "calmer static stable letterform posture",          posEn: "more dynamic kinetic tension across strokes" },
-    { id: "ornament",  label: "장식",     left: "미니멀",    right: "화려하게",   negEn: "more minimal simplified stroke detailing",         posEn: "richer ornamental decorative stroke detailing" },
+    { id: "sharpness", label: "끝 예리함",   left: "부드럽게",  right: "날카롭게",   negEn: "softer rounder stroke terminals and tips",         posEn: "sharper crisper stroke terminals and tips" },
+    // 모서리 꺾임 — 획이 꺾이는 관절/코너의 각도 성격. 끝 예리함(terminal)과 별개 축:
+    // "내부 균열 말고 모서리 꺾임의 예리함을 조정하고 싶다"는 요구로 신설.
+    { id: "corner",    label: "모서리 꺾임", left: "둥글게",    right: "각지게",     negEn: "softer rounded corner joints, smoothly curved stroke bends", posEn: "sharper more angular corner joints, crisp hard-edged stroke bends with acute fold angles" },
+    { id: "weight",    label: "획 굵기",    left: "얇게",      right: "두껍게",     negEn: "thinner lighter stroke weight",                    posEn: "thicker heavier stroke weight" },
+    { id: "texture",   label: "표면 질감",  left: "매끈하게",  right: "거칠게",     negEn: "cleaner smoother pristine stroke surface",         posEn: "more weathered rough eroded surface texture" },
+    { id: "motion",    label: "동세",       left: "차분하게",  right: "역동적으로", negEn: "calmer static stable letterform posture",          posEn: "more dynamic kinetic tension across strokes" },
+    { id: "ornament",  label: "장식",       left: "미니멀",    right: "화려하게",   negEn: "more minimal simplified stroke detailing",         posEn: "richer ornamental decorative stroke detailing" },
   ],
   // Purpose-Driven Presets (V18)
   purposes: [

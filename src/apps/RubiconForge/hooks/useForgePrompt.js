@@ -30,6 +30,9 @@ const ARC_FOLDER_NAME = '리스킨 보관함';
 const REDESIGN_FOLDER_NAME = '리디자인 보관함';
 const LIGHTFX_FOLDER_NAME = '광원 보관함';
 
+// 앱 내부 페이지 이동으로 컴포넌트가 언마운트되어도 대용량 dataURL 결과를 메모리에 유지한다.
+const forgeSessionCache = { creationSource: null, reskinResults: [], sourceAsset: null, variationResults: [], lightFxRef: null, lightFxResults: [] };
+
 export function useForgePrompt() {
   // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
   const { isLight, user, payload, clearPayload } = useGlobal();
@@ -88,11 +91,11 @@ export function useForgePrompt() {
   //   selectedVariationIds: 변형 방향 다중 선택 — 선택한 방향 수만큼 디자인 대안이 렌더됨
   //   variationStrength: 원본에서 멀어지는 정도 (subtle/moderate/bold), 모든 방향 공통
   //   variationResults: N 슬롯 { styleId(=방향 id), theme(=방향 객체), dataUrl?, error?, isLoading }
-  const [sourceAsset, setSourceAsset] = useState(null);
+  const [sourceAsset, setSourceAsset] = useState(() => forgeSessionCache.sourceAsset);
   const [isDraggingSource, setIsDraggingSource] = useState(false);
   const [backgroundRef, setBackgroundRef] = useState(null);
   const [isDraggingBackground, setIsDraggingBackground] = useState(false);
-  const [selectedVariationIds, setSelectedVariationIds] = useState(defaultDesignVariationIds);
+  const [selectedVariationIds, setSelectedVariationIds] = useState(defaultDesignVariationIds.slice(0, 1));
   const [variationStrength, setVariationStrength] = useState('subtle');
   // 주변 광원 제외(오브젝트만) — 리디자인 시 원본 주변 빛효과 제거.
   const [variationStripGlow, setVariationStripGlow] = useState(false);
@@ -100,12 +103,7 @@ export function useForgePrompt() {
   const [variationOutlineOnly, setVariationOutlineOnly] = useState(false);
   // 생성 배경색 — 결과가 깔릴 단색. 기본 블랙. (마스크포지·투명추출용 비-블랙 선택 가능)
   const [variationBgColor, setVariationBgColor] = useState('black');
-  const [variationResults, setVariationResults] = useState(() =>
-    defaultDesignVariationIds.map(id => {
-      const d = DESIGN_VARIATION_BY_ID[id];
-      return { styleId: id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
-    })
-  );
+  const [variationResults, setVariationResults] = useState(() => forgeSessionCache.variationResults);
   const [isGeneratingVariations, setIsGeneratingVariations] = useState(false);
 
   // ─── 아틀라스(디자인 시스템) 모드 — 변형 모드와 동일 구조, 별도 state 유지 ─────────
@@ -208,18 +206,13 @@ export function useForgePrompt() {
   // "처음부터 옵션으로 생성"이 아니라, 이미 만들어진 버튼 이미지를 업로드해 형태·텍스트·
   // 비율은 그대로 잠그고 색/표면/프레임/장식 재질만 새 테마로 갈아끼운다(image-to-image recolor).
   // services 의 renderVariation(구조 보존 recolor 패스)을 그대로 사용 — 선택한 테마 톤마다 1장.
-  const [creationSource, setCreationSource] = useState(null);
+  const [creationSource, setCreationSource] = useState(() => forgeSessionCache.creationSource);
   const [isDraggingCreationSource, setIsDraggingCreationSource] = useState(false);
   const [creationBgRef, setCreationBgRef] = useState(null);
   const [isDraggingCreationBg, setIsDraggingCreationBg] = useState(false);
   const [reskinMoodId, setReskinMoodId] = useState(VARIATION_MOODS[2].id); // darkFantasy 기본
-  const [selectedReskinStyleIds, setSelectedReskinStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id));
-  const [reskinResults, setReskinResults] = useState(() =>
-    defaultStyleIdsFor(VARIATION_MOODS[2].id).map(id => {
-      const s = STYLE_BY_ID[id];
-      return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
-    })
-  );
+  const [selectedReskinStyleIds, setSelectedReskinStyleIds] = useState(defaultStyleIdsFor(VARIATION_MOODS[2].id).slice(0, 1));
+  const [reskinResults, setReskinResults] = useState(() => forgeSessionCache.reskinResults);
   const [isGeneratingReskin, setIsGeneratingReskin] = useState(false);
   const [reskinRefinementLevel, setReskinRefinementLevel] = useState('source');
   const [reskinTemperature, setReskinTemperature] = useState('neutral');
@@ -238,7 +231,9 @@ export function useForgePrompt() {
   const [customThemeHint, setCustomThemeHint] = useState('');
   const composeReskinHint = (styleHint) => {
     const c = (customThemeHint || '').trim();
-    return c ? `${styleHint}\n\nPRIORITY PALETTE & MOOD (from the key visual — bias all color/material toward this): ${c}` : styleHint;
+    return c
+      ? `PROMOTION CONCEPT — HIGHEST CREATIVE PRIORITY: ${c}\n\nSELECTED ADAPTATION DIRECTION: ${styleHint}`
+      : `SELECTED ADAPTATION DIRECTION: ${styleHint}`;
   };
   const composeDirection = (dirBlock) => {
     const c = (customThemeHint || '').trim();
@@ -315,11 +310,6 @@ export function useForgePrompt() {
   }, [payload?.timestamp]);
 
   // 빈 슬롯 빌더 — 선택한 스타일 id 배열 → 결과 슬롯 배열.
-  const buildReskinSlots = (ids) => ids.map(id => {
-    const s = STYLE_BY_ID[id];
-    return { styleId: id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
-  });
-
   const handleCreationSourceFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
@@ -332,7 +322,7 @@ export function useForgePrompt() {
   const handleCreationSourceDrop = useCallback((e) => { e.preventDefault(); setIsDraggingCreationSource(false); handleCreationSourceFile(e.dataTransfer.files[0]); }, []);
   const handleClearCreationSource = () => {
     setCreationSource(null);
-    setReskinResults(prev => prev.map(s => ({ ...s, dataUrl: null, error: null, isLoading: false })));
+    setReskinResults([]);
   };
 
   const handleCreationBgFile = (file) => {
@@ -350,33 +340,29 @@ export function useForgePrompt() {
   // 분위기 카테고리 변경 → 기본 스타일 채움. 선택 톤 수 = 생성 장수.
   const handleSelectReskinMood = (moodId) => {
     setReskinMoodId(moodId);
-    const ids = defaultStyleIdsFor(moodId);
+    const ids = defaultStyleIdsFor(moodId).slice(0, 1);
     setSelectedReskinStyleIds(ids);
-    setReskinResults(buildReskinSlots(ids));
   };
-  // 테마 톤 토글 — 다중 선택(선택한 톤마다 한 장씩 리스킨).
+  // 변형 방향은 단일 선택 — 설정과 결과의 관계를 명확하게 유지한다.
   const handleToggleReskinStyle = (styleId) => {
-    const isSel = selectedReskinStyleIds.includes(styleId);
-    const next = isSel
-      ? selectedReskinStyleIds.filter(id => id !== styleId)
-      : [...selectedReskinStyleIds, styleId];
+    const next = [styleId];
     setSelectedReskinStyleIds(next);
-    setReskinResults(buildReskinSlots(next));
   };
 
   const handleGenerateReskin = async () => {
-    if (!creationSource) { setErrorMsg('리스킨할 기존 버튼 이미지를 먼저 업로드해주세요.'); return; }
-    if (selectedReskinStyleIds.length === 0) { setErrorMsg('적용할 테마 톤을 1개 이상 선택해주세요.'); return; }
+    if (!creationSource) { setErrorMsg('변형할 원본 에셋을 먼저 업로드해주세요.'); return; }
+    if (selectedReskinStyleIds.length === 0) { setErrorMsg('적용할 변형 방향을 선택해주세요.'); return; }
     if (isGeneratingReskin) return;
     setIsGeneratingReskin(true);
     const bg = BG_COLOR_BY_ID[reskinBgColor];
     const bgHex = bg?.hex || '#000000';
-    const styles = selectedReskinStyleIds.map(id => STYLE_BY_ID[id]).filter(Boolean);
-    setReskinResults(styles.map(s => ({ styleId: s.id, theme: s, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex })));
+    const style = STYLE_BY_ID[selectedReskinStyleIds[0]];
+    if (!style) { setIsGeneratingReskin(false); setErrorMsg('선택한 변형 방향을 찾지 못했습니다.'); return; }
+    const resultId = `${Date.now()}-${style.id}`;
+    setReskinResults(prev => [{ resultId, styleId: style.id, theme: style, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex }, ...prev].slice(0, 5));
     const saves = [];
     let anyOk = false;
-    await Promise.all(styles.map(async (style, idx) => {
-      const result = await renderVariation(creationSource, composeReskinHint(style.promptHint), {
+    const result = await renderVariation(creationSource, composeReskinHint(style.promptHint), {
         refinementLevel: reskinRefinementLevel,
         temperature: reskinTemperature,
         age: reskinAge,
@@ -387,20 +373,15 @@ export function useForgePrompt() {
         outlineOnly: reskinOutlineOnly,
         bg,
       });
-      setReskinResults(prev => {
-        const next = prev.slice();
-        next[idx] = {
-          styleId: style.id, theme: style,
-          dataUrl: result.ok ? result.dataUrl : null,
-          error: result.ok ? null : (result.error || '생성 실패'),
-          prompt: result.prompt || null,
-          compactPrompt: result.compactPrompt || null,
-          isLoading: false, bgHex,
-        };
-        return next;
-      });
-      if (result.ok) { anyOk = true; const p = autoSaveReskin(style, result); if (p) saves.push(p); }
-    }));
+      setReskinResults(prev => prev.map(slot => slot.resultId === resultId ? {
+        ...slot,
+        dataUrl: result.ok ? result.dataUrl : null,
+        error: result.ok ? null : (result.error || '생성 실패'),
+        prompt: result.prompt || null,
+        compactPrompt: result.compactPrompt || null,
+        isLoading: false,
+      } : slot));
+    if (result.ok) { anyOk = true; const p = autoSaveReskin(style, result); if (p) saves.push(p); }
     setIsGeneratingReskin(false);
     // PromptArc 자동 저장 — 렌더 완료 후 백그라운드로 처리하고 결과만 알림.
     if (saves.length) {
@@ -415,11 +396,7 @@ export function useForgePrompt() {
     if (!creationSource) return;
     const slot = reskinResults[idx];
     if (!slot || slot.isLoading) return;
-    setReskinResults(prev => {
-      const next = prev.slice();
-      next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
-      return next;
-    });
+    setReskinResults(prev => prev.map(item => item.resultId === slot.resultId ? { ...item, dataUrl: null, error: null, isLoading: true } : item));
     const bg = BG_COLOR_BY_ID[reskinBgColor];
     const bgHex = bg?.hex || '#000000';
     const result = await renderVariation(creationSource, composeReskinHint(slot.theme.promptHint), {
@@ -433,18 +410,14 @@ export function useForgePrompt() {
       outlineOnly: reskinOutlineOnly,
       bg,
     });
-    setReskinResults(prev => {
-      const next = prev.slice();
-      next[idx] = {
-        styleId: slot.styleId, theme: slot.theme,
+    setReskinResults(prev => prev.map(item => item.resultId === slot.resultId ? {
+        ...item,
         dataUrl: result.ok ? result.dataUrl : null,
         error: result.ok ? null : (result.error || '생성 실패'),
         prompt: result.prompt || null,
         compactPrompt: result.compactPrompt || null,
         isLoading: false, bgHex,
-      };
-      return next;
-    });
+      } : item));
     if (result.ok) {
       const p = autoSaveReskin(slot.theme, result);
       if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${ARC_FOLDER_NAME}'에 저장 · 임시 ${TEMP_TTL_DAYS}일` : 'PromptArc 저장 실패 — 콘솔 확인');
@@ -459,16 +432,22 @@ export function useForgePrompt() {
   const [lightFxForm, setLightFxForm] = useState('free'); // 배치 형태 (아이콘 뒤/박스 아웃그로우/캐릭터 아우라 등)
   const [lightFxStyle, setLightFxStyle] = useState('soft');
   const [lightFxColor, setLightFxColor] = useState('gold');
+  const [lightFxIntensity, setLightFxIntensity] = useState('medium');
+  const [lightFxShape, setLightFxShape] = useState('none');
   const [lightFxText, setLightFxText] = useState('');
   const [lightFxCount, setLightFxCount] = useState(4);
-  const [lightFxRef, setLightFxRef] = useState(null); // (선택) 형태 참고 dataURL
+  const [lightFxRef, setLightFxRef] = useState(() => forgeSessionCache.lightFxRef); // (선택) 형태 참고 dataURL
   const [isDraggingLightFxRef, setIsDraggingLightFxRef] = useState(false);
   const [lightFxRenderModel, setLightFxRenderModel] = useState(IMAGEN_MODELS[0]?.id || 'gemini-3.1-flash-image-preview');
   const [lightFxImageSize, setLightFxImageSize] = useState('2K');
   // 생성 배경색 — 발광 에셋이 깔릴 단색. 기본 블랙(발광 합성).
   const [lightFxBgColor, setLightFxBgColor] = useState('black');
-  const [lightFxResults, setLightFxResults] = useState([]); // { theme:{id,label,desc,color}, dataUrl, error, prompt, compactPrompt, isLoading }
+  const [lightFxResults, setLightFxResults] = useState(() => forgeSessionCache.lightFxResults); // { theme:{id,label,desc,color}, dataUrl, error, prompt, compactPrompt, isLoading }
   const [isGeneratingLightFx, setIsGeneratingLightFx] = useState(false);
+
+  useEffect(() => { forgeSessionCache.creationSource = creationSource; forgeSessionCache.reskinResults = reskinResults; }, [creationSource, reskinResults]);
+  useEffect(() => { forgeSessionCache.sourceAsset = sourceAsset; forgeSessionCache.variationResults = variationResults; }, [sourceAsset, variationResults]);
+  useEffect(() => { forgeSessionCache.lightFxRef = lightFxRef; forgeSessionCache.lightFxResults = lightFxResults; }, [lightFxRef, lightFxResults]);
 
   // 형태 참고 업로드 핸들러.
   const handleLightFxRefFile = (file) => {
@@ -511,7 +490,7 @@ export function useForgePrompt() {
 
   const renderOneLightFx = (i) => renderLightFx({
     category: lightFxCategory, form: lightFxForm, style: lightFxStyle, color: lightFxColor,
-    userText: lightFxText, index: i,
+    userText: lightFxText, intensity: lightFxIntensity, shape: lightFxRef ? 'none' : lightFxShape, index: i,
     referenceDataUrl: lightFxRef,
     imageSize: lightFxImageSize, modelId: lightFxRenderModel,
     bg: BG_COLOR_BY_ID[lightFxBgColor],
@@ -520,17 +499,15 @@ export function useForgePrompt() {
   const handleGenerateLightFx = async () => {
     if (isGeneratingLightFx) return;
     setIsGeneratingLightFx(true);
-    const n = lightFxCount;
-    setLightFxResults(buildLightFxSlots(n));
+    const n = 1;
+    const resultId = `${Date.now()}-lightfx`;
+    const slot = { ...buildLightFxSlots(1)[0], resultId };
+    setLightFxResults(prev => [slot, ...prev].slice(0, 5));
     const saves = [];
     let anyOk = false;
     await Promise.all(Array.from({ length: n }, (_, i) => (async () => {
       const r = await renderOneLightFx(i);
-      setLightFxResults(prev => {
-        const next = prev.slice();
-        if (next[i]) next[i] = { ...next[i], dataUrl: r.ok ? r.dataUrl : null, error: r.ok ? null : (r.error || '생성 실패'), prompt: r.prompt || null, compactPrompt: r.compactPrompt || null, isLoading: false };
-        return next;
-      });
+      setLightFxResults(prev => prev.map(item => item.resultId === resultId ? { ...item, dataUrl: r.ok ? r.dataUrl : null, error: r.ok ? null : (r.error || '생성 실패'), prompt: r.prompt || null, compactPrompt: r.compactPrompt || null, isLoading: false } : item));
       if (r.ok) { anyOk = true; const p = autoSaveLightFx(null, r); if (p) saves.push(p); }
     })()));
     setIsGeneratingLightFx(false);
@@ -599,7 +576,7 @@ export function useForgePrompt() {
   const handleSourceDrop = useCallback((e) => { e.preventDefault(); setIsDraggingSource(false); handleSourceFile(e.dataTransfer.files[0]); }, []);
   const handleClearSource = () => {
     setSourceAsset(null);
-    setVariationResults(prev => prev.map(s => ({ ...s, dataUrl: null, error: null, isLoading: false })));
+    setVariationResults([]);
   };
 
   const handleBackgroundFile = (file) => {
@@ -617,15 +594,7 @@ export function useForgePrompt() {
   // ─── 변형 모드: 변형 방향 다중 선택 ───────────────────────────────────
   // 방향 칩 토글: 이미 선택 → 해제, 미선택 → 추가. 선택한 방향 수 = 생성될 대안 수.
   const handleToggleVariation = (variationId) => {
-    const isSelected = selectedVariationIds.includes(variationId);
-    const next = isSelected
-      ? selectedVariationIds.filter(id => id !== variationId)
-      : [...selectedVariationIds, variationId];
-    setSelectedVariationIds(next);
-    setVariationResults(next.map(id => {
-      const d = DESIGN_VARIATION_BY_ID[id];
-      return { styleId: id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: false };
-    }));
+    setSelectedVariationIds([variationId]);
   };
 
   // ─── 변형 모드: 선택한 방향 수만큼 병렬 생성 ───────────────────────────
@@ -633,18 +602,19 @@ export function useForgePrompt() {
   // 같은 강도(variationStrength)를 공유하되 방향(promptBlock)이 달라 서로 다른 대안이 나온다.
   const handleGenerateVariations = async () => {
     if (!sourceAsset) { setErrorMsg('세부 에셋 이미지를 먼저 업로드해주세요.'); return; }
-    if (selectedVariationIds.length === 0) { setErrorMsg('변형 방향을 1개 이상 선택해주세요.'); return; }
+    if (selectedVariationIds.length === 0) { setErrorMsg('변형 방향을 선택해주세요.'); return; }
     if (isGeneratingVariations) return;
     setIsGeneratingVariations(true);
     const bg = BG_COLOR_BY_ID[variationBgColor];
     const bgHex = bg?.hex || '#000000';
-    const dirs = selectedVariationIds.map(id => DESIGN_VARIATION_BY_ID[id]).filter(Boolean);
+    const dir = DESIGN_VARIATION_BY_ID[selectedVariationIds[0]];
+    if (!dir) { setIsGeneratingVariations(false); setErrorMsg('선택한 변형 방향을 찾지 못했습니다.'); return; }
     const strength = VARIATION_STRENGTH_BY_ID[variationStrength] || VARIATION_STRENGTH_BY_ID.moderate;
-    setVariationResults(dirs.map(d => ({ styleId: d.id, theme: d, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex })));
+    const resultId = `${Date.now()}-${dir.id}`;
+    setVariationResults(prev => [{ resultId, styleId: dir.id, theme: dir, dataUrl: null, error: null, prompt: null, compactPrompt: null, isLoading: true, bgHex }, ...prev].slice(0, 5));
     const saves = [];
     let anyOk = false;
-    await Promise.all(dirs.map(async (dir, idx) => {
-      const result = await renderDesignAlternative(sourceAsset, {
+    const result = await renderDesignAlternative(sourceAsset, {
         directionBlock: composeDirection(dir.promptBlock),
         directionHint: composeDirection(dir.promptBlock),
         strengthBlock: strength?.promptBlock,
@@ -656,21 +626,15 @@ export function useForgePrompt() {
         outlineOnly: variationOutlineOnly,
         bg,
       });
-      setVariationResults(prev => {
-        const next = prev.slice();
-        next[idx] = {
-          styleId: dir.id,
-          theme: dir,
+      setVariationResults(prev => prev.map(slot => slot.resultId === resultId ? {
+          ...slot,
           dataUrl: result.ok ? result.dataUrl : null,
           error: result.ok ? null : (result.error || '생성 실패'),
           prompt: result.prompt || null,
           compactPrompt: result.compactPrompt || null,
           isLoading: false, bgHex,
-        };
-        return next;
-      });
-      if (result.ok) { anyOk = true; const p = autoSaveRedesign(dir, result); if (p) saves.push(p); }
-    }));
+        } : slot));
+    if (result.ok) { anyOk = true; const p = autoSaveRedesign(dir, result); if (p) saves.push(p); }
     setIsGeneratingVariations(false);
     // PromptArc 자동 저장 — 렌더 완료 후 백그라운드 처리하고 결과만 알림.
     if (saves.length) {
@@ -689,11 +653,7 @@ export function useForgePrompt() {
     const strength = VARIATION_STRENGTH_BY_ID[variationStrength] || VARIATION_STRENGTH_BY_ID.moderate;
     const bg = BG_COLOR_BY_ID[variationBgColor];
     const bgHex = bg?.hex || '#000000';
-    setVariationResults(prev => {
-      const next = prev.slice();
-      next[idx] = { ...slot, dataUrl: null, error: null, isLoading: true };
-      return next;
-    });
+    setVariationResults(prev => prev.map(item => item.resultId === slot.resultId ? { ...item, dataUrl: null, error: null, isLoading: true } : item));
     const result = await renderDesignAlternative(sourceAsset, {
       directionBlock: composeDirection(slot.theme.promptBlock),
       directionHint: composeDirection(slot.theme.promptBlock),
@@ -706,19 +666,14 @@ export function useForgePrompt() {
       outlineOnly: variationOutlineOnly,
       bg,
     });
-    setVariationResults(prev => {
-      const next = prev.slice();
-      next[idx] = {
-        styleId: slot.styleId,
-        theme: slot.theme,
+    setVariationResults(prev => prev.map(item => item.resultId === slot.resultId ? {
+        ...item,
         dataUrl: result.ok ? result.dataUrl : null,
         error: result.ok ? null : (result.error || '생성 실패'),
         prompt: result.prompt || null,
         compactPrompt: result.compactPrompt || null,
         isLoading: false, bgHex,
-      };
-      return next;
-    });
+      } : item));
     if (result.ok) {
       const p = autoSaveRedesign(slot.theme, result);
       if (p) flashSaveMsg((await p)?.ok ? `PromptArc '${REDESIGN_FOLDER_NAME}'에 저장 · 임시 ${TEMP_TTL_DAYS}일` : 'PromptArc 저장 실패 — 콘솔 확인');
@@ -1196,6 +1151,8 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     lightFxForm, setLightFxForm,
     lightFxStyle, setLightFxStyle,
     lightFxColor, setLightFxColor,
+    lightFxIntensity, setLightFxIntensity,
+    lightFxShape, setLightFxShape,
     lightFxText, setLightFxText,
     lightFxCount, setLightFxCount,
     lightFxRef, isDraggingLightFxRef,

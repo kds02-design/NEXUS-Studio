@@ -64,7 +64,8 @@ export function useFolders({ user, showToast, setCategory, category }) {
     if (!ref) return;
     try {
       await deleteDoc(ref);
-      if (category === `folder:${folderId}`) setCategory('all');
+      // 활성 폴더 삭제 시 내 폴더 영역의 기본 탭(내 비공개)으로 — 탭 UI 에서 영역 이탈 방지.
+      if (category === `folder:${folderId}`) setCategory('my_private');
       showToast('폴더가 삭제됐어요');
     } catch (e) {
       console.error('[PromptArc] deleteFolder failed', e);
