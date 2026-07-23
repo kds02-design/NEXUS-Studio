@@ -71,8 +71,13 @@ export default function MatrixSidebar({
 
         {state.currentView === "editor" && (
           <div className="flex flex-col gap-5">
-            <SectionGroup index={1} label="① 시안 (입력 텍스트 · 이미지 · 의도)" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
+            <SectionGroup index={1} label="① 역분석 (시안 이미지 · 프롬프트 → 옵션 자동 세팅)" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
             <div className="space-y-3">
+              {/* 섹션 역할 안내 — 여기 업로드한 이미지는 "분석용". 렌더링 입력(기본 이미지)은 우측 패널. */}
+              <p className="text-[10px] text-zinc-500 leading-snug px-1">
+                참고 시안이나 기존 프롬프트를 <b className="text-zinc-300">역분석해서 아래 옵션(②~④)을 자동으로 맞춰주는</b> 영역이에요.
+                렌더링에 쓸 이미지는 우측 상단 <b className="text-zinc-300">"기본 이미지"</b> 패널에 올려주세요.
+              </p>
               {incomingFromArc && (
                 <div className="mb-3 px-3 py-2.5 rounded-lg border border-[#6C5CE7]/40 bg-[#6C5CE7]/10 flex items-start gap-2 animate-in fade-in slide-in-from-top-2">
                   {isArcAnalyzing
@@ -117,7 +122,7 @@ export default function MatrixSidebar({
                     onDrop={(e) => { e.preventDefault(); setIsDraggingRef(false); readImage(e.dataTransfer.files[0], setters.setReferenceImage); }}
                     isDragging={isDraggingRef}
                     isLoading={isAnalyzingRef}
-                    title="REFERENCE IMAGE" sub="역설계할 타이포그래피 시안 업로드"
+                    title="REFERENCE IMAGE" sub="분석할 시안 업로드 — 스타일을 읽어 옵션 자동 세팅 (렌더 입력 아님)"
                     icon={ImageIcon} heightClass="h-24"
                   />
                   {state.referenceImage && !isAnalyzingRef && (
@@ -212,7 +217,7 @@ export default function MatrixSidebar({
             <SectionGroup index={5} label="⑤ 이펙트 & 렌더 (고급)" dotColor="#FD79A8" open={currentOpen === 'vfx'} onToggle={toggleSection('vfx')} className="mb-6">
             {/* VFX / Background / Engine */}
             <div className="space-y-3">
-              <ToggleControl label="시안 연출 모드 (이펙트 & 배경)" desc="질감 있는 다크 캔버스를 깔고 특수 효과를 발동시킵니다." enabled={state.enableVfx} onChange={() => {
+              <ToggleControl label="시안 연출 모드 (이펙트 & 배경)" desc="순수 리얼블랙 배경 위에 특수 효과를 발동시킵니다 — 이펙트 소스 추출 가능." enabled={state.enableVfx} onChange={() => {
                 const newVal = !state.enableVfx;
                 handleChange(setters.setEnableVfx)(newVal);
                 if (newVal && state.energyCore === "None") handleChange(setters.setEnergyCore)("GoldenDust");

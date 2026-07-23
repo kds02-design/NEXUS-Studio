@@ -5,10 +5,13 @@ import App from "./apps/DestinyObservatory";
 
 createRoot(document.getElementById("root")).render(<App standalone />);
 
-// 서비스 워커 — scope 를 /destiny.html 로 좁혀 NEXUS 본체(/)에는 영향 없음.
+// 서비스 워커 — 배포 형태에 따라 scope 자동 결정:
+//   NEXUS 동거 배포(/destiny.html): scope 를 그 페이지로 좁혀 본체(/)에 영향 없음
+//   전용 도메인 배포(루트 index.html): scope "/" 전체
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
+  const scope = window.location.pathname.endsWith("/destiny.html") ? "/destiny.html" : "/";
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/destiny-sw.js", { scope: "/destiny.html" }).catch((e) => {
+    navigator.serviceWorker.register("/destiny-sw.js", { scope }).catch((e) => {
       console.warn("[DestinyObservatory] SW 등록 실패:", e?.message || e);
     });
   });

@@ -6,8 +6,9 @@ import { usePresets } from "./hooks/usePresets";
 import MatrixSidebar from "./components/MatrixSidebar";
 import MatrixResultPanel from "./components/MatrixResultPanel";
 import { TuningRoomModal } from "./components/MatrixPromptForm";
-import { renderWithImagen, IMAGEN_MODELS } from "../../lib/imagenRender";
+import { renderWithImagen, IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from "../../lib/imagenRender";
 import { uploadBase64 } from "../../lib/storage";
+import { TEMP_TTL_MS } from "../../lib/promptArcSave";
 import { db, appId } from "../../lib/firebase";
 import { serializeForFirestore } from "../PromptArc/services/firebase";
 import { useAuth } from "../../context/AuthContext";
@@ -56,6 +57,8 @@ export default function RenderMatrixApp() {
   const [renderError, setRenderError] = useState(null);
   const [savingToArc, setSavingToArc] = useState(false);
   const [selectedModel, setSelectedModel] = useState(IMAGEN_MODELS[0].id);
+  // 출력 해상도 — Pro 모델만 1K/2K/4K 선택 (Flash 는 1K 고정, clampImageSize 가 보정).
+  const [selectedRenderSize, setSelectedRenderSize] = useState("2K");
 
   // PromptArc 본 컬렉션에 'private' 으로 저장 — 내 폴더에 노출됨.
   // 자동 호출(렌더 완료 직후) + 수동 버튼 양쪽에서 동일 경로 사용.
@@ -81,6 +84,8 @@ export default function RenderMatrixApp() {
         stepDescriptions: [''],
         tags: ['RenderMatrix', 'Imagen', modelLabel],
         visibility: 'private',
+        // 렌더 자동 저장물 = 임시 파일 (15일 활성 + 15일 휴지통). 공개 전환 시 영구 보존.
+        temporary: true, expiresAt: now + TEMP_TTL_MS,
         ownerUid: user.uid,
         authorName: user.displayName || user.email || '',
         likeCount: 0,
@@ -135,6 +140,7 @@ export default function RenderMatrixApp() {
         promptText,
         selectedModel,
         referenceImage,
+        { imageSize: selectedRenderSize },
       );
       setRenderedImage(result);
       // 렌더 완료 즉시 PromptArc 내 폴더에 자동 등록 — 사용자 클릭 없이 백그라운드 진행.
@@ -147,7 +153,7 @@ export default function RenderMatrixApp() {
     } finally {
       setRendering(false);
     }
-  }, [canRender, selectedModel, rp.baseImage, rp.editImage, rp.currentView, user, saveRenderToPromptArc]);
+  }, [canRender, selectedModel, selectedRenderSize, rp.baseImage, rp.editImage, rp.currentView, user, saveRenderToPromptArc]);
 
   const handleDownloadRendered = useCallback(() => {
     if (!renderedImage?.dataUrl) return;
@@ -198,7 +204,7 @@ export default function RenderMatrixApp() {
       surfaceTreatment: rp.setSurfaceTreatment, surfaceDetail: rp.setSurfaceDetail, wearLevel: rp.setWearLevel,
       energyCore: rp.setEnergyCore, fxOrigin: rp.setFxOrigin, fxIntensity: rp.setFxIntensity,
       background: rp.setBackground, rimThickness: rp.setRimThickness, rimColor: rp.setRimColor,
-      rimIntensity: rp.setRimIntensity, vfxPassMode: rp.setVfxPassMode, enableGlint: rp.setEnableGlint,
+      rimIntensity: rp.setRimIntensity, vfxPassMode: rp.setVfxPassMode, vfxPassOverlay: rp.setVfxPassOverlay, enableGlint: rp.setEnableGlint,
       enableVfx: rp.setEnableVfx, enableShadow: rp.setEnableShadow,
     },
     onApplied: (preset) => {
@@ -320,6 +326,7 @@ export default function RenderMatrixApp() {
           vfxPassMode={rp.vfxPassMode} editVfxPassMode={rp.editVfxPassMode}
           auditIssues={rp.auditIssues}
           qualityScores={rp.qualityScores}
+          feelSummary={rp.feelSummary}
           baseImage={rp.baseImage}
           setBaseImage={rp.setBaseImage}
           editImage={rp.editImage}
@@ -351,6 +358,10 @@ export default function RenderMatrixApp() {
           imagenModels={IMAGEN_MODELS}
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
+          renderSizes={RENDER_SIZES}
+          selectedRenderSize={selectedRenderSize}
+          setSelectedRenderSize={setSelectedRenderSize}
+          sizeSelectable={isProImageModel(selectedModel)}
         />
       </main>
     </div>

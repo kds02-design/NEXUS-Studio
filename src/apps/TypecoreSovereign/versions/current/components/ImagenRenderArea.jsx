@@ -2,8 +2,9 @@
 // Imagen 렌더 영역 — 모델 선택 + 렌더 버튼 + 결과 + Download + Save / Send.
 // 자동 저장 흐름: PromptEngine 의 handleRender 가 결과 직후 saveRenderToPromptArc 호출 →
 // savedToArcId 가 채워지면 여기 버튼이 "저장됨" 인디케이터로 전환.
-import React from 'react';
-import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, Maximize2 } from 'lucide-react';
+import ImageZoomModal from '../../../../../components/ImageZoomModal';
 
 const ImagenRenderArea = ({
   promptText,
@@ -25,6 +26,7 @@ const ImagenRenderArea = ({
   grade,
 }) => {
   const hasOutput = !!promptText;
+  const [zoomOpen, setZoomOpen] = useState(false);
 
   return (
     <div className="bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col overflow-hidden h-full min-h-[480px]">
@@ -86,9 +88,13 @@ const ImagenRenderArea = ({
         )}
         {renderedImage?.dataUrl ? (
           <>
-            <div className="flex-1 min-h-0 rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center">
+            <div className="flex-1 min-h-0 rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center relative group cursor-zoom-in"
+              onClick={() => setZoomOpen(true)} title="클릭하면 전체화면으로 봅니다">
               <img src={renderedImage.dataUrl} alt="Imagen render"
                 className="max-w-full max-h-full w-auto h-auto object-contain block" />
+              <span className="absolute top-2 right-2 p-1.5 rounded-md bg-black/60 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <Maximize2 className="w-3.5 h-3.5" />
+              </span>
             </div>
             <div className="shrink-0 flex items-center gap-2 flex-wrap">
               <button
@@ -152,6 +158,9 @@ const ImagenRenderArea = ({
           </div>
         )}
       </div>
+      {zoomOpen && renderedImage?.dataUrl && (
+        <ImageZoomModal src={renderedImage.dataUrl} onClose={() => setZoomOpen(false)} />
+      )}
     </div>
   );
 };

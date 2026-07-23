@@ -104,17 +104,27 @@ export default function ArcCard({ prompt, onClick, onDelete, onEdit, isAdminMode
               <Lock size={10} strokeWidth={2.5} /> 비공개
             </div>
           )}
-          {prompt.temporary && prompt.visibility !== 'public' && (
-            prompt.trashed ? (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-900/85 text-rose-200 text-[10px] font-bold backdrop-blur-sm border border-rose-500/30" title={`휴지통 — ${TRASH_TTL_DAYS}일 후 영구 삭제됩니다. 공개로 전환하면 보존됩니다.`}>
-                <Trash2 size={10} strokeWidth={2.5} /> 휴지통
+          {prompt.temporary && prompt.visibility !== 'public' && (() => {
+            // 남은 날짜 표시 — expiresAt(활성)/trashExpiresAt(휴지통) 기준 D-n.
+            // 만료 시각이 없는 구버전 doc 은 기존 정적 문구로 폴백.
+            const dLeft = (ts) => (typeof ts === 'number' ? Math.max(0, Math.ceil((ts - Date.now()) / 86400000)) : null);
+            if (prompt.trashed) {
+              const d = dLeft(prompt.trashExpiresAt);
+              return (
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-900/85 text-rose-200 text-[10px] font-bold backdrop-blur-sm border border-rose-500/30"
+                  title={`휴지통 — ${d != null ? `${d}일 후` : `최대 ${TRASH_TTL_DAYS}일 후`} 영구 삭제됩니다. 공개로 전환하면 보존됩니다.`}>
+                  <Trash2 size={10} strokeWidth={2.5} /> 휴지통{d != null ? ` D-${d}` : ''}
+                </div>
+              );
+            }
+            const d = dLeft(prompt.expiresAt);
+            return (
+              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-zinc-200 text-[10px] font-bold backdrop-blur-sm border border-white/10"
+                title={`임시 파일 — ${d != null ? `${d}일 후` : `${TEMP_TTL_DAYS}일 후`} 휴지통으로 이동, 다시 ${TRASH_TTL_DAYS}일 뒤 영구 삭제됩니다. 공개로 전환하면 보존됩니다.`}>
+                <Clock size={10} strokeWidth={2.5} /> {d != null ? `임시 D-${d}` : `임시 ${TEMP_TTL_DAYS}일`}
               </div>
-            ) : (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-900/85 text-zinc-200 text-[10px] font-bold backdrop-blur-sm border border-white/10" title={`임시 파일 — ${TEMP_TTL_DAYS}일 후 휴지통으로 이동, 다시 ${TRASH_TTL_DAYS}일 뒤 영구 삭제됩니다. 공개로 전환하면 보존됩니다.`}>
-                <Clock size={10} strokeWidth={2.5} /> 임시 {TEMP_TTL_DAYS}일
-              </div>
-            )
-          )}
+            );
+          })()}
         </div>
       )}
       {videoUrl && (

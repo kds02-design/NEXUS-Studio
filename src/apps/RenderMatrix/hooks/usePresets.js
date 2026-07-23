@@ -28,6 +28,7 @@ export function usePresets({ setters, onApplied }) {
     if (s.rimColor !== undefined) setters.rimColor(s.rimColor);
     if (s.rimIntensity !== undefined) setters.rimIntensity(s.rimIntensity);
     if (s.vfxPassMode !== undefined) setters.vfxPassMode(s.vfxPassMode);
+    if (s.vfxPassOverlay !== undefined) setters.vfxPassOverlay(s.vfxPassOverlay);
     if (s.enableGlint !== undefined) setters.enableGlint(s.enableGlint);
     if (s.enableVfx !== undefined) setters.enableVfx(s.enableVfx);
     if (s.enableShadow !== undefined) setters.enableShadow(s.enableShadow);

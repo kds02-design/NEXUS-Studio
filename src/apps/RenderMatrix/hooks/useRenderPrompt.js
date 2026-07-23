@@ -7,7 +7,7 @@ import {
   compileNanoBanana, compileChatGPT, compileMidjourney,
   compileEditNanoBanana, compileEditChatGPT, compileEditMidjourney,
   compileVeo, compileRunway, compileLuma, compileSequence,
-  performLogicAudit, calculateQualityScore,
+  performLogicAudit, calculateQualityScore, buildFeelSummary,
 } from "../services/promptCompiler";
 import {
   analyzeReferenceImage, analyzePromptText,
@@ -41,6 +41,9 @@ export function useRenderPrompt() {
   const [fxOrigin, setFxOrigin] = useState("Edges");
   const [fxIntensity, setFxIntensity] = useState("Subtle");
   const [vfxPassMode, setVfxPassMode] = useState(false);
+  // 이펙트 소스 추출의 "전면 통과" 변형 — 이펙트가 검은 타이틀 위를 자유롭게 가로지름
+  // (타이틀 앞 레이어 합성용 소스. 기본 홀드아웃은 뒤 발광용).
+  const [vfxPassOverlay, setVfxPassOverlay] = useState(false);
   const [material, setMaterial] = useState("HyperChrome");
   const [materialInt] = useState("Mid");
   const [dramaticTex, setDramaticTex] = useState("Auto");
@@ -107,6 +110,8 @@ export function useRenderPrompt() {
 
   // ===== derived: IR / compiled / audit / quality =====
   const [currentIR, setCurrentIR] = useState(null);
+  // 예상 질감·느낌 요약 (한국어, 규칙 기반) — editor 뷰에서만 계산.
+  const [feelSummary, setFeelSummary] = useState(null);
   const [compiledOutputs, setCompiledOutputs] = useState({ NanoBanana: "", ChatGPT: "", Midjourney: "", Veo: "", Runway: "", Luma: "", Sequence: "" });
   const [optimizedPrompts, setOptimizedPrompts] = useState({ NanoBanana: null, ChatGPT: null, Midjourney: null });
   const [optimizedPromptsKo, setOptimizedPromptsKo] = useState({ NanoBanana: null, ChatGPT: null, Midjourney: null });
@@ -318,7 +323,7 @@ export function useRenderPrompt() {
     setIsOptimizing(true);
     try {
       const isVfxPass = currentIR.vfxPassMode === true;
-      const isOrthographic = currentIR.camera_and_depth?.isMinimal || currentIR.constraints?.extrusion?.includes("MINIMAL");
+      const isOrthographic = currentIR.camera_and_depth?.isFlat2D || currentIR.camera_and_depth?.isMinimal || currentIR.constraints?.extrusion?.includes("MINIMAL");
       const currentIntentText = currentView === 'editor' ? userIntent : (currentView === 'edit' ? editIntent : motionIntent);
       console.log('[RenderMatrix] optimize start', { aiModel, baseLen: basePrompt.length, isVfxPass, isOrthographic });
       const parsed = await optimizePrompt({
@@ -352,6 +357,16 @@ export function useRenderPrompt() {
         finalEn = `${finalEn.trim()} ${original}`;
         console.warn('[RenderMatrix] optimizer dropped --no flag — restored from base');
         showToast('⚠️ Midjourney --no 가드가 누락돼 원본으로 복원했어요');
+      }
+      // 형태 락 복원 가드 — 옵티마이저가 형태 보존 태그를 지우면 레터폼이 다른 폰트로
+      // 교체되는 사고. Negative 복원과 동일한 방어선 (ABSOLUTE RULE F 의 클라이언트 백업).
+      const SHAPE_LOCK_MARK = 'exact original letterform silhouette';
+      if (basePrompt.includes(SHAPE_LOCK_MARK) && !finalEn.includes(SHAPE_LOCK_MARK)) {
+        const lockTags = "(exact original letterform silhouette from the input image:1.5), (strict shape preservation lock:1.4), (preserve every serif, flourish and decorative detail of the original letterforms:1.45), (final rule — letterform shapes identical to the input image, restyle nothing:1.4)";
+        const negIdx = finalEn.indexOf('\n\nNegative prompt:');
+        finalEn = negIdx >= 0 ? `${finalEn.slice(0, negIdx)}, ${lockTags}${finalEn.slice(negIdx)}` : `${finalEn.trim()}, ${lockTags}`;
+        console.warn('[RenderMatrix] optimizer dropped shape locks — restored from base');
+        showToast('⚠️ 형태 락이 누락돼 복원했어요');
       }
       setOptimizedPrompts(prev => ({ ...prev, [aiModel]: finalEn }));
       if (parsed.ko) setOptimizedPromptsKo(prev => ({ ...prev, [aiModel]: parsed.ko }));
@@ -452,12 +467,17 @@ export function useRenderPrompt() {
 
   // ===== compile orchestrator =====
   useEffect(() => {
+    // 컴파일 입력이 바뀌면 이전 AI 최적화 결과는 무효 — 옛 베이스로 만든 최적화본이
+    // compiled 보다 우선 사용되면서(promptText = optimized || compiled) 컴파일러 개선이
+    // 렌더에 반영되지 않던 근본 원인 (첫 줄 반복·줌·구형 표현 재발 사례).
+    setOptimizedPrompts({ NanoBanana: null, ChatGPT: null, Midjourney: null });
+    setOptimizedPromptsKo({ NanoBanana: null, ChatGPT: null, Midjourney: null });
     const s = {
       currentView,
       directorPersona, complexity, typographyScale, cameraLens, frontRelief, projectionDepth, surfaceTreatment,
       energyCore, material, materialInt, dramaticTex, wearLevel, rimMaterial, rimThickness, rimColor, rimIntensity,
       enableGlint, background, renderEngine, userIntent, imageRatio,
-      fxOrigin, fxIntensity, surfaceDetail, vfxPassMode, enableVfx, enableShadow,
+      fxOrigin, fxIntensity, surfaceDetail, vfxPassMode, vfxPassOverlay, enableVfx, enableShadow,
       editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent,
       editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity,
       motionImage, cameraMotion, vfxDynamics, motionIntent,
@@ -466,6 +486,7 @@ export function useRenderPrompt() {
       const ir = generateIR(s, appOptions);
       setCurrentIR(ir);
       setCompiledOutputs({ NanoBanana: compileNanoBanana(ir, s), ChatGPT: compileChatGPT(ir, s), Midjourney: compileMidjourney(ir, s) });
+      setFeelSummary(buildFeelSummary(s, appOptions));
     } else if (currentView === "edit") {
       const ir = generateEditIR(s, appOptions);
       setCurrentIR(ir);
@@ -547,6 +568,7 @@ export function useRenderPrompt() {
     fxOrigin, setFxOrigin,
     fxIntensity, setFxIntensity,
     vfxPassMode, setVfxPassMode,
+    vfxPassOverlay, setVfxPassOverlay,
     material, setMaterial,
     dramaticTex, setDramaticTex,
     surfaceDetail, setSurfaceDetail,
@@ -593,7 +615,7 @@ export function useRenderPrompt() {
     motionIntent, setMotionIntent,
     // derived
     currentIR, compiledOutputs, optimizedPrompts, optimizedPromptsKo,
-    auditIssues, qualityScores,
+    auditIssues, qualityScores, feelSummary,
     // ai actions
     isOptimizing, handleOptimizePrompt,
     isCompressing, handleCompressPrompt,

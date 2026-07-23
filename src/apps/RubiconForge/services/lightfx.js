@@ -33,7 +33,11 @@ const lightFxBackgroundBlock = (bg) => {
 - Bright luminous core with smooth glow falloff; the surrounding empty area stays the flat uniform ${b.label} (${b.hex}).`;
 };
 
-const REF_SHAPE_BLOCK = `SHAPING REFERENCE (a reference image is attached): use it ONLY to shape and place the light — let the glow, halo, rays, or particles wrap, backlight, or emanate around the silhouette/position of the referenced subject. Do NOT draw, trace, recolor, or reproduce the referenced object itself — the OUTPUT contains light ONLY, on pure black. The reference is a placement guide that must not appear in the result.`;
+const REF_SHAPE_BLOCK = `SHAPING REFERENCE (a reference image is attached): use it ONLY to shape and place the light — let the glow, halo, rays, or particles wrap, backlight, or emanate around the silhouette/position of the referenced subject. Do NOT draw, trace, recolor, or reproduce the referenced object itself — the OUTPUT contains light ONLY, on pure black. The reference is a placement guide that must not appear in the result.
+CRITICAL — NO REPRODUCED OBJECTS: absolutely do NOT redraw, copy, or reconstruct any object from the reference — no orb, gem, crystal, emblem, medallion, jewel, badge, character, face, cloth, armor or any recognizable item. Bright or detailed areas inside the reference (a glowing orb, crystal, emblem, etc.) must NOT be reproduced as an object; instead replace each such focal point with a pure abstract GLOW — a soft luminous bloom at that position with no internal structure, facets, shapes or details. The final image is emitted light only on black, containing zero solid objects.`;
+
+// 참조가 있을 때 — 외곽선/형태에 "밀착"된 절제된 디테일 이펙트. 전체를 채우지 않음.
+const REF_DETAIL_BLOCK = `EDGE-HUGGING DETAIL (refined & restrained): concentrate the light TIGHTLY along the OUTER CONTOUR and key silhouette edges of the reference — a crisp thin rim/edge light that traces the outline, with a few small tasteful sparkle glints and short delicate filament rays only at corners and tips. Keep the interior and the surrounding area almost entirely dark/empty — the effect must NOT flood, fill, or wash over the whole frame. Prioritize a clean sharp edge trace over volume. Aim for premium, understated elegance: sparse, precise, high-craft accents — NOT a dense energetic explosion. Most of the canvas stays true black; the light is a fine luminous outline plus a handful of restrained highlights.`;
 
 // 배치 형태(placement) 블록 — 빛이 피사체에 대해 어디에 놓이는지. 형태 참고가 있으면 그 실루엣에 앵커.
 const placementBlock = (formHint, hasRef) => {
@@ -42,6 +46,12 @@ const placementBlock = (formHint, hasRef) => {
 };
 
 const INTENSITY_HINT = { subtle: 'low intensity, restrained bloom, soft narrow falloff', medium: 'balanced medium intensity with a clear luminous core', strong: 'strong high-energy emission with a hot core, while preserving clean edges and breathing room' };
+// 참조(형태 밀착) 모드 전용 — 같은 강도라도 "외곽 디테일" 기준으로 한 단계 절제하고 커버리지를 제한.
+const INTENSITY_HINT_REF = {
+  subtle: 'very low intensity — a whisper-thin edge glow with only 1-2 tiny glints; the canvas stays almost fully black',
+  medium: 'restrained intensity — a crisp fine edge trace with a few small tasteful highlights; do not fill the interior or background',
+  strong: 'confident but controlled — a bright clean edge light and slightly bolder tip rays, yet still sparse and edge-bound, never flooding the frame',
+};
 const SHAPE_HINT = { none: '', square: 'shape the light around a clean centered SQUARE guide', circle: 'shape the light around a perfect centered CIRCLE guide', rectangle: 'shape the light around a wide horizontal RECTANGLE guide' };
 
 export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = 'medium', shape = 'none', index = 0, bg }) {
@@ -54,19 +64,19 @@ export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userTex
 EFFECT: ${categoryHint}.
 ${userText && userText.trim() ? `SPECIFIC REQUEST: ${userText.trim()}.` : ''}
 LIGHT QUALITY / STYLE: ${styleHint}.
-LIGHT COLOR: ${colorHint}. Keep the palette coherent around this color (subtle complementary accents are fine).
-INTENSITY: ${INTENSITY_HINT[intensity] || INTENSITY_HINT.medium}.
+LIGHT COLOR: ${colorHint}. Keep the palette coherent around this color (subtle complementary accents are fine). This chosen color OVERRIDES any color present in the reference image — ignore the reference's own colors and render the glow in this selected color.
+INTENSITY: ${(hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT)[intensity] || (hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT).medium}.
 ${SHAPE_HINT[shape] ? `BASIC SHAPE GUIDE: ${SHAPE_HINT[shape]}. The guide itself must not appear; render light only.\n` : ''}
-${place ? `${place}\n` : ''}${hasRef ? `\n${REF_SHAPE_BLOCK}\n` : ''}
+${place ? `${place}\n` : ''}${hasRef ? `\n${REF_SHAPE_BLOCK}\n${REF_DETAIL_BLOCK}\n` : ''}
 ${lightFxBackgroundBlock(bg)}
 
-COMPOSITION: center the effect with breathing room; balanced, production-ready, clean. This is variation #${index + 1} — make its motion/arrangement visibly distinct from other variations while keeping the same effect type, style, and color.
+COMPOSITION: center the effect with breathing room; balanced, production-ready, clean. This is variation #${index + 1} — vary the arrangement of the accents versus other variations${hasRef ? ' (without adding more light or filling more of the frame — keep every variation sparse and edge-bound)' : ', make its motion/arrangement visibly distinct'} while keeping the same effect type, style, and color.
 
-FINAL: output ONE light effect (${subject}) glowing on ${bgName} — light only, no object, no text, no scene.`;
+FINAL: output ONE light effect (${subject}) glowing on ${bgName} — light only, no object, no text, no scene. Any orb/gem/crystal/emblem from the reference becomes a pure abstract glow, never a rendered object.`;
 }
 
 // 외부 Gemini / AI Studio 챗 붙여넣기용 컴팩트 버전.
-export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = 'medium', shape = 'none', bg }) {
+export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = 'medium', shape = 'none', bg, hasRef = false }) {
   const b = resolveBg(bg);
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
   const tail = b.id === 'black'
@@ -74,7 +84,7 @@ export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, 
     : `Bright luminous core with smooth glow falloff; the empty area stays a single flat ${b.label} (${b.hex}) — do NOT add any second backdrop card, vignette, gradient, or UI.`;
   return `Generate a single isolated LIGHT / GLOW EFFECT on ${bgName} background — light only, NO object, NO text, NO scene (a compositable light asset for background removal / keying).
 Effect: ${userText && userText.trim() ? userText.trim() : categoryHint}.
-Style: ${styleHint}. Color: ${colorHint}. Intensity: ${INTENSITY_HINT[intensity] || INTENSITY_HINT.medium}.${SHAPE_HINT[shape] ? `\nShape guide: ${SHAPE_HINT[shape]}; do not draw the guide itself.` : ''}${formHint ? `\nPlacement: ${formHint}.` : ''}
+Style: ${styleHint}. Color: ${colorHint}. Intensity: ${(hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT)[intensity] || (hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT).medium}.${SHAPE_HINT[shape] ? `\nShape guide: ${SHAPE_HINT[shape]}; do not draw the guide itself.` : ''}${formHint ? `\nPlacement: ${formHint}.` : ''}${hasRef ? `\nEDGE-HUGGING & RESTRAINED: hug the outer contour of the reference with a crisp thin rim light plus a few small tasteful glints at corners/tips; keep the interior and background almost fully dark — do NOT flood or fill the frame. Premium, sparse, understated.\nNO REPRODUCED OBJECTS: never redraw any orb, gem, crystal, emblem or item from the reference — replace each bright focal point with a pure abstract glow (no internal shapes), rendered in the chosen color which overrides the reference's own colors.` : ''}
 ${tail}`;
 }
 
@@ -110,6 +120,7 @@ export async function renderLightFx(spec = {}) {
     intensity: spec.intensity,
     shape: spec.shape,
     bg: spec.bg,
+    hasRef: !!ref,
   });
 
   try {

@@ -19,7 +19,7 @@ export const TEMP_TTL_DAYS = 15;   // 활성 보관 기간 (이후 휴지통 이
 export const TRASH_TTL_DAYS = 15;  // 휴지통 보관 기간 (이후 영구 삭제)
 export const TRASH_FOLDER_NAME = "쓰레기통";
 const DAY_MS = 24 * 60 * 60 * 1000;
-const TEMP_TTL_MS = TEMP_TTL_DAYS * DAY_MS;
+export const TEMP_TTL_MS = TEMP_TTL_DAYS * DAY_MS; // 각 앱의 렌더 자동 저장 record 에서 expiresAt 계산용
 const TRASH_TTL_MS = TRASH_TTL_DAYS * DAY_MS;
 
 // 이름으로 폴더 조회 → 없으면 생성. folderId 반환(실패 시 null).

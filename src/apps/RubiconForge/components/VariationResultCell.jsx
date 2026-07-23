@@ -16,6 +16,7 @@ export default function VariationResultCell({
   filePrefix = 'rubicon-variation',
   sourceLoaded,
   fitViewport = false,
+  maskForgeMethod = 'luma',
   compositeRef = null, // (lightfx) 레퍼런스 dataURL — 있으면 "효과+레퍼런스 합성" 토글 노출
 }) {
   const { theme, dataUrl, error, prompt, compactPrompt, isLoading, bgHex } = slot;
@@ -109,7 +110,7 @@ export default function VariationResultCell({
     navigate('mask-forge', {
       source: 'rubicon-forge',
       image: { url: dataUrl, metadata: { from: 'rubicon-forge', label: theme.label } },
-      params: { method: 'luma', keyColor: bgHex || '#000000' },
+      params: { method: maskForgeMethod, keyColor: bgHex || '#000000' },
     });
     setSent(true);
     setTimeout(() => setSent(false), 1500);

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { doc, setDoc } from 'firebase/firestore';
 import { useGlobal } from '../../context/GlobalContext';
 import { useAuth } from '../../context/AuthContext';
+import { TEMP_TTL_MS } from '../../lib/promptArcSave';
 import { useUsageGate } from '../../components/UsageGate';
 import { useMotionPrompt } from './hooks/useMotionPrompt';
 import { usePresets } from './hooks/usePresets';
@@ -327,6 +328,8 @@ function App() {
         stepDescriptions: [''],
         tags: ['MotionMatrix', 'Veo', modelLabel],
         visibility: 'private',
+        // 렌더 자동 저장물 = 임시 파일 (15일 활성 + 15일 휴지통). 공개 전환 시 영구 보존.
+        temporary: true, expiresAt: now + TEMP_TTL_MS,
         ownerUid: user.uid,
         authorName: user.displayName || user.email || '',
         likeCount: 0,

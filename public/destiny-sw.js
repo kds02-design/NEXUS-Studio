@@ -1,11 +1,15 @@
-// 운명 관측소 PWA 서비스 워커 — scope: /destiny.html (NEXUS 본체에는 관여하지 않음).
+// 운명 관측소 PWA 서비스 워커.
+// 배포 형태별 scope 는 등록부(destiny-main.jsx)가 결정:
+//   NEXUS 동거 배포 → /destiny.html (본체에 관여하지 않음) / 전용 도메인 → /
 // 페이지는 network-first(새 배포 즉시 반영, 오프라인 시 캐시 폴백),
 // 해시 파일명 에셋·폰트는 cache-first.
 const CACHE = "destiny-obs-v1";
+// 캐시할 페이지 경로 — 등록 scope 에서 유도 ("/" 또는 "/destiny.html")
+const PAGE = new URL(self.registration.scope).pathname;
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.add("/destiny.html")).then(() => self.skipWaiting())
+    caches.open(CACHE).then((c) => c.add(PAGE)).then(() => self.skipWaiting())
   );
 });
 
@@ -28,10 +32,10 @@ self.addEventListener("fetch", (e) => {
       fetch(req)
         .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put("/destiny.html", copy));
+          caches.open(CACHE).then((c) => c.put(PAGE, copy));
           return res;
         })
-        .catch(() => caches.match("/destiny.html"))
+        .catch(() => caches.match(PAGE))
     );
     return;
   }

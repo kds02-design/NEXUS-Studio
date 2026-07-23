@@ -1,7 +1,9 @@
 // Breeze 전용 Imagen 렌더 영역 — Sovereign current 의 ImagenRenderArea 를 Breeze 톤(violet)으로 변형.
 // Creation/Edit 두 뷰가 공통으로 사용.
-import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, ImagePlus, Scissors } from 'lucide-react';
+import { useState } from 'react';
+import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, ImagePlus, Scissors, Maximize2 } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
+import ImageZoomModal from '../../../components/ImageZoomModal';
 
 export default function BreezeRenderArea() {
   const {
@@ -16,11 +18,12 @@ export default function BreezeRenderArea() {
 
   // 렌더 결과가 이미 Micro-Edit 레퍼런스(base)와 동일하면 "사용 중" 으로 표시.
   const isRenderedTheRef = !!renderedImage?.dataUrl && editUploadedImage === renderedImage.dataUrl;
+  const [zoomOpen, setZoomOpen] = useState(false);
 
   return (
-    <div className="rounded-xl border bg-[#111111] border-zinc-800/80 overflow-hidden flex flex-col h-full min-h-[480px]">
-      {/* 헤더 — 모델 선택 + 렌더 버튼 */}
-      <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-800 bg-[#141414] gap-3">
+    <div className="rounded-2xl border bg-[#18181B] border-zinc-800 overflow-hidden flex flex-col h-full min-h-[480px]">
+      {/* 헤더 — 모델 선택 + 렌더 버튼 (소버린/렌더메트릭스와 톤 통일) */}
+      <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-800 bg-[#121214] gap-3">
         <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
           {IMAGEN_MODELS.map((m) => {
             const active = selectedImagenModel === m.id;
@@ -64,8 +67,12 @@ export default function BreezeRenderArea() {
         )}
         {renderedImage?.dataUrl ? (
           <>
-            <div className="flex-1 min-h-[300px] rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center">
+            <div className="flex-1 min-h-[300px] rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center relative group cursor-zoom-in"
+              onClick={() => setZoomOpen(true)} title="클릭하면 전체화면으로 봅니다">
               <img src={renderedImage.dataUrl} alt="Imagen render" className="max-w-full max-h-full w-auto h-auto object-contain block" />
+              <span className="absolute top-2 right-2 p-1.5 rounded-md bg-black/60 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <Maximize2 className="w-3.5 h-3.5" />
+              </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
@@ -131,12 +138,15 @@ export default function BreezeRenderArea() {
           <div className="flex-1 min-h-[300px] rounded-xl border border-dashed border-zinc-800 bg-black/20 flex flex-col items-center justify-center text-zinc-600 gap-2 px-6 py-12 text-center">
             <ImageIcon className="w-9 h-9 opacity-30" />
             <p className="text-[12px] font-semibold leading-relaxed">
-              {rendering ? '이미지 생성 중입니다' : '위 [렌더링] 버튼을 눌러 시작'}
+              {rendering ? '이미지 생성 중입니다' : '우측 상단 [렌더링] 버튼을 눌러 시작'}
             </p>
             <p className="text-[10px] text-zinc-700">선택한 모델: {IMAGEN_MODELS.find((m) => m.id === selectedImagenModel)?.label}</p>
           </div>
         )}
       </div>
+      {zoomOpen && renderedImage?.dataUrl && (
+        <ImageZoomModal src={renderedImage.dataUrl} onClose={() => setZoomOpen(false)} />
+      )}
     </div>
   );
 }

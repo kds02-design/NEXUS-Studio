@@ -1,19 +1,31 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivitySquare, Sliders, AlertCircle,
   ChevronRight, Check, Stars, Sparkles, Image as ImageIcon, Download, Save, Loader2,
-  Upload, X,
+  Upload, X, Maximize2,
 } from "lucide-react";
 import { ScoreBar } from "./MatrixControls";
 import MatrixHeader from "./MatrixHeader";
+import ImageZoomModal from "../../../components/ImageZoomModal";
 import { QUICK_ADJUSTMENTS, EDIT_BUDGETS } from "../constants/presets";
 import { getQualityFeedback } from "../services/promptCompiler";
 
 // 우측 결과 영역: Logic Audit / Quality Score / Quick Adjustments 카드 3개 +
 // 하단 모델 헤더 + 컴파일된 prompt 출력 박스 + Imagen 렌더 영역.
+// 예상 질감·느낌 요약 한 줄 — [라벨] [값] 컴팩트 행.
+function FeelRow({ k, v }) {
+  if (!v) return null;
+  return (
+    <div className="flex gap-2 text-[10px] leading-snug">
+      <span className="text-zinc-500 shrink-0 w-10 font-bold">{k}</span>
+      <span className="text-zinc-300 min-w-0">{v}</span>
+    </div>
+  );
+}
+
 export default function MatrixResultPanel({
   currentView, vfxPassMode, editVfxPassMode,
-  auditIssues, qualityScores,
+  auditIssues, qualityScores, feelSummary,
   activeTroubleshoots, onApplyTroubleshoot,
   aiModel, setAiModel, currentIR,
   compiledOutputs, optimizedPrompts, optimizedPromptsKo,
@@ -29,9 +41,13 @@ export default function MatrixResultPanel({
   editImage,
   // 모델 선택
   imagenModels = [], selectedModel, setSelectedModel,
+  // 출력 해상도 — Pro 모델만 선택 가능 (Flash 는 1K 고정)
+  renderSizes = [], selectedRenderSize, setSelectedRenderSize, sizeSelectable = false,
 }) {
   const isVfxBox = currentView === "editor" ? vfxPassMode : editVfxPassMode;
   const promptText = optimizedPrompts[aiModel] || compiledOutputs[aiModel];
+  // 렌더 결과 전체화면 모달 — 키/줌/팬 처리는 FullscreenImageModal 이 담당.
+  const [imageFullscreen, setImageFullscreen] = useState(false);
   const hasOutput = !!promptText;
   // 렌더 가능 판정용 참조 이미지 — 뷰별로 실제 렌더에 쓰이는 입력과 동일 기준.
   // (이전엔 edit 뷰에서도 baseImage 만 보고 버튼을 잠가, Target 이미지를 올려도 렌더 불가였음)
@@ -137,6 +153,19 @@ export default function MatrixResultPanel({
               {getQualityFeedback(qualityScores)}
             </p>
           </div>
+          {/* 예상 질감·느낌 요약 — 점수(수치)가 못 보여주는 "어떤 느낌으로 나올지"를
+              현재 옵션 조합에서 규칙 기반으로 요약. editor 뷰에서만 제공. */}
+          {currentView === 'editor' && feelSummary && (
+            <div className="mt-3 bg-zinc-900/40 border border-zinc-800 p-3 rounded-lg space-y-1.5">
+              <div className="text-[9px] font-black uppercase tracking-widest text-indigo-300/80 mb-0.5">예상 질감 · 느낌</div>
+              <FeelRow k="무드" v={feelSummary.mood} />
+              <FeelRow k="재질" v={feelSummary.material} />
+              <FeelRow k="조형" v={feelSummary.form} />
+              <FeelRow k="라이팅" v={feelSummary.lighting} />
+              <FeelRow k="이펙트" v={feelSummary.fx} />
+              <FeelRow k="배경" v={feelSummary.background} />
+            </div>
+          )}
         </div>
 
         {/* Quick Adjustments */}
@@ -229,6 +258,29 @@ export default function MatrixResultPanel({
               ) : (
                 <span className="text-[11px] text-zinc-500">Imagen 렌더링</span>
               )}
+              {/* 출력 해상도 — Pro 모델 전용. Flash 선택 시 1K 고정 안내. */}
+              {renderSizes.length > 0 && setSelectedRenderSize && (
+                <div className="flex items-center gap-1 ml-1 pl-2 border-l border-zinc-800">
+                  {sizeSelectable ? (
+                    renderSizes.map((s) => {
+                      const active = selectedRenderSize === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => setSelectedRenderSize(s.id)}
+                          disabled={!canRender || rendering}
+                          title={s.desc}
+                          className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-colors ${active ? 'bg-[#00CEC9]/15 border-[#00CEC9]/50 text-[#00CEC9]' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                        >
+                          {s.label}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <span className="text-[10px] text-zinc-600 whitespace-nowrap" title="해상도 선택은 Nano Banana Pro 전용 — Flash 모델은 1K 고정입니다">1K 고정</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 1차 액션 — 렌더링만 컬러 강조. 참조 이미지 없으면 차단. */}
@@ -272,12 +324,20 @@ export default function MatrixResultPanel({
 
             {renderedImage?.dataUrl ? (
               <>
-                <div className="flex-1 min-h-0 rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center">
+                {/* 클릭 → 전체화면 모달 (Esc/클릭으로 닫기) */}
+                <div
+                  className="flex-1 min-h-0 rounded-xl border border-zinc-800 bg-black/40 overflow-hidden flex items-center justify-center relative group cursor-zoom-in"
+                  onClick={() => setImageFullscreen(true)}
+                  title="클릭하면 전체화면으로 봅니다"
+                >
                   <img
                     src={renderedImage.dataUrl}
                     alt="Imagen render"
                     className="max-w-full max-h-full w-auto h-auto object-contain block"
                   />
+                  <span className="absolute top-2 right-2 p-1.5 rounded-md bg-black/60 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </span>
                 </div>
                 {/* 액션 바 — 모두 뉴트럴(보더+텍스트). */}
                 <div className="shrink-0 flex items-center gap-2 flex-wrap">
@@ -323,6 +383,10 @@ export default function MatrixResultPanel({
           </div>
         </div>
       </div>
+      {/* 전체화면 이미지 모달 — portal 로 body 에 렌더 (레이아웃 overflow 영향 회피). */}
+      {imageFullscreen && renderedImage?.dataUrl && (
+        <ImageZoomModal src={renderedImage.dataUrl} onClose={() => setImageFullscreen(false)} />
+      )}
     </div>
   );
 }

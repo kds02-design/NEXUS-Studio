@@ -316,7 +316,7 @@ function fuse({ mbti, blood, zodiac, saju, env, gender, birth, hour }) {
   // 타고난 기운(사주 팔자 + MBTI·혈액형·별자리) — 환경과 분리
   const dist = { 목: 0, 화: 0, 토: 0, 금: 0, 수: 0 };
   OH_ORDER.forEach((k) => (dist[k] = saju.dist[k]));
-  dist[eMbti] += 0.5; dist[eBlood] += 0.8; dist[eZod] += 1.4; // MBTI는 성향 레이더 중심, 오행 분포엔 최소만
+  dist[eMbti] += 0.5; dist[eBlood] += 0.8; dist[eZod] += 1.4; // 오행 분포엔 사주가 절대 우위 — 보조 체계는 최소 가중만
   // 환경 기운(형기): 별도 집계 — 타고난 분포에는 섞지 않음
   const envAdd = { 목: 0, 화: 0, 토: 0, 금: 0, 수: 0 };
   ENV_Q.forEach((q) => { const o = q.opts[env[q.key]]; if (o && o[1]) envAdd[o[1]] += o[2]; });
@@ -385,19 +385,25 @@ function fuse({ mbti, blood, zodiac, saju, env, gender, birth, hour }) {
   return { eMbti, eBlood, eZod, eSaju, envAdd, envMainHas, sysEl, dist, dominant, deficient, ...ys, harmony, rels, synergy, coined, persona, cats, months, monthlyCats };
 }
 
+// 체계별 비중 예산(절대 점수 합 기준): 사주 ≈40% > MBTI ≈25% > 별자리 ≈20% > 혈액형 ≈15%.
+// (조정 이력: MBTI가 ~50%로 과다해 25%로 축소, 사주를 최대 기여자로 승격)
 function personality(mbti, blood, we, eSaju, dom, def) {
   const t = { 리더십: 50, 창의력: 50, 사교성: 50, 안정감: 50, 직관력: 50, 열정: 50 };
   const src = { 리더십: [], 창의력: [], 사교성: [], 안정감: [], 직관력: [], 열정: [] };
   const add = (k, v, label) => { t[k] += v; if (v > 0 && label) src[k].push({ label, v }); };
+  // MBTI — 글자당 ±5~8, 합계 ≈24 (25%)
   const [a, b, c, d] = mbti;
-  a === "E" ? (add("사교성", 15, "MBTI(E)"), add("열정", 8, "MBTI(E)"), add("리더십", 5, "MBTI(E)")) : (add("안정감", 12, "MBTI(I)"), add("직관력", 10, "MBTI(I)"), add("사교성", -10));
-  b === "N" ? (add("창의력", 15, "MBTI(N)"), add("직관력", 12, "MBTI(N)")) : (add("안정감", 10, "MBTI(S)"), add("리더십", 6, "MBTI(S)"), add("창의력", -6));
-  c === "T" ? (add("리더십", 12, "MBTI(T)"), add("안정감", 5, "MBTI(T)"), add("사교성", -5)) : (add("사교성", 12, "MBTI(F)"), add("열정", 6, "MBTI(F)"), add("리더십", -4));
-  d === "J" ? (add("안정감", 12, "MBTI(J)"), add("리더십", 8, "MBTI(J)"), add("창의력", -4)) : (add("창의력", 12, "MBTI(P)"), add("열정", 8, "MBTI(P)"), add("안정감", -6));
-  ({ A: () => (add("안정감", 7, `${blood}형`), add("창의력", 2, `${blood}형`)), B: () => (add("창의력", 7, `${blood}형`), add("열정", 6, `${blood}형`)), O: () => (add("리더십", 7, `${blood}형`), add("사교성", 6, `${blood}형`)), AB: () => (add("직관력", 7, `${blood}형`), add("창의력", 4, `${blood}형`)) })[blood]();
-  ({ 불: () => (add("열정", 12, "별자리(불)"), add("리더십", 8, "별자리(불)")), 땅: () => add("안정감", 12, "별자리(땅)"), 공기: () => (add("사교성", 10, "별자리(공기)"), add("창의력", 8, "별자리(공기)")), 물: () => (add("직관력", 12, "별자리(물)"), add("열정", 4, "별자리(물)")) })[we]();
+  a === "E" ? (add("사교성", 4, "MBTI(E)"), add("열정", 2, "MBTI(E)"), add("리더십", 1, "MBTI(E)")) : (add("안정감", 3, "MBTI(I)"), add("직관력", 3, "MBTI(I)"), add("사교성", -2));
+  b === "N" ? (add("창의력", 4, "MBTI(N)"), add("직관력", 2, "MBTI(N)")) : (add("안정감", 3, "MBTI(S)"), add("리더십", 2, "MBTI(S)"), add("창의력", -1));
+  c === "T" ? (add("리더십", 3, "MBTI(T)"), add("안정감", 1, "MBTI(T)"), add("사교성", -1)) : (add("사교성", 3, "MBTI(F)"), add("열정", 2, "MBTI(F)"), add("리더십", -1));
+  d === "J" ? (add("안정감", 3, "MBTI(J)"), add("리더십", 2, "MBTI(J)"), add("창의력", -1)) : (add("창의력", 3, "MBTI(P)"), add("열정", 2, "MBTI(P)"), add("안정감", -1));
+  // 혈액형 — 합계 ≈13 (15%)
+  ({ A: () => (add("안정감", 9, `${blood}형`), add("창의력", 4, `${blood}형`)), B: () => (add("창의력", 8, `${blood}형`), add("열정", 6, `${blood}형`)), O: () => (add("리더십", 8, `${blood}형`), add("사교성", 6, `${blood}형`)), AB: () => (add("직관력", 9, `${blood}형`), add("창의력", 5, `${blood}형`)) })[blood]();
+  // 별자리 — 합계 ≈18 (20%)
+  ({ 불: () => (add("열정", 12, "별자리(불)"), add("리더십", 7, "별자리(불)")), 땅: () => (add("안정감", 15, "별자리(땅)"), add("직관력", 4, "별자리(땅)")), 공기: () => (add("사교성", 10, "별자리(공기)"), add("창의력", 9, "별자리(공기)")), 물: () => (add("직관력", 13, "별자리(물)"), add("열정", 4, "별자리(물)")) })[we]();
+  // 사주 — 합계 ≈38 (40%, 최대 기여자)
   const ohTrait = { 목: "창의력", 화: "열정", 토: "안정감", 금: "리더십", 수: "직관력" };
-  add(ohTrait[eSaju], 10, "사주"); add(ohTrait[dom], 6, "타고난 최다"); add(ohTrait[def], -6);
+  add(ohTrait[eSaju], 16, "사주"); add(ohTrait[dom], 12, "타고난 최다"); add(ohTrait[def], -10);
   return TRAITS.map((k) => ({ trait: k, value: clamp(t[k]), sources: src[k].sort((x, y) => y.v - x.v).slice(0, 2).map((s) => s.label) }));
 }
 
@@ -805,12 +811,13 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
   });
 
   // 공유 링크는 항상 독립 PWA 페이지 — 받은 사람이 로그인 없이 바로 관측 가능.
+  //   독립 모드: 지금 보고 있는 주소 그대로 (전용 도메인이면 루트 /)
+  //   NEXUS 모드: VITE_DESTINY_URL(전용 도메인)이 있으면 그 주소, 없으면 같은 오리진의 /destiny.html
   const doShare = async () => {
-    const r = await shareResult({
-      title: "🔮 운명 관측소",
-      text: shareText,
-      url: `${window.location.origin}/destiny.html`,
-    });
+    const shareUrl = standalone
+      ? window.location.origin + (window.location.pathname.endsWith("/destiny.html") ? "/destiny.html" : "/")
+      : (import.meta.env.VITE_DESTINY_URL || `${window.location.origin}/destiny.html`);
+    const r = await shareResult({ title: "🔮 운명 관측소", text: shareText, url: shareUrl });
     if (r === "copied") { setShared(true); setTimeout(() => setShared(false), 2000); }
   };
 
@@ -882,7 +889,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
             </div>
           ))}
         </div>
-        <p style={{ fontSize: 11, color: C.dim, margin: "10px 0 0", textAlign: "center" }}>점수는 MBTI·혈액형·별자리·사주의 기여를 합산한 값이에요.</p>
+        <p style={{ fontSize: 11, color: C.dim, margin: "10px 0 0", textAlign: "center" }}>사주 40% · MBTI 25% · 별자리 20% · 혈액형 15% 비중으로 합산한 점수예요.</p>
       </Panel>
 
       {/* ── 이하 원본 유실 구간(50k 잘림)을 동일 스타일로 재구성 ── */}

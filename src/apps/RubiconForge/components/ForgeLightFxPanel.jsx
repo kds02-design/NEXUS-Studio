@@ -29,7 +29,7 @@ export default function ForgeLightFxPanel({ forge }) {
         </div> : <p className="mt-2 text-[10px] text-zinc-600">좌측에서 설정한 뒤 생성하면 결과가 순서대로 쌓입니다.</p>}
       </header>
       <main className="flex-1 min-h-0 px-4 lg:px-6 pt-4 lg:pt-6 pb-[100px] flex items-center justify-center overflow-hidden">
-        {selectedSlot ? <div className="w-full h-full min-h-0 max-w-[1100px]"><VariationResultCell key={selectedSlot.resultId} slot={selectedSlot} idx={selectedIdx} onRegenerate={handleRegenerateLightFx} showNineSlice={false} filePrefix="rubicon-lightfx" compositeRef={lightFxRef} sourceLoaded fitViewport /></div>
+        {selectedSlot ? <div className="w-full h-full min-h-0 max-w-[1100px]"><VariationResultCell key={selectedSlot.resultId} slot={selectedSlot} idx={selectedIdx} onRegenerate={handleRegenerateLightFx} showNineSlice={false} filePrefix="rubicon-lightfx" compositeRef={lightFxRef} sourceLoaded fitViewport maskForgeMethod="effect" /></div>
           : <div className="flex flex-col items-center gap-3 text-center text-zinc-600"><div className="w-16 h-16 rounded-2xl border border-zinc-800 bg-zinc-900/40 flex items-center justify-center"><ImagePlus className="w-6 h-6" /></div><div><div className="text-[12px] font-semibold text-zinc-400">아직 생성된 결과가 없습니다</div><div className="text-[10px] mt-1">생성 버튼은 좌측 설정 영역 아래에 있습니다.</div></div></div>}
       </main>
     </div>

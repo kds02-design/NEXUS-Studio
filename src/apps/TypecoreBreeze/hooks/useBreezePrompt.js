@@ -64,6 +64,15 @@ const resolveConflicts = (s) => {
   return { resolved: out, conflicts };
 };
 
+// 옵션 en 자동 가중치 wrap — 무가중치 토큰을 (text:w) 로 감싸 모델 attention 확보.
+// 소버린의 wrapWeight 이식: 옵션을 바꿔도 결과가 안 변하던 "변별력 부족" 문제 해소.
+// 이미 (..:N) 가중치를 가진 토큰이나 빈 값은 그대로 둔다.
+const W = (en, w = 1.2) => {
+  if (!en) return "";
+  if (/\([^)]+:\s*[\d.]+\s*\)/.test(en)) return en;
+  return `(${en}:${w})`;
+};
+
 export const buildPrompts = (raw) => {
   const { resolved: s, conflicts } = resolveConflicts(raw);
 
@@ -124,7 +133,20 @@ export const buildPrompts = (raw) => {
   const connectionKo = getOptionName(staticOptions.LetterConnections, s.letterConnection);
   const surroundKo = getOptionName(staticOptions.CasualSurroundings, s.casualSurrounding);
 
-  const genreSpecEn = `- Fill Decoration: ${internalEn}\n- Text Flow Baseline: ${textFlowEn}\n- Connections: ${connectionEn}\n- Surrounding Elements: ${surroundEn}\n- Distortions: ${getOptionEn(staticOptions.playfulDistortions, s.playfulDistortion)}`;
+  const distortionEn = getOptionEn(staticOptions.playfulDistortions, s.playfulDistortion);
+  // 재미 정체성 축 — 리듬/플로우/왜곡/장식/주변. 기본값이 아닌(=사용자가 의도적으로 고른) 축만
+  //   고가중치(1.35)로 승격해 "설정 조정이 결과에 충실히 반영"되게 한다. 캐주얼 컨셉의 핵심.
+  const funBlockEn = [
+    s.rhythmDynamic !== 'Rhythm_Calm' ? W(rhythmEn, 1.35) : '',
+    s.textFlow !== 'Straight' ? W(textFlowEn, 1.35) : '',
+    s.playfulDistortion !== 'Distort_None' ? W(distortionEn, 1.35) : '',
+    s.internalDecoration !== 'Solid' ? W(internalEn, 1.3) : '',
+    s.casualSurrounding !== 'Clean' ? W(surroundEn, 1.3) : '',
+  ].filter(Boolean).join(', ');
+  const funMandateEn = funBlockEn
+    ? `\n[PLAYFUL IDENTITY — MUST BE CLEARLY VISIBLE]: ${funBlockEn}. These playful traits are the heart of the design; make them unmistakable while keeping the text perfectly legible.`
+    : '';
+  const genreSpecEn = `- Fill Decoration: ${internalEn}\n- Text Flow Baseline: ${textFlowEn}\n- Connections: ${connectionEn}\n- Surrounding Elements: ${surroundEn}\n- Distortions: ${distortionEn}`;
   const layoutEn = layoutLines === 1
     ? `[LAYOUT MANDATE]: STRICT SINGLE HORIZONTAL ROW. ABSOLUTELY NO VERTICAL STACKING.`
     : layoutLines === 3
@@ -159,8 +181,9 @@ export const buildPrompts = (raw) => {
   const momentumBoostKo = s.momentumActive ? `\n[리듬 바운스 시스템]: 활성화됨.\n- 춤추는 텍스트: 타이포그래피가 춤을 추거나, 점프하거나, 에너지 넘치는 움직임으로 흐르는 것처럼 보여야 합니다.\n- 액션 궤적: 역동적이고 시원하게 뻗어나가는 베이스라인을 따르세요.\n- 생동감 있는 에너지: 기울어지거나, 늘어나거나, 통통 튀는 형태를 사용해 순수한 즐거움이나 역동적인 속도감을 전달하세요.` : "";
 
   const activePersonaData = directorPersonas.find(p => p.id === s.aiPersona) || directorPersonas[0];
-  const morphologyBody = `${weightEn}, ${kerningEn}, Width(${widthEn}), Specific Proportion(${proportionEn}).`;
-  const morphologyDetail = s.isAdvancedOptionsEnabled ? `\n- Detail: ${terminalEn}, ${sharpnessEn}, Texture(${textureEn}), Extension(${extensionEn}).\n${genreSpecEn}\n- Slant: ${slantEn}` : "";
+  // 뼈대 옵션 가중치 wrap — 획 굵기/자간/자폭/비례가 실제로 결과에 반영되도록.
+  const morphologyBody = `${W(weightEn)}, ${W(kerningEn)}, Width(${W(widthEn)}), Specific Proportion(${W(proportionEn)}).`;
+  const morphologyDetail = s.isAdvancedOptionsEnabled ? `\n- Detail: ${W(terminalEn)}, ${W(sharpnessEn)}, Texture(${W(textureEn)}), Extension(${W(extensionEn)}).\n${genreSpecEn}\n- Slant: ${W(slantEn)}` : "";
 
   const morphologyBodyKo = `${weightKo}, ${kerningKo}, 자폭(${widthKo}), 특정 비율(${proportionKo}).`;
   const morphologyDetailKo = s.isAdvancedOptionsEnabled ? `\n- 디테일: ${terminalKo}, ${sharpnessKo}, 텍스처(${textureKo}), 연장선(${extensionKo}).\n- 채우기 장식: ${internalKo}\n- 베이스라인 흐름: ${textFlowKo}\n- 글자 연결성: ${connectionKo}\n- 주변 요소: ${surroundKo}\n- 왜곡: ${getOptionName(staticOptions.playfulDistortions, s.playfulDistortion)}\n- 기울기: ${slantKo}` : "";
@@ -197,9 +220,9 @@ export const buildPrompts = (raw) => {
 ${layoutEn}${lineBreakEn}${personaMandate}${hangulBoostEn}
 [PROPORTION SAFETY]: Force each character's proportion to ${proportionEn} and width to ${widthEn}. Do not stretch or rotate individual characters vertically. Multi-row stacking is allowed only when required by the LAYOUT MANDATE.
 [MORPHOLOGY]:
-- Theme: ${styleEn}.
+- Theme: ${W(styleEn, 1.3)}.
 - Body: ${morphologyBody}${morphologyDetail}
-[RHYTHM]: ${rhythmEn}.
+[RHYTHM]: ${W(rhythmEn, 1.3)}.${funMandateEn}
 [ENVIRONMENT]: AR ${arBoostEn}, ${bgDesc}.${artisticBoost}${qualityBoost}${transformationBoost}${momentumBoost}`.trim();
 
   const hangulBoostKo = hasHangul(s.inputText)

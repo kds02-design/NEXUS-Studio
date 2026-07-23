@@ -5,6 +5,7 @@
 import { doc, setDoc } from 'firebase/firestore';
 import { renderWithImagen } from '../../../lib/imagenRender';
 import { uploadBase64 } from '../../../lib/storage';
+import { TEMP_TTL_MS } from '../../../lib/promptArcSave';
 import { db, appId } from '../../../lib/firebase';
 import { serializeForFirestore } from '../../PromptArc/services/firebase';
 
@@ -35,6 +36,8 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
         stepKeywords: [''], stepDescriptions: [''],
         tags: ['TypecoreBreeze', 'Imagen', modelLabel],
         visibility: 'private',
+        // 렌더 자동 저장물 = 임시 파일 (15일 활성 + 15일 휴지통). 공개 전환 시 영구 보존.
+        temporary: true, expiresAt: now + TEMP_TTL_MS,
         ownerUid: user.uid,
         authorName: user.displayName || user.email || '',
         likeCount: 0, relatedIds: [], type: 'image',

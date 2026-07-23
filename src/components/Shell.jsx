@@ -794,7 +794,8 @@ function AppCardGrid({ onScroll, initialScrollTop = 0 }) {
         // 관리자에게는 보이되 '숨김' 표시 + 토글 가능.
         if (toolGroup !== "all" && toolGroup !== g.key) return null;
         const query = toolQuery.trim().toLowerCase();
-        const apps = APP_REGISTRY.filter(a => a.group === g.key && (!isAppHidden(a, overrides) || isAdmin))
+        // adminLocked 앱은 가시성 오버라이드("공개" 토글)와 무관하게 비관리자에게 미노출.
+        const apps = APP_REGISTRY.filter(a => a.group === g.key && (!isAppHidden(a, overrides) || isAdmin) && (!a.adminLocked || isAdmin))
           .filter(a => !query || `${a.label} ${a.sub} ${a.desc}`.toLowerCase().includes(query));
         if (!apps.length) return null;
         // Admin 그룹은 패널 wrapper 없이 기존 미니멀 톤 유지.
@@ -910,9 +911,27 @@ function VersionSubHeader({ versions, selectedVersion, onSelect }) {
   );
 }
 
+// adminLocked 앱을 비관리자가 열었을 때의 차단 화면 — 가시성 오버라이드/직접 URL 우회 방지.
+function AdminOnlyBlock() {
+  const { setCurrentApp } = useGlobal();
+  const T = useTheme();
+  return (
+    <div style={{ height:"100%", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:14, padding:24, textAlign:"center" }}>
+      <div style={{ width:52, height:52, borderRadius:14, display:"grid", placeItems:"center", background:T.hoverBg, border:`1px solid ${T.border}`, color:T.textMuted }}>
+        <Lock size={24} />
+      </div>
+      <div>
+        <div style={{ fontSize:15, fontWeight:700, color:T.text, marginBottom:6 }}>관리자 전용 도구입니다</div>
+        <div style={{ fontSize:12, color:T.textMuted, lineHeight:1.6 }}>이 앱은 관리자 계정만 사용할 수 있어요.</div>
+      </div>
+      <button onClick={() => setCurrentApp(null)} className="nx-btn nx-btn-primary" style={{ marginTop:4 }}>홈으로 돌아가기</button>
+    </div>
+  );
+}
+
 export default function Shell() {
   const { currentApp } = useGlobal();
-  const { loginModalOpen, closeLoginModal } = useAuth();
+  const { loginModalOpen, closeLoginModal, isAdmin } = useAuth();
   const T = useTheme();
   const app = currentApp ? APP_MAP[currentApp] : null;
   const hasVersions = Array.isArray(app?.versions) && app.versions.length > 0;
@@ -999,7 +1018,11 @@ export default function Shell() {
       <div style={{ flex:1, overflow:"hidden", paddingTop: innerPaddingTop + subHeaderHeight, minHeight:0 }}>
         {/* 인덱스 재마운트 시 직전 스크롤 위치를 초기값으로 한 번 전달한다. */}
         {/* eslint-disable-next-line react-hooks/refs */}
-        {currentApp ? <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} /> : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={indexScrollYRef.current}/>}
+        {currentApp
+          ? (app?.adminLocked && !isAdmin
+            ? <AdminOnlyBlock />
+            : <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} />)
+          : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={indexScrollYRef.current}/>}
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {loginModalOpen && <LoginScreen asModal onClose={closeLoginModal} />}

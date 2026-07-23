@@ -20,6 +20,7 @@ const PREVIEW_COLOR = APP_MAP['nexus-preview']?.color || '#22B8CF';
 const METHOD_API = 'api';
 const METHOD_LUMA = 'luma';
 const METHOD_SPRITE = 'sprite';
+const METHOD_EFFECT = 'effect';
 const METHOD_STORAGE = 'mask-forge:method';
 
 // transformers.js ESM (CDN). 모델은 huggingface.co 에서 캐시됨. Gemini 프록시와 무관.
@@ -54,6 +55,8 @@ const KEY_DEFAULTS = {
   decontam: true,
   trim: false,
 };
+
+const EFFECT_DEFAULTS = { cutoff: 6, gamma: 0.85, opacity: 100, recoverColor: true, trim: false };
 
 // 결과 패널 배경 미리보기 프리셋 — 투명 컷아웃에 남은 잔여 엣지/헤일로를
 // 다양한 배경(흰/검/회색 + 형광 녹·마젠타 = 잔여 픽셀 검출용)에서 검수.
@@ -307,6 +310,49 @@ function colorKeyToBlob(srcData, { bg, tolerance, feather, holeProtect, holeSize
   });
 }
 
+// 발광 렌더 전용 추출. 배경 B 위 프리멀티플라이(C = A·F + (1−A)·B)로 보고
+// 참 알파를 배경과의 색거리(max-norm)로 근사, F = (C − (1−A)·B)/A 로 역산해
+// 헤일로 없는 straight-alpha PNG를 만든다.
+// bg 미지정/검정이면 기존 max(RGB) 방식과 동일 결과 — 크로마 그린/블루 등
+// 단색 배경 발광 렌더도 같은 수식으로 추출된다 (검정 전제라 크로마에서 안 되던 버그 수정).
+function effectToBlob(srcData, { cutoff, gamma, opacity, recoverColor, trim, bg }) {
+  const W = srcData.width, H = srcData.height, s = srcData.data;
+  const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const out = ctx.createImageData(W, H), o = out.data;
+  const threshold = Math.min(0.95, Math.max(0, cutoff / 255));
+  const curve = Math.max(0.2, gamma);
+  const gain = Math.max(0, opacity / 100);
+  const br = (bg?.[0] || 0) / 255, bgr = (bg?.[1] || 0) / 255, bb = (bg?.[2] || 0) / 255;
+  for (let i = 0; i < s.length; i += 4) {
+    const sr = s[i] / 255, sg = s[i + 1] / 255, sb = s[i + 2] / 255;
+    // 배경과의 색거리 = 참 알파 근사 — 검정 배경이면 max(RGB) 밝기와 동일
+    const d = Math.max(Math.abs(sr - br), Math.abs(sg - bgr), Math.abs(sb - bb));
+    let a = d <= threshold ? 0 : (d - threshold) / Math.max(0.001, 1 - threshold);
+    a = Math.min(1, Math.pow(a, curve) * gain) * (s[i + 3] / 255);
+    if (a <= 0.0001) { o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0; continue; }
+    if (recoverColor && d > 0.0001) {
+      // 배경 성분 역산 제거 — 검정 배경에선 C/peak(기존 발광색 복원)와 동일
+      o[i] = clamp255(((sr - (1 - d) * br) / d) * 255);
+      o[i + 1] = clamp255(((sg - (1 - d) * bgr) / d) * 255);
+      o[i + 2] = clamp255(((sb - (1 - d) * bb) / d) * 255);
+    } else {
+      o[i] = s[i]; o[i + 1] = s[i + 1]; o[i + 2] = s[i + 2];
+    }
+    o[i + 3] = clamp255(a * 255);
+  }
+  ctx.putImageData(out, 0, 0);
+  let exportCanvas = canvas;
+  if (trim) {
+    const box = alphaTrimBox(o, W, H);
+    if (box) {
+      exportCanvas = document.createElement('canvas'); exportCanvas.width = box.w; exportCanvas.height = box.h;
+      exportCanvas.getContext('2d').drawImage(canvas, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+    }
+  }
+  return new Promise((resolve, reject) => exportCanvas.toBlob((blob) => blob ? resolve({ blob, width: exportCanvas.width, height: exportCanvas.height }) : reject(new Error('PNG 변환 실패')), 'image/png'));
+}
+
 export default function MaskForgeApp() {
   const { navigate, payload, clearPayload } = useGlobal();
   const consumedPayloadRef = useRef(null);
@@ -340,6 +386,11 @@ export default function MaskForgeApp() {
   const [picking, setPicking] = useState(false); // 스포이드 모드
   const [lumaBusy, setLumaBusy] = useState(false);
   const [fineTuneOpen, setFineTuneOpen] = useState(false);
+  const [effectCutoff, setEffectCutoff] = useState(EFFECT_DEFAULTS.cutoff);
+  const [effectGamma, setEffectGamma] = useState(EFFECT_DEFAULTS.gamma);
+  const [effectOpacity, setEffectOpacity] = useState(EFFECT_DEFAULTS.opacity);
+  const [effectRecoverColor, setEffectRecoverColor] = useState(EFFECT_DEFAULTS.recoverColor);
+  const [effectTrim, setEffectTrim] = useState(EFFECT_DEFAULTS.trim);
   const lumaImgRef = useRef(null); // 디코딩된 원본 캐시 — 실시간 재처리용
   const srcDataRef = useRef(null);  // 원본 ImageData 캐시 — 키잉·감지·스포이드 공유
 
@@ -448,13 +499,15 @@ export default function MaskForgeApp() {
 
   const setStatusMsg = (msg, state = 'idle') => setStatus({ msg, state });
 
-  const loadFile = useCallback((file) => {
+  // opts.trusted — 다른 앱(루비콘/브리즈 등)에서 navigate 로 보낸 앱 내부 생성 이미지.
+  //   4K 렌더 결과는 12MB 를 쉽게 넘겨 크기 가드에 걸려 "이미지가 안 붙던" 문제 → 신뢰 소스는 우회.
+  const loadFile = useCallback((file, opts = {}) => {
     if (!file) return;
     if (!file.type?.startsWith('image/')) {
       setStatusMsg('이미지 파일만 가능합니다 (PNG · JPG · WEBP)', 'error');
       return;
     }
-    if (file.size > 12 * 1024 * 1024) {
+    if (!opts.trusted && file.size > 12 * 1024 * 1024) {
       setStatusMsg(`파일이 너무 큽니다 (최대 12MB · 현재 ${(file.size / 1024 / 1024).toFixed(1)}MB)`, 'error');
       return;
     }
@@ -489,12 +542,12 @@ export default function MaskForgeApp() {
         if (cancelled) return;
         const ext = (blob.type && blob.type.split('/')[1]) || 'png';
         const file = new File([blob], `incoming_${payload.timestamp}.${ext}`, { type: blob.type || 'image/png' });
-        loadFile(file);
+        loadFile(file, { trusted: true }); // 앱 내부 생성 이미지 — 크기 가드 우회
         // 송신 앱이 방식/키 컬러를 지정하면 반영 — 루비콘 포지: 로컬 색상 키(luma)로 진입하고
         // 생성 배경색을 키 컬러로 미리 지정해 컨트롤 가능한 투명 추출이 즉시 시작되게 한다.
         // (loadFile 이 bgColor 를 null 로 리셋하므로 그 뒤에 지정해야 자동 감지 대신 지정색이 쓰임)
         const p = payload.params || {};
-        if (p.method === METHOD_LUMA || p.method === METHOD_API) setMethod(p.method);
+        if ([METHOD_LUMA, METHOD_API, METHOD_EFFECT].includes(p.method)) setMethod(p.method);
         if (p.keyColor) { const rgb = hexToRgb(p.keyColor); if (rgb) setBgColor(rgb); }
         try { clearPayload(); } catch { /* ignore */ }
       } catch (e) {
@@ -533,9 +586,10 @@ export default function MaskForgeApp() {
     return data;
   }, [uploadedFile]);
 
-  // 배경색 자동 감지 — 로컬 키잉 모드 진입 + 이미지 준비 시 1회 (스포이드/수동 지정 전).
+  // 배경색 자동 감지 — 로컬 키잉·이펙트 추출 모드 진입 + 이미지 준비 시 1회 (스포이드/수동 지정 전).
+  // 이펙트 추출도 배경색을 써야 크로마 그린 등 비검정 배경 발광 렌더가 추출된다.
   useEffect(() => {
-    if (method !== METHOD_LUMA || !uploadedFile || bgColor) return undefined;
+    if (![METHOD_LUMA, METHOD_EFFECT].includes(method) || !uploadedFile || bgColor) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -575,9 +629,29 @@ export default function MaskForgeApp() {
     return () => { cancelled = true; clearTimeout(t); };
   }, [method, uploadedFile, bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim, ensureSrcData, applyResultQuiet]);
 
-  // 스포이드 — 원본 미리보기 클릭 위치의 픽셀색을 배경색으로 지정.
+  // 발광 이펙트 실시간 추출 — 검정 제거와 색 복원을 원본 해상도에서 즉시 갱신.
+  useEffect(() => {
+    if (method !== METHOD_EFFECT || !uploadedFile) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setLumaBusy(true);
+      try {
+        const data = await ensureSrcData();
+        if (!data || cancelled) return;
+        const { blob, width, height } = await effectToBlob(data, { cutoff: effectCutoff, gamma: effectGamma, opacity: effectOpacity, recoverColor: effectRecoverColor, trim: effectTrim, bg: bgColor });
+        if (cancelled) return;
+        applyResultQuiet(blob);
+        setStatus({ msg: `이펙트 추출 · 실시간 (${width}×${height})`, state: 'done' });
+      } catch (e) {
+        if (!cancelled) setStatus({ msg: `오류: ${e.message || e}`, state: 'error' });
+      } finally { if (!cancelled) setLumaBusy(false); }
+    }, 90);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [method, uploadedFile, bgColor, effectCutoff, effectGamma, effectOpacity, effectRecoverColor, effectTrim, ensureSrcData, applyResultQuiet]);
+
+  // 스포이드 — 원본 미리보기 클릭 위치의 픽셀색을 배경색으로 지정 (색상 키·이펙트 공용).
   const handleEyedrop = useCallback(async (e) => {
-    if (!picking || method !== METHOD_LUMA) return;
+    if (!picking || ![METHOD_LUMA, METHOD_EFFECT].includes(method)) return;
     const data = await ensureSrcData();
     if (!data) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -620,6 +694,19 @@ export default function MaskForgeApp() {
       return;
     }
 
+    if (method === METHOD_EFFECT) {
+      setProcessing(true); setStatusMsg('발광 이펙트 추출 중...', 'active'); setProgress(45);
+      try {
+        const data = await ensureSrcData();
+        if (!data) throw new Error('이미지를 불러올 수 없습니다.');
+        const bg = bgColor || detectBg(data.data, data.width, data.height);
+        const { blob, width, height } = await effectToBlob(data, { cutoff: effectCutoff, gamma: effectGamma, opacity: effectOpacity, recoverColor: effectRecoverColor, trim: effectTrim, bg });
+        applyResult(blob); setProgress(100); setStatusMsg(`완료! 이펙트 알파 추출 (${width}×${height})`, 'done');
+      } catch (e) { setStatusMsg(`오류: ${e.message || e}`, 'error'); setProgress(0); }
+      finally { setProcessing(false); }
+      return;
+    }
+
     // Remove.bg AI.
     if (!apiKey.trim()) { setStatusMsg('API 키를 먼저 입력하세요', 'error'); return; }
     setProcessing(true);
@@ -642,7 +729,7 @@ export default function MaskForgeApp() {
     } finally {
       setProcessing(false);
     }
-  }, [apiKey, uploadedFile, method, bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim, applyResult, ensureSrcData]);
+  }, [apiKey, uploadedFile, method, bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim, effectCutoff, effectGamma, effectOpacity, effectRecoverColor, effectTrim, applyResult, ensureSrcData]);
 
   const handleDownload = useCallback(() => {
     if (!resultUrl) return;
@@ -757,6 +844,7 @@ export default function MaskForgeApp() {
               {method === METHOD_API && 'Remove.bg AI — 머리카락 · 반투명 · 복잡한 배경까지 전문가 수준으로 처리'}
               {method === METHOD_LUMA && '로컬 색상 키 — 단색·단순 배경의 타이포 / 로고 / 발광 소재를 원본 해상도로'}
               {method === METHOD_SPRITE && '로컬 AI 스프라이트 — 복잡한 게임 화면에서 캐릭터 분리 후 브러시로 마무리'}
+              {method === METHOD_EFFECT && '이펙트 알파 추출 — 검정·크로마 등 단색 배경은 제거하고 빛의 색과 부드러운 투명도는 자연스럽게 보존'}
             </p>
           </div>
 
@@ -765,6 +853,7 @@ export default function MaskForgeApp() {
             {[
               { key: METHOD_API, title: 'Remove.bg AI', desc: '피사체 누끼 · 무료키 저해상도(~0.25MP)' },
               { key: METHOD_LUMA, title: '로컬 색상 키', desc: '원본 해상도 · 무료 · 타이포 / 로고 / 단색 배경' },
+              { key: METHOD_EFFECT, title: '이펙트 추출', desc: '검정·크로마 배경 광원 · 글로우 · 파티클 전용 알파 복원' },
               { key: METHOD_SPRITE, title: 'AI 스프라이트', desc: '로컬 AI 누끼 + 브러시 보정 · 복잡한 게임 화면' },
             ].map((m) => {
               const active = method === m.key;
@@ -819,6 +908,55 @@ export default function MaskForgeApp() {
                 잔여 {creditsRemaining} 크레딧
               </span>
             )}
+          </div>
+          )}
+
+          {method === METHOD_EFFECT && (
+          <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">발광 알파 복원</span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border" style={{ color: ACCENT, borderColor: `${ACCENT}55` }}>원본 해상도 · 실시간</span>
+              {lumaBusy && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+            </div>
+
+            {/* 배경색 — 자동 감지 + 스포이드. 검정뿐 아니라 크로마 그린 등 단색 배경 발광 렌더 지원 */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">배경색</span>
+              <span
+                className="w-8 h-8 rounded-md border border-zinc-700 shrink-0"
+                style={{ background: bgColor ? `rgb(${bgColor[0]},${bgColor[1]},${bgColor[2]})` : '#000' }}
+                title={bgColor ? `rgb(${bgColor.join(', ')})` : '감지 대기 (기본 검정)'}
+              />
+              <span className="text-[11px] font-mono text-zinc-400 tabular-nums">
+                {bgColor ? `#${bgColor.map((v) => v.toString(16).padStart(2, '0')).join('').toUpperCase()}` : '자동 감지 대기'}
+              </span>
+              <button
+                onClick={() => setPicking((v) => !v)}
+                disabled={!uploadedFile}
+                className={`ml-auto text-[10px] font-bold tracking-wider px-3 py-2 rounded-lg border inline-flex items-center gap-1.5 transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${picking ? 'text-black' : 'text-zinc-300 border-zinc-700 hover:border-zinc-500'}`}
+                style={picking ? { background: ACCENT, borderColor: ACCENT } : undefined}
+              >
+                <Pipette size={12} /> {picking ? '원본에서 배경 클릭…' : '스포이드'}
+              </button>
+              {bgColor && (
+                <button
+                  onClick={async () => { const d = await ensureSrcData(); if (d) setBgColor(detectBg(d.data, d.width, d.height)); }}
+                  className="text-[10px] font-bold tracking-wider px-3 py-2 rounded-lg border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+                  title="테두리에서 배경색 다시 감지"
+                >
+                  자동 재감지
+                </button>
+              )}
+            </div>
+
+            <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">배경 제거</span><input type="range" min={0} max={64} value={effectCutoff} onChange={(e) => setEffectCutoff(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{effectCutoff}</span></label>
+            <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">알파 곡선</span><input type="range" min={0.35} max={1.8} step={0.05} value={effectGamma} onChange={(e) => setEffectGamma(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{effectGamma.toFixed(2)}</span></label>
+            <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">불투명도</span><input type="range" min={25} max={200} value={effectOpacity} onChange={(e) => setEffectOpacity(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{effectOpacity}%</span></label>
+            <div className="flex flex-wrap gap-2">
+              {[{ on: effectRecoverColor, set: setEffectRecoverColor, label: '발광색 복원', title: '배경과 섞인 색을 역산해 배경색 헤일로를 제거합니다.' }, { on: effectTrim, set: setEffectTrim, label: '여백 트림', title: '투명 여백을 자동으로 잘라냅니다.' }].map(t => <button key={t.label} onClick={() => t.set(v => !v)} title={t.title} className={`text-[10px] font-bold px-3 py-1.5 rounded-full border ${t.on ? 'text-black' : 'text-zinc-400 border-zinc-700'}`} style={t.on ? { background: ACCENT, borderColor: ACCENT } : undefined}>{t.label}</button>)}
+              <button onClick={() => { setEffectCutoff(EFFECT_DEFAULTS.cutoff); setEffectGamma(EFFECT_DEFAULTS.gamma); setEffectOpacity(EFFECT_DEFAULTS.opacity); setEffectRecoverColor(true); setEffectTrim(false); }} className="text-[10px] font-bold px-3 py-1.5 rounded-full border border-zinc-700 text-zinc-400">기본값</button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-zinc-500"><b className="text-zinc-300">배경색</b>은 테두리에서 자동 감지 — 검정은 물론 크로마 그린/블루 같은 단색 배경도 지원하며, 잘못 잡히면 스포이드로 지정하세요. <b className="text-zinc-300">배경 제거</b>는 배경 근처 노이즈를 줄이고, <b className="text-zinc-300">알파 곡선</b>은 소프트 글로우의 퍼짐을 조절합니다. 발광색 복원을 켜면 배경색 테두리 없이 밝은 색을 straight-alpha로 복원합니다.</p>
           </div>
           )}
 
@@ -1102,7 +1240,7 @@ export default function MaskForgeApp() {
                 <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-4 z-20">
                   <Loader2 className="w-8 h-8 animate-spin" style={{ color: ACCENT }} />
                   <span className="text-[11px] font-bold tracking-wider" style={{ color: ACCENT }}>
-                    {method === METHOD_LUMA ? '로컬 배경 제거 중...' : 'Remove.bg AI 처리 중...'}
+                    {method === METHOD_LUMA ? '로컬 배경 제거 중...' : method === METHOD_EFFECT ? '이펙트 알파 복원 중...' : 'Remove.bg AI 처리 중...'}
                   </span>
                 </div>
               )}
@@ -1119,7 +1257,7 @@ export default function MaskForgeApp() {
             >
               {processing ? (
                 <span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> 처리 중…</span>
-              ) : method === METHOD_LUMA ? '로컬 배경 제거' : '배경 제거 실행'}
+              ) : method === METHOD_LUMA ? '로컬 배경 제거' : method === METHOD_EFFECT ? '이펙트 투명화' : '배경 제거 실행'}
             </button>
             <button
               onClick={handleReset}
@@ -1271,6 +1409,7 @@ function SpriteView({ navigate }) {
   const [erodeV, setErodeV] = useState(1);
   const [featherV, setFeatherV] = useState(1);
   const [defringe, setDefringe] = useState(true);
+  const [trimV, setTrimV] = useState(false); // 저장/보내기 시 투명 여백 트림
   const [bgMode, setBgMode] = useState('check'); // check / dark / light
   const [resampleWidth, setResampleWidth] = useState(RESAMPLE_DEFAULT);
 
@@ -1445,8 +1584,24 @@ function SpriteView({ navigate }) {
     render();
   };
 
+  // 내보내기 캔버스 — 여백 트림이 켜져 있으면 불투명 경계 박스(+2px 패딩)로 잘라낸 사본 반환.
+  // 미리보기 캔버스는 원본 크기 유지 (브러시 좌표계 보존), 트림은 저장/보내기 시에만 적용.
+  const exportCanvas = () => {
+    const view = viewRef.current;
+    if (!view) return null;
+    if (!trimV) return view;
+    try {
+      const img = view.getContext('2d').getImageData(0, 0, view.width, view.height);
+      const box = alphaTrimBox(img.data, view.width, view.height);
+      if (!box || (box.w === view.width && box.h === view.height)) return view;
+      const c = document.createElement('canvas');
+      c.width = box.w; c.height = box.h;
+      c.getContext('2d').drawImage(view, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
+      return c;
+    } catch { return view; }
+  };
   const downloadPng = () => {
-    viewRef.current?.toBlob((b) => {
+    exportCanvas()?.toBlob((b) => {
       if (!b) return;
       const a = document.createElement('a'); a.href = URL.createObjectURL(b);
       a.download = `sprite_${Date.now()}.png`; document.body.appendChild(a); a.click();
@@ -1454,18 +1609,20 @@ function SpriteView({ navigate }) {
     }, 'image/png');
   };
   const downloadResample = async () => {
-    if (!viewRef.current) return;
+    const src = exportCanvas();
+    if (!src) return;
     const targetW = Math.min(4096, Math.max(16, Math.round(Number(resampleWidth) || RESAMPLE_DEFAULT)));
     try {
-      const { blob, width, height } = await resampleToWidth(viewRef.current.toDataURL('image/png'), targetW);
+      const { blob, width, height } = await resampleToWidth(src.toDataURL('image/png'), targetW);
       const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
       a.download = `sprite_${width}x${height}_${Date.now()}.png`; document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(a.href);
     } catch (e) { setProg(`리샘플 실패: ${e.message || e}`); }
   };
   const sendToPreview = () => {
-    if (!viewRef.current) return;
-    try { navigate('nexus-preview', { source: 'mask-forge', image: { url: viewRef.current.toDataURL('image/png'), metadata: {} } }); }
+    const src = exportCanvas();
+    if (!src) return;
+    try { navigate('nexus-preview', { source: 'mask-forge', image: { url: src.toDataURL('image/png'), metadata: {} } }); }
     catch (e) { setProg(`보내기 실패: ${e.message || e}`); }
   };
 
@@ -1541,13 +1698,23 @@ function SpriteView({ navigate }) {
             <input type="range" min={0} max={12} value={featherV} onChange={(e) => { setFeatherV(Number(e.target.value)); schedule(); }} className="flex-1 accent-[#FF3366]" />
             <span className="text-[11px] font-mono text-zinc-300 w-8 text-right tabular-nums">{featherV}</span>
           </label>
-          <button
-            onClick={() => { setDefringe((v) => !v); schedule(); }}
-            className={`text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-full border transition-colors inline-flex items-center gap-1.5 self-start ${defringe ? 'text-black' : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
-            style={defringe ? { background: ACCENT, borderColor: ACCENT } : undefined}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${defringe ? 'bg-black' : 'bg-zinc-600'}`} /> 디프린지 (색 번짐 제거)
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => { setDefringe((v) => !v); schedule(); }}
+              className={`text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-full border transition-colors inline-flex items-center gap-1.5 ${defringe ? 'text-black' : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+              style={defringe ? { background: ACCENT, borderColor: ACCENT } : undefined}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${defringe ? 'bg-black' : 'bg-zinc-600'}`} /> 디프린지 (색 번짐 제거)
+            </button>
+            <button
+              onClick={() => setTrimV((v) => !v)}
+              title="저장/보내기 시 투명 여백을 잘라내 실제 스프라이트 크기로 내보냅니다"
+              className={`text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-full border transition-colors inline-flex items-center gap-1.5 ${trimV ? 'text-black' : 'text-zinc-400 border-zinc-700 hover:border-zinc-500'}`}
+              style={trimV ? { background: ACCENT, borderColor: ACCENT } : undefined}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${trimV ? 'bg-black' : 'bg-zinc-600'}`} /> 여백 트림 (저장 시)
+            </button>
+          </div>
           <div className="text-[10px] text-zinc-600 leading-relaxed">배경 테두리가 남으면 <b className="text-zinc-400">수축</b>을 키우고, 경계는 <b className="text-zinc-400">부드럽기</b>로 완화하세요.</div>
         </div>
 
