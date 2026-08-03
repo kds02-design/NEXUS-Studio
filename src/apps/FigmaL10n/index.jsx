@@ -231,7 +231,7 @@ export default function FigmaL10nApp() {
               <input
                 className="l10n-input" style={inputStyle}
                 value={sheetName} onChange={e => setSheetName(e.target.value)}
-                placeholder="시트명 (비워두면 첫 번째 시트)"
+                placeholder="시트명 (비워두면 번역표 시트 자동 감지)"
               />
             </div>
             <div>
@@ -315,6 +315,11 @@ export default function FigmaL10nApp() {
         {parsed && (
           <div style={{ ...panelStyle, marginBottom: 20 }}>
             <SectionTitle T={T} index="03" title="Detected" />
+            {parsed.sheetName && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 16, fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: T.textMuted, padding: '5px 11px', border: `1px solid ${T.border}`, borderRadius: 999, background: T.surface }}>
+                <FileSpreadsheet size={12} style={{ color: ACCENT }} /> 시트: <strong style={{ color: T.text }}>{parsed.sheetName}</strong>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 20 }}>
               <StatCard T={T} num={parsed.rows.length} label="Total Rows" color={ACCENT} />
               <StatCard T={T} num={parsed.detected.length} label="Languages" color={ACCENT} />

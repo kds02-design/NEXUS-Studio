@@ -14,6 +14,7 @@ import { useAuth } from "../../context/AuthContext";
 import {
   listUsersByStatus, approveUser, rejectUser, deleteUserDoc,
   GRADES, GRADE_LABEL, STATUS,
+  creditsRef, weekKey, setCreditCache,
 } from "../../lib/grades";
 import {
   migrateInitialCriteria, getSeedCriteria, getSeedRules,
@@ -183,6 +184,7 @@ function UsersPanel() {
   const [loading, setLoading] = useState(true);
   const [busyUid, setBusyUid] = useState(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
@@ -238,6 +240,18 @@ function UsersPanel() {
     } catch (e) { setError(e.message || "권한 변경 실패"); }
     finally { setBusyUid(null); }
   };
+  // 이번 주 크레딧 사용량 초기화 — users/{uid}/credits/{현재 주} doc 삭제 → 주간 한도 즉시 복구.
+  const onResetCredits = async (uid, email) => {
+    if (!confirm(`"${email || uid}" 의 이번 주(${weekKey()}) 크레딧 사용량을 초기화하시겠습니까?\n주간 한도가 즉시 복구됩니다.`)) return;
+    setBusyUid(uid);
+    try {
+      await deleteDoc(creditsRef(uid));
+      setCreditCache(uid, 0, {}); // 로컬 캐시 동기화 — 본인 초기화 시 UI 잔량 즉시 반영
+      setNotice(`크레딧 초기화 완료 — ${email || uid} (${weekKey()})`);
+      setTimeout(() => setNotice(""), 4000);
+    } catch (e) { setError(e.message || "크레딧 초기화 실패"); }
+    finally { setBusyUid(null); }
+  };
 
   return (
     <AdminSection
@@ -246,6 +260,7 @@ function UsersPanel() {
       action={<RefreshButton onClick={load} loading={loading}/>}
     >
       {error && <ErrorBanner message={error}/>}
+      {notice && <div className="text-[11px] font-bold text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-lg px-3 py-2">{notice}</div>}
 
       {pending.length > 0 && (
         <div>
@@ -265,6 +280,7 @@ function UsersPanel() {
         <UserTable users={approved} status="approved" busyUid={busyUid}
           onApprove={onApprove} onReject={onReject} onDelete={onDelete}
           onChangeGrade={onChangeGrade} onToggleAdmin={onToggleAdmin}
+          onResetCredits={onResetCredits}
           loading={loading}
         />
       </div>
@@ -283,7 +299,7 @@ function UsersPanel() {
   );
 }
 
-function UserTable({ users, status, busyUid, onApprove, onReject, onDelete, onChangeGrade, onToggleAdmin, loading }) {
+function UserTable({ users, status, busyUid, onApprove, onReject, onDelete, onChangeGrade, onToggleAdmin, onResetCredits, loading }) {
   if (loading && users.length === 0) {
     return <div className="text-zinc-600 text-xs text-center py-6">로딩 중...</div>;
   }
@@ -342,6 +358,7 @@ function UserTable({ users, status, busyUid, onApprove, onReject, onDelete, onCh
                   )}
                   {status === "approved" && (
                     <>
+                      <ActionButton onClick={() => onResetCredits(u.uid, u.email)} disabled={busy} color="#FDCB6E" label="크레딧 초기화"/>
                       <ActionButton onClick={() => onReject(u.uid)} disabled={busy} color="#ff7575" label="차단"/>
                       <ActionButton onClick={() => onDelete(u.uid, u.email)} disabled={busy} color="#52525b" label="삭제"/>
                     </>

@@ -23,6 +23,8 @@ export const RENDER_MODEL = "gemini-3-pro-image-preview";
 // bg-mood-theme 은 분위기 프리셋/컬러 시스템 연동이 있을 때만 삽입 (아래 buildEnhancePrompt).
 const ENHANCE_SKILLS_BG = [
   "quality-up/bg-intro",
+  "quality-up/no-new-elements",
+  "quality-up/no-new-text",
   "quality-up/preserve-letterform",
   "quality-up/preserve-face",
   "quality-up/preserve-subject",
@@ -38,7 +40,7 @@ const ENHANCE_SKILLS_BG = [
 //   moodPresets: UI 프리셋(갓레이/파티클 등) + 강도 지시 라인들.
 //   themePalette: 프로모션 컬러 시스템(테마 토큰) 연동 지시.
 // 사용자가 추가로 원하는 효과/지시는 [추가 요청 가드] 스킬로 끝에 합침(형태 변경 요청은 이중 가드로 무시).
-const buildEnhancePrompt = (extra, boost = {}) => {
+export const buildEnhancePrompt = (extra, boost = {}) => {
   const mood = String(boost.moodPresets || "").trim();
   const palette = String(boost.themePalette || "").trim();
   const ids = [...ENHANCE_SKILLS_BG];
@@ -169,18 +171,19 @@ ${String(extraInstructions).trim()}
 - 현재 퀄리티가 부족한 영역
 
 [프롬프트 절대 금지 — 맨 앞에 명시]
+- ★새 문자/텍스트 생성 절대 금지: 원본에 없는 글자·단어·타이틀·로고·서브카피·숫자·워터마크·UI 텍스트를 단 한 글자도 새로 만들지 말 것. 상단/하단 빈 영역에 제목·카피를 채워 넣지 말고 빈 공간은 그대로 유지. 유사 문자(gibberish lettering)도 금지. (프롬프트 본문에도 "do NOT add any new text, title, logo, or lettering that is not in the original — keep empty areas empty" 명시.)
 - 타이틀/로고의 ★형태★(글자/철자, 서체/자형 윤곽, 자간, 위치, 크기, 각도, 외곽 실루엣) 변경 금지. 텍스트 재작성·이동·확대 금지.
 - 구도·레이아웃·피사체 배치 변경 금지. 단, ★배경★(피사체·타이틀 제외 영역)의 색온도·빛·분위기는 드라마틱하게 변경 허용 — 배경 퀄리티업의 목적.
 - ★ 캐릭터/인물의 얼굴 인상 절대 변형 금지: 생김새·이목구비 비율·표정·시선·연령대·성별·헤어스타일·메이크업·고유 특징(점/흉터/장신구 포함)을 1:1로 보존. 다른 사람으로 바뀌거나 비슷하지만 다른 얼굴로 가는 것 모두 금지. 얼굴 부위에는 미세 조명/디테일 강화만 허용.
 - ★ 캐릭터의 체형·실루엣·포즈·의상/갑옷·헤어·소품·비율도 1:1 보존(배경만 바꾸고 캐릭터는 그대로). 캐릭터를 새로 그리거나 디자인을 바꾸지 말 것.
-- 새 요소 추가·요소 재배치 금지.
+- ★새 요소 생성 절대 금지 (가장 흔한 실패): 원본에 없는 캐릭터/인물/실루엣/군중, 타이틀/텍스트, 오브젝트(건물·무기·소품·구조물)를 단 하나도 추가하지 말 것 — 배경 연출을 위해서라도, 멀리 흐릿하게라도 금지. 배경 강화는 빛·대기·안개·파티클·그레이딩 같은 비정형 연출로만. 요소 재배치도 금지. (프롬프트 본문에도 "do NOT add any new character, figure, silhouette, text, title, or object that is not in the original — enhance only with light, atmosphere, particles and grading" 명시.)
 - ★ 가장자리(좌·우·상·하)의 ★그라데이션 페이드·소프트 vignette·반투명 영역·자연스러운 fade-out★ 은 원본 그대로 보존. 다른 콘텐츠와 자연스럽게 연결되도록 의도된 디자인이므로 결과에서 단단한 배경/오브젝트/풍경 등으로 채우지 말 것. 옅게 사라지는 영역을 결과에서 단단한 색으로 메우는 outpainting/extending canvas 절대 금지. (프롬프트 본문에도 "preserve original edge fade / soft vignette / transparent gradient at the borders, do NOT outpaint, do NOT fill faded areas with new content" 명시.)
 
 [프롬프트 허용]
 - 서브카피·날짜 텍스트의 '색상'만 향상된 이미지 톤에 맞춰 가독성 위해 조정 가능(내용·위치·서체는 유지).
 - ★ 타이틀의 ★질감·재질 마감★ 은 배경의 라이팅/톤과 어울리되 ★타이틀이 가장 돋보이는 방향으로★ 조정 가능. 예) 메탈릭/스톤/유리 PBR 마감, 표면 반사·하이라이트, 미세 그라데이션, 림라이트, 글로우, 텍스처 오버레이, 외곽 분리감. 단, 위 [절대 금지]의 글자 형태·자형 윤곽·실루엣은 그대로 보존 — 질감/광만 입히고 형태는 절대 건드리지 말 것을 프롬프트에 명시.
 
-[★ 타이틀은 시각적 HERO — 프롬프트에 반드시 강조]
+[★ 타이틀은 시각적 HERO — 프롬프트에 반드시 강조 (★원본에 타이틀 텍스트가 이미 있는 경우에만 — 없으면 이 섹션 전체를 프롬프트에 넣지 말고 타이틀을 새로 만들지도 말 것★)]
 - "타이틀이 이미지의 1차 focal point" 라고 명시 — 첫 시선이 반드시 타이틀로 가도록.
 - ★ 분리감 우선순위(프롬프트에 명시):
   1순위: 타이틀 자체의 ★또렷한 림라이트·표면 하이라이트·광택·명확한 silhouette★ 로 끌어올림.

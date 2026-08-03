@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS, ATMOSPHERE_TEMPERATURE, ATMOSPHERE_AGE, DESIGN_VARIATIONS, VARIATION_STRENGTH, BG_COLORS } from '../constants/variations';
-import { LIGHTFX_CATEGORIES, LIGHTFX_FORMS, LIGHTFX_STYLES, LIGHTFX_COLORS } from '../constants/lightfx';
+import { LIGHTFX_CATEGORIES, LIGHTFX_FORMS, LIGHTFX_STYLES, LIGHTFX_COLORS, LIGHTFX_MOTIONS, LIGHTFX_GRAINS, LIGHTFX_BOKEHS } from '../constants/lightfx';
 import { IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from '../../../lib/imagenRender';
 import ForgeHeader from './ForgeHeader';
 
@@ -210,6 +210,9 @@ export default function ForgeSidebar({ forge }) {
     lightFxStyle, setLightFxStyle,
     lightFxColor, setLightFxColor,
     lightFxIntensity, setLightFxIntensity,
+    lightFxMotion, setLightFxMotion,
+    lightFxGrain, setLightFxGrain,
+    lightFxBokeh, setLightFxBokeh,
     lightFxShape, setLightFxShape,
     lightFxText, setLightFxText,
     lightFxRef, isDraggingLightFxRef,
@@ -880,6 +883,50 @@ export default function ForgeSidebar({ forge }) {
             <div className="grid grid-cols-3 gap-1.5">
               {[['subtle','약하게'],['medium','보통'],['strong','강하게']].map(([id, label]) => <button key={id} onClick={() => setLightFxIntensity(id)} className={`h-9 rounded-md border text-[10px] font-semibold ${lightFxIntensity === id ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-[#141417] border-zinc-800 text-zinc-400'}`}>{label}</button>)}
             </div>
+          </section>
+
+          {/* 형태 변형 — 빛의 흐름을 물·안개 등 자연 형상으로 (종류·스타일과 별개 축) */}
+          <section>
+            <h3 className="text-[12px] font-semibold text-zinc-300 mb-2.5">형태 변형</h3>
+            <div className="grid grid-cols-2 gap-1.5">
+              {LIGHTFX_MOTIONS.map(m => {
+                const active = m.id === lightFxMotion;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => setLightFxMotion(m.id)}
+                    title={m.hint}
+                    className={`flex flex-col items-start gap-0.5 px-2.5 py-2 rounded-md border transition-colors text-left ${active ? 'bg-zinc-800 border-zinc-600' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
+                  >
+                    <div className={`text-[11px] font-semibold ${active ? 'text-white' : 'text-zinc-300'}`}>{m.label}</div>
+                    <div className="text-[9px] text-zinc-500 truncate w-full">{m.desc}</div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed break-keep-all">
+              빛의 <span className="text-zinc-400">흐름·형상</span>을 변형합니다. 종류·스타일·컬러는 그대로 유지돼요.
+            </p>
+          </section>
+
+          {/* 디테일 스케일 — 입자·보케 크기 */}
+          <section>
+            <h3 className="text-[12px] font-semibold text-zinc-300 mb-2.5">디테일 스케일</h3>
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] font-semibold text-zinc-400 w-16 shrink-0">입자 크기</span>
+              <div className="grid grid-cols-2 gap-1.5 flex-1">
+                {LIGHTFX_GRAINS.map(g => <button key={g.id} onClick={() => setLightFxGrain(g.id)} title={g.hint} className={`h-8 rounded-md border text-[10px] font-semibold ${lightFxGrain === g.id ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-[#141417] border-zinc-800 text-zinc-400'}`}>{g.label}</button>)}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-semibold text-zinc-400 w-16 shrink-0">보케 사이즈</span>
+              <div className="grid grid-cols-2 gap-1.5 flex-1">
+                {LIGHTFX_BOKEHS.map(b => <button key={b.id} onClick={() => setLightFxBokeh(b.id)} title={b.hint} className={`h-8 rounded-md border text-[10px] font-semibold ${lightFxBokeh === b.id ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-[#141417] border-zinc-800 text-zinc-400'}`}>{b.label}</button>)}
+              </div>
+            </div>
+            <p className="text-[10px] text-zinc-600 mt-1.5 leading-relaxed break-keep-all">
+              <span className="text-zinc-400">세밀</span>을 고르면 파티클·빛망울이 작고 촘촘한 미세 디테일로 렌더됩니다.
+            </p>
           </section>
 
           <section>

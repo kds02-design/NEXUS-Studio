@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import {
   X, Copy, Trash2, Edit2, Heart, Star, Check, ChevronLeft, ChevronRight,
   Play, Folder, FolderPlus, Plus, Type, Box, Video, MoreHorizontal,
-  Link2, Search, Download,
+  Link2, Search, Download, Scissors, LayoutTemplate, Sparkles, Hexagon,
 } from "lucide-react";
 import { APP_MAP } from "../../../config/apps";
 import { useGlobal } from "../../../context/GlobalContext";
-import { inferRelatedType } from "../constants/categories";
+import { inferRelatedType, classifyImageNature, IMAGE_NATURE_LABEL } from "../constants/categories";
+import { smartTransparentPng } from "../../../lib/smartTransparency";
 import { PromptImage } from "./ArcCard";
 import { MODAL_LIGHT_OVERRIDE_CSS } from "../../../lib/modalLightOverrideCSS";
 
@@ -54,11 +55,8 @@ export default function ArcDetailModal({
 
   useEffect(() => { setZoomScale(1); setPanPos({ x: 0, y: 0 }); }, [mediaIdx]);
 
-  // 이미지 저장 — Cloudinary 등 CORS 가 허용되면 blob 다운로드, 막히면 새 탭으로 폴백.
-  const handleDownload = async () => {
-    if (activeMedia?.type !== 'image' || !activeMedia.src) return;
-    const url = activeMedia.src;
-    const base = (prompt.title || 'image').replace(/[\\/:*?"<>|]/g, '_');
+  // 원본 blob 다운로드 — Cloudinary 등 CORS 허용 시 blob, 막히면 새 탭 폴백.
+  const downloadOriginal = async (url, base, note) => {
     try {
       const res = await fetch(url, { mode: 'cors' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -69,12 +67,35 @@ export default function ArcDetailModal({
       a.href = obj; a.download = `${base}.${ext}`;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(obj);
-      showToast?.('이미지를 저장했습니다.');
+      showToast?.(note || '이미지를 저장했습니다.');
     } catch {
       // CORS 차단 시 새 탭으로 이동 → 사용자가 우클릭 저장 가능
       window.open(url, '_blank', 'noopener');
       showToast?.('이미지 새 탭에서 열림 — 우클릭하여 저장하세요.');
     }
+  };
+
+  // 이미지 저장 — 배경을 분석해 가장 적절한 투명화를 자동 적용.
+  //   순흑(광원) → 루마키(발광 보존) / 단색(타이포·오브젝트) → 컬러 키잉+디프린지 /
+  //   복잡(키비주얼 등) → 로컬 키잉 불가 → 원본 저장 + 마스크 포지(AI 누끼) 안내.
+  const handleDownload = async () => {
+    if (activeMedia?.type !== 'image' || !activeMedia.src) return;
+    const url = activeMedia.src;
+    const base = (prompt.title || 'image').replace(/[\\/:*?"<>|]/g, '_');
+    const r = await smartTransparentPng(url);
+    if (r.ok) {
+      const a = document.createElement('a');
+      a.href = r.dataUrl; a.download = `${base}_transparent.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      showToast?.(r.method === 'luma' ? '투명 PNG 저장 — 순흑 배경 루마키(발광 보존) 자동 적용' : '투명 PNG 저장 — 단색 배경 키잉 자동 적용');
+      return;
+    }
+    if (r.reason === 'complex') {
+      await downloadOriginal(url, base, '복잡한 배경 — 원본 저장. 정밀 누끼는 … 메뉴에서 마스크 포지로 보내세요.');
+      return;
+    }
+    // CORS taint / 로드 실패 — 원본 경로로 폴백.
+    await downloadOriginal(url, base);
   };
 
   const handleZoomWheel = (e) => { const adj = e.deltaY * -0.001; setZoomScale((prev) => Math.min(Math.max(1, prev + adj), 5)); };
@@ -106,14 +127,36 @@ export default function ArcDetailModal({
   const currentDesc = prompt.stepDescriptions?.[mainIdx] || prompt.description || '';
   const currentKws = (prompt.stepKeywords?.[mainIdx] || prompt.aiKeywords || '').split(',').map(k => k.trim()).filter(Boolean);
 
-  // sendTargets — 5개 타겟 모두 항상 노출. 각 항목은 클릭 시 target-별 payload 모양으로 라우팅된다.
-  const sendTargets = useMemo(() => [
-    { id: 'typecore-sovereign', label: '타이프코어 소버린 마이크로 리터칭', icon: <Type size={13} /> },
-    { id: 'render-matrix',      label: '렌더 메트릭스 마이크로 에디트',     icon: <Box size={13} /> },
-    { id: 'render-matrix-pop',  label: '렌더 메트릭스 팝으로 변형',         icon: <Box size={13} /> },
-    { id: 'motion-metrics',     label: '모션 메트릭스 레퍼런스 전달',       icon: <Video size={13} /> },
-    { id: 'design-eval',        label: '디자인 평가도구로 평가',            icon: <Star size={13} /> },
-  ], []);
+  // sendTargets — 이미지 성격(타이포/오브젝트/광원/모션/키비주얼)에 맞는 타겟만 노출.
+  // 성격 분류는 태그(카테고리·자동저장 태그) + 키워드 + 제목 기반 (classifyImageNature).
+  const imageNature = useMemo(() => classifyImageNature(prompt), [prompt]);
+  const sendTargets = useMemo(() => {
+    const T = {
+      sovereign:  { id: 'typecore-sovereign', label: '타이프코어 소버린 마이크로 리터칭', icon: <Type size={13} /> },
+      render:     { id: 'render-metrics',     label: '렌더 메트릭스 재질·입체 입히기',    icon: <Box size={13} /> },
+      renderPop:  { id: 'render-matrix-pop',  label: '렌더 메트릭스 팝으로 변형',         icon: <Box size={13} /> },
+      motion:     { id: 'motion-metrics',     label: '모션 메트릭스 레퍼런스 전달',       icon: <Video size={13} /> },
+      evalTool:   { id: 'design-eval',        label: '디자인 평가도구로 평가',            icon: <Star size={13} /> },
+      mask:       { id: 'mask-forge',         label: '마스크 포지 정밀 투명화',           icon: <Scissors size={13} /> },
+      maskAi:     { id: 'mask-forge',         label: '마스크 포지 AI 누끼',               icon: <Scissors size={13} /> },
+      preview:    { id: 'nexus-preview',      label: 'NEXUS Preview 목업 배치',           icon: <LayoutTemplate size={13} /> },
+      rubicon:    { id: 'rubicon-forge',      label: '루비콘 포지 테마 변형',             icon: <Hexagon size={13} /> },
+    };
+    switch (imageNature) {
+      case 'typography': // 타이포 → 리터칭·재질·목업·투명화·모션
+        return [T.sovereign, T.render, T.preview, T.mask, T.motion, T.evalTool];
+      case 'object':     // 버튼·프레임 → 변형·투명화·목업
+        return [T.rubicon, T.mask, T.preview, T.renderPop, T.evalTool];
+      case 'lightfx':    // 광원·이펙트 → 투명화·모션 소스·목업
+        return [T.mask, T.motion, T.preview, T.evalTool];
+      case 'motion':     // 모션 → 모션·평가
+        return [T.motion, T.evalTool];
+      case 'kv':         // 키비주얼 → 목업·AI 누끼·모션
+        return [T.preview, T.maskAi, T.motion, T.evalTool];
+      default:           // 판별 불가 — 기존 기본 5종
+        return [T.sovereign, T.render, T.renderPop, T.motion, T.evalTool];
+    }
+  }, [imageNature]);
 
   // 타겟별 navigate payload 빌더. PromptArc/index.jsx 의 handleSendToApp 은 이 payload 를 그대로 navigate 에 전달한다.
   const buildPayload = (targetId, imageUrl) => {
@@ -130,7 +173,7 @@ export default function ArcDetailModal({
         params: { briefReportId: null },
       };
     }
-    if (targetId === 'render-matrix') {
+    if (targetId === 'render-metrics') {
       // 렌더링 → 마이크로 에디트 모드로 진입, editImage 자동 임포트.
       return {
         ...stamp,
@@ -139,6 +182,16 @@ export default function ArcDetailModal({
         image: { url: imageUrl },
         params: {},
       };
+    }
+    if (targetId === 'mask-forge') {
+      // 투명화 — 이미지 성격에 맞는 방식 프리셋:
+      //   광원(순흑) → 로컬 색상 키 + 검정 키컬러 / 키비주얼(복잡) → Remove.bg AI / 그 외 오브젝트 → 로컬 색상 키(자동 감지).
+      const params = imageNature === 'kv'
+        ? { method: 'api' }
+        : imageNature === 'lightfx'
+          ? { method: 'luma', keyColor: '#000000' }
+          : { method: 'luma' };
+      return { ...stamp, prompt: basePrompt, image: { url: imageUrl, metadata: {} }, params };
     }
     if (targetId === 'motion-metrics') {
       // 모션 → 레퍼런스 이미지로 진입, image 영역에 자동 임포트.
@@ -498,7 +551,12 @@ export default function ArcDetailModal({
               title="이 프롬프트로 이어서 작업"
             ><MoreHorizontal className="w-5 h-5" /></button>
             {actionMenuOpen && (
-              <div className="absolute bottom-full right-0 mb-4 w-[210px] rounded-2xl shadow-2xl p-2 animate-in fade-in slide-in-from-bottom-2 border bg-[#1c1c1e] border-white/5">
+              <div className="absolute bottom-full right-0 mb-4 w-[230px] rounded-2xl shadow-2xl p-2 animate-in fade-in slide-in-from-bottom-2 border bg-[#1c1c1e] border-white/5">
+                <div className="flex items-center gap-1.5 px-2.5 pt-1 pb-2 border-b border-white/5 mb-1">
+                  <Sparkles size={11} className="text-[#C8A969]" />
+                  <span className="text-[9px] font-bold tracking-wider text-zinc-500 uppercase">이미지 성격</span>
+                  <span className="text-[10px] font-bold text-zinc-300">{IMAGE_NATURE_LABEL[imageNature]}</span>
+                </div>
                 {sendTargets.map(t => {
                   const isDisabled = !!APP_MAP[t.id]?.disabled;
                   return (

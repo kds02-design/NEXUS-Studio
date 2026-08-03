@@ -18,6 +18,7 @@ export default function VariationResultCell({
   fitViewport = false,
   maskForgeMethod = 'luma',
   compositeRef = null, // (lightfx) 레퍼런스 dataURL — 있으면 "효과+레퍼런스 합성" 토글 노출
+  autoTransparent = false, // true(광원 등)면 기본 다운로드가 투명 PNG 자동 추출 — 합성 보기는 예외
 }) {
   const { theme, dataUrl, error, prompt, compactPrompt, isLoading, bgHex } = slot;
   const { navigate } = useGlobal();
@@ -76,11 +77,22 @@ export default function VariationResultCell({
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = async () => {
     if (!activeUrl) return;
+    let href = activeUrl;
+    let suffix = composited ? '-composite' : '';
+    // 광원 등 오브젝트 결과물은 저장 시 투명화 자동 적용 (합성 보기는 레퍼런스 포함이라 그대로).
+    if (autoTransparent && !composited) {
+      try {
+        href = await colorToTransparentPng(dataUrl, bgHex || '#000000');
+        suffix = '-transparent';
+      } catch (e) {
+        console.warn('[VariationResultCell] auto transparent failed — 원본 저장', e);
+      }
+    }
     const a = document.createElement('a');
-    a.href = activeUrl;
-    a.download = `${filePrefix}-${theme.id}${composited ? '-composite' : ''}-${Date.now()}.png`;
+    a.href = href;
+    a.download = `${filePrefix}-${theme.id}${suffix}-${Date.now()}.png`;
     a.click();
   };
 

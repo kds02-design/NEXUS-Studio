@@ -213,6 +213,7 @@ const COMPLETE_AXES = {
       { key:'nature', ko:'자연 정령', en:'restrained leaf and spirit-light accents localized to two corners' },
       { key:'arcane', ko:'아케인 마법', en:'one subtle arcane glow line and a small central glowing geometric accent — an abstract shape, never a rune or character' },
       { key:'dark_minimal', ko:'다크 미니멀', en:'plain charcoal surface, precise thin border and almost no ornament' },
+      { key:'modern_ui', ko:'모던 UI', en:'clean contemporary product-UI styling — flat calm surfaces, ONE restrained thin border line as the only decoration, generous negative space; explicitly NOT futuristic: no sci-fi glow, no neon, no holographic effects, no tech greebles, no angular chamfer patterns' },
       { key:'red_lacquer', ko:'붉은 칠기', en:'restrained deep-red lacquer with narrow aged-gold edge accents' },
       { key:'crystal', ko:'크리스탈', en:'clean translucent crystal rim with sparse controlled highlights' },
     ],
@@ -224,6 +225,7 @@ const COMPLETE_AXES = {
       { key:'button_hex_4', for:['button'], ko:'뾰족 육각 4:1', en:'an ultra-wide 4:1 pointed hexagon button frame' },
       { key:'button_cut', for:['button'], ko:'컷코너 버튼', en:'an elongated 3:1 button with precise clipped corners' },
       { key:'button_pill', for:['button'], ko:'필 버튼', en:'a clean horizontal pill-shaped button' },
+      { key:'button_stadium', for:['button'], ko:'좌우 원형', en:'a wide stadium-shaped button frame whose left and right ends are perfect full semicircles — true capsule geometry with the end radius equal to half the button height, never just softly rounded corners' },
       { key:'button_round', for:['button'], ko:'라운드 버튼', en:'a wide softly rounded rectangular button' },
       { key:'box_landscape', for:['box'], ko:'가로 박스', en:'a wide landscape content box with a large usable interior' },
       { key:'box_square', for:['box'], ko:'정사각 박스', en:'a square content box with a large usable interior' },
@@ -247,6 +249,8 @@ const COMPLETE_AXES = {
       { key:'icon_scroll_down', for:['icon'], ko:'스크롤 다운 (셰브론)', en:'a scroll-down indicator icon made of two stacked downward chevrons, the lower chevron slightly smaller and fainter, clean game UI style' },
       { key:'icon_scroll_mouse', for:['icon'], ko:'스크롤 다운 (마우스)', en:'a scroll-down indicator icon: a slim rounded mouse outline with a small inner scroll dot and one downward chevron beneath it' },
       { key:'icon_chevron_down', for:['icon'], ko:'셰브론 (아래)', en:'a single clean downward chevron icon with crisp mitered joints and consistent stroke weight' },
+      { key:'icon_nav_prev', for:['icon'], ko:'이동 (왼쪽)', en:'a single clean left-pointing navigation chevron icon for a previous/back UI control — one crisp mitered chevron with consistent stroke weight, no tail, instantly readable as "go left" in a carousel or pager' },
+      { key:'icon_nav_next', for:['icon'], ko:'이동 (오른쪽)', en:'a single clean right-pointing navigation chevron icon for a next/forward UI control — one crisp mitered chevron with consistent stroke weight, no tail, instantly readable as "go right" in a carousel or pager' },
       { key:'icon_play', for:['icon'], ko:'재생 (플레이)', en:'a single media play icon — one clean right-pointing triangle, video play button glyph, crisp even edges' },
       { key:'icon_play_circle', for:['icon'], ko:'영상 플레이 (원형)', en:'a video play button icon: a right-pointing play triangle centered inside a clean circular ring, classic media player play glyph, balanced and instantly readable' },
     ],
@@ -272,6 +276,7 @@ const COMPLETE_AXES = {
       { ko:'은', en:'polished silver with cool controlled reflections' },
       { ko:'다마스커스 강철', en:'dark Damascus steel with subtle layered wave patterns' },
       { ko:'연마 강철', en:'polished forged steel with crisp cold highlights' },
+      { ko:'무광 매트', en:'smooth matte non-metallic surface with a soft flat finish, minimal reflections and clean uniform color' },
       { ko:'전투로 단련된 흑철', en:'battle-hardened dark steel, subtly scratched and worn' },
       { ko:'기름 먹인 흑철', en:'oiled blackened steel with restrained cold highlights' },
       { ko:'그을린 강철', en:'smoke-darkened forged steel with worn edges' },
@@ -321,7 +326,10 @@ const SIMPLE_MOODS = [
   { key:'gold_kingdom', ko:'화려한 황금 왕국', preset:'royal_crest', material:'고대 황금', ornament:'네 모서리 집중' },
   { key:'magic', ko:'신비로운 마법', preset:'arcane', material:'마력 크리스탈', ornament:'좌우 대칭' },
   { key:'nature', ko:'자연과 정령', preset:'nature', material:'고목', ornament:'네 모서리 집중' },
-  { key:'clean', ko:'깔끔하고 현대적', preset:'dark_minimal', material:'연마 강철', ornament:'절제된 테두리' },
+  // '깔끔하고 현대적'(구: dark_minimal+연마강철)이 SF 풍으로 나온다는 피드백 →
+  // 그 조합은 '미래적 SF'로 정직하게 이름 붙이고, 현대적은 모던 UI + 무광 매트로 재정의.
+  { key:'clean', ko:'깔끔하고 현대적', preset:'modern_ui', material:'무광 매트', ornament:'절제된 테두리' },
+  { key:'futuristic', ko:'미래적 SF', preset:'dark_minimal', material:'연마 강철', ornament:'절제된 테두리' },
 ];
 const SIMPLE_RENDER_STYLES = [
   { key:'illustrated', ko:'게임 일러스트' },

@@ -6,7 +6,7 @@
 // 둘 다 가능 — 변형 모드 결과와 동일한 파이프라인(투명 PNG 버튼)을 그대로 재사용한다.
 
 import { renderWithImagen } from '../../../lib/imagenRender';
-import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID, LIGHTFX_FORM_BY_ID } from '../constants/lightfx';
+import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID, LIGHTFX_FORM_BY_ID, LIGHTFX_MOTION_BY_ID, LIGHTFX_GRAIN_BY_ID, LIGHTFX_BOKEH_BY_ID } from '../constants/lightfx';
 import { DEFAULT_BG } from '../constants/variations';
 
 const DEFAULT_MODEL = 'gemini-3.1-flash-image-preview';
@@ -54,7 +54,7 @@ const INTENSITY_HINT_REF = {
 };
 const SHAPE_HINT = { none: '', square: 'shape the light around a clean centered SQUARE guide', circle: 'shape the light around a perfect centered CIRCLE guide', rectangle: 'shape the light around a wide horizontal RECTANGLE guide' };
 
-export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = 'medium', shape = 'none', index = 0, bg }) {
+export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = 'medium', shape = 'none', index = 0, bg, motionHint = '', grainHint = '', bokehHint = '' }) {
   const b = resolveBg(bg);
   const subject = userText && userText.trim() ? userText.trim() : categoryHint;
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
@@ -66,7 +66,7 @@ ${userText && userText.trim() ? `SPECIFIC REQUEST: ${userText.trim()}.` : ''}
 LIGHT QUALITY / STYLE: ${styleHint}.
 LIGHT COLOR: ${colorHint}. Keep the palette coherent around this color (subtle complementary accents are fine). This chosen color OVERRIDES any color present in the reference image — ignore the reference's own colors and render the glow in this selected color.
 INTENSITY: ${(hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT)[intensity] || (hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT).medium}.
-${SHAPE_HINT[shape] ? `BASIC SHAPE GUIDE: ${SHAPE_HINT[shape]}. The guide itself must not appear; render light only.\n` : ''}
+${motionHint ? `FORM VARIATION: ${motionHint}. Apply this shaping to the overall flow and silhouette of the effect while keeping the chosen effect type and color readable — still light-only emission, never a solid object or scene.\n` : ''}${grainHint ? `${grainHint}.\n` : ''}${bokehHint ? `${bokehHint}.\n` : ''}${SHAPE_HINT[shape] ? `BASIC SHAPE GUIDE: ${SHAPE_HINT[shape]}. The guide itself must not appear; render light only.\n` : ''}
 ${place ? `${place}\n` : ''}${hasRef ? `\n${REF_SHAPE_BLOCK}\n${REF_DETAIL_BLOCK}\n` : ''}
 ${lightFxBackgroundBlock(bg)}
 
@@ -76,7 +76,7 @@ FINAL: output ONE light effect (${subject}) glowing on ${bgName} — light only,
 }
 
 // 외부 Gemini / AI Studio 챗 붙여넣기용 컴팩트 버전.
-export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = 'medium', shape = 'none', bg, hasRef = false }) {
+export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = 'medium', shape = 'none', bg, hasRef = false, motionHint = '', grainHint = '', bokehHint = '' }) {
   const b = resolveBg(bg);
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
   const tail = b.id === 'black'
@@ -84,7 +84,7 @@ export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, 
     : `Bright luminous core with smooth glow falloff; the empty area stays a single flat ${b.label} (${b.hex}) — do NOT add any second backdrop card, vignette, gradient, or UI.`;
   return `Generate a single isolated LIGHT / GLOW EFFECT on ${bgName} background — light only, NO object, NO text, NO scene (a compositable light asset for background removal / keying).
 Effect: ${userText && userText.trim() ? userText.trim() : categoryHint}.
-Style: ${styleHint}. Color: ${colorHint}. Intensity: ${(hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT)[intensity] || (hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT).medium}.${SHAPE_HINT[shape] ? `\nShape guide: ${SHAPE_HINT[shape]}; do not draw the guide itself.` : ''}${formHint ? `\nPlacement: ${formHint}.` : ''}${hasRef ? `\nEDGE-HUGGING & RESTRAINED: hug the outer contour of the reference with a crisp thin rim light plus a few small tasteful glints at corners/tips; keep the interior and background almost fully dark — do NOT flood or fill the frame. Premium, sparse, understated.\nNO REPRODUCED OBJECTS: never redraw any orb, gem, crystal, emblem or item from the reference — replace each bright focal point with a pure abstract glow (no internal shapes), rendered in the chosen color which overrides the reference's own colors.` : ''}
+Style: ${styleHint}. Color: ${colorHint}. Intensity: ${(hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT)[intensity] || (hasRef ? INTENSITY_HINT_REF : INTENSITY_HINT).medium}.${motionHint ? `\nForm variation: ${motionHint} (still light-only, no object).` : ''}${grainHint ? `\n${grainHint}.` : ''}${bokehHint ? `\n${bokehHint}.` : ''}${SHAPE_HINT[shape] ? `\nShape guide: ${SHAPE_HINT[shape]}; do not draw the guide itself.` : ''}${formHint ? `\nPlacement: ${formHint}.` : ''}${hasRef ? `\nEDGE-HUGGING & RESTRAINED: hug the outer contour of the reference with a crisp thin rim light plus a few small tasteful glints at corners/tips; keep the interior and background almost fully dark — do NOT flood or fill the frame. Premium, sparse, understated.\nNO REPRODUCED OBJECTS: never redraw any orb, gem, crystal, emblem or item from the reference — replace each bright focal point with a pure abstract glow (no internal shapes), rendered in the chosen color which overrides the reference's own colors.` : ''}
 ${tail}`;
 }
 
@@ -98,6 +98,9 @@ export async function renderLightFx(spec = {}) {
   const ref = spec.referenceDataUrl || null;
   const refs = ref ? [ref] : [];
   const form = LIGHTFX_FORM_BY_ID[spec.form] || null; // 미지정/자유면 배치 힌트 없음
+  const motionHint = LIGHTFX_MOTION_BY_ID[spec.motion]?.hint || '';
+  const grainHint = LIGHTFX_GRAIN_BY_ID[spec.grain]?.hint || '';
+  const bokehHint = LIGHTFX_BOKEH_BY_ID[spec.bokeh]?.hint || '';
 
   const prompt = buildLightFxPrompt({
     categoryHint: cat.promptHint,
@@ -110,6 +113,7 @@ export async function renderLightFx(spec = {}) {
     shape: spec.shape,
     index: spec.index || 0,
     bg: spec.bg,
+    motionHint, grainHint, bokehHint,
   });
   const compactPrompt = buildCompactLightFxPrompt({
     categoryHint: cat.promptHint,
@@ -121,6 +125,7 @@ export async function renderLightFx(spec = {}) {
     shape: spec.shape,
     bg: spec.bg,
     hasRef: !!ref,
+    motionHint, grainHint, bokehHint,
   });
 
   try {

@@ -84,5 +84,31 @@ export const LIGHTFX_COLORS = [
 ];
 export const LIGHTFX_COLOR_BY_ID = Object.fromEntries(LIGHTFX_COLORS.map(c => [c.id, c]));
 
+// 형태 변형 — 빛의 흐름·형상을 물·안개 같은 자연 형상으로 변형 (종류·스타일과 별개 축).
+export const LIGHTFX_MOTIONS = [
+  { id: 'none',     label: '기본',      desc: '변형 없음',           hint: '' },
+  { id: 'water',    label: '물의 흐름', desc: '유체 · 물결 커런트',   hint: 'shape the light like FLOWING WATER — fluid luminous liquid streams, rippling waves and smooth curving currents of light, wave-like flowing motion' },
+  { id: 'mist',     label: '안개',      desc: '낮게 깔린 헤이즈',     hint: 'shape the light as glowing MIST / FOG — soft volumetric haze banks and wispy diffuse veils drifting slowly, low-lying luminous fog with gentle depth' },
+  { id: 'smoke',    label: '연기',      desc: '피어오르는 스모크',    hint: 'shape the light as luminous SMOKE — curling glowing plumes swirling and rising upward with soft turbulence and silky curls' },
+  { id: 'flame',    label: '불꽃',      desc: '타오르는 화염 결',     hint: 'shape the light like FLAMES — licking fire tongues and rising flame-shaped luminous wisps with subtle heat shimmer' },
+  { id: 'wind',     label: '바람 결',   desc: '휘도는 리본 기류',     hint: 'shape the light as WIND STREAMS — sweeping curved air currents and ribbon-like flowing streaks gliding gracefully across' },
+  { id: 'electric', label: '전기',      desc: '번개 · 아크 방전',     hint: 'shape the light as ELECTRIC energy — crackling lightning tendrils and fine branching arcs with sharp luminous cores' },
+];
+export const LIGHTFX_MOTION_BY_ID = Object.fromEntries(LIGHTFX_MOTIONS.map(m => [m.id, m]));
+
+// 입자 크기 — 파티클·글린트·스파클의 스케일.
+export const LIGHTFX_GRAINS = [
+  { id: 'normal', label: '기본', hint: '' },
+  { id: 'fine',   label: '세밀', hint: 'PARTICLE SCALE — FINE: render every particle, sparkle, glint and speck at a fine SMALL scale — many tiny delicate micro-particles instead of large blobs; crisp refined micro-detail throughout' },
+];
+export const LIGHTFX_GRAIN_BY_ID = Object.fromEntries(LIGHTFX_GRAINS.map(g => [g.id, g]));
+
+// 보케 사이즈 — 아웃포커스 빛망울의 스케일.
+export const LIGHTFX_BOKEHS = [
+  { id: 'normal', label: '기본', hint: '' },
+  { id: 'fine',   label: '세밀', hint: 'BOKEH SCALE — FINE: keep all bokeh discs and out-of-focus light circles SMALL and subtle — fine delicate bokeh specks, never oversized orbs dominating the frame' },
+];
+export const LIGHTFX_BOKEH_BY_ID = Object.fromEntries(LIGHTFX_BOKEHS.map(b => [b.id, b]));
+
 // 한 번에 생성할 변형 수.
 export const LIGHTFX_COUNTS = [2, 4, 6];

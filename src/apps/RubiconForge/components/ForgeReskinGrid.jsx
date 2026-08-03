@@ -66,6 +66,7 @@ export default function ForgeReskinGrid({ forge }) {
               filePrefix="rubicon-reskin"
               sourceLoaded={!!creationSource}
               fitViewport
+              autoTransparent
             />
           </div>
         ) : (

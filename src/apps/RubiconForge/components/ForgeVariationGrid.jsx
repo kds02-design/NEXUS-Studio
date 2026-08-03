@@ -51,7 +51,7 @@ export default function ForgeVariationGrid({ forge }) {
           <div className="w-full h-full min-h-0 max-w-[1100px]">
             <VariationResultCell key={selectedSlot.resultId} slot={selectedSlot} idx={selectedIdx}
               onRegenerate={handleRegenerateVariation} onOpenNineSlice={setNineSliceIdx} showNineSlice
-              filePrefix="rubicon-variation" sourceLoaded={!!sourceAsset} fitViewport />
+              filePrefix="rubicon-variation" sourceLoaded={!!sourceAsset} fitViewport autoTransparent />
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center gap-3 text-center text-zinc-600">

@@ -434,6 +434,9 @@ export function useForgePrompt() {
   const [lightFxColor, setLightFxColor] = useState('gold');
   const [lightFxIntensity, setLightFxIntensity] = useState('medium');
   const [lightFxShape, setLightFxShape] = useState('none');
+  const [lightFxMotion, setLightFxMotion] = useState('none');   // 형태 변형 (물·안개 등)
+  const [lightFxGrain, setLightFxGrain] = useState('normal');   // 입자 크기 (기본/세밀)
+  const [lightFxBokeh, setLightFxBokeh] = useState('normal');   // 보케 사이즈 (기본/세밀)
   const [lightFxText, setLightFxText] = useState('');
   const [lightFxCount, setLightFxCount] = useState(4);
   const [lightFxRef, setLightFxRef] = useState(() => forgeSessionCache.lightFxRef); // (선택) 형태 참고 dataURL
@@ -491,6 +494,7 @@ export function useForgePrompt() {
   const renderOneLightFx = (i) => renderLightFx({
     category: lightFxCategory, form: lightFxForm, style: lightFxStyle, color: lightFxColor,
     userText: lightFxText, intensity: lightFxIntensity, shape: lightFxRef ? 'none' : lightFxShape, index: i,
+    motion: lightFxMotion, grain: lightFxGrain, bokeh: lightFxBokeh,
     referenceDataUrl: lightFxRef,
     imageSize: lightFxImageSize, modelId: lightFxRenderModel,
     bg: BG_COLOR_BY_ID[lightFxBgColor],
@@ -1152,6 +1156,9 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     lightFxStyle, setLightFxStyle,
     lightFxColor, setLightFxColor,
     lightFxIntensity, setLightFxIntensity,
+    lightFxMotion, setLightFxMotion,
+    lightFxGrain, setLightFxGrain,
+    lightFxBokeh, setLightFxBokeh,
     lightFxShape, setLightFxShape,
     lightFxText, setLightFxText,
     lightFxCount, setLightFxCount,

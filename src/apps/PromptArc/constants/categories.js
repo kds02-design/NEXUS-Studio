@@ -105,3 +105,32 @@ export const inferRelatedType = (p) => {
   if (/2d|흑백|타이포|캘리그라피/i.test(hay) || tags.has('타이포')) return '2D';
   return '기타';
 };
+
+// ─── 이미지 성격 분류 — 전송 메뉴 필터링 + 스마트 투명화 안내용 ─────────────
+// 태그(카테고리·RubiconForge 자동저장 태그) + 키워드 + 제목을 종합해 결과물의 "성격"을 판별.
+//   typography — 타이포/타이틀/캘리그라피 (단색 배경 오브젝트)
+//   object     — 버튼/프레임/배지/패널/리스킨 (단색 배경 오브젝트)
+//   lightfx    — 광원/이펙트/파티클 (순흑 배경 발광)
+//   motion     — 영상/모션
+//   kv         — 키비주얼/씬/일러스트 (복잡 배경 — 로컬 키잉 불가, AI 누끼 필요)
+//   other      — 판별 불가 (기본 메뉴)
+export const IMAGE_NATURE_LABEL = {
+  typography: '타이포', object: '오브젝트', lightfx: '광원/이펙트', motion: '모션', kv: '키비주얼', other: '일반',
+};
+
+export const classifyImageNature = (p) => {
+  if (!p) return 'other';
+  if (p.type === 'video' || p.type === '모션') return 'motion';
+  const tags = new Set([
+    ...toArrayMaybeJson(p.tags).map(String),
+    ...collectStepTags(p.stepTags),
+  ]);
+  if (tags.has('Motion')) return 'motion';
+  const hay = `${buildKeywordHaystack(p)} | ${String(p.title || '').toLowerCase()}`;
+  if (tags.has('광원') || /광원|이펙트|파티클|후광|오라|glow|light\s?fx|flare|particle/i.test(hay)) return 'lightfx';
+  if (tags.has('버튼') || tags.has('리스킨') || /버튼|프레임|배지|패널|블릿|리스킨|button|frame|badge|panel/i.test(hay)) return 'object';
+  if (tags.has('타이포') || /타이포|캘리그라피|레터링|타이틀|로고|2d|흑백|typo|lettering|calligraphy/i.test(hay)) return 'typography';
+  if (/키비주얼|key\s?visual|\bkv\b|일러스트|씬|장면|배경|풍경|캐릭터 일러스트|illustration|scene/i.test(hay)) return 'kv';
+  if (tags.has('visualFX')) return 'lightfx';
+  return 'other';
+};
