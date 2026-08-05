@@ -187,7 +187,9 @@ const MAT_AXES = {
 const MAT_RANDOM = ['palette', 'lighting', 'finish', 'mood'];
 
 // ─── 완성형 프레임 · 형태+장식+재질을 한 번에 생성 ──────────
-const COMPLETE_AXES = {
+// 스킬 런타임(SkillChat)이 재사용하는 옵션 축·빌더 — 컴포넌트 파일에 함께 두되 Fast Refresh 예외만 명시.
+// eslint-disable-next-line react-refresh/only-export-components
+export const COMPLETE_AXES = {
   assetType: {
     label:'사용 용도', pick:true,
     opts:[
@@ -321,7 +323,8 @@ const COMPLETE_AXES = {
   },
 };
 const COMPLETE_RANDOM = ['preset', 'silhouette', 'frameWeight', 'material', 'interior', 'ornament', 'renderStyle'];
-const SIMPLE_MOODS = [
+// eslint-disable-next-line react-refresh/only-export-components
+export const SIMPLE_MOODS = [
   { key:'dark_rpg', ko:'어둡고 강한 RPG', preset:'black_thorn', material:'전투로 단련된 흑철', ornament:'절제된 테두리' },
   { key:'gold_kingdom', ko:'화려한 황금 왕국', preset:'royal_crest', material:'고대 황금', ornament:'네 모서리 집중' },
   { key:'magic', ko:'신비로운 마법', preset:'arcane', material:'마력 크리스탈', ornament:'좌우 대칭' },
@@ -331,7 +334,8 @@ const SIMPLE_MOODS = [
   { key:'clean', ko:'깔끔하고 현대적', preset:'modern_ui', material:'무광 매트', ornament:'절제된 테두리' },
   { key:'futuristic', ko:'미래적 SF', preset:'dark_minimal', material:'연마 강철', ornament:'절제된 테두리' },
 ];
-const SIMPLE_RENDER_STYLES = [
+// eslint-disable-next-line react-refresh/only-export-components
+export const SIMPLE_RENDER_STYLES = [
   { key:'illustrated', ko:'게임 일러스트' },
   { key:'realistic_3d', ko:'사실적인 3D' },
   { key:'flat_graphic', ko:'심플한 2D' },
@@ -344,7 +348,8 @@ function buildFormPrompt(seed) {
 function buildMatPrompt(seed) {
   return `Using the ATTACHED flat form image as the exact structural base, apply material and lighting WITHOUT changing its shape, proportions, corners or internal layout. Material: ${seed.material.en}. Color palette: ${seed.palette.en}. Lighting: ${seed.lighting.en}. Finish: ${seed.finish.en}. Mood: ${seed.mood.en}. Preserve the crisp silhouette and clean alpha edges. Isolated on a transparent or flat dark background, front orthographic view, high detail, production-ready game UI, 4k. No text, no watermark.`;
 }
-function buildCompletePrompt(seed, userIntent = '', opts = {}) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function buildCompletePrompt(seed, userIntent = '', opts = {}) {
   const isDivider = seed.assetType.key === 'divider';
   const isIcon = seed.assetType.key === 'icon';
   const iconCreative = isIcon && opts.iconCreative;

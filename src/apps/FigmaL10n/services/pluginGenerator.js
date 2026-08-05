@@ -98,35 +98,32 @@ function enforceOneLine(node, originalWidth) {
   return { expanded: false };
 }
 
-async function applyTranslation(node, translatedText, lang) {
-  const targetFamily = FONT_FAMILY[lang];
-  if (!targetFamily) throw new Error('Invalid lang: ' + lang);
+async function applyTranslation(node, translatedText) {
   const originalWidth = node.width;
 
+  // 노드의 기존 폰트를 모두 로드하고, 첫 글자 폰트를 기준 폰트로 유지한다.
   const existingFonts = new Set();
+  let baseFont = null;
   if (node.fontName === figma.mixed) {
     for (let i = 0; i < node.characters.length; i++) {
       const fn = node.getRangeFontName(i, i + 1);
-      if (fn !== figma.mixed) existingFonts.add(JSON.stringify(fn));
+      if (fn !== figma.mixed) {
+        existingFonts.add(JSON.stringify(fn));
+        if (!baseFont) baseFont = fn;
+      }
     }
   } else {
     existingFonts.add(JSON.stringify(node.fontName));
+    baseFont = node.fontName;
   }
   for (const fnStr of existingFonts) {
     await figma.loadFontAsync(JSON.parse(fnStr)).catch(() => {});
   }
+  if (!baseFont) throw new Error('폰트 정보를 읽을 수 없습니다');
 
-  const style = node.fontName !== figma.mixed ? mapFontStyle(node.fontName.style) : 'Regular';
-  let targetFont = { family: targetFamily, style };
-  try {
-    await figma.loadFontAsync(targetFont);
-  } catch (e) {
-    targetFont = { family: targetFamily, style: 'Regular' };
-    try { await figma.loadFontAsync(targetFont); }
-    catch (e2) { throw new Error(targetFamily + ' 폰트 로드 실패'); }
-  }
   node.characters = translatedText;
-  node.setRangeFontName(0, translatedText.length, targetFont);
+  // 원본(TL) 폰트 유지 — 언어별 폰트 교체 없이 글자만 치환한다.
+  node.setRangeFontName(0, translatedText.length, baseFont);
   return enforceOneLine(node, originalWidth);
 }
 
@@ -209,11 +206,6 @@ figma.ui.onmessage = async (msg) => {
       return;
     }
 
-    const targetFamily = FONT_FAMILY[lang];
-    for (const style of NOTO_STYLES) {
-      await figma.loadFontAsync({ family: targetFamily, style }).catch(() => {});
-    }
-
     let matched = 0, expanded = 0, fontErrors = [], unmatched = [];
 
     for (const node of targetNodes) {
@@ -248,9 +240,19 @@ figma.ui.onmessage = async (msg) => {
         translated = translated.split('\\n').map(l => l.replace(/^\\*/, '')).join('\\n');
       }
 
+      // 리터럴 머리기호(- • · *)가 텍스트에 포함된 라벨(예: '- 스토리'): 기호를 떼고
+      // 순수 키로 조회한 뒤 원래 기호를 복원한다. 번역표 키가 접두어 없이 '스토리'인 경우 대응.
+      if (translated === null) {
+        const mk = original.match(/^(\\s*[-•·*]+\\s*)([\\s\\S]+)$/);
+        if (mk) {
+          const core = lookupTranslation(MAP, mk[2].trim());
+          if (core !== null) translated = mk[1] + core;
+        }
+      }
+
       if (translated !== null) {
         try {
-          const result = await applyTranslation(node, translated, lang);
+          const result = await applyTranslation(node, translated);
           matched++;
           if (result && result.expanded) expanded++;
         } catch (e) {
@@ -286,13 +288,10 @@ export function generateUiHtml(langMaps, pluginName) {
     return `    <div class="lang-tab${active}" data-lang="${code.toLowerCase()}">
       <span class="flag">${cfg.flag}</span>
       <div class="label">${cfg.name}</div>
-      <div class="font-name">${cfg.font}</div>
     </div>`;
   }).join('\n');
 
   const firstLangCode = langCodes[0].toLowerCase();
-  const firstFont = LANG_CONFIG[langCodes[0]].font;
-  const fontMapJs = '{' + langCodes.map(c => `${c.toLowerCase()}:'${LANG_CONFIG[c].font}'`).join(',') + '}';
 
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -341,7 +340,7 @@ export function generateUiHtml(langMaps, pluginName) {
 
 <div class="header">
   <h1>🌏 ${pluginName}</h1>
-  <p>지원 ${langCodes.length}개 언어 · 폰트 자동 변경 · 1줄 박스 자동 확장</p>
+  <p>지원 ${langCodes.length}개 언어 · 원본 폰트 유지 · 1줄 박스 자동 확장</p>
 </div>
 
 <div class="section">
@@ -350,7 +349,7 @@ export function generateUiHtml(langMaps, pluginName) {
 ${tabsHtml}
   </div>
   <div class="info-badges">
-    <div class="badge">🔤 폰트 자동 교체 → <strong id="font-target">${firstFont}</strong></div>
+    <div class="badge">🔤 원본 폰트 유지 — 언어별 폰트 교체 없이 글자만 치환</div>
     <div class="badge">↔ 텍스트 넘침 시 박스 너비 자동 확장 (1줄 유지)</div>
   </div>
 </div>
@@ -385,7 +384,6 @@ ${tabsHtml}
 (function() {
   var selectedLang = '${firstLangCode}';
   var selectedScope = 'selection';
-  var FONT_MAP = ${fontMapJs};
 
   document.querySelectorAll('.lang-tab').forEach(function(tab) {
     tab.addEventListener('click', function() { selectLang(tab.getAttribute('data-lang')); });
@@ -399,7 +397,6 @@ ${tabsHtml}
     document.querySelectorAll('.lang-tab').forEach(function(tab) {
       tab.classList.toggle('active', tab.getAttribute('data-lang') === lang);
     });
-    document.getElementById('font-target').textContent = FONT_MAP[lang];
     hideResults();
   }
   function selectScope(scope) {

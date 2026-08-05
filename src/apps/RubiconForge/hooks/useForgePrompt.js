@@ -16,6 +16,7 @@ import {
 } from '../services/gemini';
 import { renderDesignAlternative, renderAtlasVariation, renderVariation } from '../services/variations';
 import { renderLightFx } from '../services/lightfx';
+import { autoPadImage } from '../../../lib/autoPadImage';
 import { renderWithImagen, IMAGEN_MODELS } from '../../../lib/imagenRender';
 import { savePromptToArc, TEMP_TTL_DAYS } from '../../../lib/promptArcSave';
 import {
@@ -441,6 +442,9 @@ export function useForgePrompt() {
   const [lightFxCount, setLightFxCount] = useState(4);
   const [lightFxRef, setLightFxRef] = useState(() => forgeSessionCache.lightFxRef); // (선택) 형태 참고 dataURL
   const [isDraggingLightFxRef, setIsDraggingLightFxRef] = useState(false);
+  // 여백 자동 추가 — 피사체가 프레임에 꽉 찬 형태 참고를 올리면 주변 여백을 만들어 빛이 퍼질 공간 확보.
+  const [lightFxAutoPad, setLightFxAutoPad] = useState(true);
+  const [lightFxRefPadded, setLightFxRefPadded] = useState(false); // 마지막 업로드가 실제로 패딩됐는지(배지 표시용)
   const [lightFxRenderModel, setLightFxRenderModel] = useState(IMAGEN_MODELS[0]?.id || 'gemini-3.1-flash-image-preview');
   const [lightFxImageSize, setLightFxImageSize] = useState('2K');
   // 생성 배경색 — 발광 에셋이 깔릴 단색. 기본 블랙(발광 합성).
@@ -453,17 +457,32 @@ export function useForgePrompt() {
   useEffect(() => { forgeSessionCache.lightFxRef = lightFxRef; forgeSessionCache.lightFxResults = lightFxResults; }, [lightFxRef, lightFxResults]);
 
   // 형태 참고 업로드 핸들러.
+  // 여백 자동 추가가 켜져 있으면 피사체가 가장자리에 붙은(여백 없는) 이미지에 캔버스 여백을 만들어
+  // 빛효과가 실루엣 바깥으로 퍼질 공간을 확보한다. 이미 여백이 있거나 CORS 실패 시엔 원본 그대로.
+  const applyLightFxRef = async (dataUrl) => {
+    if (!lightFxAutoPad) { setLightFxRef(dataUrl); setLightFxRefPadded(false); return; }
+    try {
+      // 자동 여백 ON → 무조건 16:9 캔버스로 확장(부족한 축에만 여백 추가, 크롭 없음).
+      // targetMargin 을 넉넉히(긴 변의 80%) 줘서 광원·이펙트가 실루엣 바깥으로 크게 퍼져도 잘리지 않게 한다.
+      const { padded, dataUrl: out } = await autoPadImage(dataUrl, { aspectRatio: 16 / 9, targetMargin: 0.8 });
+      setLightFxRef(out || dataUrl);
+      setLightFxRefPadded(!!padded);
+    } catch {
+      setLightFxRef(dataUrl);
+      setLightFxRefPadded(false);
+    }
+  };
   const handleLightFxRefFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onloadend = () => setLightFxRef(reader.result);
+    reader.onloadend = () => applyLightFxRef(reader.result);
     reader.readAsDataURL(file);
   };
   const handleLightFxRefUpload = (e) => handleLightFxRefFile(e.target.files[0]);
   const handleLightFxRefDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(true); }, []);
   const handleLightFxRefDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(false); }, []);
   const handleLightFxRefDrop = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(false); handleLightFxRefFile(e.dataTransfer.files[0]); }, []);
-  const handleClearLightFxRef = () => setLightFxRef(null);
+  const handleClearLightFxRef = () => { setLightFxRef(null); setLightFxRefPadded(false); };
 
   // 빛효과 슬롯 빌더 — N장 모두 같은 스펙의 변형. 셀 표시용 theme 객체를 합성.
   const buildLightFxSlots = (n) => {
@@ -1163,6 +1182,7 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     lightFxText, setLightFxText,
     lightFxCount, setLightFxCount,
     lightFxRef, isDraggingLightFxRef,
+    lightFxAutoPad, setLightFxAutoPad, lightFxRefPadded,
     handleLightFxRefUpload, handleLightFxRefDragOver, handleLightFxRefDragLeave, handleLightFxRefDrop, handleClearLightFxRef,
     lightFxRenderModel, setLightFxRenderModel,
     lightFxImageSize, setLightFxImageSize,

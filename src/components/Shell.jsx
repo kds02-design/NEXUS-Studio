@@ -21,6 +21,7 @@ import ProfilePopover from "./ProfilePopover";
 import DashboardRecentPrompts from "./DashboardRecentPrompts";
 import IndexSearchBar from "./IndexSearchBar";
 import CommandPalette from "./CommandPalette";
+import SkillChat from "../skills-runtime/SkillChat";
 import LoginScreen from "./LoginScreen";
 import PromptArcApp from "../apps/PromptArc";
 import TypecoreSovereignApp from "../apps/TypecoreSovereign";
@@ -874,7 +875,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "theme-forge":        return <ThemeForgeApp />;
     case "vector-forge":       return <VectorForgeApp />;
     case "lumkey":             return <LumKeyApp />;
-    case "figma-l10n":         return <FigmaL10nApp />;
+    case "figma-l10n":         return <FigmaL10nApp version={version} />;
     case "brief-studio":       return <BriefStudioApp version={version} />;
     case "prompt-audit":       return <PromptAuditApp />;
     case "destiny-observatory": return <Suspense fallback={null}><DestinyObservatoryApp /></Suspense>;
@@ -938,6 +939,7 @@ export default function Shell() {
   const [selectedVersion, setSelectedVersionRaw] = useState(() => readSelectedVersion(app));
   const [scrollY, setScrollY] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [skillChatId, setSkillChatId] = useState(null); // 대화형 스킬 오버레이 (null=닫힘)
   // 인덱스 스크롤 위치 — 앱 진입 시점에 보관, 복귀 시 AppCardGrid 가 컨테이너 scrollTop 복원에 사용.
   const indexScrollYRef = useRef(0);
 
@@ -1024,7 +1026,8 @@ export default function Shell() {
             : <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} />)
           : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={indexScrollYRef.current}/>}
       </div>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onLaunchSkill={(id) => setSkillChatId(id ?? "")} />
+      <SkillChat key={skillChatId ?? "closed"} openId={skillChatId} onClose={() => setSkillChatId(null)} />
       {loginModalOpen && <LoginScreen asModal onClose={closeLoginModal} />}
       <Notification/>
     </div>

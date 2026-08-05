@@ -216,6 +216,7 @@ export default function ForgeSidebar({ forge }) {
     lightFxShape, setLightFxShape,
     lightFxText, setLightFxText,
     lightFxRef, isDraggingLightFxRef,
+    lightFxAutoPad, setLightFxAutoPad, lightFxRefPadded,
     handleLightFxRefUpload, handleLightFxRefDragOver, handleLightFxRefDragLeave, handleLightFxRefDrop, handleClearLightFxRef,
     lightFxRenderModel, setLightFxRenderModel,
     lightFxImageSize, setLightFxImageSize,
@@ -945,6 +946,26 @@ export default function ForgeSidebar({ forge }) {
             <p className="text-[10px] text-zinc-600 mb-2 leading-relaxed break-keep-all">
               샘플 이미지(아이콘·박스·캐릭터 등)를 올리면 위 <span className="text-zinc-400">배치 형태</span>대로 그 실루엣에 맞춰 <span className="text-zinc-400">빛효과만 별도 렌더</span>됩니다. <span className="text-zinc-400">참고 오브젝트 자체는 결과에 나오지 않습니다</span> — 빛만 순흑 위에.
             </p>
+
+            {/* 여백 자동 추가 — 피사체가 프레임에 꽉 찬(여백 없는) 참고를 올리면 주변 여백을 만들어 빛이 퍼질 공간 확보 */}
+            <button
+              onClick={() => setLightFxAutoPad(!lightFxAutoPad)}
+              className={`w-full h-9 flex items-center gap-2.5 px-3 mb-2 rounded-md border text-left transition-colors ${lightFxAutoPad ? 'bg-[#76cee0]/10 border-[#76cee0]/40' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
+            >
+              <span className={`w-7 h-4 rounded-full shrink-0 relative transition-colors ${lightFxAutoPad ? 'bg-[#76cee0]' : 'bg-zinc-700'}`}>
+                <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${lightFxAutoPad ? 'left-[14px]' : 'left-0.5'}`} />
+              </span>
+              <div className="min-w-0">
+                <div className={`text-[11px] font-semibold ${lightFxAutoPad ? 'text-[#76cee0]' : 'text-zinc-300'}`}>여백 자동 추가 · 16:9</div>
+                <p className="text-[9px] text-zinc-500 leading-tight">무조건 16:9 캔버스로 확장해 빛이 잘리지 않게 (원본은 크롭 없음)</p>
+              </div>
+            </button>
+            {lightFxRefPadded && (
+              <p className="text-[10px] text-[#76cee0] mb-2 flex items-center gap-1">
+                <Sparkles className="w-3 h-3" /> 16:9 비율로 여백을 자동 추가했습니다
+              </p>
+            )}
+
             <div
               onDragOver={handleLightFxRefDragOver}
               onDragLeave={handleLightFxRefDragLeave}

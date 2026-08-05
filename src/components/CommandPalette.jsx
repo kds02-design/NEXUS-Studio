@@ -6,7 +6,8 @@ import { APP_REGISTRY, APP_MAP } from "../config/apps";
 import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useAuth } from "../context/AuthContext";
 import { useAppVisibility, isAppHidden } from "../lib/appVisibility";
-import { Lock, Search, X, Home } from "lucide-react";
+import { SKILL_REGISTRY, skillMatches } from "../skills-runtime/registry";
+import { Lock, Search, X, Home, Sparkles } from "lucide-react";
 
 const matches = (app, q) => {
   if (!q) return true;
@@ -116,12 +117,13 @@ function PaletteCard({ app, selected, isCurrent, locked, adminUnlocked, T, isLig
   );
 }
 
-export default function CommandPalette({ open, onClose }) {
+export default function CommandPalette({ open, onClose, onLaunchSkill }) {
   const { setCurrentApp, currentApp, isLight } = useGlobal();
   const T = useTheme();
   const { isAdmin } = useAuth();
   const overrides = useAppVisibility();
   const [query, setQuery] = useState("");
+  const skills = useMemo(() => SKILL_REGISTRY.filter((s) => skillMatches(s, query)), [query]);
   const [selectedId, setSelectedId] = useState(null);
   const inputRef = useRef(null);
 
@@ -323,7 +325,31 @@ export default function CommandPalette({ open, onClose }) {
 
         {/* 본문 — 섹션별 카드 그리드 */}
         <div className="cp-scroll" style={{ flex: 1, overflowY: "auto", padding: "18px 20px 22px" }}>
-          {sections.length === 0 && (
+          {/* 대화형 생성 스킬 — 단일 진입점. 클릭 시 채팅 오버레이가 뜨고 그 안에서 스킬을 고른다. */}
+          {onLaunchSkill && skills.length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", color: T.textDim, textTransform: "uppercase", padding: "0 2px 10px", borderBottom: `1px solid ${T.border}`, marginBottom: 12 }}>
+                대화형 생성
+              </div>
+              <div
+                onClick={() => { onLaunchSkill(skills.length === 1 ? skills[0].id : ""); onClose?.(); }}
+                role="button"
+                tabIndex={-1}
+                title="채팅으로 생성 — 창 안에서 스킬 선택"
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", background: `${T.accent}10`, border: `1px solid ${T.accent}44`, borderRadius: 10, cursor: "pointer", minHeight: 64, transition: "all 0.15s" }}
+              >
+                <div style={{ width: 36, height: 36, borderRadius: 8, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: `${T.accent}1f`, border: `1px solid ${T.accent}40`, color: T.accent }}>
+                  <Sparkles size={16} />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, lineHeight: 1.2, color: T.text }}>AI 생성 스킬</div>
+                  <div style={{ fontSize: 10, color: T.textMuted, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>채팅으로 요청 → 자동 생성 · 지원 {SKILL_REGISTRY.length}종{skills.length === 1 ? ` · “${skills[0].label}” 바로가기` : ""}</div>
+                </div>
+                <span style={{ fontSize: 9, letterSpacing: "0.1em", color: T.accent, textTransform: "uppercase", background: `${T.accent}1A`, border: `1px solid ${T.accent}55`, padding: "2px 6px", borderRadius: 4, fontWeight: 700 }}>SKILL</span>
+              </div>
+            </div>
+          )}
+          {sections.length === 0 && skills.length === 0 && (
             <div style={{ padding: "40px 18px", textAlign: "center", color: T.textMuted, fontSize: 12 }}>
               일치하는 앱이 없어요.
             </div>

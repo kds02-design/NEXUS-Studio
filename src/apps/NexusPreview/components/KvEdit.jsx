@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, FolderCheck, Gift, Layers, Loader2, RotateCcw, Sparkles, Upload, Wand2, X } from "lucide-react";
+import { Download, FolderCheck, Gift, Layers, Loader2, RotateCcw, Sparkles, Type, Upload, Wand2, X } from "lucide-react";
 import { useUsageGate } from "../../../components/UsageGate";
 import { useAuth } from "../../../context/AuthContext";
 import { IMAGEN_MODELS } from "../../../lib/imagenRender";
@@ -7,12 +7,15 @@ import QualityEnhancer from "./QualityEnhancer";
 import PsdImportModal from "./PsdImportModal";
 import { renderBgCompose, renderBgGenerate, renderItemBundle, saveBundleToPromptArc, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS } from "../services/bgTools";
 import { renderCharEnhanced, saveCharToPromptArc, resolveCharBg, CHAR_LIGHT_OPTIONS, CHAR_PARTICLE_OPTIONS, CHAR_INTENSITY_OPTIONS, CHAR_BG_OPTIONS } from "../services/characterEnhancer";
+import { renderTitleEffect, saveTitleToPromptArc, TITLE_FX_EFFECTS, TITLE_FX_COLORS, TITLE_FX_DIRECTIONS, TITLE_FX_INTENSITY, TITLE_FX_BG_OPTIONS } from "../services/titleEffect";
 import { charSplitToBlobs, dataUrlToImageData, CHAR_SPLIT_DEFAULTS } from "../../../lib/charEffectSplit";
+import { autoPadImage } from "../../../lib/autoPadImage";
 
 const DEFAULT_MODEL = "gemini-3-pro-image-preview";
 const MODES = [
   { key: "quality", label: "배경 품질 개선", desc: "원본 구도는 유지하고 빛과 분위기를 개선합니다." },
   { key: "charfx", label: "캐릭터 렌더 향상", desc: "캐릭터 형태를 분석해 어울리는 빛·파티클 연출을 더합니다 (원본 99% · 얼굴 99.9% 보존)." },
+  { key: "titlefx", label: "타이틀 이펙트", desc: "타이틀·대형 텍스트 이미지에 속도감·서리·아우라·안개·금빛·글리치·모션블러 등을 더해 생명력을 넣습니다 (글자 철자·서체 100% 보존)." },
   { key: "compose", label: "배경 합성", desc: "배경에 이미지나 PSD 레이어를 자연스럽게 합성합니다." },
   { key: "generate", label: "배경 생성", desc: "설명과 참고 이미지로 새로운 KV 배경을 만듭니다." },
   { key: "bundle", label: "아이템 꾸러미", desc: "아이템 이미지 여러 장을 형태 그대로 하나의 보상 꾸러미로 합성합니다." },
@@ -28,6 +31,7 @@ export default function KvEdit({ T, accent }) {
       <div style={{ fontSize: 12, color: T.textDim, margin: "8px 0 18px" }}>{MODES.find((m) => m.key === mode)?.desc}</div>
       {mode === "quality" && <QualityEnhancer T={T} accent={accent} />}
       {mode === "charfx" && <CharEnhance T={T} accent={accent} />}
+      {mode === "titlefx" && <TitleEnhance T={T} accent={accent} />}
       {mode === "compose" && <BgCompose T={T} accent={accent} />}
       {mode === "generate" && <BgGenerate T={T} accent={accent} />}
       {mode === "bundle" && <ItemBundle T={T} accent={accent} />}
@@ -196,6 +200,141 @@ function CharEnhance({ T, accent }) {
       )}
     </section>
     <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="char-enhance" />
+    {modal}
+  </div>;
+}
+
+// ─── 타이틀 이펙트 — 타이틀/대형 텍스트에 연출을 더해 생명력 부여 (글자 철자·서체 100% 보존) ───
+function TitleEnhance({ T, accent }) {
+  const { ensureCanGenerate, modal } = useUsageGate();
+  const { user } = useAuth();
+  const [source, setSource] = useState(null);
+  const [effects, setEffects] = useState([]); // 다중 선택 — 비어 있으면 자동
+  const [color, setColor] = useState("auto");
+  const [direction, setDirection] = useState("auto");
+  const [intensity, setIntensity] = useState("normal");
+  const [bg, setBg] = useState("keep");
+  const [intent, setIntent] = useState("");
+  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [busy, setBusy] = useState(false), [result, setResult] = useState(null), [error, setError] = useState("");
+  const [savedArc, setSavedArc] = useState("");
+  // 여백 자동 확장 — 상하좌우 여백이 없는 타이틀에 가상 공간을 만들어 이펙트가 잘리지 않게.
+  const [autoPad, setAutoPad] = useState(true);
+  const [padded, setPadded] = useState(false); // 실제로 여백이 추가됐는지(안내 표시용)
+
+  const toggleEffect = (key) => setEffects((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+
+  // 업로드된 타이틀에 여백 자동 확장 적용. 이미 여백이 충분하거나 CORS 실패 시엔 원본 그대로.
+  const applySource = async (dataUrl) => {
+    if (!autoPad) { setSource(dataUrl); setPadded(false); return; }
+    try {
+      const { padded: didPad, dataUrl: out } = await autoPadImage(dataUrl, { targetMargin: 0.28 });
+      setSource(out || dataUrl);
+      setPadded(!!didPad);
+    } catch {
+      setSource(dataUrl);
+      setPadded(false);
+    }
+  };
+  const clearSource = () => { setSource(null); setPadded(false); };
+
+  const run = async () => {
+    if (!source || busy || !(await ensureCanGenerate("image"))) return;
+    setBusy(true); setResult(null); setError(""); setSavedArc("");
+    try {
+      const url = await renderTitleEffect(source, { modelId: model, effects, color, direction, intensity, bg, intent });
+      if (!url) throw new Error("렌더 결과가 비어 있습니다.");
+      setResult(url);
+      if (user?.uid) {
+        setSavedArc("saving");
+        try {
+          await saveTitleToPromptArc(url, user, { effects, color, direction, intensity, bg, intent });
+          setSavedArc("done");
+        } catch (e) {
+          console.error("[TitleEnhance] PromptArc 저장 실패", e);
+          setSavedArc("failed");
+        }
+      }
+    } catch (e) { setError(e?.message || "타이틀 이펙트 렌더 중 오류가 발생했습니다."); }
+    finally { setBusy(false); }
+  };
+
+  const chip = (on) => ({ padding: "7px 12px", borderRadius: 8, border: `1px solid ${on ? accent : T.border}`, background: on ? `${accent}20` : T.surface, color: on ? accent : T.textMuted, cursor: "pointer", fontSize: 12, fontWeight: 700 });
+  const optionLabel = { display: "block", fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 7 };
+  // 방향은 흐름성 이펙트(속도감·모션블러)를 골랐을 때만 의미가 있어 노출.
+  const showDirection = effects.length === 0 || effects.some((k) => ["speed", "blur", "spark", "shatter"].includes(k));
+
+  return <div style={panelGrid}>
+    <section style={{ display: "grid", gap: 14 }}>
+      <Dropzone T={T} accent={accent} dataUrl={source} onFile={applySource} onClear={clearSource} title="1. 타이틀 이미지" sub="타이틀·로고·'COMING SOON' 등 대형 텍스트 — 글자 철자·서체는 그대로 보존됩니다" />
+
+      {/* 여백 자동 확장 — 상하좌우 여백 없는 타이틀에 가상 공간 생성 */}
+      <div>
+        <button onClick={() => setAutoPad((v) => !v)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${autoPad ? accent : T.border}`, background: autoPad ? `${accent}14` : T.surface, cursor: "pointer", textAlign: "left" }}>
+          <span style={{ width: 30, height: 18, borderRadius: 9, background: autoPad ? accent : T.border, position: "relative", flexShrink: 0, transition: "background .15s" }}>
+            <span style={{ position: "absolute", top: 2, left: autoPad ? 14 : 2, width: 14, height: 14, borderRadius: "50%", background: "#fff", transition: "left .15s" }} />
+          </span>
+          <span style={{ minWidth: 0 }}>
+            <span style={{ display: "block", fontSize: 12, fontWeight: 800, color: autoPad ? accent : T.text }}>여백 자동 확장</span>
+            <span style={{ display: "block", fontSize: 11, color: T.textDim, marginTop: 2 }}>여백 없는 타이틀 주위에 가상 공간을 만들어 이펙트가 잘리지 않게 합니다</span>
+          </span>
+        </button>
+        {padded && <div style={{ fontSize: 11, color: accent, marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}><Sparkles size={12} /> 여백이 없어 이펙트 공간을 자동으로 넓혔습니다</div>}
+      </div>
+
+      <div>
+        <span style={optionLabel}><Sparkles size={12} /> 2. 이펙트 (여러 개 선택 가능 · 미선택 시 자동)</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {TITLE_FX_EFFECTS.map((o) => <button key={o.key} onClick={() => toggleEffect(o.key)} style={chip(effects.includes(o.key))}>{o.ko}</button>)}
+        </div>
+        <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>{effects.length === 0 ? "아무것도 고르지 않으면 타이틀의 형태·컨셉을 분석해 어울리는 연출을 자동으로 조합합니다." : "선택한 연출을 조합해 글자 뒤·주변에만 얹습니다 — 글자 획은 원본이 그대로 비쳐 보입니다."}</div>
+      </div>
+
+      <div>
+        <span style={optionLabel}>3. 색감</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {TITLE_FX_COLORS.map((o) => <button key={o.key} onClick={() => setColor(o.key)} style={chip(color === o.key)}>{o.ko}</button>)}
+        </div>
+      </div>
+
+      {showDirection && (
+        <div>
+          <span style={optionLabel}>4. 방향 (속도감·모션블러 등)</span>
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            {TITLE_FX_DIRECTIONS.map((o) => <button key={o.key} onClick={() => setDirection(o.key)} style={chip(direction === o.key)}>{o.ko}</button>)}
+          </div>
+        </div>
+      )}
+
+      <div>
+        <span style={optionLabel}>{showDirection ? "5" : "4"}. 연출 강도</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {TITLE_FX_INTENSITY.map((o) => <button key={o.key} onClick={() => setIntensity(o.key)} style={chip(intensity === o.key)}>{o.ko}</button>)}
+        </div>
+      </div>
+
+      <div>
+        <span style={optionLabel}>{showDirection ? "6" : "5"}. 배경 (누끼 작업용)</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {TITLE_FX_BG_OPTIONS.map((o) => <button key={o.key} onClick={() => setBg(o.key)} style={chip(bg === o.key)}>
+            {o.fill && <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: o.fill, border: "1px solid rgba(255,255,255,.3)", marginRight: 6, verticalAlign: "-1px" }} />}{o.ko}
+          </button>)}
+        </div>
+        <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>원본 유지=배경 그대로 · 블랙=발광 추출(스크린 블렌드) · 크로마 그린=색상 키 · 화이트=레퍼런스 (마스크 포지 연계)</div>
+      </div>
+
+      <label><span style={optionLabel}>추가 지시 (선택)</span><textarea value={intent} onChange={(e) => setIntent(e.target.value)} rows={3} placeholder="예: 글자 아래쪽으로만 냉기가 흐르고, 오른쪽 끝에서 금가루가 흩날리게." style={fieldStyle(T)} /></label>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
+        <ModelSelect T={T} model={model} onChange={setModel} />
+        <button onClick={run} disabled={!source || busy} style={primaryBtn(T, accent, !source || busy)}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Type size={15} />} 바로 렌더링</button>
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
+      {savedArc === "saving" && <div style={{ color: T.textDim, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><Loader2 size={12} className="animate-spin" /> 프롬프트 아크에 저장 중…</div>}
+      {savedArc === "done" && <div style={{ color: accent, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><FolderCheck size={13} /> 프롬프트 아크 내 폴더에 자동 저장됐어요.</div>}
+      {savedArc === "failed" && <div style={{ color: "#f87171", fontSize: 12 }}>프롬프트 아크 저장에 실패했어요 (렌더 결과는 유지됩니다).</div>}
+    </section>
+    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="title-fx" />
     {modal}
   </div>;
 }

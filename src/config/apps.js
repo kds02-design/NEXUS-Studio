@@ -64,7 +64,12 @@ export const APP_REGISTRY = [
   { id: "mask-forge",          label: "Mask Forge",         sub: "Mask Forge",          abbr: "Mf", icon: "✂", desc: "무료 색상 키 또는 AI로 배경을 제거하고 투명 PNG로 저장",   group: "production", color: "#FF3366", canReceive: ["typecore-breeze","rubicon-forge","theme-forge"],                         canSend: ["nexus-preview"] },
   { id: "vector-forge",        label: "Vector Forge",       sub: "Vector Forge",        abbr: "Vf", icon: "◇", desc: "비트맵 이미지를 SVG 벡터로 변환 — Marching Squares + 베지어 피팅",  group: "production", color: "#3DDC84", canReceive: [],                                                                              canSend: [] },
   { id: "lumkey",              label: "루마키",             sub: "LumKey",              abbr: "Lk", icon: "◐", desc: "영상 배경 제거 — 루마키·스크린·크로마·멀티플라이",        group: "production", color: "#C8FF00", canReceive: [],                                                                              canSend: [] },
-  { id: "figma-l10n",          label: "피그마 번역기",      sub: "Figma L10N",          abbr: "Fl", icon: "文", desc: "엑셀 번역표 → Figma 번역 플러그인 자동 생성 · 언어 자동 감지", group: "production", color: "#5C7CFA", canReceive: [],                                                                              canSend: [] },
+  { id: "figma-l10n",          label: "피그마 번역기",      sub: "Figma L10N",          abbr: "Fl", icon: "文", desc: "게임별 완성 Figma 번역 플러그인 다운로드 (TL · 아이온2)", group: "production", color: "#5C7CFA", canReceive: [],                                                                              canSend: [],
+    versions: [
+      { key: "tl",    label: "TL",     color: "#5C7CFA" },
+      { key: "aion2", label: "아이온2", color: "#F4B860" },
+    ],
+    defaultVersion: "tl" },
   { id: "visual-flux",         label: "Visual Flux",        sub: "Visual Flux",         abbr: "Vf", icon: "▣", desc: "배너·비주얼 자동 생성 (준비 중)",                       group: "production", color: "#E17055", canReceive: ["banner-codex"],                                                              canSend: ["banner-codex","design-eval"], disabled: true, status: "coming-soon", adminOnly: true },
   { id: "destiny-observatory", label: "운명 관측소",        sub: "Destiny Observatory", abbr: "Do", icon: "☾", desc: "MBTI·혈액형·별자리·사주를 오행으로 융합해 읽는 재미용 운세",  group: "life",    color: "#C9A24B", canReceive: [],                                                                              canSend: [], beta: true, adminOnly: true },
   { id: "pet-persona",         label: "반려동물 MBTI",      sub: "Pet Persona",         abbr: "Pp", icon: "🐾", desc: "고양이·강아지 성격 유형 테스트 — 집사 궁합 + AI 심층 리포트",  group: "life",    color: "#E8795E", canReceive: [],                                                                              canSend: [], beta: true, adminOnly: true },
