@@ -627,12 +627,22 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
       setRenderingId(null);
     }
   };
-  const downloadRendered = (q) => {
+  // 저장 = 오브젝트라 자동 투명화(형태에 맞는 색상 키)를 거쳐 저장. 실패 시 원본 저장 + Mask Forge 안내.
+  const downloadRendered = async (q) => {
     const dataUrl = renderResults[q.id]?.dataUrl;
-    if (!dataUrl) return;
-    const a = document.createElement('a');
-    a.href = dataUrl; a.download = `frame_forge_${Date.now()}.png`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    if (!dataUrl || transparentBusyId) return;
+    setTransparentBusyId(q.id);
+    try {
+      await downloadTransparentPng(dataUrl);
+    } catch (e) {
+      console.warn('[FrameForge] 자동 투명화 실패 — 원본 저장', e);
+      const a = document.createElement('a');
+      a.href = dataUrl; a.download = `frame_forge_${Date.now()}.png`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setRenderErrors((prev) => ({ ...prev, [q.id]: '자동 투명화가 어려워 원본으로 저장했어요. Mask Forge에서 배경 제거를 시도하세요.' }));
+    } finally {
+      setTransparentBusyId(null);
+    }
   };
   const downloadTransparent = async (q) => {
     const dataUrl = renderResults[q.id]?.dataUrl;

@@ -1,0 +1,7 @@
+{
+  "mode": "background",
+  "engine": "NexusPreview Background Quality Up",
+  "concept": "비취 연못, 옅은 금빛 햇살, 절제된 깊이감",
+  "prompt": "Edit the input key visual background. Preserve composition, crop, camera, perspective, all object positions, subject identity, title letterforms, and edge fades exactly. Enhance only lighting, atmosphere, particles, color grading, texture clarity, and depth separation. Direction: 비취 연못, 옅은 금빛 햇살, 절제된 깊이감. Use one coherent light source and stable exposure. Add no text, logo, character, silhouette, object, scenery, or outpainting.",
+  "avoid": "layout change, crop change, identity change, new text, new object, HDR, clipped highlights, crushed blacks, excessive flare"
+}

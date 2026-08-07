@@ -1,0 +1,4 @@
+display_name: "Nexus Imagen 렌더"
+short_description: "Google 이미지 API로 Nexus 품질 렌더링"
+default_prompt: "Use $nexus-imagen-render to render this reference asset with the Nexus Studio Google image pipeline while preserving its locked structure."
+

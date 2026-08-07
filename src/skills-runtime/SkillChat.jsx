@@ -8,10 +8,7 @@ import { useGlobal, useTheme } from "../context/GlobalContext";
 import { useUsageGate } from "../components/UsageGate";
 import { SKILL_REGISTRY, SKILL_MAP } from "./registry";
 import { resolveSlots } from "./slotResolver";
-import { smartTransparentPng } from "../lib/smartTransparency";
-
-// 투명 미리보기용 체커보드 배경.
-const CHECKER = "repeating-conic-gradient(rgba(255,255,255,.14) 0% 25%, transparent 0% 50%) 50% / 16px 16px";
+import { transparentForSave } from "../lib/saveTransparent";
 
 const uid = (() => { let n = 0; return () => `m${++n}`; })();
 const isFileSlot = (slot) => slot?.type === "file" || slot?.type === "files";
@@ -151,6 +148,8 @@ function SkillSession({ skill, T, onClose }) {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
   const accent = skill.color;
+  // 오브젝트 스킬(투명화 대상): 'ai'(씬 배경=배경생성/품질)·'none' 제외.
+  const isObjectSkill = skill.transparent && skill.transparent !== "ai" && skill.transparent !== "none";
 
   const push = (m) => setMessages((prev) => [...prev, { id: uid(), ...m }]);
   const replaceLast = (m) => setMessages((prev) => prev.map((x, i) => (i === prev.length - 1 ? { ...x, ...m } : x)));
@@ -290,20 +289,17 @@ function SkillSession({ skill, T, onClose }) {
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  // ── 배경 투명화 ──
-  // 자동: smartTransparentPng 가 배경을 분석해 루마키/색상키를 스스로 선택. 복잡 배경이면 Mask Forge 권유.
+  // ── 저장 시 자동 투명화 ──
+  // 오브젝트 스킬 저장은 transparentForSave 가 배경을 분석해 적합한 툴(루마/색상 키)로 투명화한 뒤 저장.
+  // 복잡 배경이면 원본 저장 + Mask Forge 안내.
   const [txBusy, setTxBusy] = useState(false);
-  const makeTransparent = async (dataUrl) => {
+  const downloadObject = async (dataUrl) => {
     if (txBusy) return;
     setTxBusy(true);
-    push({ role: "assistant", text: "배경을 분석해 자동 투명화 중…", loading: true });
-    try {
-      const r = await smartTransparentPng(dataUrl);
-      if (r.ok) replaceLast({ text: `투명 PNG 완성 — ${r.method === "luma" ? "발광 루마키" : "색상 키"}로 분리했어요.`, loading: false, image: r.dataUrl, transparent: true });
-      else replaceLast({ text: r.reason === "complex" ? "배경이 복잡해 자동 투명화가 어려워요. Mask Forge의 AI 배경 제거로 보내는 게 좋아요." : "이 이미지는 자동 투명화가 안 돼요 (원격 이미지 제약). Mask Forge에서 처리하세요.", loading: false, maskForge: dataUrl });
-    } catch (e) {
-      replaceLast({ text: `투명화 실패: ${e?.message || e}`, loading: false, error: true });
-    } finally { setTxBusy(false); }
+    const { dataUrl: out, transparent } = await transparentForSave(dataUrl);
+    downloadPng(out, transparent ? `${skill.id}_transparent` : skill.id);
+    if (!transparent) push({ role: "assistant", text: "배경이 복잡해 원본으로 저장했어요. Mask Forge에서 배경 제거를 시도하세요.", maskForge: dataUrl });
+    setTxBusy(false);
   };
   const toMaskForge = (dataUrl) => { navigate("mask-forge", { source: "skill", image: { url: dataUrl, metadata: {} } }); onClose?.(); };
 
@@ -320,35 +316,22 @@ function SkillSession({ skill, T, onClose }) {
               {m.image && m.role === "user" && (
                 <div style={{ marginTop: 8 }}><img src={m.image} alt="첨부" style={{ maxWidth: 160, borderRadius: 8, border: `1px solid ${T.border}`, display: "block" }} /></div>
               )}
-              {/* 생성/투명화 결과 (어시스턴트 메시지) */}
+              {/* 생성 결과 (어시스턴트) — 오브젝트 스킬은 저장 버튼이 자동 투명화 후 저장 */}
               {m.image && m.role !== "user" && (
                 <div style={{ marginTop: 10 }}>
-                  <img src={m.image} alt="결과" style={{ width: "100%", borderRadius: 10, background: m.transparent ? CHECKER : "#000", display: "block" }} />
-                  {m.transparent ? (
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <button onClick={() => downloadPng(m.image, `${skill.id}_transparent`)} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Download size={13} /> 투명 PNG</button>
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                        <button onClick={() => downloadPng(m.image, skill.id)} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Download size={13} /> PNG</button>
-                        <button onClick={generate} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><RotateCcw size={13} /> 다시 생성</button>
-                        <button onClick={restart} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Wand2 size={13} /> 새 요청</button>
-                      </div>
-                      {skill.transparent !== "none" && (
-                        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-                          {skill.transparent === "ai" ? (
-                            <button onClick={() => toMaskForge(m.image)} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Scissors size={13} /> 배경 제거 (Mask Forge)</button>
-                          ) : (
-                            <>
-                              <button onClick={() => makeTransparent(m.image)} disabled={txBusy} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center", opacity: txBusy ? 0.5 : 1 }}><Scissors size={13} /> 배경 투명화</button>
-                              <button onClick={() => toMaskForge(m.image)} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}>Mask Forge에서</button>
-                            </>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )}
+                  <img src={m.image} alt="결과" style={{ width: "100%", borderRadius: 10, background: "#000", display: "block" }} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+                    {isObjectSkill ? (
+                      <button onClick={() => downloadObject(m.image)} disabled={txBusy} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center", opacity: txBusy ? 0.5 : 1 }}>{txBusy ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />} 투명 PNG 저장</button>
+                    ) : (
+                      <button onClick={() => downloadPng(m.image, skill.id)} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Download size={13} /> PNG</button>
+                    )}
+                    <button onClick={generate} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><RotateCcw size={13} /> 다시 생성</button>
+                    <button onClick={restart} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Wand2 size={13} /> 새 요청</button>
+                    {skill.transparent === "ai"
+                      ? <button onClick={() => toMaskForge(m.image)} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Scissors size={13} /> 배경 제거 (Mask Forge)</button>
+                      : isObjectSkill && <button onClick={() => toMaskForge(m.image)} style={{ ...chipStyle(false), display: "flex", gap: 6, alignItems: "center" }}><Scissors size={13} /> Mask Forge에서</button>}
+                  </div>
                 </div>
               )}
               {/* 복잡 배경 → Mask Forge 라우팅 안내 버튼 */}

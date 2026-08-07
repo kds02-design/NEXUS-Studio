@@ -1,0 +1,6 @@
+param([Parameter(Mandatory=$true)][string]$InputPath,[Parameter(Mandatory=$true)][string]$OutputPath)
+Add-Type -ReferencedAssemblies 'System.Drawing.dll' -TypeDefinition @'
+using System;using System.Drawing;using System.Drawing.Imaging;using System.Runtime.InteropServices;
+public static class StripTitleTeal{public static void Convert(string input,string output){using(var s0=new Bitmap(input))using(var s=new Bitmap(s0.Width,s0.Height,PixelFormat.Format32bppArgb)){using(var g=Graphics.FromImage(s))g.DrawImageUnscaled(s0,0,0);var r=new Rectangle(0,0,s.Width,s.Height);var d=s.LockBits(r,ImageLockMode.ReadWrite,PixelFormat.Format32bppArgb);int n=Math.Abs(d.Stride)*s.Height;var p=new byte[n];Marshal.Copy(d.Scan0,p,0,n);for(int y=0;y<s.Height;y++)for(int x=0;x<s.Width;x++){int i=y*d.Stride+x*4,b=p[i],g=p[i+1],rr=p[i+2],mx=Math.Max(rr,Math.Max(g,b));bool teal=rr<105&&g>rr*1.12&&b>rr*1.12;bool mag=rr>60&&b>60&&Math.Abs(rr-b)<100&&Math.Min(rr,b)-g>14;bool darkFringe=mx<58;if(teal||mag||darkFringe){p[i]=p[i+1]=p[i+2]=p[i+3]=0;}}Marshal.Copy(p,0,d.Scan0,n);s.UnlockBits(d);s.Save(output,ImageFormat.Png);}}}
+'@
+$src=(Resolve-Path -LiteralPath $InputPath).Path;$dst=[IO.Path]::GetFullPath($OutputPath);[IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($dst))|Out-Null;[StripTitleTeal]::Convert($src,$dst)

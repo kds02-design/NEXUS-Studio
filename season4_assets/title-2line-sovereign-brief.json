@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "engine": "sovereign",
+  "sourceLogic": "Typecore Sovereign",
+  "exactText": "봉마 소울패스 진무 시즌4",
+  "lines": [
+    "봉마 소울패스",
+    "진무 시즌4"
+  ],
+  "concept": "season 4 pond key visual, monumental two-line Korean RPG title, upper line compact gold ivory, lower line larger jade silver metal, exact Hangul, flat magenta chroma-key background",
+  "ratio": "2.76:1",
+  "occupancy": "70%",
+  "prompt": "[TEXT LOCK] Render exactly: \"봉마 소울패스 / 진무 시즌4\". Preserve every Korean syllable and spacing.\n[LAYOUT LOCK] 2 row(s), aspect ratio 2.76:1, title occupies about 70% of the canvas.\n[TYPECORE ENGINE] custom MMORPG title lettering with a strong silhouette, disciplined stroke hierarchy, controlled ornamental detail.\n[ART DIRECTION] season 4 pond key visual, monumental two-line Korean RPG title, upper line compact gold ivory, lower line larger jade silver metal, exact Hangul, flat magenta chroma-key background.\n[READABILITY] Commercial game-publishing quality; readable at banner size; no missing, substituted, duplicated, or romanized characters.\n[ISOLATION] Typography artwork only. No character, landscape, UI, logo, date, subtitle, mockup, frame, or unrelated words.\n[COMPOSITING] Transparent background. Generate the lettering body without glow or cast light; lighting effects will be produced as a separate transparent layer.",
+  "negativePrompt": "misspelled Hangul, extra text, English translation, character, scenery, black rectangle, opaque background, merged glow, illegible distortion",
+  "deliverables": [
+    "title-body.png",
+    "title-light.png",
+    "title-brief.json"
+  ]
+}

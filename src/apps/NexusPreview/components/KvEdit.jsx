@@ -2,7 +2,9 @@ import { useRef, useState } from "react";
 import { Download, FolderCheck, Gift, Layers, Loader2, RotateCcw, Sparkles, Type, Upload, Wand2, X } from "lucide-react";
 import { useUsageGate } from "../../../components/UsageGate";
 import { useAuth } from "../../../context/AuthContext";
+import { useGlobal } from "../../../context/GlobalContext";
 import { IMAGEN_MODELS } from "../../../lib/imagenRender";
+import { transparentForSave } from "../../../lib/saveTransparent";
 import QualityEnhancer from "./QualityEnhancer";
 import PsdImportModal from "./PsdImportModal";
 import { renderBgCompose, renderBgGenerate, renderItemBundle, saveBundleToPromptArc, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS } from "../services/bgTools";
@@ -58,9 +60,22 @@ function Dropzone({ T, accent, dataUrl, onFile, onClear, title, sub, accept = "i
   return <div onClick={() => fileRef.current?.click()} onDrop={(e) => { e.preventDefault(); setOver(false); read(e.dataTransfer.files?.[0]); }} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} style={{ minHeight: 150, display: "grid", placeItems: "center", textAlign: "center", border: `1.5px dashed ${over ? accent : T.border}`, borderRadius: 12, padding: 20, background: over ? `${accent}14` : T.surface, cursor: "pointer", boxSizing: "border-box" }}><div><Upload size={20} color={accent} /><div style={{ marginTop: 8, color: T.text, fontSize: 13, fontWeight: 700 }}>{title}</div><div style={{ marginTop: 4, color: T.textMuted, fontSize: 11 }}>{sub || "클릭하거나 파일을 끌어 놓으세요"}</div></div><input ref={fileRef} type="file" accept={accept} hidden onChange={(e) => read(e.target.files?.[0])} /></div>;
 }
 
-function ResultView({ T, accent, url, busy, onRetry, filePrefix }) {
-  const download = () => { const a = document.createElement("a"); a.href = url; a.download = `${filePrefix}_${Date.now()}.png`; a.click(); };
-  return <section style={{ minHeight: 430, border: `1px solid ${T.border}`, background: T.surface, borderRadius: 14, padding: 16, boxSizing: "border-box" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, marginBottom: 12 }}>렌더 결과</div>{url ? <><img src={url} alt="렌더 결과" style={{ width: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 10, background: "#08090b" }} /><div style={{ display: "flex", gap: 8, marginTop: 12 }}><button onClick={download} style={secondaryBtn(T, accent)}><Download size={14} /> PNG 다운로드</button><button onClick={onRetry} disabled={busy} style={secondaryBtn(T, accent)}><Wand2 size={14} /> 다시 렌더링</button></div></> : <div style={{ minHeight: 350, display: "grid", placeItems: "center", color: T.textDim, fontSize: 13, border: `1px dashed ${T.border}`, borderRadius: 10 }}>{busy ? <><Loader2 className="animate-spin" size={22} /> 렌더링 중...</> : "왼쪽에서 설정한 뒤 바로 렌더링하세요."}</div>}</section>;
+function ResultView({ T, accent, url, busy, onRetry, filePrefix, transparentOnSave = false }) {
+  const { navigate } = useGlobal();
+  const [txBusy, setTxBusy] = useState(false);
+  const [maskSrc, setMaskSrc] = useState(null); // 자동 투명화 실패 시 Mask Forge 로 보낼 원본
+  const anchor = (href, suffix) => { const a = document.createElement("a"); a.href = href; a.download = `${filePrefix}${suffix}_${Date.now()}.png`; a.click(); };
+  // 오브젝트 결과는 저장 시 자동 투명화. 실패(복잡 배경) 시 원본 저장 + Mask Forge 안내.
+  const download = async () => {
+    if (!transparentOnSave) { anchor(url, ""); return; }
+    setTxBusy(true); setMaskSrc(null);
+    const { dataUrl, transparent } = await transparentForSave(url);
+    anchor(dataUrl, transparent ? "_transparent" : "");
+    if (!transparent) setMaskSrc(url);
+    setTxBusy(false);
+  };
+  const toMaskForge = () => navigate("mask-forge", { source: "nexus-preview", image: { url: maskSrc || url, metadata: {} } });
+  return <section style={{ minHeight: 430, border: `1px solid ${T.border}`, background: T.surface, borderRadius: 14, padding: 16, boxSizing: "border-box" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, marginBottom: 12 }}>렌더 결과{transparentOnSave ? " · 저장 시 자동 투명화" : ""}</div>{url ? <><img src={url} alt="렌더 결과" style={{ width: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 10, background: "#08090b" }} /><div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button onClick={download} disabled={txBusy} style={{ ...secondaryBtn(T, accent), opacity: txBusy ? 0.6 : 1 }}>{txBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {transparentOnSave ? "투명 PNG 저장" : "PNG 다운로드"}</button><button onClick={onRetry} disabled={busy} style={secondaryBtn(T, accent)}><Wand2 size={14} /> 다시 렌더링</button></div>{maskSrc && <div style={{ marginTop: 8, fontSize: 11, color: T.textDim }}>배경이 복잡해 원본으로 저장했어요. <button onClick={toMaskForge} style={{ color: accent, background: "none", border: 0, cursor: "pointer", fontWeight: 700, padding: 0 }}>Mask Forge에서 배경 제거 →</button></div>}</> : <div style={{ minHeight: 350, display: "grid", placeItems: "center", color: T.textDim, fontSize: 13, border: `1px dashed ${T.border}`, borderRadius: 10 }}>{busy ? <><Loader2 className="animate-spin" size={22} /> 렌더링 중...</> : "왼쪽에서 설정한 뒤 바로 렌더링하세요."}</div>}</section>;
 }
 
 const panelGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 18, alignItems: "start" };
@@ -199,7 +214,7 @@ function CharEnhance({ T, accent }) {
         </div>
       )}
     </section>
-    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="char-enhance" />
+    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="char-enhance" transparentOnSave />
     {modal}
   </div>;
 }
@@ -472,7 +487,7 @@ function ItemBundle({ T, accent }) {
       {savedArc === "done" && <div style={{ color: accent, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><FolderCheck size={13} /> 프롬프트 아크 내 폴더에 자동 저장됐어요.</div>}
       {savedArc === "failed" && <div style={{ color: "#f87171", fontSize: 12 }}>프롬프트 아크 저장에 실패했어요 (렌더 결과는 유지됩니다).</div>}
     </section>
-    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="item-bundle" />
+    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="item-bundle" transparentOnSave />
     {modal}
   </div>;
 }

@@ -1,0 +1,85 @@
+{
+  "schema": "bns-banner-job/v1",
+  "season": "5",
+  "pageName": "봉마 소울패스 진무 시즌5",
+  "title": {
+    "engine": "sovereign",
+    "mode": "two-line-flat-then-render-matrix",
+    "eyebrow": "봉마 소울패스",
+    "main": "진무 시즌5"
+  },
+  "copy": {
+    "subcopy": "진무 시즌을 소울패스와 함께 성장 부스트!",
+    "date": "날짜 입력 필요"
+  },
+  "source": {
+    "projectDir": "C:\\work\\00_AI연습\\23_배너자동화_피그마mcp\\01_샘플\\20260715_Live_봉마 소울패스 진무 시즌5",
+    "logo": null
+  },
+  "figma": {
+    "fileKey": "yfrEN3GMD2RPqs7I2MbryK",
+    "referencePageNode": "31:16",
+    "newPage": true
+  },
+  "frames": [
+    {
+      "name": "1180x750_Notice",
+      "width": 1180,
+      "height": 750,
+      "composition": "full-text"
+    },
+    {
+      "name": "1200x628_Facebook",
+      "width": 1200,
+      "height": 628,
+      "composition": "full-text-logo"
+    },
+    {
+      "name": "1352x860_PURPLE",
+      "width": 1352,
+      "height": 860,
+      "composition": "image-only-centered"
+    },
+    {
+      "name": "620x640_PC_MO",
+      "width": 620,
+      "height": 640,
+      "composition": "image-only-centered"
+    },
+    {
+      "name": "600x340_EventON",
+      "width": 600,
+      "height": 340,
+      "composition": "image-only-centered"
+    },
+    {
+      "name": "357x230_Toast",
+      "width": 357,
+      "height": 230,
+      "composition": "image-only-transparent-top-70"
+    },
+    {
+      "name": "266x280_Ingame",
+      "width": 266,
+      "height": 280,
+      "composition": "transparent-character-only"
+    },
+    {
+      "name": "72x40_List",
+      "width": 72,
+      "height": 40,
+      "composition": "image-only-face-crop"
+    }
+  ],
+  "pipeline": [
+    "psd-extract",
+    "typecore-flat",
+    "render-matrix-locked",
+    "background-enhance",
+    "mask-forge-fx-alpha",
+    "figma-master-1180",
+    "duplicate-1200",
+    "image-only-variants",
+    "qa"
+  ]
+}

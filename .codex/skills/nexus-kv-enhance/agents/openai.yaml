@@ -1,0 +1,6 @@
+interface:
+  display_name: "Nexus KV Enhance"
+  short_description: "키비주얼 배경과 캐릭터 광원 효과를 향상합니다"
+  default_prompt: "Use $nexus-kv-enhance to improve this key visual background and add a separated character light FX layer."
+policy:
+  allow_implicit_invocation: true
