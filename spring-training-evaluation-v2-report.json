@@ -1,0 +1,92 @@
+{
+  "frame": "1180x750_Notice",
+  "overall": 90.2,
+  "pass": true,
+  "hardFailures": [],
+  "metrics": [
+    {
+      "key": "impression",
+      "weight": 14,
+      "score": 91,
+      "reason": "좌측의 큰 독초거사와 우측의 선명한 봄 타이틀이 즉시 대비되어 첫인상이 강하다."
+    },
+    {
+      "key": "concept",
+      "weight": 9,
+      "score": 92,
+      "reason": "Breeze 계열의 둥근 제목, 새싹색 그라디언트, 약초 연구자 캐릭터가 봄맞이 특훈 콘셉트를 명확히 전달한다."
+    },
+    {
+      "key": "layout",
+      "weight": 8,
+      "score": 90,
+      "reason": "오른쪽을 보는 캐릭터를 좌측에 배치해 시선이 우측 타이틀과 정보로 연결되며 양쪽 질량이 안정적이다."
+    },
+    {
+      "key": "typography",
+      "weight": 18,
+      "score": 91,
+      "reason": "독초거사의 배지와 봄맞이 특훈 본문이 하나의 제목 덩어리로 보이고 둥근 형태와 간격이 이벤트 분위기에 적합하다."
+    },
+    {
+      "key": "color",
+      "weight": 8,
+      "score": 90,
+      "reason": "노랑에서 그린으로 이어지는 제목과 금빛·연두 반사광이 숲 배경 및 캐릭터 장비와 자연스럽게 연결된다."
+    },
+    {
+      "key": "readability",
+      "weight": 9,
+      "score": 91,
+      "reason": "우측의 어두운 로컬 그레이드와 제목 외곽선, 흰색 카피, 날짜 패널 덕분에 문구가 빠르게 읽힌다."
+    },
+    {
+      "key": "brand",
+      "weight": 8,
+      "score": 84,
+      "reason": "게임 NPC와 실제 게임 배경이 브랜드 정체성을 제공하며 Notice 규격상 별도 로고가 없어 표식은 간접적이다."
+    },
+    {
+      "key": "flow",
+      "weight": 8,
+      "score": 92,
+      "reason": "캐릭터 고글의 우측 시선에서 제목, 서브카피, 날짜로 자연스러운 Z형 흐름이 형성된다."
+    },
+    {
+      "key": "detail",
+      "weight": 14,
+      "score": 90,
+      "reason": "기존 형광 윤곽을 제거하고 원본 알파에 맞춘 얇은 금빛 키라이트로 바꿔 가장자리가 자연스럽고 정합된다."
+    },
+    {
+      "key": "conversion",
+      "weight": 4,
+      "score": 89,
+      "reason": "이벤트명, 보패 강화 혜택, 기간의 정보 우선순위가 명료해 참여 목적을 빠르게 이해할 수 있다."
+    }
+  ],
+  "priorities": [
+    {
+      "key": "brand",
+      "weight": 8,
+      "score": 84,
+      "reason": "게임 NPC와 실제 게임 배경이 브랜드 정체성을 제공하며 Notice 규격상 별도 로고가 없어 표식은 간접적이다."
+    },
+    {
+      "key": "conversion",
+      "weight": 4,
+      "score": 89,
+      "reason": "이벤트명, 보패 강화 혜택, 기간의 정보 우선순위가 명료해 참여 목적을 빠르게 이해할 수 있다."
+    },
+    {
+      "key": "layout",
+      "weight": 8,
+      "score": 90,
+      "reason": "오른쪽을 보는 캐릭터를 좌측에 배치해 시선이 우측 타이틀과 정보로 연결되며 양쪽 질량이 안정적이다."
+    }
+  ],
+  "recommendedCorrections": [
+    "현재 구성 유지",
+    "최종 투명 PNG 내보내기 시 실제 알파 픽셀 검사"
+  ]
+}

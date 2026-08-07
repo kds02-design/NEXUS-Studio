@@ -41,3 +41,9 @@ service-account.json
 .ultra-profile/
 theme-output/
 theme-prompts*.json
+
+# Codex 배너 자동화(season4) 산출물 — 로컬 작업물, 커밋 금지
+psd_exports/
+season4_assets/
+season4_psd_extract/
+banner-evaluation/season4/

@@ -1,0 +1,14 @@
+[IMMUTABLE TEXT AND SILHOUETTE LOCK]
+Use the supplied transparent Typecore Breeze title as the exact immutable reference. Preserve every Korean glyph, counter, spacing relationship, line break, width, height, and outer silhouette exactly. The text must remain exactly two rows:
+독초거사의
+봄맞이 특훈!
+Do not redraw, replace, misspell, distort, duplicate, remove, or add any character.
+
+[MATERIAL RENDER ONLY]
+Render only surface, bevel, outline stack, and lighting inside the locked letterforms. Create a polished spring-herb game-event title: fresh leaf green body, yellow-green highlights, warm golden top light, subtle ivory inner bevel, deep forest-green outer keyline, small orange accent only on the first row. Friendly rounded casual RPG-event finish, premium but playful.
+
+[COMPOSITING]
+Transparent background. No black matte, rectangle, scenery, character, logo, English, date, subtitle, particles, or unrelated decorations. Keep glow minimal and separable. Preserve clean antialiased alpha edges and crop close to the visible title artwork with modest safe padding.
+
+[NEGATIVE]
+misspelled Hangul, changed typography, changed line breaks, extra text, black background, teal contamination, excessive 3D extrusion, illegible counters, melted letters, duplicated strokes, added icons

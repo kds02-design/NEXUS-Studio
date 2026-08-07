@@ -1,6 +1,6 @@
 // 스킬 매니페스트 — NEXUS Preview 이미지 생성기들.
 // 각 앱의 기존 render 함수·옵션 상수를 그대로 재사용. 이미지 입력형은 file/files 슬롯 사용.
-import { renderBgGenerate, renderItemBundle, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_LAYOUT_OPTIONS } from "../apps/NexusPreview/services/bgTools";
+import { renderBgGenerate, renderItemBundle, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, FLOATING_EFFECT_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_COLORS } from "../apps/NexusPreview/services/bgTools";
 import { renderEnhanced } from "../apps/NexusPreview/services/qualityEnhancer";
 import { renderCharEnhanced, CHAR_LIGHT_OPTIONS, CHAR_PARTICLE_OPTIONS, CHAR_INTENSITY_OPTIONS } from "../apps/NexusPreview/services/characterEnhancer";
 import { renderTitleEffect, TITLE_FX_EFFECTS, TITLE_FX_COLORS, TITLE_FX_INTENSITY } from "../apps/NexusPreview/services/titleEffect";
@@ -84,4 +84,18 @@ export const itemBundleSkill = {
   render: (v) => wrap(renderItemBundle(v.items, { light: v.light, ground: v.ground, magicColor: v.magicColor || "purple", bg: "black", layout: v.layout, intent: v.intent || "", imageSize: "2K" })),
 };
 
-export const nexusPreviewSkills = [bgGenerateSkill, bgQualitySkill, charEnhanceSkill, titleFxSkill, itemBundleSkill];
+export const floatingItemsSkill = {
+  id: "nexus-floating", label: "공중부양 아이템", sub: "Floating Items", color: NP, action: "image", transparent: "auto",
+  intro: "아이템을 물방울·번개·금빛·회오리 등 원형 이펙트로 감싸 공중에 띄워요. 원 하나에 1개 또는 여러 개. 느낌을 적고 아이템을 올려주세요 (1장 이상).\n예: “금빛 회오리로 화려하게”",
+  placeholder: "원하는 연출 (없으면 ‘자동’ 입력)…",
+  freeTextKey: "intent",
+  slots: [
+    { key: "items", label: "아이템 이미지", question: "아이템 이미지를 올려주세요 (1장 이상).", type: "files", min: 1, required: true },
+    { key: "effect", label: "원형 이펙트", question: "원형 이펙트는?", options: kv(FLOATING_EFFECT_OPTIONS), default: "bubble" },
+    { key: "layout", label: "배치", question: "배치는? (개별 원 / 한 원에 모아서)", options: kv(FLOATING_LAYOUT_OPTIONS), default: "each" },
+    { key: "color", label: "이펙트 색", question: "이펙트 색은?", options: kv(FLOATING_COLORS), default: "auto" },
+  ],
+  render: (v) => wrap(renderFloatingItems(v.items, { effect: v.effect, layout: v.layout, color: v.color, bg: "black", intent: v.intent || "", imageSize: "2K" })),
+};
+
+export const nexusPreviewSkills = [bgGenerateSkill, bgQualitySkill, charEnhanceSkill, titleFxSkill, itemBundleSkill, floatingItemsSkill];

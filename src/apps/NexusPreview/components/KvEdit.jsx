@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Download, FolderCheck, Gift, Layers, Loader2, RotateCcw, Sparkles, Type, Upload, Wand2, X } from "lucide-react";
+import { Download, FolderCheck, Gift, Layers, Loader2, Orbit, RotateCcw, Sparkles, Type, Upload, Wand2, X } from "lucide-react";
 import { useUsageGate } from "../../../components/UsageGate";
 import { useAuth } from "../../../context/AuthContext";
 import { useGlobal } from "../../../context/GlobalContext";
@@ -7,7 +7,7 @@ import { IMAGEN_MODELS } from "../../../lib/imagenRender";
 import { transparentForSave } from "../../../lib/saveTransparent";
 import QualityEnhancer from "./QualityEnhancer";
 import PsdImportModal from "./PsdImportModal";
-import { renderBgCompose, renderBgGenerate, renderItemBundle, saveBundleToPromptArc, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS } from "../services/bgTools";
+import { renderBgCompose, renderBgGenerate, renderItemBundle, saveBundleToPromptArc, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, saveFloatingToPromptArc, FLOATING_EFFECT_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_COLORS } from "../services/bgTools";
 import { renderCharEnhanced, saveCharToPromptArc, resolveCharBg, CHAR_LIGHT_OPTIONS, CHAR_PARTICLE_OPTIONS, CHAR_INTENSITY_OPTIONS, CHAR_BG_OPTIONS } from "../services/characterEnhancer";
 import { renderTitleEffect, saveTitleToPromptArc, TITLE_FX_EFFECTS, TITLE_FX_COLORS, TITLE_FX_DIRECTIONS, TITLE_FX_INTENSITY, TITLE_FX_BG_OPTIONS } from "../services/titleEffect";
 import { charSplitToBlobs, dataUrlToImageData, CHAR_SPLIT_DEFAULTS } from "../../../lib/charEffectSplit";
@@ -21,6 +21,7 @@ const MODES = [
   { key: "compose", label: "배경 합성", desc: "배경에 이미지나 PSD 레이어를 자연스럽게 합성합니다." },
   { key: "generate", label: "배경 생성", desc: "설명과 참고 이미지로 새로운 KV 배경을 만듭니다." },
   { key: "bundle", label: "아이템 꾸러미", desc: "아이템 이미지 여러 장을 형태 그대로 하나의 보상 꾸러미로 합성합니다." },
+  { key: "floating", label: "공중부양 아이템", desc: "아이템을 물방울·번개·금빛·회오리 등 원형 이펙트로 감싸 공중에 띄웁니다 (원 하나에 1개 또는 여러 개)." },
 ];
 
 export default function KvEdit({ T, accent }) {
@@ -37,6 +38,7 @@ export default function KvEdit({ T, accent }) {
       {mode === "compose" && <BgCompose T={T} accent={accent} />}
       {mode === "generate" && <BgGenerate T={T} accent={accent} />}
       {mode === "bundle" && <ItemBundle T={T} accent={accent} />}
+      {mode === "floating" && <FloatingItems T={T} accent={accent} />}
     </div>
   );
 }
@@ -488,6 +490,137 @@ function ItemBundle({ T, accent }) {
       {savedArc === "failed" && <div style={{ color: "#f87171", fontSize: 12 }}>프롬프트 아크 저장에 실패했어요 (렌더 결과는 유지됩니다).</div>}
     </section>
     <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="item-bundle" transparentOnSave />
+    {modal}
+  </div>;
+}
+
+// ─── 공중부양 아이템 — 아이템을 원형 이펙트로 감싸 공중에 띄움 (원 하나에 1개 또는 여러 개) ───
+const FLOATING_MAX = 8;
+function FloatingItems({ T, accent }) {
+  const { ensureCanGenerate, modal } = useUsageGate();
+  const { user } = useAuth();
+  const fileRef = useRef(null);
+  const [items, setItems] = useState([]); // dataURL[]
+  const [effect, setEffect] = useState("bubble");
+  const [layout, setLayout] = useState("each");
+  const [color, setColor] = useState("auto");
+  const [bg, setBg] = useState("black");
+  const [intent, setIntent] = useState("");
+  const [size, setSize] = useState("2K");
+  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [busy, setBusy] = useState(false), [result, setResult] = useState(null), [error, setError] = useState("");
+  const [over, setOver] = useState(false);
+  const [savedArc, setSavedArc] = useState("");
+
+  const addFiles = (fileList) => {
+    const files = [...(fileList || [])].filter((f) => f.type?.startsWith("image/"));
+    if (!files.length) return;
+    files.slice(0, FLOATING_MAX).forEach((f) => {
+      const reader = new FileReader();
+      reader.onload = (e) => setItems((prev) => (prev.length >= FLOATING_MAX ? prev : [...prev, e.target.result]));
+      reader.readAsDataURL(f);
+    });
+  };
+  const removeItem = (i) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+
+  const run = async () => {
+    if (items.length < 1 || busy || !(await ensureCanGenerate("image"))) return;
+    setBusy(true); setResult(null); setError(""); setSavedArc("");
+    try {
+      const url = await renderFloatingItems(items, { effect, layout, color, bg, intent, imageSize: size, modelId: model });
+      if (!url) throw new Error("렌더 결과가 비어 있습니다.");
+      setResult(url);
+      if (user?.uid) {
+        setSavedArc("saving");
+        try {
+          await saveFloatingToPromptArc(url, user, { effect, layout, color, bg, intent, itemCount: items.length });
+          setSavedArc("done");
+        } catch (e) {
+          console.error("[FloatingItems] PromptArc 저장 실패", e);
+          setSavedArc("failed");
+        }
+      }
+    } catch (e) { setError(e?.message || "공중부양 합성 중 오류가 발생했습니다."); }
+    finally { setBusy(false); }
+  };
+
+  const chip = (on) => ({ padding: "7px 12px", borderRadius: 8, border: `1px solid ${on ? accent : T.border}`, background: on ? `${accent}20` : T.surface, color: on ? accent : T.textMuted, cursor: "pointer", fontSize: 12, fontWeight: 700 });
+  const optionLabel = { display: "block", fontSize: 11, fontWeight: 700, color: T.textMuted, marginBottom: 7 };
+
+  return <div style={panelGrid}>
+    <section style={{ display: "grid", gap: 14 }}>
+      {/* 멀티 업로드 — 1장부터 가능 */}
+      <div>
+        <span style={optionLabel}><Orbit size={12} /> 1. 아이템 이미지 ({items.length}/{FLOATING_MAX}) — 1장 이상, 배경 없는 PNG 권장</span>
+        {items.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))", gap: 8, marginBottom: 8 }}>
+            {items.map((url, i) => (
+              <div key={i} style={{ position: "relative", aspectRatio: "1", borderRadius: 10, border: `1px solid ${T.border}`, background: "#0b0c10", overflow: "hidden", display: "grid", placeItems: "center" }}>
+                <img src={url} alt={`아이템 ${i + 1}`} style={{ maxWidth: "92%", maxHeight: "92%", objectFit: "contain" }} />
+                <button onClick={() => removeItem(i)} aria-label="아이템 제거" style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: 6, background: "rgba(0,0,0,.75)", border: `1px solid ${T.border}`, color: T.text, cursor: "pointer", display: "grid", placeItems: "center", padding: 0 }}><X size={11} /></button>
+              </div>
+            ))}
+          </div>
+        )}
+        {items.length < FLOATING_MAX && (
+          <div onClick={() => fileRef.current?.click()}
+            onDrop={(e) => { e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files); }}
+            onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+            style={{ minHeight: items.length ? 64 : 130, display: "grid", placeItems: "center", textAlign: "center", border: `1.5px dashed ${over ? accent : T.border}`, borderRadius: 12, padding: 14, background: over ? `${accent}14` : T.surface, cursor: "pointer", boxSizing: "border-box" }}>
+            <div><Upload size={18} color={accent} /><div style={{ marginTop: 6, color: T.text, fontSize: 12.5, fontWeight: 700 }}>{items.length ? "아이템 추가" : "아이템 이미지를 올려놓으세요"}</div><div style={{ marginTop: 3, color: T.textMuted, fontSize: 11 }}>1장이면 원 하나 · 여러 장이면 배치 선택 가능</div></div>
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+          </div>
+        )}
+      </div>
+
+      {/* 원형 이펙트 형태 */}
+      <div>
+        <span style={optionLabel}><Sparkles size={12} /> 2. 원형 이펙트</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {FLOATING_EFFECT_OPTIONS.map((o) => <button key={o.key} onClick={() => setEffect(o.key)} style={chip(effect === o.key)}>{o.ko}</button>)}
+        </div>
+        <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>아이템을 감싸는 링/구체 형태를 정합니다.</div>
+      </div>
+
+      {/* 배치 — 개별 원 vs 한 원에 모아서 */}
+      <div>
+        <span style={optionLabel}>3. 배치</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {FLOATING_LAYOUT_OPTIONS.map((o) => <button key={o.key} onClick={() => setLayout(o.key)} style={chip(layout === o.key)}>{o.ko}</button>)}
+        </div>
+        <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>개별=아이템마다 원 하나씩(여러 오브) · 모아서=모든 아이템을 한 원 안에. (1장이면 자동으로 원 하나)</div>
+      </div>
+
+      {/* 이펙트 색 */}
+      <div>
+        <span style={optionLabel}>4. 이펙트 색</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {FLOATING_COLORS.map((o) => <button key={o.key} onClick={() => setColor(o.key)} style={chip(color === o.key)}>{o.ko}</button>)}
+        </div>
+      </div>
+
+      {/* 배경 — 누끼 방식 */}
+      <div>
+        <span style={optionLabel}>5. 배경 (누끼 작업용)</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {BUNDLE_BG_OPTIONS.map((o) => <button key={o.key} onClick={() => setBg(o.key)} style={chip(bg === o.key)}><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: o.fill, border: "1px solid rgba(255,255,255,.3)", marginRight: 6, verticalAlign: "-1px" }} />{o.ko}</button>)}
+        </div>
+        <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>블랙=발광 추출 · 크로마 그린=색상 키 · 화이트=레퍼런스. 저장 시 자동 투명화됩니다.</div>
+      </div>
+
+      <label><span style={optionLabel}>추가 지시 (선택)</span><textarea value={intent} onChange={(e) => setIntent(e.target.value)} rows={3} placeholder="예: 원을 살짝 겹쳐서 대각선으로 배치, 물방울 안에 작은 반짝임 추가." style={fieldStyle(T)} /></label>
+
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{["2K", "4K"].map((v) => <button key={v} onClick={() => setSize(v)} style={chip(size === v)}>{v}</button>)}</div>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
+        <ModelSelect T={T} model={model} onChange={setModel} />
+        <button onClick={run} disabled={items.length < 1 || busy} style={primaryBtn(T, accent, items.length < 1 || busy)}>{busy ? <Loader2 size={15} className="animate-spin" /> : <Orbit size={15} />} 공중부양 렌더링</button>
+      </div>
+      {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
+      {savedArc === "saving" && <div style={{ color: T.textDim, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><Loader2 size={12} className="animate-spin" /> 프롬프트 아크에 저장 중…</div>}
+      {savedArc === "done" && <div style={{ color: accent, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><FolderCheck size={13} /> 프롬프트 아크 내 폴더에 자동 저장됐어요.</div>}
+      {savedArc === "failed" && <div style={{ color: "#f87171", fontSize: 12 }}>프롬프트 아크 저장에 실패했어요 (렌더 결과는 유지됩니다).</div>}
+    </section>
+    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="floating-items" transparentOnSave />
     {modal}
   </div>;
 }

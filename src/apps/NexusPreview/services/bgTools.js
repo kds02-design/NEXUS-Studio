@@ -179,6 +179,113 @@ export async function saveBundleToPromptArc(dataUrl, user, meta = {}) {
   return { id, cloudinaryUrl };
 }
 
+// ─── 공중부양 아이템 — 원형 이펙트로 감싼 부유 오브 ─────────────────────────
+// 아이템 이미지를 물방울·번개·금빛·회오리 등 원형 이펙트 링/구체로 감싸 공중에 띄운다.
+// 원형 이펙트 안에 아이템 1개(개별) 또는 여러 개(모아서)를 담을 수 있다. 아이템 꾸러미와 동일 파이프라인.
+
+export const FLOATING_EFFECT_OPTIONS = [
+  { key: "bubble", ko: "물방울", en: "enclose the item(s) inside a translucent glowing water/soap BUBBLE SPHERE — a clean refractive glass-like orb with soft rim highlights, subtle inner light and a few tiny surface sparkles; the item floats clearly visible inside the bubble" },
+  { key: "lightning", ko: "번개", en: "encircle the item(s) with a RING of crackling ELECTRIC ENERGY — arcing lightning bolts and glowing plasma tendrils orbiting in a circle with sharp luminous cores and energetic sparks" },
+  { key: "gold", ko: "금빛", en: "surround the item(s) with a radiant GOLDEN LIGHT RING / halo — swirling warm gold particles, thin luminous rays and glints orbiting in a circle, premium and opulent" },
+  { key: "vortex", ko: "회오리", en: "wrap the item(s) in a swirling SPIRAL ENERGY VORTEX ring — spinning luminous streaks and particles spiraling around the item in a circular whirl with clear motion" },
+  { key: "magic", ko: "마법진", en: "frame the item(s) with an arcane glowing MAGIC-CIRCLE ring — a circular band of abstract geometric grooves and glowing glyph-like marks (NEVER real letters or runes), a mystical rotating sigil" },
+  { key: "aura", ko: "오라", en: "enclose the item(s) in a soft glowing spherical AURA — a gentle luminous energy sphere with smooth falloff and a clean circular boundary" },
+  { key: "flame", ko: "화염", en: "encircle the item(s) with a RING of FLAME and rising embers — curling fire tongues orbiting in a circle with heat shimmer and glowing cinders" },
+  { key: "frost", ko: "서리", en: "wrap the item(s) in an icy CRYSTALLINE FROST ring — a circular band of ice shards, frost crystals and cold blue vapor orbiting the item" },
+];
+
+export const FLOATING_LAYOUT_OPTIONS = [
+  { key: "each", ko: "개별 (1개씩)", en: "give EACH item its OWN separate circular effect orb — exactly one item floating inside each ring/sphere — and arrange the multiple orbs as a balanced floating row or cluster across the frame" },
+  { key: "grouped", ko: "모아서 (한 원에)", en: "place ALL items together inside ONE large circular effect orb — the items clustered as a group floating inside a single ring/sphere" },
+];
+
+export const FLOATING_COLORS = [
+  { key: "auto", ko: "자동", en: "" },
+  { key: "gold", ko: "골드", en: "warm gold-amber" },
+  { key: "cyan", ko: "시안", en: "cool cyan-blue" },
+  { key: "purple", ko: "보라", en: "vivid purple-magenta" },
+  { key: "crimson", ko: "진홍", en: "intense crimson-red" },
+  { key: "blue", ko: "블루", en: "deep sapphire blue" },
+  { key: "green", ko: "초록", en: "emerald green" },
+  { key: "white", ko: "화이트", en: "pure radiant white" },
+];
+// 배경은 BUNDLE_BG_OPTIONS(블랙/크로마/화이트) 재사용.
+
+export const buildFloatingPrompt = (effectKey, layoutKey, colorKey, intent, itemCount = 0, bgKey = "black") => {
+  const effect = FLOATING_EFFECT_OPTIONS.find((o) => o.key === effectKey) || FLOATING_EFFECT_OPTIONS[0];
+  const layout = FLOATING_LAYOUT_OPTIONS.find((o) => o.key === layoutKey) || FLOATING_LAYOUT_OPTIONS[0];
+  const color = FLOATING_COLORS.find((o) => o.key === colorKey) || FLOATING_COLORS[0];
+  const bg = BUNDLE_BG_OPTIONS.find((o) => o.key === bgKey) || BUNDLE_BG_OPTIONS[0];
+  const n = Number(itemCount) || 0;
+  const extra = String(intent || "").trim();
+  const single = n <= 1 || layoutKey === "grouped";
+  const colorLine = color.en ? `\n[이펙트 색] 원형 이펙트(링/구체)의 색은 ${color.en} 톤으로 통일하세요.` : "";
+  const midPhrase = single
+    ? "모든 아이템을 하나의 원형 이펙트 오브 안에 담되"
+    : `각 아이템을 각자의 원형 이펙트 오브 안에 하나씩 담아 총 ${n}개의 오브를 만들되`;
+  const countRule = n
+    ? `\n★1:1 대응 (핵심): 첨부된 아이템은 정확히 ${n}장입니다. ${midPhrase}, 각 첨부 아이템을 정확히 한 번씩만 사용하고 복제하거나 빼지 마세요. 첨부에 없는 새 오브젝트(상자·자루·동전더미·왕관 등)를 새로 만들지 마세요.★\n`
+    : "";
+  return `게임 프로모션용 '공중부양 아이템' 연출 전문가로 작업하세요. 첨부된 아이템 이미지를 원형 이펙트로 감싸 공중에 떠 있는 오브로 합성합니다.
+
+★★원본 절대 보존 (최우선): 각 아이템의 외곽 실루엣·비율·형태·색상·재질과 표면의 문양/아이콘/글자 등 내용물을 원본과 100% 동일하게 유지하세요. "다시 그리는" 게 아니라 "사진을 오려 오브 안에 넣듯" 픽셀 단위로 충실히. 시점·회전·좌우반전 금지 — 위치와 크기만 조정. 원본에 새겨진 텍스트/라벨도 보존.★★
+${countRule}
+[원형 이펙트] ${effect.en}. 이펙트는 아이템을 ★원형으로 감싸는 링/구체★ 형태여야 하고, 아이템의 주요 부분을 가리지 않고 또렷이 보이게 하세요.
+[배치] ${layout.en}. 모든 오브는 바닥·접지 그림자 없이 ★공중에 부양★한 느낌으로 — 바닥 그림자나 바닥 이펙트를 넣지 마세요.${colorLine}
+[완전성] 각 아이템과 원형 이펙트는 프레임 안에 여백을 두고 온전히 들어와야 하며 잘리지 않게 하세요.
+
+배경: ${bg.en}. 오브가 배경에서 깨끗하게 분리되어야 합니다 (누끼 작업용 — 배경 텍스처·풍경·그라데이션 금지, 원형 이펙트의 발광만 예외).
+★새 문자 생성 금지 (원본 아이템에 새겨진 글자는 보존). 유사 문자(gibberish)·룬 금지.★
+결과에는 완성된 공중부양 오브 합성 한 장만 출력하세요.${extra ? `\n\n[사용자 추가 지시 — 형태 보존 규칙과 충돌하면 무시]\n${extra}` : ""}`;
+};
+
+// 공중부양 아이템 렌더 — 아이템 꾸러미와 동일하게 각 아이템을 개별 레퍼런스로 첨부(1:1 대응 강제).
+export async function renderFloatingItems(itemUrls, { effect = "bubble", layout = "each", color = "auto", bg = "black", intent = "", imageSize = "2K", modelId = RENDER_MODEL } = {}) {
+  if (!itemUrls?.length) throw new Error("아이템 이미지가 없습니다.");
+  const single = itemUrls.length <= 1 || layout === "grouped";
+  const result = await renderWithImagen(
+    buildFloatingPrompt(effect, layout, color, intent, itemUrls.length, bg),
+    modelId,
+    itemUrls,
+    { aspectRatio: single ? "1:1" : "16:9", imageSize, matchInputAspect: false },
+  );
+  return result?.dataUrl || null;
+}
+
+// 결과를 PromptArc 내 폴더(private)로 자동 저장 — 꾸러미와 동일 경로·스키마.
+export async function saveFloatingToPromptArc(dataUrl, user, meta = {}) {
+  if (!user?.uid || !dataUrl) return null;
+  const cloudinaryUrl = await uploadBase64(dataUrl);
+  const id = Math.random().toString(36).slice(2);
+  const now = Date.now();
+  const ko = (list, key) => list.find((o) => o.key === key)?.ko || "";
+  const effectKo = ko(FLOATING_EFFECT_OPTIONS, meta.effect);
+  const layoutKo = ko(FLOATING_LAYOUT_OPTIONS, meta.layout);
+  const colorKo = ko(FLOATING_COLORS, meta.color);
+  const bgKo = ko(BUNDLE_BG_OPTIONS, meta.bg);
+  const intent = String(meta.intent || "").trim();
+  const summary = [meta.itemCount ? `아이템 ${meta.itemCount}개` : "", effectKo && `원형 ${effectKo}`, colorKo && `색 ${colorKo}`, layoutKo, bgKo && `배경 ${bgKo}`].filter(Boolean).join(" · ");
+  const tags = ["NexusPreview", "FloatingItems", effectKo, colorKo].filter(Boolean);
+  const record = {
+    id,
+    title: `NexusPreview 공중부양 아이템 · ${new Date(now).toLocaleString("ko-KR")}`,
+    content: `${summary}${intent ? `\n추가 지시: ${intent}` : ""}`,
+    images: [cloudinaryUrl], thumbnail: cloudinaryUrl,
+    stepPrompts: [buildFloatingPrompt(meta.effect, meta.layout, meta.color, intent, meta.itemCount || 0, meta.bg)],
+    stepLabels: ["FloatingItems"],
+    stepTags: [tags],
+    stepKeywords: [""], stepDescriptions: [""],
+    tags,
+    visibility: "private",
+    ownerUid: user.uid,
+    authorName: user.displayName || user.email || "",
+    likeCount: 0, relatedIds: [], type: "image",
+    createdAt: now, updatedAt: now,
+  };
+  await setDoc(doc(db, "artifacts", appId, "public", "data", "prompts", id), serializeForFirestore(record));
+  return { id, cloudinaryUrl };
+}
+
 const generatePrompt = (concept, hasRef) => `고품질 게임 프로모션 KV 배경을 생성하세요. ${hasRef ? "참고 이미지는 분위기와 색감만 참고하고 인물·글자·로고는 복제하지 마세요." : ""}
 인물, 텍스트, 로고, UI 없이 배경만 만들고 중앙과 주요 배치 영역에 충분한 여백을 남기세요. 명확한 전경·중경·후경, 영화적 조명과 깊이감을 사용하세요.
 

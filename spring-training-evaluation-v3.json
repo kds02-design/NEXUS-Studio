@@ -1,0 +1,17 @@
+{
+  "frame": "1180x750_Notice",
+  "scores": {
+    "impression": {"score": 92, "reason": "좌측 캐릭터와 우측 렌더 타이틀의 대비가 강하고 타이틀의 재질감이 첫인상을 강화한다."},
+    "concept": {"score": 93, "reason": "봄·약초를 연상시키는 연두, 아이보리, 금빛 소재가 이벤트 콘셉트와 정확히 연결된다."},
+    "layout": {"score": 90, "reason": "캐릭터의 우측 시선이 우측 타이틀과 정보 블록으로 자연스럽게 이어진다."},
+    "typography": {"score": 93, "reason": "Typecore Breeze 2줄 레터폼이 하나의 렌더 이미지로 통합되어 위계와 완성도가 높고 한글도 정확하다."},
+    "color": {"score": 91, "reason": "타이틀의 봄 그린과 금빛 하이라이트가 캐릭터 장비 및 배경 광원과 조화된다."},
+    "readability": {"score": 92, "reason": "짙은 우측 그레이드와 숲색 외곽선으로 제목, 카피, 날짜가 모두 빠르게 읽힌다."},
+    "brand": {"score": 84, "reason": "게임 NPC와 실제 게임 배경으로 브랜드 문법이 유지되며 Notice 규격상 로고는 필수 요소가 아니다."},
+    "flow": {"score": 92, "reason": "고글의 시선에서 타이틀, 서브카피, 날짜로 이어지는 흐름이 명확하다."},
+    "detail": {"score": 92, "reason": "타이틀 알파가 깨끗하고 자형 잠금이 유지되며 캐릭터 Light FX도 원본 알파와 정합된다."},
+    "conversion": {"score": 89, "reason": "이벤트명과 보패 강화 혜택, 기간이 명료한 순서로 전달된다."}
+  },
+  "hardFailures": [],
+  "recommendedCorrections": ["현재 구성 유지", "최종 투명 PNG 산출 시 실제 알파 픽셀 검사"]
+}
