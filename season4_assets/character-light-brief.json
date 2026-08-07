@@ -1,7 +1,0 @@
-{
-  "mode": "character-light",
-  "engine": "RubiconForge Light FX + NexusPreview Character Up",
-  "concept": "비취색과 백금 림라이트, 물결형 위스프, 희소한 파티클",
-  "prompt": "Use the input character only as a silhouette placement reference. Generate LIGHT ONLY on pure black #000000. Create a sparse thin edge-hugging rim, restrained backlight bloom, a few tiny glints, and optional short wisps. Direction: 비취색과 백금 림라이트, 물결형 위스프, 희소한 파티클. Keep the interior and most of the canvas black. Never reproduce the face, body, clothes, weapon, text, scene, or any solid object.",
-  "avoid": "reproduced character, solid silhouette fill, dense particles, full-frame haze, large lens flare, excessive bloom"
-}
