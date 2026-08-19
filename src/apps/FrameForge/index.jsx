@@ -627,22 +627,13 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
       setRenderingId(null);
     }
   };
-  // 저장 = 오브젝트라 자동 투명화(형태에 맞는 색상 키)를 거쳐 저장. 실패 시 원본 저장 + Mask Forge 안내.
-  const downloadRendered = async (q) => {
+  // 일반(원본) 저장 — 생성 배경 그대로. 투명 저장은 옆의 '투명 PNG' 버튼으로 선택.
+  const downloadRendered = (q) => {
     const dataUrl = renderResults[q.id]?.dataUrl;
-    if (!dataUrl || transparentBusyId) return;
-    setTransparentBusyId(q.id);
-    try {
-      await downloadTransparentPng(dataUrl);
-    } catch (e) {
-      console.warn('[FrameForge] 자동 투명화 실패 — 원본 저장', e);
-      const a = document.createElement('a');
-      a.href = dataUrl; a.download = `frame_forge_${Date.now()}.png`;
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setRenderErrors((prev) => ({ ...prev, [q.id]: '자동 투명화가 어려워 원본으로 저장했어요. Mask Forge에서 배경 제거를 시도하세요.' }));
-    } finally {
-      setTransparentBusyId(null);
-    }
+    if (!dataUrl) return;
+    const a = document.createElement('a');
+    a.href = dataUrl; a.download = `frame_forge_${Date.now()}.png`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
   const downloadTransparent = async (q) => {
     const dataUrl = renderResults[q.id]?.dataUrl;
@@ -869,7 +860,7 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                   <span className="text-[10px] font-bold text-zinc-500">렌더 미리보기</span>
                   {renderResults[q.id]?.dataUrl && <span className="text-[9px] text-zinc-600">휠로 확대·축소 · {Math.round((renderZoom[q.id] || 1) * 100)}%</span>}
                   <div className="ml-auto flex flex-wrap justify-end gap-2">
-                    {renderResults[q.id]?.dataUrl && <button onClick={() => downloadRendered(q)} className="text-[10px] font-bold px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 inline-flex items-center gap-1.5"><Download size={12} /> 원본</button>}
+                    {renderResults[q.id]?.dataUrl && <button onClick={() => downloadRendered(q)} title="일반 PNG 저장 (생성 배경 포함)" className="text-[10px] font-bold px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 inline-flex items-center gap-1.5"><Download size={12} /> 원본</button>}
                     {renderResults[q.id]?.dataUrl && <button onClick={() => downloadTransparent(q)} disabled={!!transparentBusyId} className="text-[10px] font-bold px-3 py-1.5 rounded-md border border-emerald-500/40 text-emerald-300 inline-flex items-center gap-1.5 disabled:opacity-40">{transparentBusyId === q.id ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} 투명 PNG</button>}
                     {renderResults[q.id]?.dataUrl && <button onClick={() => sendToMaskForge(q)} className="text-[10px] font-bold px-3 py-1.5 rounded-md border border-fuchsia-500/40 text-fuchsia-300 inline-flex items-center gap-1.5"><ImageIcon size={12} /> Mask Forge</button>}
                     <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} title="렌더링 모델" className="max-w-36 bg-black/60 border border-zinc-700 rounded-md px-2 py-1.5 text-[9px] text-zinc-300 outline-none">

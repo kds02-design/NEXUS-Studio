@@ -18,23 +18,9 @@ import { serializeForFirestore } from "../../PromptArc/services/firebase";
 // 프로젝트가 쓰는 Pro 급 이미지 생성 모델을 사용.)
 export const RENDER_MODEL = "gemini-3-pro-image-preview";
 
-// 배경 모드 정책: 캐릭터(얼굴·체형·의상·포즈)·타이틀 형태는 절대 보존하되, ★배경★의 빛·색·대기를
-// 드라마틱하게 강화. bg-preserve-layout(배치만 고정, 배경 색·빛은 변경 허용) 이 핵심.
-// bg-mood-theme 은 분위기 프리셋/컬러 시스템 연동이 있을 때만 삽입 (아래 buildEnhancePrompt).
-const ENHANCE_SKILLS_BG = [
-  "quality-up/bg-intro",
-  "quality-up/no-new-elements",
-  "quality-up/no-new-text",
-  "quality-up/preserve-letterform",
-  "quality-up/preserve-face",
-  "quality-up/preserve-subject",
-  "quality-up/bg-preserve-layout",
-  "quality-up/preserve-edge-fade",
-  "quality-up/bg-dramatic-light",
-  "quality-up/title-hero",
-  "quality-up/allow-title-finish",
-  "quality-up/outro",
-];
+// 스킬 순서·조합 규칙은 ./qualityUpSkills (순수 모듈 — MCP 서버 공용) 로 분리, 여기서 재수출.
+export * from "./qualityUpSkills";
+import { buildQualityUpSkillIds } from "./qualityUpSkills";
 
 // boost — { moodPresets, themePalette } (둘 다 문자열, 빈 값 허용).
 //   moodPresets: UI 프리셋(갓레이/파티클 등) + 강도 지시 라인들.
@@ -43,10 +29,8 @@ const ENHANCE_SKILLS_BG = [
 export const buildEnhancePrompt = (extra, boost = {}) => {
   const mood = String(boost.moodPresets || "").trim();
   const palette = String(boost.themePalette || "").trim();
-  const ids = [...ENHANCE_SKILLS_BG];
-  if (mood || palette) ids.splice(ids.indexOf("quality-up/title-hero"), 0, "quality-up/bg-mood-theme");
   const e = String(extra || "").trim();
-  if (e) ids.push("quality-up/user-extra-guard");
+  const ids = buildQualityUpSkillIds(Boolean(mood || palette), Boolean(e));
   return composeSkills(ids, { extraInstructions: e, moodPresets: mood, themePalette: palette });
 };
 

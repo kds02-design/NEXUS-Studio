@@ -97,7 +97,6 @@ export default function ForgeAtlasGrid({ forge }) {
               showNineSlice={false}
               filePrefix="rubicon-atlas"
               sourceLoaded={!!atlasSource}
-              autoTransparent
             />
           ))}
         </div>

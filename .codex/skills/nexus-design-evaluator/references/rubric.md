@@ -1,5 +1,7 @@
 # Nexus banner evaluation rubric
 
+> These 10 metrics and weights are the **single source of truth for banner scoring** — identical to Banner Codex's `promo` criteria in `src/lib/evaluationCriteria.js`. The DesignEvaluator banner mode and Banner Codex evaluate with the same rubric; they are one standard, not two.
+
 ## Scoring schema
 
 Create JSON in this form:

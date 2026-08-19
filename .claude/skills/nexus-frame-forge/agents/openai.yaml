@@ -1,0 +1,3 @@
+display_name: "프레임 포지 (버튼·프레임 제작)"
+short_description: "버튼·프레임 생성 → 투명화 → 검수(80점) → 투명 PNG"
+default_prompt: "Use $nexus-frame-forge to create the requested UI part (button/frame/badge/icon), make it transparent with MaskForge scripts, and deliver a transparent PNG only after it passes the component design evaluation at 80 or above."

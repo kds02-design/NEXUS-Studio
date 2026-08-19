@@ -1,20 +1,25 @@
 // Imagen / Nano Banana — 텍스트 + (선택) 기본 이미지 → 이미지 생성.
 // VITE_GEMINI_API_KEY 사용. referenceImageDataUrl 은 dataURL 문자열만 받음.
 
+// 기본(첫 번째) 모델이 스튜디오 전반의 기본 렌더 엔진 — Nano Banana Pro 를 맨 앞에 둔다.
+// 각 앱은 IMAGEN_MODELS[0].id 를 기본 선택값으로 쓰므로, 순서가 곧 기본값이다.
 export const IMAGEN_MODELS = [
-  {
-    id: "gemini-3.1-flash-image-preview",
-    label: "Nano Banana 2",
-    desc: "빠름 · $0.067/장",
-    color: "#00CEC9",
-  },
   {
     id: "gemini-3-pro-image-preview",
     label: "Nano Banana Pro",
     desc: "고품질 · $0.134/장",
     color: "#6C5CE7",
   },
+  {
+    id: "gemini-3.1-flash-image-preview",
+    label: "Nano Banana 2",
+    desc: "빠름 · $0.067/장",
+    color: "#00CEC9",
+  },
 ];
+
+// 스튜디오 전반 기본 렌더 엔진 — 명시적으로 참조할 때 사용(서비스 레이어 fallback 등).
+export const DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview";
 
 // 출력 해상도 — Pro 모델만 1K/2K/4K 지원, Flash 는 1K 고정.
 // id 가 generationConfig.imageConfig.imageSize 로 그대로 전달됨.

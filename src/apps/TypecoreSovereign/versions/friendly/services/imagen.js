@@ -4,7 +4,7 @@
 import { IMAGEN_MODELS, renderWithImagen } from '../../../../../lib/imagenRender';
 
 // 기본 모델 — 빠르고 저렴한 Nano Banana 2. 사용자가 모델을 토글할 수 있게 export.
-export const DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image-preview';
+export const DEFAULT_IMAGE_MODEL = 'gemini-3-pro-image-preview';
 
 export { IMAGEN_MODELS };
 

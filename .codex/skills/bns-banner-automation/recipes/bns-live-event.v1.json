@@ -1,0 +1,80 @@
+{
+  "recipe": "bns-live-event/v1",
+  "note": "Single source of truth for a Blade & Soul live-event banner set. Lock everything here; do not re-decide per run. Bump the version to change a rule.",
+
+  "structure": {
+    "referencePageNode": "31:16",
+    "layerOrder": [
+      "01_배경",
+      "02_분위기_그라데이션",
+      "03_캐릭터",
+      "CHAR_LIGHT_FX__ORIGINAL_ALPHA__MASK_FORGE",
+      "TITLE__TYPECORE_BASE__RENDER_MATRIX_LOCKED",
+      "서브 카피",
+      "날짜_딤드",
+      "날짜",
+      "07_로고"
+    ],
+    "anchors": {
+      "background":     [0, 0, 1180, 750],
+      "atmosphere":     [0, 0, 1180, 750],
+      "character":      [-20, 0, 610, 860],
+      "characterFxCanvas": [-192, -15, 972, 890],
+      "title":          [470, 167, 700, 302.45],
+      "subcopy":        [548.5, 455, 543, 30],
+      "dateDim":        [550, 510, 540, 48],
+      "date":           [583.5, 525, 473, 18]
+    },
+    "anchorTolerancePx": 6,
+    "fonts": { "subcopyPx": 30, "datePx": 18 },
+    "textFrames": ["1180x750_Notice", "1200x628_Facebook"]
+  },
+
+  "titleEffect": {
+    "preset": "steel-season-title/v1",
+    "engine": "render-matrix-typography",
+    "editBudget": "Locked",
+    "cameraLens": "Telephoto",
+    "projectionDepth": "None",
+    "main":    { "material": "polished-steel",      "target": "진무 시즌 N" },
+    "eyebrow": { "material": "antique-matte-gold",   "target": "봉마 소울패스" },
+    "bevel":   { "depth": 6, "angle": 135 },
+    "outline": [
+      { "color": "#0b1a2a", "width": 8 },
+      { "color": "#7fd0e6", "width": 2 }
+    ],
+    "glow":   { "color": "#6fe0ff", "blur": 18, "opacity": 40 },
+    "shadow": { "dx": 0, "dy": 6, "blur": 14, "opacity": 55, "color": "#00121f" },
+    "seed": 730425,
+    "structureLock": {
+      "immutable": ["hangulForms", "counters", "lineBreaks", "widthRelationships", "silhouette"],
+      "forbid": ["fontSubstitution", "outlineGrowth", "counterFilling", "horizontalSqueeze", "extraText"]
+    },
+    "onStructureChange": { "action": "reject-and-retry", "maxRetries": 2, "fallback": "flat-typecore-base" },
+    "postProcess": ["remove-black-teal-matte", "verify-alpha-clean"]
+  },
+
+  "characterFx": {
+    "preset": "pond-jade-cyan/v1",
+    "rim": "jade-cyan",
+    "fill": "pale-gold",
+    "intensity": "medium-low",
+    "wisps": "subtle-water-flow",
+    "maskForge": { "cutoff": 6, "gamma": 0.85, "opacity": 100, "recoverColor": true, "preserveCanvas": true },
+    "placementReference": "untouched-original-character-alpha"
+  },
+
+  "background": {
+    "engine": "nexus-imagen-render",
+    "referenceLock": "source-psd-background",
+    "seed": 730425,
+    "allow": ["light", "atmosphere", "particles", "grading", "textureClarity", "depth"],
+    "forbid": ["camera", "crop", "objectPositions", "characterIdentity", "newText", "newObjects", "edgeFades"],
+    "onStructureChange": { "action": "fallback-to-source" }
+  },
+
+  "gate": {
+    "quality": { "weightedOverall": 85, "everyMetric": 75, "hardFailures": 0, "rubric": "nexus-banner (== banner-codex promo)" },
+    "consistency": { "checkAnchors": true, "checkLayerOrder": true, "checkFonts": true, "checkPresets": true, "checkSeed": true }
+  }
+}

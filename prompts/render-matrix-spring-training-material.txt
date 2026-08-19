@@ -1,0 +1,27 @@
+Use the supplied black-and-white Typecore Breeze title as an immutable typography mask.
+
+EXACT TITLE:
+Line 1: 독초거사의
+Line 2: 봄맞이 특훈!
+
+ABSOLUTE PRESERVATION:
+- Preserve every Korean glyph, punctuation mark, counter, brush ending, line break, spacing relationship, and full outer silhouette exactly.
+- Do not redraw, reinterpret, add, remove, merge, or distort any letter.
+- Keep the two-line scale hierarchy and compact lockup exactly.
+- The black background is only a temporary key color, not part of the final artwork.
+
+RENDER MATRIX MATERIAL:
+- Premium cheerful spring-event game-title treatment
+- Main face: warm ivory enamel with a subtle fresh yellow-green vertical tint
+- Inner edge: restrained pale lime highlight
+- Hairline bevel: antique champagne gold, thin and clean
+- Outer separation edge: deep forest green, narrow and consistent
+- Very subtle dimensional emboss and polished highlight; maintain crisp readability
+- One restrained dark green offset extrusion, no more than a few percent of stroke width
+- Friendly, lively, high-quality Korean casual game promotion; not childish and not heavy fantasy metal
+
+OUTPUT RULES:
+- Render only the title artwork on a pure solid black background
+- No leaves, flowers, particles, ribbons, frames, underline, icons, scenery, or extra lettering
+- No broad glow or floating shadow outside the title silhouette
+- Entire title fits with small even margins, nothing cropped

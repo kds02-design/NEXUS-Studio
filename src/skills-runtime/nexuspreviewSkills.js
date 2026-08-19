@@ -1,6 +1,6 @@
 // 스킬 매니페스트 — NEXUS Preview 이미지 생성기들.
 // 각 앱의 기존 render 함수·옵션 상수를 그대로 재사용. 이미지 입력형은 file/files 슬롯 사용.
-import { renderBgGenerate, renderItemBundle, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, FLOATING_EFFECT_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_COLORS } from "../apps/NexusPreview/services/bgTools";
+import { renderBgGenerate, renderItemBundle, BUNDLE_LIGHT_OPTIONS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, FLOATING_EFFECT_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_COLORS } from "../apps/NexusPreview/services/bgTools";
 import { renderEnhanced } from "../apps/NexusPreview/services/qualityEnhancer";
 import { renderCharEnhanced, CHAR_LIGHT_OPTIONS, CHAR_PARTICLE_OPTIONS, CHAR_INTENSITY_OPTIONS } from "../apps/NexusPreview/services/characterEnhancer";
 import { renderTitleEffect, TITLE_FX_EFFECTS, TITLE_FX_COLORS, TITLE_FX_INTENSITY } from "../apps/NexusPreview/services/titleEffect";
@@ -70,18 +70,15 @@ export const titleFxSkill = {
 
 export const itemBundleSkill = {
   id: "nexus-bundle", label: "아이템 꾸러미", sub: "Item Bundle", color: NP, action: "image", transparent: "auto", // 블랙 배경 → 루마/색상 키
-  intro: "아이템 이미지 여러 장을 형태 그대로 하나의 보상 꾸러미로 합성해요. 원하는 연출을 적고 아이템들을 올려주세요 (2장 이상).\n예: “보라 마법광 바닥, 좁게 모아서”",
+  intro: "아이템 이미지 여러 장을 형태 그대로 하나의 보상 꾸러미로 합성해요. 원하는 연출을 적고 아이템들을 올려주세요 (2장 이상).\n바닥 이펙트는 RubiconForge 광원 효과(바닥 이펙트·그라운드)에서 따로 만들어 겹쳐 쓰세요.",
   placeholder: "원하는 연출 (없으면 ‘기본’ 입력)…",
   freeTextKey: "intent",
   slots: [
     { key: "items", label: "아이템 이미지", question: "아이템 이미지를 2장 이상 올려주세요.", type: "files", min: 2, required: true },
     { key: "light", label: "빛효과", question: "빛효과는?", options: kv(BUNDLE_LIGHT_OPTIONS), default: "soft" },
-    { key: "ground", label: "바닥 이펙트", question: "바닥 이펙트는?", options: kv(BUNDLE_GROUND_OPTIONS), default: "magic" },
-    // 마법광 색 — 바닥이 '마법광'일 때만 후보가 있고 질문됨(종속 슬롯, default 없음).
-    { key: "magicColor", label: "마법광 색", question: "마법광 색은?", options: (v) => (v.ground === "magic" ? kv(BUNDLE_MAGIC_COLORS) : []) },
     { key: "layout", label: "배치", question: "배치는?", options: kv(BUNDLE_LAYOUT_OPTIONS), default: "normal" },
   ],
-  render: (v) => wrap(renderItemBundle(v.items, { light: v.light, ground: v.ground, magicColor: v.magicColor || "purple", bg: "black", layout: v.layout, intent: v.intent || "", imageSize: "2K" })),
+  render: (v) => wrap(renderItemBundle(v.items, { light: v.light, ground: "none", bg: "black", layout: v.layout, intent: v.intent || "", imageSize: "2K" })),
 };
 
 export const floatingItemsSkill = {

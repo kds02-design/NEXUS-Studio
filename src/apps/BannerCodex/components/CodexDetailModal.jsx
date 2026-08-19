@@ -240,7 +240,7 @@ const CodexDetailModal = ({
               ) : (
                 <div className={`flex items-center justify-between p-3.5 rounded-xl border transition-colors duration-300 ${isCopied ? 'bg-[#0eb9b3]/20 border-[#0eb9b3] text-[#0eb9b3]' : isLightMode ? 'bg-transparent border-slate-200 text-slate-600' : 'bg-transparent border-white/10 text-zinc-400'}`}>
                   <div className="text-[11px] font-mono break-all whitespace-pre-wrap mr-2 flex-1 select-all">{editedBanner?.path || '경로 없음'}</div>
-                  <button onClick={() => handleCopyPathModal(editedBanner?.path)} className={`shrink-0 transition-colors ${isLightMode ? 'hover:text-slate-900' : 'hover:text-white'}`}>
+                  <button onClick={() => handleCopyPathModal(editedBanner)} className={`shrink-0 transition-colors ${isLightMode ? 'hover:text-slate-900' : 'hover:text-white'}`}>
                     {isCopied ? <Check className="w-4 h-4 text-[#0eb9b3]" /> : <Copy className="w-4 h-4" />}
                   </button>
                 </div>

@@ -32,6 +32,12 @@ export const LIGHTFX_CATEGORIES = [
     promptHint: 'dynamic light effects — lens flares, light streaks and energy wisps, shimmering light trails sweeping across the frame with glints and bloom',
     placeholder: '예: 가로지르는 빛줄기 / 렌즈 플레어 / 에너지 위습 트레일',
   },
+  {
+    id: 'ground', label: '바닥 이펙트 · 그라운드', desc: '바닥에 깔리는 발광 풀·스플래시',
+    accent: '#a5b4fc', ratio: '16:9',
+    promptHint: 'a low ground-level luminous FLOOR effect — a radiant pool / splash of light hugging the ground plane, spreading low and horizontally, brightest at the center core and fading softly outward into darkness, as if glowing energy is cast across the floor beneath a subject; low-lying, wide and grounded (not floating). Magic splash, glowing pool, swirling ground vortex or drifting low mist depending on style/material/color',
+    placeholder: '예: 바닥에 퍼지는 보라 마법광 스플래시 / 낮게 깔리는 금빛 빛 회오리 / 바닥 글로우 풀',
+  },
 ];
 export const LIGHTFX_CATEGORY_BY_ID = Object.fromEntries(LIGHTFX_CATEGORIES.map(c => [c.id, c]));
 
@@ -43,11 +49,13 @@ export const LIGHTFX_FORMS = [
     placementHint: '' },
   { id: 'iconBack',   label: '아이콘 뒤 광원',   desc: '피사체 뒤쪽에서 방사', accent: '#fde68a',
     placementHint: 'position the glow BEHIND the subject as a backlight — a radiant burst emanating from behind and around the silhouette, as if light shines out from behind an icon; brightest just outside the silhouette edge and fading outward' },
-  { id: 'boxGlow',    label: '박스 아웃그로우',  desc: '사각 외곽을 감싸는 외부광', accent: '#7dd3fc',
+  { id: 'boxGlow',    label: '박스 아웃그로우',  desc: '사각 외곽을 감싸는 외부광', accent: '#7dd3fc', edgeHug: true,
     placementHint: 'render an OUTER GLOW that hugs and traces the rectangular box/panel/button silhouette edges and spills outward — a clean luminous rim following the outline, glow only ON and OUTSIDE the perimeter, no fill inside' },
-  { id: 'charAura',   label: '캐릭터 외곽 아우라', desc: '실루엣을 따라 도는 아우라', accent: '#c084fc',
+  { id: 'circleGlow', label: '원형 아웃그로우',  desc: '원 외곽을 감싸는 외부광', accent: '#a5b4fc', edgeHug: true,
+    placementHint: 'render an OUTER GLOW that hugs and traces a CIRCULAR / RING outline and spills outward — a clean luminous rim following the circle perimeter, brightest right along the circular edge and softly bleeding outward, with a HOLLOW DARK CENTER (no fill inside the circle). The overall silhouette reads clearly as a glowing ring/circle' },
+  { id: 'charAura',   label: '캐릭터 외곽 아우라', desc: '실루엣을 따라 도는 아우라', accent: '#c084fc', edgeHug: true,
     placementHint: 'render an AURA tracing the character/figure silhouette outline — a luminous rim-light contour wrapping the body shape, brightest along the silhouette edge and softly bleeding outward, following the organic outline' },
-  { id: 'textGlow',   label: '텍스트 글로우',    desc: '글자 획을 따라 발광', accent: '#f0abfc',
+  { id: 'textGlow',   label: '텍스트 글로우',    desc: '글자 획을 따라 발광', accent: '#f0abfc', edgeHug: true,
     placementHint: 'render glow that follows the letterform strokes of the referenced text — luminous emission tracing each stroke and outline, brightest along the letter edges; do NOT draw solid letters, glow only' },
   { id: 'groundPool', label: '바닥 광 풀',       desc: '피사체 아래 고이는 빛', accent: '#a5b4fc',
     placementHint: 'render a pool of light gathering BENEATH the subject — a bright elliptical ground glow and soft cast radiance as if the object emits light onto the floor below, brightest at the base and fading upward/outward' },
@@ -84,17 +92,19 @@ export const LIGHTFX_COLORS = [
 ];
 export const LIGHTFX_COLOR_BY_ID = Object.fromEntries(LIGHTFX_COLORS.map(c => [c.id, c]));
 
-// 형태 변형 — 빛의 흐름·형상을 물·안개 같은 자연 형상으로 변형 (종류·스타일과 별개 축).
-export const LIGHTFX_MOTIONS = [
-  { id: 'none',     label: '기본',      desc: '변형 없음',           hint: '' },
-  { id: 'water',    label: '물의 흐름', desc: '유체 · 물결 커런트',   hint: 'shape the light like FLOWING WATER — fluid luminous liquid streams, rippling waves and smooth curving currents of light, wave-like flowing motion' },
-  { id: 'mist',     label: '안개',      desc: '낮게 깔린 헤이즈',     hint: 'shape the light as glowing MIST / FOG — soft volumetric haze banks and wispy diffuse veils drifting slowly, low-lying luminous fog with gentle depth' },
-  { id: 'smoke',    label: '연기',      desc: '피어오르는 스모크',    hint: 'shape the light as luminous SMOKE — curling glowing plumes swirling and rising upward with soft turbulence and silky curls' },
-  { id: 'flame',    label: '불꽃',      desc: '타오르는 화염 결',     hint: 'shape the light like FLAMES — licking fire tongues and rising flame-shaped luminous wisps with subtle heat shimmer' },
-  { id: 'wind',     label: '바람 결',   desc: '휘도는 리본 기류',     hint: 'shape the light as WIND STREAMS — sweeping curved air currents and ribbon-like flowing streaks gliding gracefully across' },
-  { id: 'electric', label: '전기',      desc: '번개 · 아크 방전',     hint: 'shape the light as ELECTRIC energy — crackling lightning tendrils and fine branching arcs with sharp luminous cores' },
+// 재질 · 질감 — 빛의 "표면 결/재질감"을 물·불·전기 등으로 변주 (종류·스타일과 별개 축).
+// 핵심: 빛의 전체 형태·배치·실루엣은 그대로 두고, 내부 질감·표면 무브먼트만 그 원소처럼 만든다.
+// (구 '형태 변형'을 재정의 — 실루엣을 통째로 바꾸지 않아 광원 정체성 보존)
+export const LIGHTFX_MATERIALS = [
+  { id: 'none',     label: '기본',   desc: '재질 없음',          hint: '' },
+  { id: 'water',    label: '물',     desc: '액체 · 굴절 · 코스틱', hint: 'give the light a WATER material — liquid luminous surface with wet sheen, refraction and rippling caustic highlights, glossy fluid texture as if made of glowing water' },
+  { id: 'fire',     label: '불',     desc: '화염 질감 · 불티',    hint: 'give the light a FIRE material — flickering flame texture, glowing embers and sparks, hot-to-cool heat gradient (white-hot core to amber edges) with a burning surface feel' },
+  { id: 'electric', label: '전기',   desc: '플라즈마 · 아크',      hint: 'give the light an ELECTRIC / PLASMA material — crackling energy surface with fine branching arcs, current filaments and sharp luminous sparks threading through the glow' },
+  { id: 'smoke',    label: '연기',   desc: '발광 스모크 결',      hint: 'give the light a SMOKE material — soft curling luminous smoke texture with silky turbulent wisps and gentle billowing detail across the surface' },
+  { id: 'mist',     label: '안개',   desc: '플라즈마 헤이즈',      hint: 'give the light a MIST / HAZE material — soft volumetric haze texture, diffuse veils and gentle depth, a nebulous glowing vapor surface' },
+  { id: 'crystal',  label: '크리스탈', desc: '결정 · 프리즘',       hint: 'give the light a CRYSTAL material — faceted prismatic surface with sharp refractive glints, sparkling shards and clean geometric light dispersion' },
 ];
-export const LIGHTFX_MOTION_BY_ID = Object.fromEntries(LIGHTFX_MOTIONS.map(m => [m.id, m]));
+export const LIGHTFX_MATERIAL_BY_ID = Object.fromEntries(LIGHTFX_MATERIALS.map(m => [m.id, m]));
 
 // 입자 크기 — 파티클·글린트·스파클의 스케일.
 export const LIGHTFX_GRAINS = [

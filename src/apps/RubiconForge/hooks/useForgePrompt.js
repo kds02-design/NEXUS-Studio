@@ -32,13 +32,13 @@ const REDESIGN_FOLDER_NAME = '리디자인 보관함';
 const LIGHTFX_FOLDER_NAME = '광원 보관함';
 
 // 앱 내부 페이지 이동으로 컴포넌트가 언마운트되어도 대용량 dataURL 결과를 메모리에 유지한다.
-const forgeSessionCache = { creationSource: null, reskinResults: [], sourceAsset: null, variationResults: [], lightFxRef: null, lightFxResults: [] };
+const forgeSessionCache = { creationSource: null, reskinResults: [], sourceAsset: null, variationResults: [], lightFxRef: null, lightFxResults: [], lightFxBase: null };
 
 export function useForgePrompt() {
   // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
   const { isLight, user, payload, clearPayload } = useGlobal();
   const theme = isLight ? "light" : "dark";
-  const [currentView, setCurrentView] = useState("creation");
+  const [currentView, setCurrentView] = useState("kvedit"); // 기본 = 키비주얼 편집(KvEdit)
 
   const [themeDna, setThemeDna] = useState("LineageDarkRoyal");
   const [assetType, setAssetType] = useState("Button");
@@ -435,13 +435,17 @@ export function useForgePrompt() {
   const [lightFxColor, setLightFxColor] = useState('gold');
   const [lightFxIntensity, setLightFxIntensity] = useState('medium');
   const [lightFxShape, setLightFxShape] = useState('none');
-  const [lightFxMotion, setLightFxMotion] = useState('none');   // 형태 변형 (물·안개 등)
+  const [lightFxMaterial, setLightFxMaterial] = useState('none');   // 재질 · 질감 (물·불·전기 등)
   const [lightFxGrain, setLightFxGrain] = useState('normal');   // 입자 크기 (기본/세밀)
   const [lightFxBokeh, setLightFxBokeh] = useState('normal');   // 보케 사이즈 (기본/세밀)
   const [lightFxText, setLightFxText] = useState('');
   const [lightFxCount, setLightFxCount] = useState(4);
   const [lightFxRef, setLightFxRef] = useState(() => forgeSessionCache.lightFxRef); // (선택) 형태 참고 dataURL
   const [isDraggingLightFxRef, setIsDraggingLightFxRef] = useState(false);
+  // 변형(알파값 유지) — 이전에 제작된 발광 에셋을 base 로 삼아 색·질감만 리스킨. { dataUrl, label, resultId } | null
+  const [lightFxBase, setLightFxBase] = useState(() => forgeSessionCache.lightFxBase || null);
+  const [lightFxPreserveAlpha, setLightFxPreserveAlpha] = useState(true); // 원본 발광 형태(알파) 고정
+  const [isDraggingLightFxBase, setIsDraggingLightFxBase] = useState(false);
   // 여백 자동 추가 — 피사체가 프레임에 꽉 찬 형태 참고를 올리면 주변 여백을 만들어 빛이 퍼질 공간 확보.
   const [lightFxAutoPad, setLightFxAutoPad] = useState(true);
   const [lightFxRefPadded, setLightFxRefPadded] = useState(false); // 마지막 업로드가 실제로 패딩됐는지(배지 표시용)
@@ -454,7 +458,7 @@ export function useForgePrompt() {
 
   useEffect(() => { forgeSessionCache.creationSource = creationSource; forgeSessionCache.reskinResults = reskinResults; }, [creationSource, reskinResults]);
   useEffect(() => { forgeSessionCache.sourceAsset = sourceAsset; forgeSessionCache.variationResults = variationResults; }, [sourceAsset, variationResults]);
-  useEffect(() => { forgeSessionCache.lightFxRef = lightFxRef; forgeSessionCache.lightFxResults = lightFxResults; }, [lightFxRef, lightFxResults]);
+  useEffect(() => { forgeSessionCache.lightFxRef = lightFxRef; forgeSessionCache.lightFxResults = lightFxResults; forgeSessionCache.lightFxBase = lightFxBase; }, [lightFxRef, lightFxResults, lightFxBase]);
 
   // 형태 참고 업로드 핸들러.
   // 여백 자동 추가가 켜져 있으면 피사체가 가장자리에 붙은(여백 없는) 이미지에 캔버스 여백을 만들어
@@ -484,6 +488,23 @@ export function useForgePrompt() {
   const handleLightFxRefDrop = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(false); handleLightFxRefFile(e.dataTransfer.files[0]); }, []);
   const handleClearLightFxRef = () => { setLightFxRef(null); setLightFxRefPadded(false); };
 
+  // ── 변형 base 로드 — 우측 결과 슬롯 또는 외부 파일에서 "이전 광원"을 가져온다 ──
+  const handleUseAsLightFxBase = (slot) => {
+    if (!slot?.dataUrl) return;
+    setLightFxBase({ dataUrl: slot.dataUrl, label: slot.theme?.label || '이전 광원', resultId: slot.resultId || null });
+  };
+  const handleClearLightFxBase = () => setLightFxBase(null);
+  const handleLightFxBaseFile = (file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onloadend = () => setLightFxBase({ dataUrl: reader.result, label: '업로드 광원', resultId: null });
+    reader.readAsDataURL(file);
+  };
+  const handleLightFxBaseUpload = (e) => handleLightFxBaseFile(e.target.files[0]);
+  const handleLightFxBaseDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxBase(true); }, []);
+  const handleLightFxBaseDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxBase(false); }, []);
+  const handleLightFxBaseDrop = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxBase(false); handleLightFxBaseFile(e.dataTransfer.files[0]); }, []);
+
   // 빛효과 슬롯 빌더 — N장 모두 같은 스펙의 변형. 셀 표시용 theme 객체를 합성.
   const buildLightFxSlots = (n) => {
     const cat = LIGHTFX_CATEGORY_BY_ID[lightFxCategory];
@@ -501,20 +522,24 @@ export function useForgePrompt() {
     if (!result?.ok || !user?.uid) return null;
     const cat = LIGHTFX_CATEGORY_BY_ID[lightFxCategory];
     const col = LIGHTFX_COLOR_BY_ID[lightFxColor];
+    const isTransform = !!lightFxBase;
     return savePromptToArc(user.uid, {
       imageDataUrl: result.dataUrl,
       promptText: result.compactPrompt || result.prompt || '',
-      title: `광원 — ${cat?.label || ''}`.trim(),
-      tags: ['광원', cat?.label, col?.label].filter(Boolean),
+      title: `${isTransform ? '광원 변형' : '광원'} — ${cat?.label || ''}`.trim(),
+      tags: ['광원', isTransform && '변형', cat?.label, col?.label].filter(Boolean),
       folderName: LIGHTFX_FOLDER_NAME,
     });
   };
 
   const renderOneLightFx = (i) => renderLightFx({
     category: lightFxCategory, form: lightFxForm, style: lightFxStyle, color: lightFxColor,
-    userText: lightFxText, intensity: lightFxIntensity, shape: lightFxRef ? 'none' : lightFxShape, index: i,
-    motion: lightFxMotion, grain: lightFxGrain, bokeh: lightFxBokeh,
+    userText: lightFxText, intensity: lightFxIntensity, shape: (lightFxRef || lightFxBase) ? 'none' : lightFxShape, index: i,
+    material: lightFxMaterial, grain: lightFxGrain, bokeh: lightFxBokeh,
     referenceDataUrl: lightFxRef,
+    // 변형 모드 — base 가 있으면 이전 광원을 리스킨하고 알파(발광 형태)를 고정.
+    baseDataUrl: lightFxBase?.dataUrl || null,
+    preserveAlpha: lightFxPreserveAlpha,
     imageSize: lightFxImageSize, modelId: lightFxRenderModel,
     bg: BG_COLOR_BY_ID[lightFxBgColor],
   });
@@ -1175,7 +1200,7 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     lightFxStyle, setLightFxStyle,
     lightFxColor, setLightFxColor,
     lightFxIntensity, setLightFxIntensity,
-    lightFxMotion, setLightFxMotion,
+    lightFxMaterial, setLightFxMaterial,
     lightFxGrain, setLightFxGrain,
     lightFxBokeh, setLightFxBokeh,
     lightFxShape, setLightFxShape,
@@ -1184,6 +1209,10 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     lightFxRef, isDraggingLightFxRef,
     lightFxAutoPad, setLightFxAutoPad, lightFxRefPadded,
     handleLightFxRefUpload, handleLightFxRefDragOver, handleLightFxRefDragLeave, handleLightFxRefDrop, handleClearLightFxRef,
+    // 변형(알파값 유지) base
+    lightFxBase, lightFxPreserveAlpha, setLightFxPreserveAlpha, isDraggingLightFxBase,
+    handleUseAsLightFxBase, handleClearLightFxBase,
+    handleLightFxBaseUpload, handleLightFxBaseDragOver, handleLightFxBaseDragLeave, handleLightFxBaseDrop,
     lightFxRenderModel, setLightFxRenderModel,
     lightFxImageSize, setLightFxImageSize,
     lightFxBgColor, setLightFxBgColor,

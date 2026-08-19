@@ -65,7 +65,7 @@ const CodexCard = memo(({
               title={isInCart ? "담기 해제" : "담기"}>
               <Layers className={`w-3.5 h-3.5 ${isInCart ? 'fill-current' : ''}`} />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); onCopyPath(banner.path); }}
+            <button onClick={(e) => { e.stopPropagation(); onCopyPath(banner); }}
               className="pointer-events-auto p-2 bg-black/60 hover:bg-[#0eb9b3] text-white rounded-lg backdrop-blur-sm transition-colors shadow-lg border border-white/10" title="경로 복사">
               <Copy className="w-3.5 h-3.5" />
             </button>

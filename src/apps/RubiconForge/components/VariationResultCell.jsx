@@ -8,6 +8,7 @@ import {
   Loader2, AlertCircle, Download, RefreshCcw, ImageOff, Eraser, Grid3x3, FileText, ClipboardCopy, Check, Maximize2, X, Scissors, Layers,
 } from 'lucide-react';
 import { colorToTransparentPng, compositeLightOverReference } from '../services/variations';
+import { effectToTransparentPng } from '../../../lib/effectExtract';
 import { useGlobal } from '../../../context/GlobalContext';
 
 export default function VariationResultCell({
@@ -18,7 +19,6 @@ export default function VariationResultCell({
   fitViewport = false,
   maskForgeMethod = 'luma',
   compositeRef = null, // (lightfx) 레퍼런스 dataURL — 있으면 "효과+레퍼런스 합성" 토글 노출
-  autoTransparent = false, // true(광원 등)면 기본 다운로드가 투명 PNG 자동 추출 — 합성 보기는 예외
 }) {
   const { theme, dataUrl, error, prompt, compactPrompt, isLoading, bgHex } = slot;
   const { navigate } = useGlobal();
@@ -77,22 +77,18 @@ export default function VariationResultCell({
     }
   };
 
-  const handleDownload = async () => {
+  // 투명 추출 — 이펙트 결과(maskForgeMethod='effect')는 마스크 포지의 "이펙트 추출" 로직을 그대로 사용.
+  // 그 외(오브젝트/타이포 등)는 단색 배경 색상 키(colorToTransparentPng).
+  const extractTransparent = (src) => maskForgeMethod === 'effect'
+    ? effectToTransparentPng(src, { bg: bgHex || '#000000' })
+    : colorToTransparentPng(src, bgHex || '#000000');
+
+  // 일반(원본) 저장 — 생성 배경 그대로. 투명 저장은 옆의 '투명 PNG' 버튼(handleDownloadTransparent)으로 선택.
+  const handleDownload = () => {
     if (!activeUrl) return;
-    let href = activeUrl;
-    let suffix = composited ? '-composite' : '';
-    // 광원 등 오브젝트 결과물은 저장 시 투명화 자동 적용 (합성 보기는 레퍼런스 포함이라 그대로).
-    if (autoTransparent && !composited) {
-      try {
-        href = await colorToTransparentPng(dataUrl, bgHex || '#000000');
-        suffix = '-transparent';
-      } catch (e) {
-        console.warn('[VariationResultCell] auto transparent failed — 원본 저장', e);
-      }
-    }
     const a = document.createElement('a');
-    a.href = href;
-    a.download = `${filePrefix}-${theme.id}${suffix}-${Date.now()}.png`;
+    a.href = activeUrl;
+    a.download = `${filePrefix}-${theme.id}${composited ? '-composite' : ''}-${Date.now()}.png`;
     a.click();
   };
 
@@ -100,11 +96,11 @@ export default function VariationResultCell({
     if (!dataUrl || isExtracting) return;
     setIsExtracting(true);
     try {
-      // 생성 시 사용한 배경색(slot.bgHex)을 키아웃. 블랙이면 밝기 기반(기존), 그 외엔 색거리 기반.
-      const transparentDataUrl = await colorToTransparentPng(dataUrl, bgHex || '#000000');
+      // 이펙트는 마스크 포지 이펙트 추출, 그 외는 생성 배경색 색상 키(블랙이면 밝기 기반).
+      const transparentDataUrl = await extractTransparent(dataUrl);
       const a = document.createElement('a');
       a.href = transparentDataUrl;
-      a.download = `${filePrefix}-${theme.id}-transparent-${Date.now()}.png`;
+      a.download = `${filePrefix}-${theme.id}-${maskForgeMethod === 'effect' ? 'effect' : 'transparent'}-${Date.now()}.png`;
       a.click();
     } catch (e) {
       console.error('[VariationResultCell] transparent extraction failed', e);
@@ -223,7 +219,7 @@ export default function VariationResultCell({
               <button
                 onClick={handleDownloadTransparent}
                 disabled={isExtracting}
-                title="투명 PNG 다운로드 (생성 배경색 알파 추출)"
+                title={maskForgeMethod === 'effect' ? '투명 PNG 다운로드 (마스크 포지 이펙트 추출)' : '투명 PNG 다운로드 (생성 배경색 알파 추출)'}
                 className="p-1.5 rounded-md bg-zinc-800/80 hover:bg-zinc-700 text-white transition-colors disabled:opacity-50"
               >
                 {isExtracting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eraser className="w-3.5 h-3.5" />}
@@ -294,7 +290,7 @@ export default function VariationResultCell({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-white text-[12px] font-medium transition-colors">
               <Download className="w-4 h-4" /> {composited ? '합성 PNG' : '원본 PNG'}
             </button>
-            <button onClick={handleDownloadTransparent} disabled={isExtracting} title="투명 PNG 다운로드 (생성 배경색 알파 추출)"
+            <button onClick={handleDownloadTransparent} disabled={isExtracting} title={maskForgeMethod === 'effect' ? '투명 PNG 다운로드 (마스크 포지 이펙트 추출)' : '투명 PNG 다운로드 (생성 배경색 알파 추출)'}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 text-white text-[12px] font-medium transition-colors disabled:opacity-50">
               {isExtracting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eraser className="w-4 h-4" />} 투명 PNG
             </button>

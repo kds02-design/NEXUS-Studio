@@ -1,7 +1,7 @@
-// 사이드바 상단 타이틀 + 뷰 전환 탭 (Component / Micro-Edit).
-// 원본 index.jsx 의 사이드바 헤더 블록을 추출.
+// 앱 상단 뷰 전환 탭. 키비주얼 편집(메인) / 리스킨 / 리디자인.
+// index.jsx 최상단으로 리프트되어 모든 뷰에서 보인다. (광원·빛효과는 키비주얼 편집 내부 모드로 이동)
 
-import { LayoutTemplate, Sparkles, Sun } from 'lucide-react';
+import { Image as ImageIcon, LayoutTemplate, Sparkles } from 'lucide-react';
 
 export default function ForgeHeader({ currentView, setCurrentView }) {
   const tab = (id, Icon, label) => (
@@ -15,11 +15,11 @@ export default function ForgeHeader({ currentView, setCurrentView }) {
   );
 
   return (
-    <div className="px-4 py-5 border-b border-zinc-800/50 flex flex-col gap-4">
-      <div className="flex bg-[#111111] p-1.5 rounded-lg border border-zinc-800/50 w-full shadow-inner gap-1">
+    <div className="px-4 py-3 border-b border-zinc-800/50 shrink-0">
+      <div className="flex bg-[#111111] p-1.5 rounded-lg border border-zinc-800/50 w-full max-w-[620px] shadow-inner gap-1">
+        {tab('kvedit',     ImageIcon,      '키비주얼 편집')}
         {tab('creation',   LayoutTemplate, '리스킨')}
         {tab('micro-edit', Sparkles,       '리디자인')}
-        {tab('lightfx',    Sun,            '광원·빛효과')}
       </div>
     </div>
   );

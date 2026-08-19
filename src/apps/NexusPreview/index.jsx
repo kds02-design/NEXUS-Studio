@@ -10,7 +10,6 @@ import { useGlobal, useTheme } from "../../context/GlobalContext";
 import { useAuth } from "../../context/AuthContext";
 import { APP_MAP } from "../../config/apps";
 import KvComposer from "./components/KvComposer";
-import KvEdit from "./components/KvEdit";
 import {
   ensureSeedPromotions, subscribeToPromotions, createPromotion, updatePromotion, deletePromotion,
 } from "./services/promotions";
@@ -21,11 +20,7 @@ const TOP_TABS = [
   { key: "promo", label: "프로모션", icon: LayoutGrid, desc: "프로모션 페이지 KV 를 조립하고 컬러 시스템을 추출해 피그마로 내보내세요." },
   { key: "brandweb", label: "브랜드웹", icon: Monitor, desc: "1920×1080 브랜드웹 히어로 — 전체 배경 / 중앙 캐릭터 / 좌우 캐릭터 구성을 미리 확인하세요." },
 ];
-// 최상단 도구 메뉴 — KV 스튜디오(문서 조립: KV·프레임·컬러 생성)와 KV 편집(독립 이미지 도구)은 성격이 다르다.
-const TOOLS = [
-  { key: "studio", label: "KV 스튜디오" },
-  { key: "edit", label: "KV 편집" },
-];
+// KV 편집(독립 이미지 도구)은 RubiconForge '키비주얼 편집' 탭으로 이동. 여기는 KV 스튜디오 전용.
 
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : null);
 const monthKey = (p) => {
@@ -49,7 +44,6 @@ export default function NexusPreview() {
   const { payload } = useGlobal();
   const { user } = useAuth();
 
-  const [tool, setTool] = useState("studio"); // studio(문서 조립) | edit(독립 이미지 도구)
   const [topTab, setTopTab] = useState("promo");
   const [promotions, setPromotions] = useState(null); // null = 로딩 중
   const [activeId, setActiveId] = useState(null);     // null = 목록 페이지
@@ -81,7 +75,6 @@ export default function NexusPreview() {
   useEffect(() => {
     if (!payload || payload.target !== "nexus-preview" || !payload.timestamp) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setTool("studio");
     setTopTab("promo");
     if (!activeId) {
       const first = promotions?.find((p) => areaOf(p) === "promo");
@@ -146,17 +139,8 @@ export default function NexusPreview() {
       display: "flex", flexDirection: "column", height: "100%", background: T.bg, color: T.text,
       fontFamily: "'Noto Sans KR', sans-serif", overflow: "hidden",
     }}>
-      {/* ── 최상단 도구 메뉴 — KV 스튜디오(문서 조립) / KV 편집(독립 이미지 도구) ── */}
-      <div style={{ display: "flex", alignItems: "center", padding: "12px 24px 10px", flexShrink: 0, borderBottom: tool === "edit" ? `1px solid ${T.border}` : "none" }}>
-        <div style={{ display: "flex", gap: 2, background: T.card, border: `1px solid ${T.border}`, borderRadius: 9, padding: 3 }}>
-          {TOOLS.map((t) => (
-            <button key={t.key} onClick={() => setTool(t.key)} style={segTab(tool === t.key)}>{t.label}</button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── 워크스페이스 상단 바 (스튜디오 전용) — 영역은 목록에서 이미 선택됨(뱃지로만 표시) ── */}
-      {tool === "studio" && active && (
+      {/* ── 워크스페이스 상단 바 — 영역은 목록에서 이미 선택됨(뱃지로만 표시) ── */}
+      {active && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 24px", flexShrink: 0, borderBottom: `1px solid ${T.border}`, background: T.surface }}>
           <button onClick={() => setActiveId(null)} title="목록으로"
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "7px 12px", borderRadius: 7, border: `1px solid ${T.border}`, background: T.card, color: T.textMuted, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
@@ -186,11 +170,9 @@ export default function NexusPreview() {
         </div>
       )}
 
-      {/* ── 본문: KV 편집(독립 도구) / 목록 페이지 / 워크스페이스 ── */}
-      <div style={{ flex: 1, minHeight: 0, overflow: tool === "studio" && active ? "hidden" : "auto" }}>
-        {tool === "edit" ? (
-          <KvEdit T={T} accent={ACCENT} />
-        ) : !active ? (
+      {/* ── 본문: 목록 페이지 / 워크스페이스 ── */}
+      <div style={{ flex: 1, minHeight: 0, overflow: active ? "hidden" : "auto" }}>
+        {!active ? (
           /* ── 목록 페이지 — 히어로 타이틀 + pill 탭 + 월별 카드 그리드 ── */
           <div style={{ maxWidth: 1240, margin: "0 auto", padding: "32px 32px 48px" }}>
             <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.01em", color: T.text, margin: 0 }}>{tabDef.label}</h1>

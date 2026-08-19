@@ -1,13 +1,15 @@
 // RubiconForge 엔트리포인트. 비지니스 로직은 useForgePrompt / usePresets 훅에 위임하고
 // 여기서는 컴포넌트 컴포지션 + 글로벌 에러 토스트 + 외부 payload 수신만 담당.
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { AlertCircle, X, Layers, CheckCircle2 } from 'lucide-react';
-import { useGlobal } from '../../context/GlobalContext';
+import { useGlobal, useTheme } from '../../context/GlobalContext';
 import { useForgePrompt } from './hooks/useForgePrompt';
 import { usePresets } from './hooks/usePresets';
+import ForgeHeader from './components/ForgeHeader';
 import ForgeSidebar from './components/ForgeSidebar';
 import ForgeResultPanel from './components/ForgeResultPanel';
+import KvEdit from '../NexusPreview/components/KvEdit';
 
 // 외부에서 받은 dataURL/일반 URL 을 atlasSource 용 dataURL 로 변환.
 // CORS 가능한 호스트(Cloudinary 등)는 fetch + FileReader 로, 안 되면 직접 src 로 fallback.
@@ -34,6 +36,14 @@ export default function App() {
   const forge = useForgePrompt();
   usePresets();
   const { payload, clearPayload } = useGlobal();
+  // KvEdit(키비주얼 편집 탭)용 테마 토큰 — NexusPreview 와 동일 구성(딥 다크 zinc).
+  const GT = useTheme();
+  const kvT = useMemo(() => ({
+    ...GT,
+    bg: '#0a0a0c', surface: '#101013', card: '#141417',
+    border: '#27272a', text: '#f4f4f5', textMuted: '#a1a1aa', textDim: '#6b6b74',
+  }), [GT]);
+  const KV_ACCENT = '#76CEE0';
 
   // 외부 앱(PromotionArchive 마스터 템플릿 송신 등) payload 수신.
   // params.atlasSpec / atlasTitle / view = 'atlas' / image.url 가 있으면 디자인 시스템 탭으로 자동 전환 + 프리로드.
@@ -60,7 +70,7 @@ export default function App() {
   }, [payload]);
 
   return (
-    <div className={`flex flex-col h-screen ${forge.theme === 'dark' ? 'bg-[#030304] text-zinc-100' : 'bg-white text-zinc-900'} overflow-hidden relative`} style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
+    <div className={`flex flex-col h-full ${forge.theme === 'dark' ? 'bg-[#030304] text-zinc-100' : 'bg-white text-zinc-900'} overflow-hidden relative`} style={{ fontFamily: "'Noto Sans KR', sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
         .custom-scrollbar::-webkit-scrollbar { width: 2px; height: 2px; }
@@ -101,10 +111,19 @@ export default function App() {
         </div>
       )}
 
-      <main className="flex-1 flex overflow-hidden">
-        <ForgeSidebar forge={forge} />
-        <ForgeResultPanel forge={forge} />
-      </main>
+      {/* 앱 상단 탭 — 키비주얼 편집(메인) / 리스킨 / 리디자인 */}
+      <ForgeHeader currentView={forge.currentView} setCurrentView={forge.setCurrentView} />
+
+      {forge.currentView === 'kvedit' ? (
+        <main className="flex-1 min-h-0 overflow-auto custom-scrollbar">
+          <KvEdit T={kvT} accent={KV_ACCENT} forge={forge} />
+        </main>
+      ) : (
+        <main className="flex-1 flex overflow-hidden">
+          <ForgeSidebar forge={forge} />
+          <ForgeResultPanel forge={forge} />
+        </main>
+      )}
     </div>
   );
 }

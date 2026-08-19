@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   X, LayoutGrid, Heart, Layers, Zap, Star, Settings, ShieldCheck,
   Save, FileJson, FolderPlus, Folder, Upload,
-  CheckSquare, Trash2, Pencil
+  CheckSquare, Trash2, Pencil, CalendarClock
 } from 'lucide-react';
 import CodexFolderSelector from './CodexFolderSelector';
 import { gameNameMap } from '../constants/categories';
@@ -57,7 +57,7 @@ const CodexSidebar = ({
   handleFolderUpload, isUploading,
   lastFolderName, handlePickFolder, handleReopenLastFolder, handleForgetLastFolder,
   isProcessingFiles, handleFileUpload, skipDuplicates, setSkipDuplicates,
-  handleOpenDuplicateManager, handleSidebarClick,
+  handleOpenDuplicateManager, handleRepairPathYears, handleSidebarClick,
   folders = [], onCreateFolder, onRenameFolder, onDeleteFolder,
 }) => {
   const renderItem = (gameKey) => renderGameItem({
@@ -229,6 +229,10 @@ const CodexSidebar = ({
                       <button onClick={(e) => { e.stopPropagation(); handleOpenDuplicateManager(); }} disabled={isProcessingFiles}
                         className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'hover:bg-red-50 text-red-500' : 'hover:bg-red-500/10 text-red-500'}`}>
                         <Trash2 className="w-4 h-4 shrink-0" /> <span>중복 데이터 정리</span>
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); handleRepairPathYears?.(); }}
+                        className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-colors text-xs w-full text-left ${isLightMode ? 'hover:bg-slate-100 text-slate-600 hover:text-slate-900' : 'hover:bg-white/5 text-zinc-400 hover:text-white'}`}>
+                        <CalendarClock className="w-4 h-4 shrink-0" /> <span>경로 연도 점검·수정</span>
                       </button>
                     </>
                   )}

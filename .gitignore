@@ -47,3 +47,7 @@ psd_exports/
 season4_assets/
 season4_psd_extract/
 banner-evaluation/season4/
+
+# MCP 스모크/픽셀 툴 임시 산출물
+.tmp/*.png
+.tmp/mcp-out/

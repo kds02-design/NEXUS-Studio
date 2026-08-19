@@ -7,6 +7,8 @@ import {
 import { useGlobal } from '../../context/GlobalContext';
 import { APP_MAP } from '../../config/apps';
 import { computeCharMask, charSplitToBlobs } from '../../lib/charEffectSplit';
+import { EFFECT_DEFAULTS, effectToBlob } from '../../lib/effectExtract';
+import { KEY_DEFAULTS, colorKeyToBlob } from '../../lib/colorKeyExtract';
 
 const ACCENT = '#FF3366';
 const API_KEY_STORAGE = 'mask-forge:apiKey';
@@ -23,6 +25,7 @@ const METHOD_LUMA = 'luma';
 const METHOD_SPRITE = 'sprite';
 const METHOD_EFFECT = 'effect';
 const METHOD_CHAR = 'char';
+const METHOD_EDGE = 'edge';
 const METHOD_STORAGE = 'mask-forge:method';
 
 // transformers.js ESM (CDN). 모델은 huggingface.co 에서 캐시됨. Gemini 프록시와 무관.
@@ -49,16 +52,10 @@ function spriteBlur(a, r, W, H) {
 }
 
 // 로컬 색상 키잉 기본값.
-const KEY_DEFAULTS = {
-  tolerance: 40,   // 배경으로 간주할 색 거리 (0~160)
-  feather: 22,     // 경계 페더링 폭 (1~120)
-  holeSize: 100,   // 메울 내부 구멍 최대 크기 (0~100%)
-  holeProtect: true,
-  decontam: true,
-  trim: false,
-};
+// KEY_DEFAULTS · colorKeyToBlob 는 lib/colorKeyExtract 로 이전(마스크 포지·꾸러미 아이템 공유).
 
-const EFFECT_DEFAULTS = { cutoff: 6, gamma: 0.85, opacity: 100, recoverColor: true, trim: false };
+// EFFECT_DEFAULTS · effectToBlob 는 lib/effectExtract 로 이전(마스크 포지·루비콘 결과 셀 공유).
+const EDGE_DEFAULTS = { sensitivity: 24, softness: 42, glow: 125, maskSize: 125, maskFeather: 45, recoverColor: true, trim: false };
 // 캐릭터+이펙트 하이브리드 기본값 — solidLevel: 피사체 판정 색거리, closeRadius: 닫힘(틈 메움) 반경(px),
 // edgeSoft: 피사체 경계 페더(px). cutoff/gamma/opacity 는 이펙트 알파 곡선(이펙트 추출과 동일 의미).
 const CHAR_DEFAULTS = { solidLevel: 90, closeRadius: 12, cutoff: 6, gamma: 0.85, opacity: 100, edgeSoft: 4, recoverColor: true, trim: false };
@@ -193,42 +190,7 @@ function detectBg(d, w, h) {
   return [Math.round(best.r / best.n), Math.round(best.g / best.n), Math.round(best.b / best.n)];
 }
 
-// 테두리에서 투명 픽셀을 따라 flood fill → 진짜 외부 배경 판별. 가장자리에서 도달 불가능한
-// 투명 영역은 글자 안쪽에 뚫린 구멍이므로 형태 유지를 위해 다시 채움. 단, 임계값보다 큰
-// 구멍('O' 가운데 등)은 뚫린 채로 둠.
-function computeFillMask(alphaArr, W, H, holeSizePct) {
-  const N = W * H, OPAQUE = 250;
-  const exterior = new Uint8Array(N);
-  const stack = [];
-  const seed = (idx) => { if (alphaArr[idx] < OPAQUE && !exterior[idx]) { exterior[idx] = 1; stack.push(idx); } };
-  for (let x = 0; x < W; x++) { seed(x); seed((H - 1) * W + x); }
-  for (let y = 0; y < H; y++) { seed(y * W); seed(y * W + W - 1); }
-  while (stack.length) {
-    const idx = stack.pop(), x = idx % W, y = (idx / W) | 0;
-    if (x > 0) seed(idx - 1);
-    if (x < W - 1) seed(idx + 1);
-    if (y > 0) seed(idx - W);
-    if (y < H - 1) seed(idx + W);
-  }
-
-  const fill = new Uint8Array(N), seen = new Uint8Array(N);
-  const maxFill = (holeSizePct / 100) * N * 0.6;
-  for (let i = 0; i < N; i++) {
-    if (alphaArr[i] < OPAQUE && !exterior[i] && !seen[i]) {
-      const comp = [], st = [i]; seen[i] = 1;
-      while (st.length) {
-        const idx = st.pop(); comp.push(idx);
-        const x = idx % W, y = (idx / W) | 0;
-        if (x > 0 && alphaArr[idx - 1] < OPAQUE && !exterior[idx - 1] && !seen[idx - 1]) { seen[idx - 1] = 1; st.push(idx - 1); }
-        if (x < W - 1 && alphaArr[idx + 1] < OPAQUE && !exterior[idx + 1] && !seen[idx + 1]) { seen[idx + 1] = 1; st.push(idx + 1); }
-        if (y > 0 && alphaArr[idx - W] < OPAQUE && !exterior[idx - W] && !seen[idx - W]) { seen[idx - W] = 1; st.push(idx - W); }
-        if (y < H - 1 && alphaArr[idx + W] < OPAQUE && !exterior[idx + W] && !seen[idx + W]) { seen[idx + W] = 1; st.push(idx + W); }
-      }
-      if (comp.length <= maxFill) for (const idx of comp) fill[idx] = 1;
-    }
-  }
-  return fill;
-}
+// computeFillMask(형태 보호)는 lib/colorKeyExtract 로 이전 — colorKeyToBlob 전용 헬퍼.
 
 // 불투명 픽셀의 경계 박스 (트림용). pad 여백 포함.
 function alphaTrimBox(o, W, H) {
@@ -249,101 +211,97 @@ function alphaTrimBox(o, W, H) {
   return { x: minX, y: minY, w: maxX - minX + 1, h: maxY - minY + 1 };
 }
 
-// 로컬 색상 키잉 — ImageData → 배경색 거리 매트 → (형태 보호 + 디프린지 + 트림) → PNG blob.
-// 1) C = (r,g,b) 와 배경색 bg 의 유클리드 거리 dist. tolerance 이하 투명, +feather 이상 불투명, 사이 선형 램프.
-// 2) holeProtect: 글자 안쪽에 뚫린 구멍을 형태로 보고 복원.
-// 3) decontam: 반투명 경계 픽셀에서 배경색 역산 제거(디프린지) — C = af·F+(1-af)·B → F = (C-(1-af)B)/af.
-// 4) trim: 투명 여백 자동 잘라내기.
-function colorKeyToBlob(srcData, { bg, tolerance, feather, holeProtect, holeSize, decontam, trim }) {
-  const W = srcData.width, H = srcData.height, N = W * H;
-  const s = srcData.data;
-  const [br, bgC, bb] = bg;
-  const T = tolerance, S = Math.max(1, feather);
+// colorKeyToBlob(로컬 색상 키)은 lib/colorKeyExtract 로 이전 — MaskForge·꾸러미 아이템 공유 단일 소스.
+// effectToBlob(발광 이펙트 추출) 은 lib/effectExtract 로 이전 — MaskForge·RubiconForge 공유 단일 소스.
 
-  // pass 1 — 색 거리 → 알파
-  const alphaArr = new Uint8ClampedArray(N);
-  for (let p = 0; p < N; p++) {
-    const i = p * 4;
-    const dr = s[i] - br, dg = s[i + 1] - bgC, db = s[i + 2] - bb;
-    const dist = Math.sqrt(dr * dr + dg * dg + db * db);
-    let a;
-    if (dist <= T) a = 0;
-    else if (dist >= T + S) a = 255;
-    else a = ((dist - T) / S) * 255;
-    alphaArr[p] = a;
-  }
-
-  // pass 2 — 형태 보호 (내부 구멍 복원)
-  const fill = holeProtect ? computeFillMask(alphaArr, W, H, holeSize) : null;
-
-  // pass 3 — 디컨태미네이션과 함께 출력 합성
-  const canvas = document.createElement('canvas');
-  canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  const out = ctx.createImageData(W, H), o = out.data;
-  for (let p = 0; p < N; p++) {
-    const i = p * 4;
-    let a = alphaArr[p], r = s[i], g = s[i + 1], b = s[i + 2];
-    // 원본 알파와 곱해 이미 투명한 부분 보존.
-    a = (s[i + 3] / 255) * a;
-    if (fill && fill[p]) {
-      a = s[i + 3]; // 내부 구멍 → 글자 형태 복원 (원본 알파 유지)
-    } else if (decontam && a > 0 && a < 255) {
-      const af = a / 255, inv = 1 - af;
-      r = clamp255((r - inv * br) / af);
-      g = clamp255((g - inv * bgC) / af);
-      b = clamp255((b - inv * bb) / af);
-    }
-    o[i] = r; o[i + 1] = g; o[i + 2] = b; o[i + 3] = a;
-  }
-  ctx.putImageData(out, 0, 0);
-
-  // pass 4 — 트림
-  let exportCanvas = canvas;
-  if (trim) {
-    const box = alphaTrimBox(o, W, H);
-    if (box) {
-      exportCanvas = document.createElement('canvas');
-      exportCanvas.width = box.w; exportCanvas.height = box.h;
-      exportCanvas.getContext('2d').drawImage(canvas, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
-    }
-  }
-
-  const ow = exportCanvas.width, oh = exportCanvas.height;
-  return new Promise((resolve, reject) => {
-    exportCanvas.toBlob((b) => (b ? resolve({ blob: b, width: ow, height: oh }) : reject(new Error('PNG 변환 실패'))), 'image/png');
-  });
-}
-
-// 발광 렌더 전용 추출. 배경 B 위 프리멀티플라이(C = A·F + (1−A)·B)로 보고
-// 참 알파를 배경과의 색거리(max-norm)로 근사, F = (C − (1−A)·B)/A 로 역산해
-// 헤일로 없는 straight-alpha PNG를 만든다.
-// bg 미지정/검정이면 기존 max(RGB) 방식과 동일 결과 — 크로마 그린/블루 등
-// 단색 배경 발광 렌더도 같은 수식으로 추출된다 (검정 전제라 크로마에서 안 되던 버그 수정).
-function effectToBlob(srcData, { cutoff, gamma, opacity, recoverColor, trim, bg }) {
+// 사각형 경계 클린업 — 이미지 테두리의 실제 배경과 비교해 어두운 렌더 패널의
+// 색차 상한을 자동 추정한다. 그 아래의 저대비 면은 투명하게 만들고, 상한을 넘는
+// 광원·글로우·파티클은 부드러운 알파로 복원한다. 고정 임계값 대신 원본마다
+// dim-pixel 색차 분위수를 사용하므로 압축 노이즈와 미세한 배경 그라데이션에도 대응한다.
+function edgeCleanupToBlob(srcData, { sensitivity, softness, glow, maskSize, maskFeather, recoverColor, trim, bg }) {
   const W = srcData.width, H = srcData.height, s = srcData.data;
+  const [br, bgC, bb] = bg || detectBg(s, W, H);
+  const bgLuma = br * 0.2126 + bgC * 0.7152 + bb * 0.0722;
+  const distances = [];
+  const step = Math.max(1, Math.floor(Math.sqrt(W * H) / 700));
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    const d = Math.max(Math.abs(s[i] - br), Math.abs(s[i + 1] - bgC), Math.abs(s[i + 2] - bb));
+    const luma = s[i] * 0.2126 + s[i + 1] * 0.7152 + s[i + 2] * 0.0722;
+    // 밝은 실제 이펙트가 자동 배경 상한을 끌어올리지 않도록 어두운 70% 영역만 표본화.
+    if (luma < 178) distances.push(d);
+  }
+  distances.sort((a, b) => a - b);
+  const q = distances.length ? distances[Math.floor((distances.length - 1) * 0.88)] : 0;
+  const threshold = Math.min(220, Math.max(0, q + sensitivity));
+  const ramp = Math.max(2, softness);
+  const gain = Math.max(0.25, glow / 100);
+  // 밝은 이펙트 상위 픽셀만으로 원형 마스크를 맞춘다. 색차 기준을 쓰면 어두운 사각
+  // 패널까지 표본에 섞여 반지름이 화면보다 커지므로, 실제 최대 광량의 22% 이상만 사용한다.
+  let maxLightRise = 0;
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    const luma = s[i] * 0.2126 + s[i + 1] * 0.7152 + s[i + 2] * 0.0722;
+    maxLightRise = Math.max(maxLightRise, luma - bgLuma);
+  }
+  const brightFloor = Math.max(24, maxLightRise * 0.22);
+  let minBrightX = W, minBrightY = H, maxBrightX = 0, maxBrightY = 0, brightCount = 0;
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    const luma = s[i] * 0.2126 + s[i + 1] * 0.7152 + s[i + 2] * 0.0722;
+    if (luma - bgLuma < brightFloor) continue;
+    minBrightX = Math.min(minBrightX, x); maxBrightX = Math.max(maxBrightX, x);
+    minBrightY = Math.min(minBrightY, y); maxBrightY = Math.max(maxBrightY, y);
+    brightCount++;
+  }
+  const maskCx = brightCount ? (minBrightX + maxBrightX) / 2 : W / 2;
+  const maskCy = brightCount ? (minBrightY + maxBrightY) / 2 : H / 2;
+  const radii = [];
+  for (let y = 0; y < H; y += step) for (let x = 0; x < W; x += step) {
+    const i = (y * W + x) * 4;
+    const luma = s[i] * 0.2126 + s[i + 1] * 0.7152 + s[i + 2] * 0.0722;
+    if (luma - bgLuma >= brightFloor) radii.push(Math.hypot(x - maskCx, y - maskCy));
+  }
+  radii.sort((a, b) => a - b);
+  const detectedRadius = radii.length ? radii[Math.floor((radii.length - 1) * 0.72)] : Math.min(W, H) * 0.32;
+  // 마스크 크기는 완전 투명해지는 바깥 반경, 페이드는 그 반경에서 안쪽으로 들어오는 폭.
+  // 따라서 페이드 값을 키우면 원주 주변부터 변화가 즉시 보여 조절감이 명확하다.
+  const maskOuter = Math.max(4, detectedRadius * Math.max(0.55, maskSize / 100));
+  const maskInner = Math.max(0, maskOuter - detectedRadius * Math.max(0.03, maskFeather / 100));
   const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
   const ctx = canvas.getContext('2d');
   const out = ctx.createImageData(W, H), o = out.data;
-  const threshold = Math.min(0.95, Math.max(0, cutoff / 255));
-  const curve = Math.max(0.2, gamma);
-  const gain = Math.max(0, opacity / 100);
-  const br = (bg?.[0] || 0) / 255, bgr = (bg?.[1] || 0) / 255, bb = (bg?.[2] || 0) / 255;
   for (let i = 0; i < s.length; i += 4) {
-    const sr = s[i] / 255, sg = s[i + 1] / 255, sb = s[i + 2] / 255;
-    // 배경과의 색거리 = 참 알파 근사 — 검정 배경이면 max(RGB) 밝기와 동일
-    const d = Math.max(Math.abs(sr - br), Math.abs(sg - bgr), Math.abs(sb - bb));
-    let a = d <= threshold ? 0 : (d - threshold) / Math.max(0.001, 1 - threshold);
-    a = Math.min(1, Math.pow(a, curve) * gain) * (s[i + 3] / 255);
-    if (a <= 0.0001) { o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0; continue; }
-    if (recoverColor && d > 0.0001) {
-      // 배경 성분 역산 제거 — 검정 배경에선 C/peak(기존 발광색 복원)와 동일
-      o[i] = clamp255(((sr - (1 - d) * br) / d) * 255);
-      o[i + 1] = clamp255(((sg - (1 - d) * bgr) / d) * 255);
-      o[i + 2] = clamp255(((sb - (1 - d) * bb) / d) * 255);
-    } else {
-      o[i] = s[i]; o[i + 1] = s[i + 1]; o[i + 2] = s[i + 2];
-    }
+    const d = Math.max(Math.abs(s[i] - br), Math.abs(s[i + 1] - bgC), Math.abs(s[i + 2] - bb));
+    const luma = s[i] * 0.2126 + s[i + 1] * 0.7152 + s[i + 2] * 0.0722;
+    let t = Math.min(1, Math.max(0, (d - threshold) / ramp));
+    t = t * t * (3 - 2 * t); // smoothstep — 직선 경계 주변 밴딩 방지
+    // 렌더 패널의 대각선/직선 테두리는 색차는 있지만 대개 배경과 밝기가 비슷하다.
+    // 낮은 밝기 신호에는 데드존을 두고 다시 0~1로 매핑해 선만 남는 현상을 차단한다.
+    const lightRise = Math.max(0, luma - bgLuma);
+    const darkGateStart = Math.max(3, sensitivity * 0.28);
+    const darkGateEnd = darkGateStart + Math.max(10, softness * 0.55);
+    const darkGateRaw = Math.min(1, Math.max(0, (lightRise - darkGateStart) / (darkGateEnd - darkGateStart)));
+    const darkGate = darkGateRaw * darkGateRaw * (3 - 2 * darkGateRaw);
+    t *= darkGate;
+    // 최종 원형 그라디언트 마스크. 이펙트 원 안은 유지하고 마름모/사각 패널이 있는
+    // 바깥쪽은 부드럽게 0으로 감쇠한다.
+    const p = i / 4, px = p % W, py = (p / W) | 0;
+    const radialDistance = Math.hypot(px - maskCx, py - maskCy);
+    const radialRaw = Math.min(1, Math.max(0, (maskOuter - radialDistance) / Math.max(1, maskOuter - maskInner)));
+    const radialMask = radialRaw * radialRaw * (3 - 2 * radialRaw);
+    t *= radialMask;
+    if (t < 0.025) t = 0;
+    const a = Math.min(1, t * gain) * (s[i + 3] / 255);
+    if (a <= 0.0004) { o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0; continue; }
+    // 약한 경계 신호를 역산하면 RGB가 과도하게 밝아져 선이 강조되므로,
+    // 충분한 광원 알파가 확보된 픽셀에서만 straight-alpha 색을 복원한다.
+    if (recoverColor && d > 0.5 && t >= 0.16) {
+      const at = Math.max(d / 255, 0.004), inv = 1 - at;
+      o[i] = clamp255((s[i] - inv * br) / at);
+      o[i + 1] = clamp255((s[i + 1] - inv * bgC) / at);
+      o[i + 2] = clamp255((s[i + 2] - inv * bb) / at);
+    } else { o[i] = s[i]; o[i + 1] = s[i + 1]; o[i + 2] = s[i + 2]; }
     o[i + 3] = clamp255(a * 255);
   }
   ctx.putImageData(out, 0, 0);
@@ -355,7 +313,9 @@ function effectToBlob(srcData, { cutoff, gamma, opacity, recoverColor, trim, bg 
       exportCanvas.getContext('2d').drawImage(canvas, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
     }
   }
-  return new Promise((resolve, reject) => exportCanvas.toBlob((blob) => blob ? resolve({ blob, width: exportCanvas.width, height: exportCanvas.height }) : reject(new Error('PNG 변환 실패')), 'image/png'));
+  return new Promise((resolve, reject) => exportCanvas.toBlob((blob) => blob
+    ? resolve({ blob, width: exportCanvas.width, height: exportCanvas.height, threshold: Math.round(threshold), maskRadius: Math.round(maskOuter) })
+    : reject(new Error('PNG 변환 실패')), 'image/png'));
 }
 
 // ─── 캐릭터+이펙트 하이브리드 추출 ─────────────────────────────────────────────
@@ -462,6 +422,13 @@ export default function MaskForgeApp() {
   const [effectOpacity, setEffectOpacity] = useState(EFFECT_DEFAULTS.opacity);
   const [effectRecoverColor, setEffectRecoverColor] = useState(EFFECT_DEFAULTS.recoverColor);
   const [effectTrim, setEffectTrim] = useState(EFFECT_DEFAULTS.trim);
+  const [edgeSensitivity, setEdgeSensitivity] = useState(EDGE_DEFAULTS.sensitivity);
+  const [edgeSoftness, setEdgeSoftness] = useState(EDGE_DEFAULTS.softness);
+  const [edgeGlow, setEdgeGlow] = useState(EDGE_DEFAULTS.glow);
+  const [edgeMaskSize, setEdgeMaskSize] = useState(EDGE_DEFAULTS.maskSize);
+  const [edgeMaskFeather, setEdgeMaskFeather] = useState(EDGE_DEFAULTS.maskFeather);
+  const [edgeRecover, setEdgeRecover] = useState(EDGE_DEFAULTS.recoverColor);
+  const [edgeTrim, setEdgeTrim] = useState(EDGE_DEFAULTS.trim);
   // 캐릭터+이펙트 하이브리드 파라미터
   const [charSolid, setCharSolid] = useState(CHAR_DEFAULTS.solidLevel);
   const [charClose, setCharClose] = useState(CHAR_DEFAULTS.closeRadius);
@@ -668,7 +635,7 @@ export default function MaskForgeApp() {
   // 배경색 자동 감지 — 로컬 키잉·이펙트 추출·캐릭터+이펙트 모드 진입 + 이미지 준비 시 1회.
   // 이펙트 계열도 배경색을 써야 크로마 그린 등 비검정 배경 렌더가 추출된다.
   useEffect(() => {
-    if (![METHOD_LUMA, METHOD_EFFECT, METHOD_CHAR].includes(method) || !uploadedFile || bgColor) return undefined;
+    if (![METHOD_LUMA, METHOD_EFFECT, METHOD_CHAR, METHOD_EDGE].includes(method) || !uploadedFile || bgColor) return undefined;
     let cancelled = false;
     (async () => {
       try {
@@ -728,6 +695,26 @@ export default function MaskForgeApp() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [method, uploadedFile, bgColor, effectCutoff, effectGamma, effectOpacity, effectRecoverColor, effectTrim, ensureSrcData, applyResultQuiet]);
 
+  // 사각 경계 제거 실시간 미리보기.
+  useEffect(() => {
+    if (method !== METHOD_EDGE || !uploadedFile) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setLumaBusy(true);
+      try {
+        const data = await ensureSrcData();
+        if (!data || cancelled) return;
+        const result = await edgeCleanupToBlob(data, { sensitivity: edgeSensitivity, softness: edgeSoftness, glow: edgeGlow, maskSize: edgeMaskSize, maskFeather: edgeMaskFeather, recoverColor: edgeRecover, trim: edgeTrim, bg: bgColor });
+        if (cancelled) return;
+        applyResultQuiet(result.blob);
+        setStatus({ msg: `원형 마스크 반경 ${result.maskRadius}px · 자동 기준 ${result.threshold} · 실시간 (${result.width}×${result.height})`, state: 'done' });
+      } catch (e) {
+        if (!cancelled) setStatus({ msg: `오류: ${e.message || e}`, state: 'error' });
+      } finally { if (!cancelled) setLumaBusy(false); }
+    }, 120);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [method, uploadedFile, bgColor, edgeSensitivity, edgeSoftness, edgeGlow, edgeMaskSize, edgeMaskFeather, edgeRecover, edgeTrim, ensureSrcData, applyResultQuiet]);
+
   // 캐릭터+이펙트 실시간 추출 — 거리 변환 2회가 있어 이펙트보다 무겁게 디바운스(180ms).
   useEffect(() => {
     if (method !== METHOD_CHAR || !uploadedFile) return undefined;
@@ -754,7 +741,7 @@ export default function MaskForgeApp() {
 
   // 스포이드 — 원본 미리보기 클릭 위치의 픽셀색을 배경색으로 지정 (색상 키·이펙트·캐릭터 공용).
   const handleEyedrop = useCallback(async (e) => {
-    if (!picking || ![METHOD_LUMA, METHOD_EFFECT, METHOD_CHAR].includes(method)) return;
+    if (!picking || ![METHOD_LUMA, METHOD_EFFECT, METHOD_CHAR, METHOD_EDGE].includes(method)) return;
     const data = await ensureSrcData();
     if (!data) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -827,6 +814,20 @@ export default function MaskForgeApp() {
       return;
     }
 
+    if (method === METHOD_EDGE) {
+      setProcessing(true); setStatusMsg('사각형 경계 분석 및 제거 중...', 'active'); setProgress(45);
+      try {
+        const data = await ensureSrcData();
+        if (!data) throw new Error('이미지를 불러올 수 없습니다.');
+        const bg = bgColor || detectBg(data.data, data.width, data.height);
+        const result = await edgeCleanupToBlob(data, { sensitivity: edgeSensitivity, softness: edgeSoftness, glow: edgeGlow, maskSize: edgeMaskSize, maskFeather: edgeMaskFeather, recoverColor: edgeRecover, trim: edgeTrim, bg });
+        applyResult(result.blob); setProgress(100);
+        setStatusMsg(`완료! 원형 마스크 반경 ${result.maskRadius}px · 자동 기준 ${result.threshold} (${result.width}×${result.height})`, 'done');
+      } catch (e) { setStatusMsg(`오류: ${e.message || e}`, 'error'); setProgress(0); }
+      finally { setProcessing(false); }
+      return;
+    }
+
     if (method === METHOD_CHAR) {
       setProcessing(true); setStatusMsg('캐릭터+이펙트 분리 중...', 'active'); setProgress(45);
       try {
@@ -866,7 +867,7 @@ export default function MaskForgeApp() {
     } finally {
       setProcessing(false);
     }
-  }, [apiKey, uploadedFile, method, bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim, effectCutoff, effectGamma, effectOpacity, effectRecoverColor, effectTrim, charSolid, charClose, charCutoff, charGamma, charEdge, charRecover, charTrim, applyResult, ensureSrcData]);
+  }, [apiKey, uploadedFile, method, bgColor, tolerance, feather, holeProtect, holeSize, decontam, trim, effectCutoff, effectGamma, effectOpacity, effectRecoverColor, effectTrim, edgeSensitivity, edgeSoftness, edgeGlow, edgeMaskSize, edgeMaskFeather, edgeRecover, edgeTrim, charSolid, charClose, charCutoff, charGamma, charEdge, charRecover, charTrim, applyResult, ensureSrcData]);
 
   const handleDownload = useCallback(() => {
     if (!resultUrl) return;
@@ -982,16 +983,18 @@ export default function MaskForgeApp() {
               {method === METHOD_LUMA && '로컬 색상 키 — 단색·단순 배경의 타이포 / 로고 / 발광 소재를 원본 해상도로'}
               {method === METHOD_SPRITE && '로컬 AI 스프라이트 — 복잡한 게임 화면에서 캐릭터 분리 후 브러시로 마무리'}
               {method === METHOD_EFFECT && '이펙트 알파 추출 — 검정·크로마 등 단색 배경은 제거하고 빛의 색과 부드러운 투명도는 자연스럽게 보존'}
+              {method === METHOD_EDGE && '사각 경계 제거 — 렌더 이미지의 직선으로 끊긴 어두운 패널을 자동 감지하고 광원·파티클은 보존'}
               {method === METHOD_CHAR && '캐릭터+이펙트 분리 — 불투명 캐릭터는 어두운 부위까지 온전히, 글로우·파티클은 부드러운 반투명으로 동시에 추출'}
             </p>
           </div>
 
           {/* 방식 선택 */}
-          <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-1.5 flex gap-1.5">
+          <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-1.5 grid grid-cols-2 lg:grid-cols-3 gap-1.5">
             {[
               { key: METHOD_API, title: 'Remove.bg AI', desc: '피사체 누끼 · 무료키 저해상도(~0.25MP)' },
               { key: METHOD_LUMA, title: '로컬 색상 키', desc: '원본 해상도 · 무료 · 타이포 / 로고 / 단색 배경' },
               { key: METHOD_EFFECT, title: '이펙트 추출', desc: '검정·크로마 배경 광원 · 글로우 · 파티클 전용 알파 복원' },
+              { key: METHOD_EDGE, title: '사각 경계 제거', desc: '직선으로 끊긴 렌더 패널 제거 · 광원과 파티클 보존' },
               { key: METHOD_CHAR, title: '캐릭터+이펙트', desc: '불투명 피사체 + 발광 이펙트 동시 분리 · 단색 배경 렌더 전용' },
               { key: METHOD_SPRITE, title: 'AI 스프라이트', desc: '로컬 AI 누끼 + 브러시 보정 · 복잡한 게임 화면' },
             ].map((m) => {
@@ -1106,6 +1109,29 @@ export default function MaskForgeApp() {
             </div>
             <p className="text-[10px] leading-relaxed text-zinc-500"><b className="text-zinc-300">배경색</b>은 테두리에서 자동 감지 — 검정은 물론 크로마 그린/블루 같은 단색 배경도 지원하며, 잘못 잡히면 스포이드로 지정하세요. <b className="text-zinc-300">배경 제거</b>는 배경 근처 노이즈를 줄이고, <b className="text-zinc-300">알파 곡선</b>은 소프트 글로우의 퍼짐을 조절합니다. 발광색 복원을 켜면 배경색 테두리 없이 밝은 색을 straight-alpha로 복원합니다.</p>
             </div>}
+          </div>
+          )}
+
+          {/* 사각 렌더 경계 제거 설정 */}
+          {method === METHOD_EDGE && (
+          <div className="bg-[#18181B] border border-zinc-800 rounded-xl p-4 flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">사각 경계 자동 클린업</span>
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full border" style={{ color: ACCENT, borderColor: `${ACCENT}55` }}>원본 해상도 · 실시간</span>
+              {lumaBusy && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+            </div>
+            <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">제거 강도</span><input type="range" min={0} max={90} value={edgeSensitivity} onChange={(e) => setEdgeSensitivity(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{edgeSensitivity}</span></label>
+            <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">경계 부드럽기</span><input type="range" min={4} max={120} value={edgeSoftness} onChange={(e) => setEdgeSoftness(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{edgeSoftness}</span></label>
+            <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">글로우 보존</span><input type="range" min={50} max={200} value={edgeGlow} onChange={(e) => setEdgeGlow(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{edgeGlow}%</span></label>
+            <div className="border-t border-zinc-800 pt-4 flex flex-col gap-4">
+              <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">원형 마스크</span><input type="range" min={75} max={170} value={edgeMaskSize} onChange={(e) => setEdgeMaskSize(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{edgeMaskSize}%</span></label>
+              <label className="flex items-center gap-3"><span className="text-[11px] font-bold text-zinc-400 w-24 shrink-0">마스크 페이드</span><input type="range" min={5} max={100} value={edgeMaskFeather} onChange={(e) => setEdgeMaskFeather(Number(e.target.value))} className="flex-1 accent-[#FF3366]" /><span className="text-[11px] font-mono text-zinc-300 w-10 text-right">{edgeMaskFeather}%</span></label>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[{ on: edgeRecover, set: setEdgeRecover, label: '발광색 복원', title: '배경색 성분을 역산해 탁한 테두리를 제거합니다.' }, { on: edgeTrim, set: setEdgeTrim, label: '여백 트림', title: '투명 여백을 자동으로 잘라냅니다.' }].map(t => <button key={t.label} onClick={() => t.set(v => !v)} title={t.title} className={`text-[10px] font-bold px-3 py-1.5 rounded-full border ${t.on ? 'text-black' : 'text-zinc-400 border-zinc-700'}`} style={t.on ? { background: ACCENT, borderColor: ACCENT } : undefined}>{t.label}</button>)}
+              <button onClick={() => { setEdgeSensitivity(EDGE_DEFAULTS.sensitivity); setEdgeSoftness(EDGE_DEFAULTS.softness); setEdgeGlow(EDGE_DEFAULTS.glow); setEdgeMaskSize(EDGE_DEFAULTS.maskSize); setEdgeMaskFeather(EDGE_DEFAULTS.maskFeather); setEdgeRecover(EDGE_DEFAULTS.recoverColor); setEdgeTrim(EDGE_DEFAULTS.trim); }} className="text-[10px] font-bold px-3 py-1.5 rounded-full border border-zinc-700 text-zinc-400">기본값</button>
+            </div>
+            <p className="text-[10px] leading-relaxed text-zinc-500">밝은 이펙트 픽셀로 중심과 반지름을 자동 계산하고 원형 그라디언트 마스크를 씌웁니다. 대각선이 남으면 <b className="text-zinc-300">원형 마스크</b>를 줄이고, 광선 끝이 잘리면 마스크를 키우거나 <b className="text-zinc-300">마스크 페이드</b>를 올리세요.</p>
           </div>
           )}
 
@@ -1468,7 +1494,7 @@ export default function MaskForgeApp() {
                 <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center gap-4 z-20">
                   <Loader2 className="w-8 h-8 animate-spin" style={{ color: ACCENT }} />
                   <span className="text-[11px] font-bold tracking-wider" style={{ color: ACCENT }}>
-                    {method === METHOD_LUMA ? '로컬 배경 제거 중...' : method === METHOD_EFFECT ? '이펙트 알파 복원 중...' : method === METHOD_CHAR ? '캐릭터+이펙트 분리 중...' : 'Remove.bg AI 처리 중...'}
+                    {method === METHOD_LUMA ? '로컬 배경 제거 중...' : method === METHOD_EFFECT ? '이펙트 알파 복원 중...' : method === METHOD_EDGE ? '사각 경계 분석 중...' : method === METHOD_CHAR ? '캐릭터+이펙트 분리 중...' : 'Remove.bg AI 처리 중...'}
                   </span>
                 </div>
               )}
@@ -1485,7 +1511,7 @@ export default function MaskForgeApp() {
             >
               {processing ? (
                 <span className="inline-flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> 처리 중…</span>
-              ) : method === METHOD_LUMA ? '로컬 배경 제거' : method === METHOD_EFFECT ? '이펙트 투명화' : method === METHOD_CHAR ? '캐릭터+이펙트 분리' : '배경 제거 실행'}
+              ) : method === METHOD_LUMA ? '로컬 배경 제거' : method === METHOD_EFFECT ? '이펙트 투명화' : method === METHOD_EDGE ? '사각 경계 제거' : method === METHOD_CHAR ? '캐릭터+이펙트 분리' : '배경 제거 실행'}
             </button>
             <button
               onClick={handleReset}

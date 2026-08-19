@@ -57,6 +57,32 @@ const handleCopy = (text) => {
   finally { document.body.removeChild(textArea); }
 };
 
+// 파일명(originalTitle/title)의 오픈연도(첫 20xx)와 경로의 단독 연도 세그먼트(\...\2026\...)를
+// 비교해 어긋나면 교정 정보를 반환. 폴더 트리는 오픈일 기준이므로 파일명 오픈연도가 진실.
+// 업로드 시 폴더 날짜로 추론된 연도가 파일명 연도와 어긋난 케이스(예: 2026 오픈 파일이 2025 경로로 저장)를 잡는다.
+// 어긋난 게 없거나 판단 불가(파일명에 연도 없음/경로에 연도 세그먼트 없음)면 null.
+const getPathYearMismatch = (banner) => {
+  const path = banner?.path || '';
+  if (!path) return null;
+  const name = String(banner?.originalTitle || banner?.title || '');
+  const m = name.match(/20\d{2}/);
+  if (!m) return null;
+  const newYear = m[0];
+  const parts = path.split(/[\\/]/);
+  const idx = parts.findIndex(p => /^20\d{2}$/.test(p));
+  if (idx < 0 || parts[idx] === newYear) return null;
+  const sep = path.includes('\\') ? '\\' : '/';
+  const oldYear = parts[idx];
+  parts[idx] = newYear;
+  return { corrected: parts.join(sep), oldYear, newYear };
+};
+
+// 경로 복사용 연도 보정 — 어긋나면 교정된 경로, 아니면 원본 경로.
+const resolveCopyPath = (banner) => {
+  const fix = getPathYearMismatch(banner);
+  return fix ? fix.corrected : (banner?.path || '');
+};
+
 export default function App() {
   const { user, isAdmin } = useAuth();
   const { payload, clearPayload, navigate, isLight } = useGlobal();
@@ -344,12 +370,14 @@ export default function App() {
     if (!isInteractive && window.innerWidth >= 768) setIsDesktopSidebarOpen(prev => !prev);
   }, []);
 
-  const handleCopyPathGrid = useCallback((path) => {
+  const handleCopyPathGrid = useCallback((banner) => {
+    const path = resolveCopyPath(banner);
     if (!path) { showNotification("경로가 지정되지 않았습니다."); return; }
     if (handleCopy(path)) showNotification("클립보드에 복사되었습니다.");
   }, [showNotification]);
 
-  const handleCopyPathModal = (path) => {
+  const handleCopyPathModal = (banner) => {
+    const path = resolveCopyPath(banner);
     if (!path) return;
     if (handleCopy(path)) { setIsCopied(true); setTimeout(() => setIsCopied(false), 2000); }
     else showNotification("복사에 실패했습니다.");
@@ -534,6 +562,47 @@ export default function App() {
       setSelectedIds([]);
     } catch { showNotification("오류가 발생했습니다."); }
   };
+
+  // 경로 연도 점검·수정 — 파일명 오픈연도와 경로 연도가 어긋난 배너를 찾아
+  // 저장된 path(=표시값) 를 파일명 기준으로 교정. 복사값은 path 에서 파생되므로 함께 정렬됨.
+  // year 필드도 같이 맞춰 연도 필터/표시 일관성 유지.
+  const handleRepairPathYears = useCallback(async () => {
+    const targets = banners
+      .filter(b => b && !b.isTemp && !String(b.id).startsWith('temp_'))
+      .map(b => ({ b, fix: getPathYearMismatch(b) }))
+      .filter(x => x.fix);
+    if (targets.length === 0) { showNotification("연도가 어긋난 경로가 없습니다."); return; }
+    const sample = targets.slice(0, 6)
+      .map(({ b, fix }) => `· ${b.title || b.originalTitle || b.id}: ${fix.oldYear} → ${fix.newYear}`)
+      .join('\n');
+    const ok = window.confirm(
+      `파일명 오픈연도와 경로 연도가 어긋난 배너 ${targets.length}건을 찾았습니다.\n` +
+      `경로(표시·복사값)와 연도 필드를 파일명 기준으로 수정합니다.\n\n${sample}` +
+      (targets.length > 6 ? `\n… 외 ${targets.length - 6}건` : '') +
+      `\n\n진행할까요?`
+    );
+    if (!ok) return;
+    showNotification(`경로 연도 수정 중… (${targets.length}건)`);
+    let done = 0;
+    try {
+      for (let i = 0; i < targets.length; i += 3) {
+        const chunk = targets.slice(i, i + 3);
+        await Promise.all(chunk.map(async ({ b, fix }) => {
+          const updateData = { path: fix.corrected, year: fix.newYear };
+          await updateBanner(b.id, updateData);
+          if (selectedBanner?.id === b.id) {
+            setSelectedBanner(prev => ({ ...prev, ...updateData }));
+            setEditedBanner(prev => ({ ...prev, ...updateData }));
+          }
+          done++;
+        }));
+        await delay(WRITE_DELAY_MS);
+      }
+      showNotification(`경로 연도 수정 완료: ${done}건`);
+    } catch {
+      showNotification(`수정 중 오류 발생 (완료 ${done}건)`);
+    }
+  }, [banners, updateBanner, selectedBanner, showNotification]);
 
   // AI search
   const handleSearch = async () => {
@@ -1017,6 +1086,7 @@ export default function App() {
         isProcessingFiles={isProcessingFiles} handleFileUpload={handleFileUpload}
         skipDuplicates={skipDuplicates} setSkipDuplicates={setSkipDuplicates}
         handleOpenDuplicateManager={handleOpenDuplicateManager} handleSidebarClick={handleSidebarClick}
+        handleRepairPathYears={handleRepairPathYears}
         folders={folders}
         onCreateFolder={async (name) => { try { await createFolder(name); } catch (e) { showNotification(`폴더 생성 실패: ${e.message || e}`); } }}
         onRenameFolder={renameFolder}

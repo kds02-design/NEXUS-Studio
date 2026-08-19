@@ -13,6 +13,8 @@ import {
   getOptionName,
   getSliderText,
 } from '../constants/utils.js';
+import { PERSONA_MODIFIERS, SCRIPT_PRESETS } from '../services/sovereignOptions.js';
+import { compileSovereignImagenPrompt } from '../services/compileSovereignImagenPrompt.js';
 
 async function readGeminiText(response) {
   if (!response.ok) {
@@ -57,15 +59,6 @@ export function useSovereignPromptCurrent({ apiKey }) {
   //   프리셋이 7개 옵션 일괄 세팅의 베이스라면, 페르소나는 정체성 키 2-3개만 override 해서
   //   같은 프리셋에서도 페르소나만 바꾸면 결과 톤이 명확히 달라지도록 만든다.
   //   사용자가 마지막에 만진 값이 우선 — 페르소나/프리셋 모두 시작점일 뿐.
-  const PERSONA_MODIFIERS = {
-    core_fortress: { stemWeight: 'Stem_Ultra',  strokeTexture: 'Tex_Clean',   deformationDamage: 'Damage_None' },
-    // core_blade: Stem_Heavy 로 — Stem_Ultra("block stems") 와 weightTags 의 thick-thin contrast 충돌 회피.
-    core_blade:    { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Blade', strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
-    core_relic:    { deformationDamage: 'Damage_Erosion', strokeTexture: 'Tex_Subtle', letterConnection: 'Conn_Indep' },
-    core_glyph:    { letterConnection: 'Conn_Full', logoDegree: 'Logo_Emblem', kerning: 'Kern_Tight' },
-    core_kinetic:  { kineticVelocity: 'Vel_Swift', slantAngle: 'Slant_Forward', strokeExtension: 'Ext_Razor' },
-    core_cinema:   { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif', strokeSharpness: 'Sharp_Crisp', kerning: 'Kern_Loose', strokeTexture: 'Tex_Subtle' },
-  };
   const handleCoreArchetypeChange = (id) => {
     setCoreArchetype(id);
     const mods = PERSONA_MODIFIERS[id];
@@ -88,20 +81,6 @@ export function useSovereignPromptCurrent({ apiKey }) {
   // 선택된 프리셋의 en 토큰은 buildPromptIR 의 shapeStyleBlock 으로 프롬프트 본문에 직접 주입된다
   // (블랙레터처럼 옵션 조합만으로 표현이 안 되는 스타일이 실제 출력에 반영되게 하는 장치).
   const [scriptType, setScriptType] = useState('');
-  const SCRIPT_PRESETS = {
-    Shape_Clean:       { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Clean',     strokeSharpness: 'Sharp_Std',   kineticVelocity: 'Vel_Static',   slantAngle: 'Slant_0', charProportion: 'P_Std', strokeTexture: 'Tex_Clean' },
-    Shape_Massive:     { stemWeight: 'Stem_Ultra', terminalStyle: 'Term_Slab',      strokeSharpness: 'Sharp_Std',   kineticVelocity: 'Vel_Static',   charWidth: 'Wide' },
-    Shape_Blade:       { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Blade',     strokeSharpness: 'Sharp_Razor', kineticVelocity: 'Vel_Slashing' },
-    Shape_Thorn:       { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Thorn',     strokeSharpness: 'Sharp_Razor', charProportion: 'P_Condensed' },
-    Shape_Elegant:     { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',     strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Static' },
-    Shape_Round:       { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Round',     strokeSharpness: 'Sharp_Soft',  cornerStyle: 'Corner_Round' },
-    Shape_Speed:       { stemWeight: 'Stem_Std',   terminalStyle: 'Term_Blade',     strokeSharpness: 'Sharp_Crisp', kineticVelocity: 'Vel_Swift',    slantAngle: 'Slant_Forward' },
-    Shape_Brush:       { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_BrushFray', strokeTexture: 'Tex_DryBrush',  kineticVelocity: 'Vel_Swift' },
-    Shape_Blackletter: { stemWeight: 'Stem_Heavy', terminalStyle: 'Term_Thorn',     strokeSharpness: 'Sharp_Crisp', charProportion: 'P_Condensed',   kerning: 'Kern_Tight', cornerStyle: 'Corner_Wedge' },
-    // 영화 타이틀 — Constantine/Priest 류. persona 필드로 페르소나까지 함께 전환
-    // (게임/고딕 계열 페르소나의 고가중치 조형 언어가 세리프 옵션을 덮어쓰는 문제 방지).
-    Shape_Cinema:      { stemWeight: 'Stem_Light', terminalStyle: 'Term_Serif',     strokeSharpness: 'Sharp_Crisp', strokeTexture: 'Tex_Subtle',     deformationDamage: 'Damage_Erosion', kerning: 'Kern_Loose', persona: 'core_cinema' },
-  };
   const handleScriptPresetChange = (id) => {
     setScriptType(id);
     const preset = SCRIPT_PRESETS[id];
@@ -1322,39 +1301,12 @@ Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.
     // SD식 `(token:1.5)` / `Negative prompt:` 문법은 Gemini가 우선순위가 아닌 시각 묘사로
     // 오해할 수 있으므로 실제 렌더에는 짧은 자연어 명령만 전달한다. 복사용 Nano/MJ/ChatGPT
     // 프롬프트는 위에서 그대로 유지해 외부 모델 호환성을 보존한다.
-    const G = (value) => String(value || '')
-      .replace(/\(([^()]+?):\s*[\d.]+\)/g, '$1')
-      .replace(/\bNO\s+/gi, 'avoid ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    const renderSurface = (ir.hasTexture || ir.hasDamage)
-      ? `Apply only this flat, ink-like surface treatment inside the letter silhouettes: ${G(ir.surfaceEn)}. It must not create lighting, depth, bevels, or realistic material volume.`
-      : 'Use a perfectly uniform, opaque, matte fill with clean vector-like edges and no surface modulation.';
-    const renderSurrounding = mmoSurroundingElement === 'Clean'
-      ? 'Keep the area around the typography completely empty. Do not add symbols, particles, debris, frames, or scenery.'
-      : `Use the selected surrounding element sparingly and keep it clearly secondary to the readable title: ${G(ir.mmoSurroundingElementEn)}.`;
-    const imagenPrompt = `Create one production-ready flat 2D typography logo asset.
-
-TEXT — highest priority:
-Render exactly this text and nothing else: "${ir.inputText}". Preserve every character, spelling, line break, and reading order. Do not add, omit, translate, or substitute characters.
-
-LETTERFORM DESIGN:
-Create custom-drawn letterforms based on ${ir.activeCoreData.shortTitle}. ${G(ir.activeCoreData.language)}. ${ir.shapeStyleEn ? `Shape direction: ${G(ir.shapeStyleEn)}.` : ''} Use ${G(ir.weightEn)}, ${G(ir.widthEn)}, ${G(ir.proportionEn)}, ${G(ir.kerningEn)}, ${G(ir.letterConnEn)}, and ${G(ir.internalSpaceEn)}. Edge treatment: ${G(ir.terminalEn)}, ${G(ir.sharpnessEn)}, ${G(ir.cornerEn)}, ${G(ir.extensionEn)}. ${ir.userAuraEn !== 'Standard deployment' ? `Creative intent: ${G(ir.userAuraEn)}.` : ''}
-
-CONTROLLED MODIFICATION:
-${isEnhanceModeEnabled ? `Use ${enhanceMode} mode within a ${ir.modIntensityEn} change budget. Allowed: ${G(ir.modAllowedEn)} Forbidden: ${G(ir.modForbiddenEn)} Maintain at least ${ir.readabilityFloorEn} readability.` : 'Keep the structure controlled, coherent, and highly readable.'} ${ir.momentumActive ? `Apply controlled motion through ${G(ir.kineticEn)}, ${G(ir.slantEn)}, and ${G(ir.slicingEn)}, without changing the text.` : ''}
-
-COMPOSITION:
-${ir.cgTextInstruction}. ${G(ir.layoutEn)} ${G(ir.mmoSilhouetteEn)}. The typography occupancy is ${G(ir.occupancyEn)}. Use ${ir.aspectRatio} canvas framing and keep comfortable margins on every side.
-
-COLOR AND SURFACE:
-${ir.bgDescEn}. Use exactly two flat colors with hard separation. ${renderSurface}
-
-SURROUNDINGS:
-${renderSurrounding}
-
-ABSOLUTE RESTRICTIONS:
-This is a front-facing flat graphic, not a photograph and not a 3D render. Do not create extrusion, bevel, embossing, perspective, shadows, highlights, gradients, glow, bloom, atmospheric effects, realistic materials, environmental backgrounds, mockups, or extra text. Keep the result isolated, crisp, readable, and suitable for later material rendering.`;
+    const imagenPrompt = compileSovereignImagenPrompt({
+      ir,
+      isEnhanceModeEnabled,
+      enhanceMode,
+      surroundingMode: mmoSurroundingElement,
+    });
 
     return { baseTechnicalEn: generatedBaseEn, baseTechnicalKo: generatedBaseEn, chatGPTOutput, midjourneyOutput: sanitizedMidjourneyOutput, nanoBananaOutput: sanitizedNanoBananaOutput, imagenPrompt };
   };

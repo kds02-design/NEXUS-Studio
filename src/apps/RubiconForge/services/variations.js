@@ -430,7 +430,7 @@ ${directionHint ? `Direction: ${directionHint}\n` : ''}${strengthHint ? `Strengt
 };
 
 // ─── 호출 헬퍼 ────────────────────────────────────────────────────────────────
-const DEFAULT_MODEL = 'gemini-3.1-flash-image-preview';
+const DEFAULT_MODEL = 'gemini-3-pro-image-preview';
 
 export async function renderVariation(
   sourceDataUrl,

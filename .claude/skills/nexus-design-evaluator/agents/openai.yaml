@@ -1,0 +1,4 @@
+display_name: "Nexus 디자인 평가"
+short_description: "Nexus 10대 지표로 배너를 평가하고 자동 개선"
+default_prompt: "Use $nexus-design-evaluator to evaluate this banner, calculate its weighted score, and propose or apply the smallest layer-scoped corrections needed to pass."
+
