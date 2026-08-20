@@ -4,6 +4,8 @@
 // mcp/server.mjs
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -1944,6 +1946,119 @@ var ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 var SKILLS_DIR = path.join(ROOT, "src", "skills");
 var RUBRIC_PATH = path.join(ROOT, ".codex", "skills", "nexus-design-evaluator", "references", "rubric.md");
 var OUT_DIR = path.join(ROOT, ".tmp", "mcp-out");
+var NEXUS_AUTH_DIR = path.join(process.env.APPDATA || path.join(os.homedir(), ".config"), "NexusStudio");
+var NEXUS_AUTH_PATH = path.join(NEXUS_AUTH_DIR, "mcp-auth.json");
+var NEXUS_LINK_PORT = Number(process.env.NEXUS_MCP_LINK_PORT || 47831);
+function readNexusAuth() {
+  try {
+    return JSON.parse(fs.readFileSync(NEXUS_AUTH_PATH, "utf8"));
+  } catch {
+    return null;
+  }
+}
+function writeNexusAuth(value) {
+  fs.mkdirSync(NEXUS_AUTH_DIR, { recursive: true });
+  fs.writeFileSync(NEXUS_AUTH_PATH, JSON.stringify(value, null, 2), { mode: 384 });
+}
+async function exchangeCustomToken(customToken) {
+  const { apiKey } = firebaseConfig();
+  if (!apiKey) throw new Error("Firebase API key\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+      signal: AbortSignal.timeout(15e3)
+    }
+  );
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message || "Firebase custom token \uAD50\uD658 \uC2E4\uD328");
+  const auth = {
+    uid: body.localId,
+    email: body.email || null,
+    idToken: body.idToken,
+    refreshToken: body.refreshToken,
+    expiresAt: Date.now() + Number(body.expiresIn || 3600) * 1e3,
+    connectedAt: Date.now()
+  };
+  writeNexusAuth(auth);
+  return auth;
+}
+async function currentNexusAuth() {
+  const auth = readNexusAuth();
+  if (!auth?.refreshToken) return null;
+  if (auth.idToken && Number(auth.expiresAt || 0) > Date.now() + 6e4) return auth;
+  const { apiKey } = firebaseConfig();
+  const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: auth.refreshToken }),
+    signal: AbortSignal.timeout(15e3)
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message || "Nexus \uACC4\uC815 \uD1A0\uD070 \uAC31\uC2E0 \uC2E4\uD328");
+  const next = {
+    ...auth,
+    uid: body.user_id || auth.uid,
+    idToken: body.id_token,
+    refreshToken: body.refresh_token || auth.refreshToken,
+    expiresAt: Date.now() + Number(body.expires_in || 3600) * 1e3
+  };
+  writeNexusAuth(next);
+  return next;
+}
+function startNexusLinkBridge() {
+  const bridge = http.createServer(async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    if (req.method === "GET" && req.url === "/status") {
+      const auth = readNexusAuth();
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ connected: !!auth?.refreshToken, uid: auth?.uid || null, email: auth?.email || null }));
+      return;
+    }
+    if (req.method === "DELETE" && req.url === "/connect") {
+      try {
+        fs.unlinkSync(NEXUS_AUTH_PATH);
+      } catch {
+      }
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true, connected: false }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/connect") {
+      let raw = "";
+      for await (const chunk of req) {
+        raw += chunk;
+        if (raw.length > 1024 * 1024) throw new Error("\uC694\uCCAD\uC774 \uB108\uBB34 \uD07D\uB2C8\uB2E4.");
+      }
+      try {
+        const customToken = JSON.parse(raw || "{}").customToken;
+        if (!customToken) throw new Error("customToken\uC774 \uC5C6\uC2B5\uB2C8\uB2E4.");
+        const auth = await exchangeCustomToken(customToken);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok: true, connected: true, uid: auth.uid, email: auth.email }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, error: e?.message || String(e) }));
+      }
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  bridge.on("error", () => {
+  });
+  bridge.listen(NEXUS_LINK_PORT, "127.0.0.1");
+}
 function geminiKey() {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
   try {
@@ -1977,6 +2092,7 @@ var text = (t) => ({ content: [{ type: "text", text: t }] });
 var errText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
 var data = (structuredContent, t) => ({ content: [{ type: "text", text: t }], structuredContent });
 var PURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+var READ_REMOTE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 var WRITE_LOCAL = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 var RENDER = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 var PROMPT_OUT = {
@@ -1994,6 +2110,200 @@ var TYPECORE_OUT = {
 };
 var TYPECORE_ASPECTS = ["1:1", "16:9", "21:9"];
 var TYPECORE_LAYOUTS = ["1Line", "2Lines", "3Lines"];
+var _firebaseConfig = null;
+function firebaseConfig() {
+  if (_firebaseConfig) return _firebaseConfig;
+  const values = { projectId: process.env.VITE_FIREBASE_PROJECT_ID, apiKey: process.env.VITE_FIREBASE_API_KEY };
+  try {
+    const env = fs.readFileSync(path.join(ROOT, ".env"), "utf8");
+    for (const [key, field] of [["VITE_FIREBASE_PROJECT_ID", "projectId"], ["VITE_FIREBASE_API_KEY", "apiKey"]]) {
+      if (values[field]) continue;
+      const m = env.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, "m"));
+      if (m) values[field] = m[1].replace(/^["']|["']$/g, "");
+    }
+  } catch {
+  }
+  _firebaseConfig = values;
+  return values;
+}
+function decodeFirestoreValue(value) {
+  if (!value || typeof value !== "object") return value;
+  if ("nullValue" in value) return null;
+  if ("stringValue" in value) return value.stringValue;
+  if ("booleanValue" in value) return value.booleanValue;
+  if ("integerValue" in value) return Number(value.integerValue);
+  if ("doubleValue" in value) return Number(value.doubleValue);
+  if ("timestampValue" in value) return value.timestampValue;
+  if ("referenceValue" in value) return value.referenceValue;
+  if ("bytesValue" in value) return value.bytesValue;
+  if ("geoPointValue" in value) return value.geoPointValue;
+  if ("arrayValue" in value) return (value.arrayValue.values || []).map(decodeFirestoreValue);
+  if ("mapValue" in value) return decodeFirestoreFields(value.mapValue.fields || {});
+  return value;
+}
+function decodeFirestoreFields(fields) {
+  return Object.fromEntries(Object.entries(fields || {}).map(([key, value]) => [key, decodeFirestoreValue(value)]));
+}
+function decodeFirestoreDocument(doc) {
+  const id = String(doc?.name || "").split("/").pop();
+  return { id, ...decodeFirestoreFields(doc?.fields || {}) };
+}
+function bannerTimestamp(value) {
+  if (typeof value === "number") return value;
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+function bannerSummary(banner) {
+  return {
+    id: banner.id,
+    title: banner.title || banner.originalTitle || "\uC81C\uBAA9 \uC5C6\uC74C",
+    game: banner.game || null,
+    year: banner.year || null,
+    date: banner.date || null,
+    character: banner.character || null,
+    score: Number.isFinite(Number(banner.score)) ? Number(banner.score) : null,
+    tags: Array.isArray(banner.tags) ? banner.tags : [],
+    imageUrl: banner.imageUrl || null,
+    thumbnailUrl: banner.thumbnailUrl || null,
+    path: banner.path || null,
+    featured: !!banner.featured,
+    liked: !!banner.liked,
+    createdAt: banner.createdAt || null
+  };
+}
+function brandWebSummary(entry) {
+  const pages = Array.isArray(entry.pages) ? entry.pages : [];
+  return {
+    id: entry.id,
+    title: entry.title || entry.sourceProjectName || "\uBE0C\uB79C\uB4DC \uC6F9",
+    game: entry.game || null,
+    year: entry.year || null,
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    previewUrl: entry.preview || entry.full_image || pages[0]?.url || null,
+    desktopUrl: entry.full_image || pages.find((page) => page?.device === "pc")?.url || null,
+    mobileUrl: entry.mobile_image || pages.find((page) => page?.device === "mobile")?.url || null,
+    pageCount: Number(entry.pageCount || pages.length || 0),
+    devices: [...new Set(pages.map((page) => page?.device).filter(Boolean))],
+    description: entry.sourceDescription || null,
+    sourceProjectId: entry.sourceProjectId || null,
+    visibility: entry.visibility || "public",
+    liked: Number(entry.liked || 0),
+    createdAt: entry.created_at || entry.createdAt || null
+  };
+}
+function promotionScore(entry) {
+  const raw = entry.webAiScore ?? entry.designScore;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value > 10 ? Number((value / 10).toFixed(2)) : value;
+}
+function promotionSummary(entry) {
+  return {
+    id: entry.id,
+    title: entry.title || "\uC81C\uBAA9 \uC5C6\uC74C",
+    game: entry.game || null,
+    year: entry.year || null,
+    date: entry.date || entry.date_info || null,
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    summary: entry.summary || entry.description || null,
+    score: promotionScore(entry),
+    previewUrl: entry.preview || entry.full_image || null,
+    desktopUrl: entry.full_image || entry.preview || null,
+    mobileUrl: entry.mobile_image || null,
+    assetType: entry.assetType || "\uD504\uB85C\uBAA8\uC158",
+    visibility: entry.visibility || "public",
+    liked: Number(entry.liked || 0),
+    createdAt: entry.created_at || entry.createdAt || null
+  };
+}
+function promptArcArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+  const source = value.trim();
+  if (!source.startsWith("[") || !source.endsWith("]")) return [];
+  try {
+    const parsed = JSON.parse(source);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+function promptArcFlat(value) {
+  return promptArcArray(value).flat(Infinity).filter((item) => typeof item === "string" && item.trim());
+}
+function promptArcSafeUrl(value) {
+  return typeof value === "string" && /^https?:\/\//i.test(value) ? value : null;
+}
+function promptArcNature(entry) {
+  if (entry.type === "video" || entry.type === "\uBAA8\uC158") return "motion";
+  const tags = new Set([...promptArcArray(entry.tags), ...promptArcFlat(entry.stepTags)].map(String));
+  if (tags.has("Motion")) return "motion";
+  const haystack = [entry.title, entry.aiKeywords, ...promptArcFlat(entry.stepKeywords), ...tags].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+  if (tags.has("\uAD11\uC6D0") || /광원|이펙트|파티클|후광|오라|glow|light\s?fx|flare|particle/i.test(haystack)) return "lightfx";
+  if (tags.has("\uBC84\uD2BC") || /버튼|프레임|배지|패널|블릿|리스킨|button|frame|badge|panel/i.test(haystack)) return "object";
+  if (tags.has("\uD0C0\uC774\uD3EC") || /타이포|캘리그라피|레터링|타이틀|로고|2d|흑백|typo|lettering|calligraphy/i.test(haystack)) return "typography";
+  if (/키비주얼|key\s?visual|\bkv\b|일러스트|씬|장면|배경|풍경|illustration|scene/i.test(haystack)) return "kv";
+  if (tags.has("visualFX")) return "lightfx";
+  return "other";
+}
+function promptArcIsPublic(entry) {
+  if (entry.trashed) return false;
+  if (entry.visibility === "private") return false;
+  if (entry.visibility === "public") return true;
+  return !entry.ownerUid && !entry.temporary;
+}
+function nexusLibraryEntryReadable(entry) {
+  if (!entry || entry.trashed) return false;
+  if (promptArcIsPublic(entry)) return true;
+  const uid = readNexusAuth()?.uid;
+  return !!uid && (entry.ownerUid === uid || entry.authorId === uid);
+}
+function promptArcSummary(entry) {
+  const images = promptArcArray(entry.images).map(promptArcSafeUrl).filter(Boolean);
+  const videos = promptArcArray(entry.videos).map(promptArcSafeUrl).filter(Boolean);
+  const thumbnailUrl = promptArcSafeUrl(entry.thumbnail) || images[0] || promptArcSafeUrl(entry.image) || null;
+  return {
+    id: entry.id,
+    title: entry.title || "\uC81C\uBAA9 \uC5C6\uC74C",
+    tags: promptArcArray(entry.tags).map(String),
+    keywords: entry.aiKeywords || promptArcFlat(entry.stepKeywords).join(", ") || null,
+    description: entry.description || null,
+    nature: promptArcNature(entry),
+    type: entry.type || null,
+    thumbnailUrl,
+    imageCount: images.length,
+    videoCount: videos.length,
+    model: entry.optimizedModel || null,
+    isPinned: !!entry.isPinned,
+    isLive: !!entry.isLive,
+    views: Number(entry.views || 0),
+    likeCount: Number(entry.likeCount || 0),
+    createdAt: entry.createdAt || null,
+    updatedAt: entry.updatedAt || null
+  };
+}
+async function firestoreRequest(documentPath, params = {}) {
+  const { projectId, apiKey } = firebaseConfig();
+  if (!projectId || !apiKey) throw new Error(".env\uC5D0 VITE_FIREBASE_PROJECT_ID / VITE_FIREBASE_API_KEY\uAC00 \uD544\uC694\uD569\uB2C8\uB2E4.");
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
+  const url = new URL(`${base}/${documentPath}`);
+  url.searchParams.set("key", apiKey);
+  for (const [key, value] of Object.entries(params)) if (value != null && value !== "") url.searchParams.set(key, String(value));
+  const auth = await currentNexusAuth().catch(() => null);
+  const headers = { Accept: "application/json" };
+  if (auth?.idToken) headers.Authorization = `Bearer ${auth.idToken}`;
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(15e3) });
+  if (!response.ok) {
+    const body = await response.text();
+    let message = body;
+    try {
+      message = JSON.parse(body)?.error?.message || body;
+    } catch {
+    }
+    throw new Error(`Firestore ${response.status}: ${message}`);
+  }
+  return response.json();
+}
 function normalizedTitleText(value) {
   return String(value || "").replace(/\r\n/g, "\n").trim();
 }
@@ -2225,6 +2535,18 @@ server.registerTool("nexus_guide", {
    \xB7 nexus_remove_background     \u2014 \uB2E8\uC0C9 \uBC30\uACBD(\uBE14\uB799/\uD06C\uB85C\uB9C8) \uD0A4\uC789 \u2192 \uD22C\uBA85 PNG
    \xB7 nexus_split_character_effect \u2014 \uCE90\uB9AD\uD130/\uBC1C\uAD11 \uC774\uD399\uD2B8 \uBD84\uB9AC (\uC2A4\uD06C\uB9B0 \uBE14\uB80C\uB4DC \uB808\uC774\uC5B4)
 5) nexus_design_rubric \u2014 \uACB0\uACFC\uBB3C \uD3C9\uAC00\uC6A9 \uB514\uC790\uC778 \uB8E8\uBE0C\uB9AD
+6) Banner Codex \uB77C\uC774\uBE0C\uB7EC\uB9AC:
+   \xB7 nexus_banner_codex_list \u2014 \uC800\uC7A5 \uBC30\uB108 \uBAA9\uB85D\xB7\uAC80\uC0C9\xB7\uD544\uD130
+   \xB7 nexus_banner_codex_get  \u2014 \uBC30\uB108 1\uAC74 \uC0C1\uC138 \uBA54\uD0C0\uB370\uC774\uD130
+7) Brand Web \uB77C\uC774\uBE0C\uB7EC\uB9AC:
+   \xB7 nexus_brand_web_library_list \u2014 \uBE0C\uB79C\uB4DC\uC6F9 \uBAA9\uB85D\xB7\uAC80\uC0C9\xB7\uD544\uD130
+   \xB7 nexus_brand_web_library_get  \u2014 \uBE0C\uB79C\uB4DC\uC6F9 1\uAC74\uACFC \uC804\uCCB4 \uD398\uC774\uC9C0 \uC0C1\uC138
+8) Promotion \uB77C\uC774\uBE0C\uB7EC\uB9AC:
+   \xB7 nexus_promotion_library_list \u2014 \uD504\uB85C\uBAA8\uC158 \uBAA9\uB85D\xB7\uAC80\uC0C9\xB7\uC810\uC218 \uD544\uD130
+   \xB7 nexus_promotion_library_get  \u2014 \uD504\uB85C\uBAA8\uC158 1\uAC74\uACFC PC/\uBAA8\uBC14\uC77C\xB7\uD3C9\uAC00 \uC0C1\uC138
+9) Prompt Arc \uB77C\uC774\uBE0C\uB7EC\uB9AC:
+   \xB7 nexus_prompt_arc_list \u2014 \uACF5\uAC1C \uD504\uB86C\uD504\uD2B8\xB7\uD0C0\uC774\uD3EC\xB7\uC774\uBBF8\uC9C0 \uAC80\uC0C9
+   \xB7 nexus_prompt_arc_get  \u2014 \uD504\uB86C\uD504\uD2B8 \uB2E8\uACC4\xB7\uC774\uBBF8\uC9C0\xB7\uC5F0\uAD00 \uD56D\uBAA9 \uC0C1\uC138
 
 \u25A0 \uADDC\uC57D
 - \uC544\uC774\uD15C \uAFB8\uB7EC\uBBF8 \uB80C\uB354\uB294 \uCC38\uC870\uB97C "\uC544\uC774\uD15C 1\uAC1C = \uC774\uBBF8\uC9C0 1\uC7A5" \uC73C\uB85C \uCCA8\uBD80\uD574\uC57C \uC911\uBCF5\uC774 \uC548 \uC0DD\uAE41\uB2C8\uB2E4 (itemCount = \uCC38\uC870 \uC218).
@@ -2750,6 +3072,428 @@ server.registerTool("nexus_design_rubric", {
   }
   return data({ markdown: md }, md);
 });
+server.registerTool("nexus_banner_codex_list", {
+  title: "Banner Codex \uBC30\uB108 \uBAA9\uB85D",
+  description: "NEXUS Studio Banner Codex\uC5D0 \uC800\uC7A5\uB41C \uBC30\uB108\uB97C \uC77D\uAE30 \uC804\uC6A9\uC73C\uB85C \uC870\uD68C\uD569\uB2C8\uB2E4. \uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uAC8C\uC784\xB7\uC5F0\uB3C4\xB7\uC810\uC218 \uD544\uD130\uC640 \uD398\uC774\uC9C0 \uD1A0\uD070\uC744 \uC9C0\uC6D0\uD569\uB2C8\uB2E4.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("\uD55C \uBC88\uC5D0 \uAC00\uC838\uC62C Firestore \uBB38\uC11C \uC218 (\uCD5C\uB300 100)"),
+    pageToken: z.string().optional().describe("\uC774\uC804 \uC751\uB2F5\uC758 nextPageToken \u2014 \uB2E4\uC74C \uD398\uC774\uC9C0 \uC870\uD68C \uC2DC \uC804\uB2EC"),
+    query: z.string().optional().describe("\uC81C\uBAA9\xB7\uC6D0\uBCF8 \uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uCE90\uB9AD\uD130\xB7\uACBD\uB85C\uC5D0\uC11C \uCC3E\uC744 \uAC80\uC0C9\uC5B4"),
+    game: z.string().optional().describe("\uAC8C\uC784\uBA85 \uC815\uD655 \uC77C\uCE58 \uD544\uD130"),
+    year: z.union([z.string(), z.number()]).optional().describe("\uC5F0\uB3C4 \uD544\uD130"),
+    minScore: z.number().min(0).max(100).optional().describe("\uCD5C\uC18C \uD3C9\uAC00 \uC810\uC218"),
+    sort: z.enum(["newest", "oldest", "score"]).default("newest").describe("\uD604\uC7AC \uD398\uC774\uC9C0 \uACB0\uACFC \uC815\uB82C")
+  },
+  outputSchema: {
+    banners: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable()
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/banners`, {
+      pageSize: a.pageSize,
+      pageToken: a.pageToken,
+      showMissing: false
+    });
+    const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const filtered = decoded.filter((banner) => {
+      if (a.game && String(banner.game || "") !== a.game) return false;
+      if (a.year != null && String(banner.year || "") !== String(a.year)) return false;
+      if (a.minScore != null && Number(banner.score || 0) < a.minScore) return false;
+      if (needle) {
+        const haystack = [banner.title, banner.originalTitle, banner.character, banner.path, ...Array.isArray(banner.tags) ? banner.tags : []].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+        if (!haystack.includes(needle)) return false;
+      }
+      return true;
+    });
+    filtered.sort((x, y) => a.sort === "score" ? Number(y.score || 0) - Number(x.score || 0) : a.sort === "oldest" ? bannerTimestamp(x.createdAt) - bannerTimestamp(y.createdAt) : bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt));
+    const banners = filtered.map(bannerSummary);
+    const result = { banners, returned: banners.length, scanned: decoded.length, nextPageToken: payload.nextPageToken || null };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Banner Codex \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${e.message}`);
+  }
+});
+server.registerTool("nexus_banner_codex_get", {
+  title: "Banner Codex \uBC30\uB108 \uC0C1\uC138",
+  description: "NEXUS Studio Banner Codex\uC758 \uBC30\uB108 ID\uB85C \uC0C1\uC138 \uBA54\uD0C0\uB370\uC774\uD130\uC640 \uC774\uBBF8\uC9C0 URL\uC744 \uC77D\uAE30 \uC804\uC6A9 \uC870\uD68C\uD569\uB2C8\uB2E4.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_banner_codex_list\uAC00 \uBC18\uD658\uD55C \uBC30\uB108 \uBB38\uC11C ID")
+  },
+  outputSchema: {
+    banner: z.record(z.string(), z.any())
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/banners/${encodeURIComponent(a.id)}`);
+    const banner = decodeFirestoreDocument(payload);
+    return data({ banner }, JSON.stringify(banner, null, 2));
+  } catch (e) {
+    return errText(`Banner Codex \uC0C1\uC138 \uC870\uD68C \uC2E4\uD328 (${a.id}): ${e.message}`);
+  }
+});
+server.registerTool("nexus_prompt_arc_list", {
+  title: "Prompt Arc \uACF5\uAC1C \uB77C\uC774\uBE0C\uB7EC\uB9AC \uBAA9\uB85D",
+  description: "NEXUS Studio Prompt Arc\uC758 \uACF5\uAC1C \uD504\uB86C\uD504\uD2B8\uC640 \uD0C0\uC774\uD3EC\xB7\uC624\uBE0C\uC81D\uD2B8\xB7\uAD11\uC6D0\xB7\uBAA8\uC158 \uC0D8\uD50C\uC744 \uC77D\uAE30 \uC804\uC6A9\uC73C\uB85C \uAC80\uC0C9\uD569\uB2C8\uB2E4. \uBE44\uACF5\uAC1C\xB7\uD734\uC9C0\uD1B5 \uD56D\uBAA9\uC740 \uBC18\uD658\uD558\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("\uBC18\uD658\uD560 \uD56D\uBAA9 \uC218 (\uCD5C\uB300 100)"),
+    pageToken: z.string().optional().describe("\uC774\uC804 \uC751\uB2F5\uC758 nextPageToken \u2014 \uB2E4\uC74C \uD398\uC774\uC9C0 \uC870\uD68C \uC2DC \uC804\uB2EC"),
+    query: z.string().optional().describe("\uC81C\uBAA9\xB7\uC124\uBA85\xB7\uD0DC\uADF8\xB7AI \uD0A4\uC6CC\uB4DC\xB7\uD504\uB86C\uD504\uD2B8\uC5D0\uC11C \uCC3E\uC744 \uAC80\uC0C9\uC5B4"),
+    category: z.enum(["\uD0C0\uC774\uD3EC", "\uBC84\uD2BC", "visualFX", "Motion", "\uAE30\uD0C0"]).optional().describe("Prompt Arc \uCE74\uD14C\uACE0\uB9AC"),
+    nature: z.enum(["typography", "object", "lightfx", "motion", "kv", "other"]).optional().describe("\uC774\uBBF8\uC9C0 \uC131\uACA9 \uD544\uD130"),
+    style: z.enum(["2d_bw", "3d_render", "calligraphy"]).optional().describe("\uD0C0\uC774\uD3EC \uC2A4\uD0C0\uC77C: 2D/\uD751\uBC31\xB73D/\uB80C\uB354\uB9C1\xB7\uCE98\uB9AC\uADF8\uB77C\uD53C"),
+    theme: z.enum(["rpg_fantasy", "casual_cartoon", "sf_cyberpunk"]).optional().describe("\uD14C\uB9C8: RPG/\uD310\uD0C0\uC9C0\xB7\uCE90\uC8FC\uC5BC/\uCE74\uD230\xB7SF/\uC0AC\uC774\uBC84\uD391\uD06C"),
+    sort: z.enum(["newest", "oldest", "popular", "views"]).default("newest").describe("\uC870\uD68C \uACB0\uACFC \uC815\uB82C")
+  },
+  outputSchema: {
+    prompts: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable()
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const styleTerms = {
+      "2d_bw": ["2d/\uD751\uBC31", "2d", "\uD751\uBC31"],
+      "3d_render": ["3d/\uB80C\uB354\uB9C1", "3d", "\uB80C\uB354\uB9C1"],
+      calligraphy: ["\uCE98\uB9AC\uADF8\uB77C\uD53C", "calligraphy"]
+    };
+    const themeTerms = {
+      rpg_fantasy: ["rpg", "\uD310\uD0C0\uC9C0"],
+      casual_cartoon: ["\uCE90\uC8FC\uC5BC", "\uCE74\uD230"],
+      sf_cyberpunk: ["sf", "\uC0AC\uC774\uBC84\uD391\uD06C"]
+    };
+    const matches = [];
+    let scanned = 0;
+    let token = a.pageToken;
+    let rounds = 0;
+    do {
+      const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/prompts`, {
+        pageSize: 100,
+        pageToken: token,
+        showMissing: false
+      });
+      const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+      scanned += decoded.length;
+      for (const entry of decoded) {
+        if (!nexusLibraryEntryReadable(entry)) continue;
+        const tags = [...promptArcArray(entry.tags), ...promptArcFlat(entry.stepTags)].map(String);
+        if (a.category && !tags.includes(a.category)) continue;
+        const nature = promptArcNature(entry);
+        if (a.nature && nature !== a.nature) continue;
+        const promptText = [entry.content, entry.text, ...promptArcFlat(entry.stepPrompts)].filter(Boolean).join(" ");
+        const keywordText = [entry.aiKeywords, ...promptArcFlat(entry.stepKeywords)].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+        if (a.style && !styleTerms[a.style].some((term) => keywordText.includes(term))) continue;
+        if (a.theme && !themeTerms[a.theme].some((term) => keywordText.includes(term))) continue;
+        if (needle) {
+          const haystack = [entry.title, entry.description, entry.aiKeywords, promptText, ...tags].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+          if (!haystack.includes(needle)) continue;
+        }
+        matches.push(entry);
+      }
+      token = payload.nextPageToken || null;
+      rounds++;
+    } while (token && rounds < 20);
+    matches.sort((x, y) => {
+      if (a.sort === "popular") return Number(y.likeCount || 0) - Number(x.likeCount || 0) || bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt);
+      if (a.sort === "views") return Number(y.views || 0) - Number(x.views || 0) || bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt);
+      return a.sort === "oldest" ? bannerTimestamp(x.createdAt) - bannerTimestamp(y.createdAt) : bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt);
+    });
+    const prompts = matches.slice(0, a.pageSize).map(promptArcSummary);
+    const result = { prompts, returned: prompts.length, scanned, nextPageToken: token };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Prompt Arc \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${e.message}`);
+  }
+});
+server.registerTool("nexus_prompt_arc_get", {
+  title: "Prompt Arc \uACF5\uAC1C \uD56D\uBAA9 \uC0C1\uC138",
+  description: "Prompt Arc \uACF5\uAC1C \uD56D\uBAA9\uC758 \uD504\uB86C\uD504\uD2B8 \uB2E8\uACC4, \uC774\uBBF8\uC9C0\xB7\uC601\uC0C1 URL, \uD0DC\uADF8, \uD0A4\uC6CC\uB4DC\uC640 \uC5F0\uAD00 \uD56D\uBAA9 ID\uB97C \uC77D\uAE30 \uC804\uC6A9 \uC870\uD68C\uD569\uB2C8\uB2E4.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_prompt_arc_list\uAC00 \uBC18\uD658\uD55C \uBB38\uC11C ID")
+  },
+  outputSchema: {
+    prompt: z.record(z.string(), z.any())
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/prompts/${encodeURIComponent(a.id)}`);
+    const raw = decodeFirestoreDocument(payload);
+    if (!nexusLibraryEntryReadable(raw)) throw new Error("\uD604\uC7AC \uC5F0\uACB0\uB41C Nexus \uACC4\uC815\uC73C\uB85C \uC811\uADFC\uD560 \uC218 \uC5C6\uB294 \uD56D\uBAA9\uC785\uB2C8\uB2E4.");
+    const images = promptArcArray(raw.images).map(promptArcSafeUrl).filter(Boolean);
+    const fallbackImage = promptArcSafeUrl(raw.image);
+    if (fallbackImage && !images.includes(fallbackImage)) images.push(fallbackImage);
+    const prompt = {
+      ...promptArcSummary(raw),
+      content: raw.content || raw.text || null,
+      images,
+      videos: promptArcArray(raw.videos).map(promptArcSafeUrl).filter(Boolean),
+      videoPosterUrl: promptArcSafeUrl(raw.videoPoster),
+      stepPrompts: promptArcArray(raw.stepPrompts).map(String),
+      stepLabels: promptArcArray(raw.stepLabels).map(String),
+      stepTags: promptArcArray(raw.stepTags),
+      stepKeywords: promptArcArray(raw.stepKeywords),
+      stepDescriptions: promptArcArray(raw.stepDescriptions),
+      relatedIds: promptArcArray(raw.relatedIds).map(String),
+      analysisStatus: raw.analysisStatus || null
+    };
+    return data({ prompt }, JSON.stringify(prompt, null, 2));
+  } catch (e) {
+    return errText(`Prompt Arc \uC0C1\uC138 \uC870\uD68C \uC2E4\uD328 (${a.id}): ${e.message}`);
+  }
+});
+server.registerTool("nexus_promotion_library_list", {
+  title: "Promotion \uB77C\uC774\uBE0C\uB7EC\uB9AC \uBAA9\uB85D",
+  description: "NEXUS Studio Promotion Library\uC758 \uD504\uB85C\uBAA8\uC158\uC744 \uC77D\uAE30 \uC804\uC6A9\uC73C\uB85C \uC870\uD68C\uD569\uB2C8\uB2E4. \uBE0C\uB79C\uB4DC\uC6F9\uC740 \uC81C\uC678\uD558\uBA70 \uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uAC8C\uC784\xB7\uC5F0\uB3C4\xB7\uD3C9\uAC00\uC810\uC218 \uAC80\uC0C9\uACFC \uD398\uC774\uC9C0 \uD1A0\uD070\uC744 \uC9C0\uC6D0\uD569\uB2C8\uB2E4.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("\uBC18\uD658\uD560 \uD504\uB85C\uBAA8\uC158 \uC218 (\uCD5C\uB300 100)"),
+    pageToken: z.string().optional().describe("\uC774\uC804 \uC751\uB2F5\uC758 nextPageToken \u2014 \uB2E4\uC74C \uD398\uC774\uC9C0 \uC870\uD68C \uC2DC \uC804\uB2EC"),
+    query: z.string().optional().describe("\uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uC694\uC57D\xB7\uACBD\uB85C\uC5D0\uC11C \uCC3E\uC744 \uAC80\uC0C9\uC5B4"),
+    game: z.string().optional().describe("\uAC8C\uC784\uBA85 \uC815\uD655 \uC77C\uCE58 \uD544\uD130"),
+    year: z.union([z.string(), z.number()]).optional().describe("\uC5F0\uB3C4 \uD544\uD130"),
+    minScore: z.number().min(0).max(10).optional().describe("\uCD5C\uC18C \uD3C9\uAC00\uC810\uC218 (10\uC810 \uB9CC\uC810)"),
+    sort: z.enum(["newest", "oldest", "score", "liked"]).default("newest").describe("\uC870\uD68C \uACB0\uACFC \uC815\uB82C")
+  },
+  outputSchema: {
+    promotions: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable()
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const matches = [];
+    let scanned = 0;
+    let token = a.pageToken;
+    let rounds = 0;
+    do {
+      const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners`, {
+        pageSize: 100,
+        pageToken: token,
+        showMissing: false
+      });
+      const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+      scanned += decoded.length;
+      for (const entry of decoded) {
+        if (String(entry.assetType || "") === "\uBE0C\uB79C\uB4DC\uC6F9") continue;
+        if (!nexusLibraryEntryReadable(entry)) continue;
+        if (a.game && String(entry.game || "") !== a.game) continue;
+        if (a.year != null && String(entry.year || "") !== String(a.year)) continue;
+        const score = promotionScore(entry);
+        if (a.minScore != null && (score == null || score < a.minScore)) continue;
+        if (needle) {
+          const haystack = [
+            entry.title,
+            entry.summary,
+            entry.description,
+            entry.path,
+            entry.game,
+            ...Array.isArray(entry.tags) ? entry.tags : []
+          ].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+          if (!haystack.includes(needle)) continue;
+        }
+        matches.push(entry);
+      }
+      token = payload.nextPageToken || null;
+      rounds++;
+    } while (token && rounds < 10);
+    matches.sort((x, y) => {
+      if (a.sort === "score") return (promotionScore(y) ?? -1) - (promotionScore(x) ?? -1) || bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt);
+      if (a.sort === "liked") return Number(y.liked || 0) - Number(x.liked || 0) || bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt);
+      return a.sort === "oldest" ? bannerTimestamp(x.created_at || x.createdAt) - bannerTimestamp(y.created_at || y.createdAt) : bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt);
+    });
+    const promotions = matches.slice(0, a.pageSize).map(promotionSummary);
+    const result = { promotions, returned: promotions.length, scanned, nextPageToken: token };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Promotion Library \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${e.message}`);
+  }
+});
+server.registerTool("nexus_promotion_library_get", {
+  title: "Promotion \uB77C\uC774\uBE0C\uB7EC\uB9AC \uC0C1\uC138",
+  description: "NEXUS Studio Promotion Library \uD56D\uBAA9\uC758 PC\xB7\uBAA8\uBC14\uC77C \uC774\uBBF8\uC9C0\uC640 \uD3C9\uAC00\uC810\uC218\xB7\uD56D\uBAA9\uBCC4 \uC0AC\uC720\uB97C \uC77D\uAE30 \uC804\uC6A9 \uC870\uD68C\uD569\uB2C8\uB2E4.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_promotion_library_list\uAC00 \uBC18\uD658\uD55C \uBB38\uC11C ID")
+  },
+  outputSchema: {
+    promotion: z.record(z.string(), z.any())
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners/${encodeURIComponent(a.id)}`);
+    const raw = decodeFirestoreDocument(payload);
+    if (String(raw.assetType || "") === "\uBE0C\uB79C\uB4DC\uC6F9") throw new Error("\uBE0C\uB79C\uB4DC\uC6F9 \uD56D\uBAA9\uC785\uB2C8\uB2E4. nexus_brand_web_library_get\uC744 \uC0AC\uC6A9\uD558\uC138\uC694.");
+    if (!nexusLibraryEntryReadable(raw)) throw new Error("\uD604\uC7AC \uC5F0\uACB0\uB41C Nexus \uACC4\uC815\uC73C\uB85C \uC811\uADFC\uD560 \uC218 \uC5C6\uB294 \uD56D\uBAA9\uC785\uB2C8\uB2E4.");
+    const webScores = raw.webScores && typeof raw.webScores === "object" ? raw.webScores : {};
+    const criteria = Object.fromEntries(Object.entries(webScores).map(([key, value]) => [key, {
+      score: Number.isFinite(Number(value?.score)) ? Number(value.score) : null,
+      reason: value?.reason || null
+    }]));
+    const promotion = {
+      ...promotionSummary(raw),
+      path: raw.path || null,
+      originalTitle: raw.originalTitle || null,
+      purpose: raw.purpose || null,
+      evaluationType: raw.evaluationType || raw.webEvalType || null,
+      criteria
+    };
+    return data({ promotion }, JSON.stringify(promotion, null, 2));
+  } catch (e) {
+    return errText(`Promotion Library \uC0C1\uC138 \uC870\uD68C \uC2E4\uD328 (${a.id}): ${e.message}`);
+  }
+});
+server.registerTool("nexus_brand_web_library_list", {
+  title: "Brand Web \uB77C\uC774\uBE0C\uB7EC\uB9AC \uBAA9\uB85D",
+  description: "NEXUS Studio Brand Web Library\uC5D0 \uB4F1\uB85D\uB41C \uACF5\uAC1C \uBE0C\uB79C\uB4DC\uC6F9\uC744 \uC77D\uAE30 \uC804\uC6A9\uC73C\uB85C \uC870\uD68C\uD569\uB2C8\uB2E4. \uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uAC8C\uC784\xB7\uC5F0\uB3C4\xB7\uB514\uBC14\uC774\uC2A4 \uAC80\uC0C9\uACFC \uD398\uC774\uC9C0 \uD1A0\uD070\uC744 \uC9C0\uC6D0\uD569\uB2C8\uB2E4.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("\uBC18\uD658\uD560 \uBE0C\uB79C\uB4DC\uC6F9 \uC218 (\uCD5C\uB300 100)"),
+    pageToken: z.string().optional().describe("\uC774\uC804 \uC751\uB2F5\uC758 nextPageToken \u2014 \uB2E4\uC74C \uD398\uC774\uC9C0 \uC870\uD68C \uC2DC \uC804\uB2EC"),
+    query: z.string().optional().describe("\uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uC124\uBA85\xB7\uD398\uC774\uC9C0\uBA85\uC5D0\uC11C \uCC3E\uC744 \uAC80\uC0C9\uC5B4"),
+    game: z.string().optional().describe("\uAC8C\uC784\uBA85 \uC815\uD655 \uC77C\uCE58 \uD544\uD130"),
+    year: z.union([z.string(), z.number()]).optional().describe("\uC5F0\uB3C4 \uD544\uD130"),
+    device: z.enum(["pc", "mobile"]).optional().describe("\uD574\uB2F9 \uB514\uBC14\uC774\uC2A4 \uD398\uC774\uC9C0\uAC00 \uC788\uB294 \uD56D\uBAA9\uB9CC \uC870\uD68C"),
+    sort: z.enum(["newest", "oldest", "liked"]).default("newest").describe("\uC870\uD68C \uACB0\uACFC \uC815\uB82C")
+  },
+  outputSchema: {
+    entries: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable()
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const matches = [];
+    let scanned = 0;
+    let token = a.pageToken;
+    let rounds = 0;
+    do {
+      const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners`, {
+        pageSize: 100,
+        pageToken: token,
+        showMissing: false
+      });
+      const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+      scanned += decoded.length;
+      for (const entry of decoded) {
+        if (String(entry.assetType || "") !== "\uBE0C\uB79C\uB4DC\uC6F9") continue;
+        if (!nexusLibraryEntryReadable(entry)) continue;
+        if (a.game && String(entry.game || "") !== a.game) continue;
+        if (a.year != null && String(entry.year || "") !== String(a.year)) continue;
+        const pages = Array.isArray(entry.pages) ? entry.pages : [];
+        if (a.device && !pages.some((page) => page?.device === a.device)) continue;
+        if (needle) {
+          const haystack = [
+            entry.title,
+            entry.sourceProjectName,
+            entry.sourceDescription,
+            entry.game,
+            ...Array.isArray(entry.tags) ? entry.tags : [],
+            ...pages.map((page) => page?.name)
+          ].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+          if (!haystack.includes(needle)) continue;
+        }
+        matches.push(entry);
+        if (matches.length >= a.pageSize) break;
+      }
+      token = payload.nextPageToken || null;
+      rounds++;
+    } while (matches.length < a.pageSize && token && rounds < 10);
+    matches.sort((x, y) => a.sort === "liked" ? Number(y.liked || 0) - Number(x.liked || 0) : a.sort === "oldest" ? bannerTimestamp(x.created_at || x.createdAt) - bannerTimestamp(y.created_at || y.createdAt) : bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt));
+    const entries = matches.slice(0, a.pageSize).map(brandWebSummary);
+    const result = { entries, returned: entries.length, scanned, nextPageToken: token };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Brand Web Library \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${e.message}`);
+  }
+});
+server.registerTool("nexus_brand_web_library_get", {
+  title: "Brand Web \uB77C\uC774\uBE0C\uB7EC\uB9AC \uC0C1\uC138",
+  description: "NEXUS Studio Brand Web Library \uD56D\uBAA9\uC758 \uBA54\uD0C0\uB370\uC774\uD130\uC640 PC\xB7\uBAA8\uBC14\uC77C \uC804\uCCB4 \uD398\uC774\uC9C0 \uC774\uBBF8\uC9C0 URL\uC744 \uC77D\uAE30 \uC804\uC6A9 \uC870\uD68C\uD569\uB2C8\uB2E4.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_brand_web_library_list\uAC00 \uBC18\uD658\uD55C \uBB38\uC11C ID")
+  },
+  outputSchema: {
+    entry: z.record(z.string(), z.any())
+  },
+  annotations: READ_REMOTE
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners/${encodeURIComponent(a.id)}`);
+    const raw = decodeFirestoreDocument(payload);
+    if (String(raw.assetType || "") !== "\uBE0C\uB79C\uB4DC\uC6F9") throw new Error("\uBE0C\uB79C\uB4DC\uC6F9 \uD56D\uBAA9\uC774 \uC544\uB2D9\uB2C8\uB2E4.");
+    if (!nexusLibraryEntryReadable(raw)) throw new Error("\uD604\uC7AC \uC5F0\uACB0\uB41C Nexus \uACC4\uC815\uC73C\uB85C \uC811\uADFC\uD560 \uC218 \uC5C6\uB294 \uD56D\uBAA9\uC785\uB2C8\uB2E4.");
+    const pages = (Array.isArray(raw.pages) ? raw.pages : []).map((page, index) => ({
+      id: page?.id || null,
+      name: page?.name || `page_${index + 1}`,
+      device: page?.device || null,
+      url: page?.url || null,
+      order: Number.isFinite(Number(page?.order)) ? Number(page.order) : index,
+      confirmedAt: page?.confirmedAt || null,
+      noteCount: Number(page?.noteCount || 0)
+    }));
+    const entry = { ...brandWebSummary(raw), pages };
+    return data({ entry }, JSON.stringify(entry, null, 2));
+  } catch (e) {
+    return errText(`Brand Web Library \uC0C1\uC138 \uC870\uD68C \uC2E4\uD328 (${a.id}): ${e.message}`);
+  }
+});
+server.registerTool("nexus_account_status", {
+  title: "Nexus \uACC4\uC815 \uC5F0\uACB0 \uC0C1\uD0DC",
+  description: "Codex MCP\uC5D0 \uC5F0\uACB0\uB41C Nexus \uACC4\uC815\uACFC \uC790\uB3D9 \uD1A0\uD070 \uAC31\uC2E0 \uC0C1\uD0DC\uB97C \uD655\uC778\uD569\uB2C8\uB2E4.",
+  inputSchema: {},
+  outputSchema: {
+    connected: z.boolean(),
+    uid: z.string().nullable(),
+    email: z.string().nullable(),
+    expiresAt: z.number().nullable()
+  },
+  annotations: PURE
+}, async () => {
+  const auth = await currentNexusAuth().catch(() => null);
+  const result = {
+    connected: !!auth?.refreshToken,
+    uid: auth?.uid || null,
+    email: auth?.email || null,
+    expiresAt: auth?.expiresAt || null
+  };
+  return data(result, JSON.stringify(result, null, 2));
+});
+server.registerTool("nexus_account_disconnect", {
+  title: "Nexus \uACC4\uC815 \uC5F0\uACB0 \uD574\uC81C",
+  description: "Codex MCP\uC5D0 \uC800\uC7A5\uB41C Nexus \uC0AC\uC6A9\uC790 \uC138\uC158\uB9CC \uC81C\uAC70\uD569\uB2C8\uB2E4. Nexus Studio \uC6F9 \uB85C\uADF8\uC778\uC740 \uC720\uC9C0\uB429\uB2C8\uB2E4.",
+  inputSchema: {},
+  outputSchema: { disconnected: z.boolean() },
+  annotations: RENDER
+}, async () => {
+  try {
+    fs.unlinkSync(NEXUS_AUTH_PATH);
+  } catch {
+  }
+  const result = { disconnected: true };
+  return data(result, JSON.stringify(result));
+});
+startNexusLinkBridge();
 var transport = new StdioServerTransport();
 await server.connect(transport);
 console.error("[nexus-mcp] NEXUS Studio MCP server ready (stdio)");

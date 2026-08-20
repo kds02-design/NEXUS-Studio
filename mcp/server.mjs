@@ -10,6 +10,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -52,6 +54,112 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS_DIR = path.join(ROOT, "src", "skills");
 const RUBRIC_PATH = path.join(ROOT, ".codex", "skills", "nexus-design-evaluator", "references", "rubric.md");
 const OUT_DIR = path.join(ROOT, ".tmp", "mcp-out");
+const NEXUS_AUTH_DIR = path.join(process.env.APPDATA || path.join(os.homedir(), ".config"), "NexusStudio");
+const NEXUS_AUTH_PATH = path.join(NEXUS_AUTH_DIR, "mcp-auth.json");
+const NEXUS_LINK_PORT = Number(process.env.NEXUS_MCP_LINK_PORT || 47831);
+
+function readNexusAuth() {
+  try { return JSON.parse(fs.readFileSync(NEXUS_AUTH_PATH, "utf8")); }
+  catch { return null; }
+}
+
+function writeNexusAuth(value) {
+  fs.mkdirSync(NEXUS_AUTH_DIR, { recursive: true });
+  fs.writeFileSync(NEXUS_AUTH_PATH, JSON.stringify(value, null, 2), { mode: 0o600 });
+}
+
+async function exchangeCustomToken(customToken) {
+  const { apiKey } = firebaseConfig();
+  if (!apiKey) throw new Error("Firebase API key가 없습니다.");
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: customToken, returnSecureToken: true }),
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message || "Firebase custom token 교환 실패");
+  const auth = {
+    uid: body.localId,
+    email: body.email || null,
+    idToken: body.idToken,
+    refreshToken: body.refreshToken,
+    expiresAt: Date.now() + Number(body.expiresIn || 3600) * 1000,
+    connectedAt: Date.now(),
+  };
+  writeNexusAuth(auth);
+  return auth;
+}
+
+async function currentNexusAuth() {
+  const auth = readNexusAuth();
+  if (!auth?.refreshToken) return null;
+  if (auth.idToken && Number(auth.expiresAt || 0) > Date.now() + 60000) return auth;
+  const { apiKey } = firebaseConfig();
+  const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: auth.refreshToken }),
+    signal: AbortSignal.timeout(15000),
+  });
+  const body = await response.json();
+  if (!response.ok) throw new Error(body?.error?.message || "Nexus 계정 토큰 갱신 실패");
+  const next = {
+    ...auth,
+    uid: body.user_id || auth.uid,
+    idToken: body.id_token,
+    refreshToken: body.refresh_token || auth.refreshToken,
+    expiresAt: Date.now() + Number(body.expires_in || 3600) * 1000,
+  };
+  writeNexusAuth(next);
+  return next;
+}
+
+function startNexusLinkBridge() {
+  const bridge = http.createServer(async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method === "OPTIONS") { res.writeHead(204); res.end(); return; }
+    if (req.method === "GET" && req.url === "/status") {
+      const auth = readNexusAuth();
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ connected:!!auth?.refreshToken, uid:auth?.uid || null, email:auth?.email || null }));
+      return;
+    }
+    if (req.method === "DELETE" && req.url === "/connect") {
+      try { fs.unlinkSync(NEXUS_AUTH_PATH); } catch {}
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok:true, connected:false }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/connect") {
+      let raw = "";
+      for await (const chunk of req) {
+        raw += chunk;
+        if (raw.length > 1024 * 1024) throw new Error("요청이 너무 큽니다.");
+      }
+      try {
+        const customToken = JSON.parse(raw || "{}").customToken;
+        if (!customToken) throw new Error("customToken이 없습니다.");
+        const auth = await exchangeCustomToken(customToken);
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ ok:true, connected:true, uid:auth.uid, email:auth.email }));
+      } catch (e) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok:false, error:e?.message || String(e) }));
+      }
+      return;
+    }
+    res.writeHead(404); res.end();
+  });
+  bridge.on("error", () => {});
+  bridge.listen(NEXUS_LINK_PORT, "127.0.0.1");
+}
 
 function geminiKey() {
   if (process.env.GEMINI_API_KEY) return process.env.GEMINI_API_KEY;
@@ -90,6 +198,7 @@ const data = (structuredContent, t) => ({ content: [{ type: "text", text: t }], 
 // ─── 툴 동작 힌트 (MCP annotations) ───────────────────────────────────────────
 // 클라이언트가 read-only/파괴성/멱등성/외부호출 여부를 판단하는 데 쓴다.
 const PURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };        // 순수 함수 — 프롬프트/카탈로그/루브릭
+const READ_REMOTE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };  // 외부 저장소 읽기
 const WRITE_LOCAL = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }; // 새 파일 생성 — 로컬 픽셀 툴
 const RENDER = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };       // 외부 API 호출 + 파일 생성
 
@@ -111,6 +220,209 @@ const TYPECORE_OUT = {
 
 const TYPECORE_ASPECTS = ["1:1", "16:9", "21:9"];
 const TYPECORE_LAYOUTS = ["1Line", "2Lines", "3Lines"];
+
+let _firebaseConfig = null;
+function firebaseConfig() {
+  if (_firebaseConfig) return _firebaseConfig;
+  const values = { projectId: process.env.VITE_FIREBASE_PROJECT_ID, apiKey: process.env.VITE_FIREBASE_API_KEY };
+  try {
+    const env = fs.readFileSync(path.join(ROOT, ".env"), "utf8");
+    for (const [key, field] of [["VITE_FIREBASE_PROJECT_ID", "projectId"], ["VITE_FIREBASE_API_KEY", "apiKey"]]) {
+      if (values[field]) continue;
+      const m = env.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`, "m"));
+      if (m) values[field] = m[1].replace(/^["']|["']$/g, "");
+    }
+  } catch { /* .env 없음 */ }
+  _firebaseConfig = values;
+  return values;
+}
+
+function decodeFirestoreValue(value) {
+  if (!value || typeof value !== "object") return value;
+  if ("nullValue" in value) return null;
+  if ("stringValue" in value) return value.stringValue;
+  if ("booleanValue" in value) return value.booleanValue;
+  if ("integerValue" in value) return Number(value.integerValue);
+  if ("doubleValue" in value) return Number(value.doubleValue);
+  if ("timestampValue" in value) return value.timestampValue;
+  if ("referenceValue" in value) return value.referenceValue;
+  if ("bytesValue" in value) return value.bytesValue;
+  if ("geoPointValue" in value) return value.geoPointValue;
+  if ("arrayValue" in value) return (value.arrayValue.values || []).map(decodeFirestoreValue);
+  if ("mapValue" in value) return decodeFirestoreFields(value.mapValue.fields || {});
+  return value;
+}
+
+function decodeFirestoreFields(fields) {
+  return Object.fromEntries(Object.entries(fields || {}).map(([key, value]) => [key, decodeFirestoreValue(value)]));
+}
+
+function decodeFirestoreDocument(doc) {
+  const id = String(doc?.name || "").split("/").pop();
+  return { id, ...decodeFirestoreFields(doc?.fields || {}) };
+}
+
+function bannerTimestamp(value) {
+  if (typeof value === "number") return value;
+  const parsed = Date.parse(String(value || ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function bannerSummary(banner) {
+  return {
+    id: banner.id,
+    title: banner.title || banner.originalTitle || "제목 없음",
+    game: banner.game || null,
+    year: banner.year || null,
+    date: banner.date || null,
+    character: banner.character || null,
+    score: Number.isFinite(Number(banner.score)) ? Number(banner.score) : null,
+    tags: Array.isArray(banner.tags) ? banner.tags : [],
+    imageUrl: banner.imageUrl || null,
+    thumbnailUrl: banner.thumbnailUrl || null,
+    path: banner.path || null,
+    featured: !!banner.featured,
+    liked: !!banner.liked,
+    createdAt: banner.createdAt || null,
+  };
+}
+
+function brandWebSummary(entry) {
+  const pages = Array.isArray(entry.pages) ? entry.pages : [];
+  return {
+    id: entry.id,
+    title: entry.title || entry.sourceProjectName || "브랜드 웹",
+    game: entry.game || null,
+    year: entry.year || null,
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    previewUrl: entry.preview || entry.full_image || pages[0]?.url || null,
+    desktopUrl: entry.full_image || pages.find((page) => page?.device === "pc")?.url || null,
+    mobileUrl: entry.mobile_image || pages.find((page) => page?.device === "mobile")?.url || null,
+    pageCount: Number(entry.pageCount || pages.length || 0),
+    devices: [...new Set(pages.map((page) => page?.device).filter(Boolean))],
+    description: entry.sourceDescription || null,
+    sourceProjectId: entry.sourceProjectId || null,
+    visibility: entry.visibility || "public",
+    liked: Number(entry.liked || 0),
+    createdAt: entry.created_at || entry.createdAt || null,
+  };
+}
+
+function promotionScore(entry) {
+  const raw = entry.webAiScore ?? entry.designScore;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value > 10 ? Number((value / 10).toFixed(2)) : value;
+}
+
+function promotionSummary(entry) {
+  return {
+    id: entry.id,
+    title: entry.title || "제목 없음",
+    game: entry.game || null,
+    year: entry.year || null,
+    date: entry.date || entry.date_info || null,
+    tags: Array.isArray(entry.tags) ? entry.tags : [],
+    summary: entry.summary || entry.description || null,
+    score: promotionScore(entry),
+    previewUrl: entry.preview || entry.full_image || null,
+    desktopUrl: entry.full_image || entry.preview || null,
+    mobileUrl: entry.mobile_image || null,
+    assetType: entry.assetType || "프로모션",
+    visibility: entry.visibility || "public",
+    liked: Number(entry.liked || 0),
+    createdAt: entry.created_at || entry.createdAt || null,
+  };
+}
+
+function promptArcArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+  const source = value.trim();
+  if (!source.startsWith("[") || !source.endsWith("]")) return [];
+  try { const parsed = JSON.parse(source); return Array.isArray(parsed) ? parsed : []; }
+  catch { return []; }
+}
+
+function promptArcFlat(value) {
+  return promptArcArray(value).flat(Infinity).filter((item) => typeof item === "string" && item.trim());
+}
+
+function promptArcSafeUrl(value) {
+  return typeof value === "string" && /^https?:\/\//i.test(value) ? value : null;
+}
+
+function promptArcNature(entry) {
+  if (entry.type === "video" || entry.type === "모션") return "motion";
+  const tags = new Set([...promptArcArray(entry.tags), ...promptArcFlat(entry.stepTags)].map(String));
+  if (tags.has("Motion")) return "motion";
+  const haystack = [entry.title, entry.aiKeywords, ...promptArcFlat(entry.stepKeywords), ...tags].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+  if (tags.has("광원") || /광원|이펙트|파티클|후광|오라|glow|light\s?fx|flare|particle/i.test(haystack)) return "lightfx";
+  if (tags.has("버튼") || /버튼|프레임|배지|패널|블릿|리스킨|button|frame|badge|panel/i.test(haystack)) return "object";
+  if (tags.has("타이포") || /타이포|캘리그라피|레터링|타이틀|로고|2d|흑백|typo|lettering|calligraphy/i.test(haystack)) return "typography";
+  if (/키비주얼|key\s?visual|\bkv\b|일러스트|씬|장면|배경|풍경|illustration|scene/i.test(haystack)) return "kv";
+  if (tags.has("visualFX")) return "lightfx";
+  return "other";
+}
+
+function promptArcIsPublic(entry) {
+  if (entry.trashed) return false;
+  if (entry.visibility === "private") return false;
+  if (entry.visibility === "public") return true;
+  return !entry.ownerUid && !entry.temporary;
+}
+
+function nexusLibraryEntryReadable(entry) {
+  if (!entry || entry.trashed) return false;
+  if (promptArcIsPublic(entry)) return true;
+  const uid = readNexusAuth()?.uid;
+  return !!uid && (entry.ownerUid === uid || entry.authorId === uid);
+}
+
+function promptArcSummary(entry) {
+  const images = promptArcArray(entry.images).map(promptArcSafeUrl).filter(Boolean);
+  const videos = promptArcArray(entry.videos).map(promptArcSafeUrl).filter(Boolean);
+  const thumbnailUrl = promptArcSafeUrl(entry.thumbnail) || images[0] || promptArcSafeUrl(entry.image) || null;
+  return {
+    id: entry.id,
+    title: entry.title || "제목 없음",
+    tags: promptArcArray(entry.tags).map(String),
+    keywords: entry.aiKeywords || promptArcFlat(entry.stepKeywords).join(", ") || null,
+    description: entry.description || null,
+    nature: promptArcNature(entry),
+    type: entry.type || null,
+    thumbnailUrl,
+    imageCount: images.length,
+    videoCount: videos.length,
+    model: entry.optimizedModel || null,
+    isPinned: !!entry.isPinned,
+    isLive: !!entry.isLive,
+    views: Number(entry.views || 0),
+    likeCount: Number(entry.likeCount || 0),
+    createdAt: entry.createdAt || null,
+    updatedAt: entry.updatedAt || null,
+  };
+}
+
+async function firestoreRequest(documentPath, params = {}) {
+  const { projectId, apiKey } = firebaseConfig();
+  if (!projectId || !apiKey) throw new Error(".env에 VITE_FIREBASE_PROJECT_ID / VITE_FIREBASE_API_KEY가 필요합니다.");
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
+  const url = new URL(`${base}/${documentPath}`);
+  url.searchParams.set("key", apiKey);
+  for (const [key, value] of Object.entries(params)) if (value != null && value !== "") url.searchParams.set(key, String(value));
+  const auth = await currentNexusAuth().catch(() => null);
+  const headers = { Accept: "application/json" };
+  if (auth?.idToken) headers.Authorization = `Bearer ${auth.idToken}`;
+  const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+  if (!response.ok) {
+    const body = await response.text();
+    let message = body;
+    try { message = JSON.parse(body)?.error?.message || body; } catch { /* text 응답 */ }
+    throw new Error(`Firestore ${response.status}: ${message}`);
+  }
+  return response.json();
+}
 
 function normalizedTitleText(value) {
   return String(value || "").replace(/\r\n/g, "\n").trim();
@@ -331,6 +643,18 @@ server.registerTool("nexus_guide", {
    · nexus_remove_background     — 단색 배경(블랙/크로마) 키잉 → 투명 PNG
    · nexus_split_character_effect — 캐릭터/발광 이펙트 분리 (스크린 블렌드 레이어)
 5) nexus_design_rubric — 결과물 평가용 디자인 루브릭
+6) Banner Codex 라이브러리:
+   · nexus_banner_codex_list — 저장 배너 목록·검색·필터
+   · nexus_banner_codex_get  — 배너 1건 상세 메타데이터
+7) Brand Web 라이브러리:
+   · nexus_brand_web_library_list — 브랜드웹 목록·검색·필터
+   · nexus_brand_web_library_get  — 브랜드웹 1건과 전체 페이지 상세
+8) Promotion 라이브러리:
+   · nexus_promotion_library_list — 프로모션 목록·검색·점수 필터
+   · nexus_promotion_library_get  — 프로모션 1건과 PC/모바일·평가 상세
+9) Prompt Arc 라이브러리:
+   · nexus_prompt_arc_list — 공개 프롬프트·타이포·이미지 검색
+   · nexus_prompt_arc_get  — 프롬프트 단계·이미지·연관 항목 상세
 
 ■ 규약
 - 아이템 꾸러미 렌더는 참조를 "아이템 1개 = 이미지 1장" 으로 첨부해야 중복이 안 생깁니다 (itemCount = 참조 수).
@@ -835,7 +1159,447 @@ server.registerTool("nexus_design_rubric", {
   return data({ markdown: md }, md);
 });
 
+server.registerTool("nexus_banner_codex_list", {
+  title: "Banner Codex 배너 목록",
+  description: "NEXUS Studio Banner Codex에 저장된 배너를 읽기 전용으로 조회합니다. 제목·태그·게임·연도·점수 필터와 페이지 토큰을 지원합니다.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("한 번에 가져올 Firestore 문서 수 (최대 100)"),
+    pageToken: z.string().optional().describe("이전 응답의 nextPageToken — 다음 페이지 조회 시 전달"),
+    query: z.string().optional().describe("제목·원본 제목·태그·캐릭터·경로에서 찾을 검색어"),
+    game: z.string().optional().describe("게임명 정확 일치 필터"),
+    year: z.union([z.string(), z.number()]).optional().describe("연도 필터"),
+    minScore: z.number().min(0).max(100).optional().describe("최소 평가 점수"),
+    sort: z.enum(["newest", "oldest", "score"]).default("newest").describe("현재 페이지 결과 정렬"),
+  },
+  outputSchema: {
+    banners: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable(),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/banners`, {
+      pageSize: a.pageSize,
+      pageToken: a.pageToken,
+      showMissing: false,
+    });
+    const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const filtered = decoded.filter((banner) => {
+      if (a.game && String(banner.game || "") !== a.game) return false;
+      if (a.year != null && String(banner.year || "") !== String(a.year)) return false;
+      if (a.minScore != null && Number(banner.score || 0) < a.minScore) return false;
+      if (needle) {
+        const haystack = [banner.title, banner.originalTitle, banner.character, banner.path, ...(Array.isArray(banner.tags) ? banner.tags : [])]
+          .filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+        if (!haystack.includes(needle)) return false;
+      }
+      return true;
+    });
+    filtered.sort((x, y) => a.sort === "score"
+      ? Number(y.score || 0) - Number(x.score || 0)
+      : a.sort === "oldest"
+        ? bannerTimestamp(x.createdAt) - bannerTimestamp(y.createdAt)
+        : bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt));
+    const banners = filtered.map(bannerSummary);
+    const result = { banners, returned: banners.length, scanned: decoded.length, nextPageToken: payload.nextPageToken || null };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Banner Codex 목록 조회 실패: ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_banner_codex_get", {
+  title: "Banner Codex 배너 상세",
+  description: "NEXUS Studio Banner Codex의 배너 ID로 상세 메타데이터와 이미지 URL을 읽기 전용 조회합니다.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_banner_codex_list가 반환한 배너 문서 ID"),
+  },
+  outputSchema: {
+    banner: z.record(z.string(), z.any()),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/banners/${encodeURIComponent(a.id)}`);
+    const banner = decodeFirestoreDocument(payload);
+    return data({ banner }, JSON.stringify(banner, null, 2));
+  } catch (e) {
+    return errText(`Banner Codex 상세 조회 실패 (${a.id}): ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_prompt_arc_list", {
+  title: "Prompt Arc 공개 라이브러리 목록",
+  description: "NEXUS Studio Prompt Arc의 공개 프롬프트와 타이포·오브젝트·광원·모션 샘플을 읽기 전용으로 검색합니다. 비공개·휴지통 항목은 반환하지 않습니다.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("반환할 항목 수 (최대 100)"),
+    pageToken: z.string().optional().describe("이전 응답의 nextPageToken — 다음 페이지 조회 시 전달"),
+    query: z.string().optional().describe("제목·설명·태그·AI 키워드·프롬프트에서 찾을 검색어"),
+    category: z.enum(["타이포", "버튼", "visualFX", "Motion", "기타"]).optional().describe("Prompt Arc 카테고리"),
+    nature: z.enum(["typography", "object", "lightfx", "motion", "kv", "other"]).optional().describe("이미지 성격 필터"),
+    style: z.enum(["2d_bw", "3d_render", "calligraphy"]).optional().describe("타이포 스타일: 2D/흑백·3D/렌더링·캘리그라피"),
+    theme: z.enum(["rpg_fantasy", "casual_cartoon", "sf_cyberpunk"]).optional().describe("테마: RPG/판타지·캐주얼/카툰·SF/사이버펑크"),
+    sort: z.enum(["newest", "oldest", "popular", "views"]).default("newest").describe("조회 결과 정렬"),
+  },
+  outputSchema: {
+    prompts: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable(),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const styleTerms = {
+      "2d_bw": ["2d/흑백", "2d", "흑백"],
+      "3d_render": ["3d/렌더링", "3d", "렌더링"],
+      calligraphy: ["캘리그라피", "calligraphy"],
+    };
+    const themeTerms = {
+      rpg_fantasy: ["rpg", "판타지"],
+      casual_cartoon: ["캐주얼", "카툰"],
+      sf_cyberpunk: ["sf", "사이버펑크"],
+    };
+    const matches = [];
+    let scanned = 0;
+    let token = a.pageToken;
+    let rounds = 0;
+    do {
+      const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/prompts`, {
+        pageSize: 100,
+        pageToken: token,
+        showMissing: false,
+      });
+      const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+      scanned += decoded.length;
+      for (const entry of decoded) {
+        if (!nexusLibraryEntryReadable(entry)) continue;
+        const tags = [...promptArcArray(entry.tags), ...promptArcFlat(entry.stepTags)].map(String);
+        if (a.category && !tags.includes(a.category)) continue;
+        const nature = promptArcNature(entry);
+        if (a.nature && nature !== a.nature) continue;
+        const promptText = [entry.content, entry.text, ...promptArcFlat(entry.stepPrompts)].filter(Boolean).join(" ");
+        const keywordText = [entry.aiKeywords, ...promptArcFlat(entry.stepKeywords)].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+        if (a.style && !styleTerms[a.style].some((term) => keywordText.includes(term))) continue;
+        if (a.theme && !themeTerms[a.theme].some((term) => keywordText.includes(term))) continue;
+        if (needle) {
+          const haystack = [entry.title, entry.description, entry.aiKeywords, promptText, ...tags]
+            .filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+          if (!haystack.includes(needle)) continue;
+        }
+        matches.push(entry);
+      }
+      token = payload.nextPageToken || null;
+      rounds++;
+    } while (token && rounds < 20);
+
+    matches.sort((x, y) => {
+      if (a.sort === "popular") return Number(y.likeCount || 0) - Number(x.likeCount || 0)
+        || bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt);
+      if (a.sort === "views") return Number(y.views || 0) - Number(x.views || 0)
+        || bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt);
+      return a.sort === "oldest"
+        ? bannerTimestamp(x.createdAt) - bannerTimestamp(y.createdAt)
+        : bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt);
+    });
+    const prompts = matches.slice(0, a.pageSize).map(promptArcSummary);
+    const result = { prompts, returned: prompts.length, scanned, nextPageToken: token };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Prompt Arc 목록 조회 실패: ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_prompt_arc_get", {
+  title: "Prompt Arc 공개 항목 상세",
+  description: "Prompt Arc 공개 항목의 프롬프트 단계, 이미지·영상 URL, 태그, 키워드와 연관 항목 ID를 읽기 전용 조회합니다.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_prompt_arc_list가 반환한 문서 ID"),
+  },
+  outputSchema: {
+    prompt: z.record(z.string(), z.any()),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/prompts/${encodeURIComponent(a.id)}`);
+    const raw = decodeFirestoreDocument(payload);
+    if (!nexusLibraryEntryReadable(raw)) throw new Error("현재 연결된 Nexus 계정으로 접근할 수 없는 항목입니다.");
+    const images = promptArcArray(raw.images).map(promptArcSafeUrl).filter(Boolean);
+    const fallbackImage = promptArcSafeUrl(raw.image);
+    if (fallbackImage && !images.includes(fallbackImage)) images.push(fallbackImage);
+    const prompt = {
+      ...promptArcSummary(raw),
+      content: raw.content || raw.text || null,
+      images,
+      videos: promptArcArray(raw.videos).map(promptArcSafeUrl).filter(Boolean),
+      videoPosterUrl: promptArcSafeUrl(raw.videoPoster),
+      stepPrompts: promptArcArray(raw.stepPrompts).map(String),
+      stepLabels: promptArcArray(raw.stepLabels).map(String),
+      stepTags: promptArcArray(raw.stepTags),
+      stepKeywords: promptArcArray(raw.stepKeywords),
+      stepDescriptions: promptArcArray(raw.stepDescriptions),
+      relatedIds: promptArcArray(raw.relatedIds).map(String),
+      analysisStatus: raw.analysisStatus || null,
+    };
+    return data({ prompt }, JSON.stringify(prompt, null, 2));
+  } catch (e) {
+    return errText(`Prompt Arc 상세 조회 실패 (${a.id}): ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_promotion_library_list", {
+  title: "Promotion 라이브러리 목록",
+  description: "NEXUS Studio Promotion Library의 프로모션을 읽기 전용으로 조회합니다. 브랜드웹은 제외하며 제목·태그·게임·연도·평가점수 검색과 페이지 토큰을 지원합니다.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("반환할 프로모션 수 (최대 100)"),
+    pageToken: z.string().optional().describe("이전 응답의 nextPageToken — 다음 페이지 조회 시 전달"),
+    query: z.string().optional().describe("제목·태그·요약·경로에서 찾을 검색어"),
+    game: z.string().optional().describe("게임명 정확 일치 필터"),
+    year: z.union([z.string(), z.number()]).optional().describe("연도 필터"),
+    minScore: z.number().min(0).max(10).optional().describe("최소 평가점수 (10점 만점)"),
+    sort: z.enum(["newest", "oldest", "score", "liked"]).default("newest").describe("조회 결과 정렬"),
+  },
+  outputSchema: {
+    promotions: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable(),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const matches = [];
+    let scanned = 0;
+    let token = a.pageToken;
+    let rounds = 0;
+    do {
+      const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners`, {
+        pageSize: 100,
+        pageToken: token,
+        showMissing: false,
+      });
+      const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+      scanned += decoded.length;
+      for (const entry of decoded) {
+        if (String(entry.assetType || "") === "브랜드웹") continue;
+        if (!nexusLibraryEntryReadable(entry)) continue;
+        if (a.game && String(entry.game || "") !== a.game) continue;
+        if (a.year != null && String(entry.year || "") !== String(a.year)) continue;
+        const score = promotionScore(entry);
+        if (a.minScore != null && (score == null || score < a.minScore)) continue;
+        if (needle) {
+          const haystack = [entry.title, entry.summary, entry.description, entry.path, entry.game,
+            ...(Array.isArray(entry.tags) ? entry.tags : [])]
+            .filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+          if (!haystack.includes(needle)) continue;
+        }
+        matches.push(entry);
+      }
+      token = payload.nextPageToken || null;
+      rounds++;
+    } while (token && rounds < 10);
+
+    matches.sort((x, y) => {
+      if (a.sort === "score") return (promotionScore(y) ?? -1) - (promotionScore(x) ?? -1)
+        || bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt);
+      if (a.sort === "liked") return Number(y.liked || 0) - Number(x.liked || 0)
+        || bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt);
+      return a.sort === "oldest"
+        ? bannerTimestamp(x.created_at || x.createdAt) - bannerTimestamp(y.created_at || y.createdAt)
+        : bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt);
+    });
+    const promotions = matches.slice(0, a.pageSize).map(promotionSummary);
+    const result = { promotions, returned: promotions.length, scanned, nextPageToken: token };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Promotion Library 목록 조회 실패: ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_promotion_library_get", {
+  title: "Promotion 라이브러리 상세",
+  description: "NEXUS Studio Promotion Library 항목의 PC·모바일 이미지와 평가점수·항목별 사유를 읽기 전용 조회합니다.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_promotion_library_list가 반환한 문서 ID"),
+  },
+  outputSchema: {
+    promotion: z.record(z.string(), z.any()),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners/${encodeURIComponent(a.id)}`);
+    const raw = decodeFirestoreDocument(payload);
+    if (String(raw.assetType || "") === "브랜드웹") throw new Error("브랜드웹 항목입니다. nexus_brand_web_library_get을 사용하세요.");
+    if (!nexusLibraryEntryReadable(raw)) throw new Error("현재 연결된 Nexus 계정으로 접근할 수 없는 항목입니다.");
+    const webScores = raw.webScores && typeof raw.webScores === "object" ? raw.webScores : {};
+    const criteria = Object.fromEntries(Object.entries(webScores).map(([key, value]) => [key, {
+      score: Number.isFinite(Number(value?.score)) ? Number(value.score) : null,
+      reason: value?.reason || null,
+    }]));
+    const promotion = {
+      ...promotionSummary(raw),
+      path: raw.path || null,
+      originalTitle: raw.originalTitle || null,
+      purpose: raw.purpose || null,
+      evaluationType: raw.evaluationType || raw.webEvalType || null,
+      criteria,
+    };
+    return data({ promotion }, JSON.stringify(promotion, null, 2));
+  } catch (e) {
+    return errText(`Promotion Library 상세 조회 실패 (${a.id}): ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_brand_web_library_list", {
+  title: "Brand Web 라이브러리 목록",
+  description: "NEXUS Studio Brand Web Library에 등록된 공개 브랜드웹을 읽기 전용으로 조회합니다. 제목·태그·게임·연도·디바이스 검색과 페이지 토큰을 지원합니다.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30).describe("반환할 브랜드웹 수 (최대 100)"),
+    pageToken: z.string().optional().describe("이전 응답의 nextPageToken — 다음 페이지 조회 시 전달"),
+    query: z.string().optional().describe("제목·태그·설명·페이지명에서 찾을 검색어"),
+    game: z.string().optional().describe("게임명 정확 일치 필터"),
+    year: z.union([z.string(), z.number()]).optional().describe("연도 필터"),
+    device: z.enum(["pc", "mobile"]).optional().describe("해당 디바이스 페이지가 있는 항목만 조회"),
+    sort: z.enum(["newest", "oldest", "liked"]).default("newest").describe("조회 결과 정렬"),
+  },
+  outputSchema: {
+    entries: z.array(z.record(z.string(), z.any())),
+    returned: z.number(),
+    scanned: z.number(),
+    nextPageToken: z.string().nullable(),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const matches = [];
+    let scanned = 0;
+    let token = a.pageToken;
+    let rounds = 0;
+    do {
+      const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners`, {
+        pageSize: 100,
+        pageToken: token,
+        showMissing: false,
+      });
+      const decoded = (payload.documents || []).map(decodeFirestoreDocument);
+      scanned += decoded.length;
+      for (const entry of decoded) {
+        if (String(entry.assetType || "") !== "브랜드웹") continue;
+        if (!nexusLibraryEntryReadable(entry)) continue;
+        if (a.game && String(entry.game || "") !== a.game) continue;
+        if (a.year != null && String(entry.year || "") !== String(a.year)) continue;
+        const pages = Array.isArray(entry.pages) ? entry.pages : [];
+        if (a.device && !pages.some((page) => page?.device === a.device)) continue;
+        if (needle) {
+          const haystack = [entry.title, entry.sourceProjectName, entry.sourceDescription, entry.game,
+            ...(Array.isArray(entry.tags) ? entry.tags : []), ...pages.map((page) => page?.name)]
+            .filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+          if (!haystack.includes(needle)) continue;
+        }
+        matches.push(entry);
+        if (matches.length >= a.pageSize) break;
+      }
+      token = payload.nextPageToken || null;
+      rounds++;
+    } while (matches.length < a.pageSize && token && rounds < 10);
+
+    matches.sort((x, y) => a.sort === "liked"
+      ? Number(y.liked || 0) - Number(x.liked || 0)
+      : a.sort === "oldest"
+        ? bannerTimestamp(x.created_at || x.createdAt) - bannerTimestamp(y.created_at || y.createdAt)
+        : bannerTimestamp(y.created_at || y.createdAt) - bannerTimestamp(x.created_at || x.createdAt));
+    const entries = matches.slice(0, a.pageSize).map(brandWebSummary);
+    const result = { entries, returned: entries.length, scanned, nextPageToken: token };
+    return data(result, JSON.stringify(result, null, 2));
+  } catch (e) {
+    return errText(`Brand Web Library 목록 조회 실패: ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_brand_web_library_get", {
+  title: "Brand Web 라이브러리 상세",
+  description: "NEXUS Studio Brand Web Library 항목의 메타데이터와 PC·모바일 전체 페이지 이미지 URL을 읽기 전용 조회합니다.",
+  inputSchema: {
+    id: z.string().min(1).describe("nexus_brand_web_library_list가 반환한 문서 ID"),
+  },
+  outputSchema: {
+    entry: z.record(z.string(), z.any()),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/promotion-banners/${encodeURIComponent(a.id)}`);
+    const raw = decodeFirestoreDocument(payload);
+    if (String(raw.assetType || "") !== "브랜드웹") throw new Error("브랜드웹 항목이 아닙니다.");
+    if (!nexusLibraryEntryReadable(raw)) throw new Error("현재 연결된 Nexus 계정으로 접근할 수 없는 항목입니다.");
+    const pages = (Array.isArray(raw.pages) ? raw.pages : []).map((page, index) => ({
+      id: page?.id || null,
+      name: page?.name || `page_${index + 1}`,
+      device: page?.device || null,
+      url: page?.url || null,
+      order: Number.isFinite(Number(page?.order)) ? Number(page.order) : index,
+      confirmedAt: page?.confirmedAt || null,
+      noteCount: Number(page?.noteCount || 0),
+    }));
+    const entry = { ...brandWebSummary(raw), pages };
+    return data({ entry }, JSON.stringify(entry, null, 2));
+  } catch (e) {
+    return errText(`Brand Web Library 상세 조회 실패 (${a.id}): ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_account_status", {
+  title: "Nexus 계정 연결 상태",
+  description: "Codex MCP에 연결된 Nexus 계정과 자동 토큰 갱신 상태를 확인합니다.",
+  inputSchema: {},
+  outputSchema: {
+    connected: z.boolean(),
+    uid: z.string().nullable(),
+    email: z.string().nullable(),
+    expiresAt: z.number().nullable(),
+  },
+  annotations: PURE,
+}, async () => {
+  const auth = await currentNexusAuth().catch(() => null);
+  const result = {
+    connected: !!auth?.refreshToken,
+    uid: auth?.uid || null,
+    email: auth?.email || null,
+    expiresAt: auth?.expiresAt || null,
+  };
+  return data(result, JSON.stringify(result, null, 2));
+});
+
+server.registerTool("nexus_account_disconnect", {
+  title: "Nexus 계정 연결 해제",
+  description: "Codex MCP에 저장된 Nexus 사용자 세션만 제거합니다. Nexus Studio 웹 로그인은 유지됩니다.",
+  inputSchema: {},
+  outputSchema: { disconnected: z.boolean() },
+  annotations: RENDER,
+}, async () => {
+  try { fs.unlinkSync(NEXUS_AUTH_PATH); } catch {}
+  const result = { disconnected: true };
+  return data(result, JSON.stringify(result));
+});
+
 // ─── 기동 ─────────────────────────────────────────────────────────────────────
+startNexusLinkBridge();
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error("[nexus-mcp] NEXUS Studio MCP server ready (stdio)");

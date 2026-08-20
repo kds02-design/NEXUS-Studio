@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, isValidElement } from "react";
 import {
   Settings, Moon, Sun, Globe, TrendingUp, Key,
   LayoutDashboard, KeyRound, Bot, Activity,
-  Mail, Info, LogOut, UserX,
+  Mail, Info, LogOut, UserX, Link2, Unlink,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useGlobal, useTheme } from "../context/GlobalContext";
@@ -14,6 +14,11 @@ import UserAvatar from "./UserAvatar";
 import AvatarPicker from "./AvatarPicker";
 import UpgradeRequestModal from "./UpgradeRequestModal";
 import InviteCodeModal from "./InviteCodeModal";
+import {
+  connectCodexAccount,
+  disconnectCodexAccount,
+  getCodexConnectionStatus,
+} from "../lib/codexLinkClient";
 
 const APP_VERSION = "NEXUS Studio v0.4.0";
 
@@ -36,6 +41,7 @@ export default function ProfilePopover({ open, onClose }) {
   const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [codexState, setCodexState] = useState({ checking:false, connected:false, email:null });
 
   useEffect(() => {
     if (!open) return;
@@ -45,6 +51,16 @@ export default function ProfilePopover({ open, onClose }) {
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setCodexState((s) => ({ ...s, checking:true }));
+    getCodexConnectionStatus()
+      .then((s) => live && setCodexState({ checking:false, connected:!!s.connected, email:s.email || null }))
+      .catch(() => live && setCodexState({ checking:false, connected:false, email:null }));
+    return () => { live = false; };
+  }, [open]);
 
   if (!open && !avatarPickerOpen && !upgradeOpen && !inviteOpen) return null;
   if (!user) return null;
@@ -78,6 +94,22 @@ export default function ProfilePopover({ open, onClose }) {
         alert(`탈퇴 처리 실패: ${e.message || e.code}`);
         console.error("[Auth] deleteAccount failed", e);
       }
+    }
+  };
+  const toggleCodexConnection = async () => {
+    setCodexState((s) => ({ ...s, checking:true }));
+    try {
+      const result = codexState.connected
+        ? await disconnectCodexAccount()
+        : await connectCodexAccount(user);
+      setCodexState({
+        checking:false,
+        connected:codexState.connected ? false : !!result.connected,
+        email:codexState.connected ? null : (result.email || user.email || null),
+      });
+    } catch (e) {
+      setCodexState((s) => ({ ...s, checking:false }));
+      alert(e?.message || "Codex 계정 연결에 실패했습니다.");
     }
   };
 
@@ -123,6 +155,16 @@ export default function ProfilePopover({ open, onClose }) {
               {showInvite && <Row icon={<Key size={14} />} label="초대 코드 입력" onClick={() => { setInviteOpen(true); onClose?.(); }} />}
             </Section>
           )}
+
+          <Section label="연결">
+            <Row
+              icon={codexState.connected ? <Unlink size={14} /> : <Link2 size={14} />}
+              label={codexState.connected ? "Codex 계정 연결 해제" : "Codex 계정 연결"}
+              rightText={codexState.checking ? "확인 중" : (codexState.connected ? "연결됨" : "연결 안 됨")}
+              onClick={toggleCodexConnection}
+              disabled={codexState.checking}
+            />
+          </Section>
 
           {isAdmin && (
             <Section label="관리자">

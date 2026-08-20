@@ -2,16 +2,29 @@ import { useState, useEffect, useMemo } from 'react';
 
 const getDateValue = (b) => {
   if (b.date) {
+    // 게시기간 문자열의 첫 날짜를 정규식으로 파싱 — "2026. 3. 4.(수) ~" 처럼 월·일이
+    // 한 자리인 경우 대응. (이전 방식: 숫자만 이어붙여 앞 8자리 → "20263420" 같은
+    // 깨진 값이 되어 3월 배너가 12월보다 위로 오는 등 최신순이 뒤섞였음.)
+    const m = String(b.date).match(/(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]?\s*(\d{1,2})/);
+    if (m) return parseInt(`${m[1]}${m[2].padStart(2, '0')}${m[3].padStart(2, '0')}`);
     const cleanDate = b.date.replace(/[^0-9]/g, '');
     if (cleanDate.length >= 8) return parseInt(cleanDate.substring(0, 8));
     if (cleanDate.length === 6) return parseInt(`20${cleanDate}`);
   }
-  if (b.year && b.month) return parseInt(`${b.year}${b.month.padStart(2, '0')}00`);
+  if (b.year && b.month) return parseInt(`${b.year}${String(b.month).padStart(2, '0')}00`);
   if (b.year) return parseInt(`${b.year}0000`);
   if (b.createdAt) {
     const d = new Date(b.createdAt);
     return parseInt(`${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`);
   }
+  return 0;
+};
+
+// 같은 날짜끼리의 순서 고정용 — 등록 시각(ms). 문자열(ISO)·number 모두 대응.
+const getCreatedMs = (b) => {
+  const v = b?.createdAt;
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') { const t = Date.parse(v); return isNaN(t) ? 0 : t; }
   return 0;
 };
 
@@ -28,8 +41,9 @@ export const useFilter = ({
   }, [banners]);
 
   const recentGames = useMemo(() => {
+    // [...banners] 복사 후 정렬 — 원본 state 배열을 in-place sort 로 오염시키지 않도록.
     const sortedGames = [...new Set(
-      banners.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(b => b.game)
+      [...banners].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(b => b.game)
     )].filter(Boolean);
     return sortedGames.slice(0, 2);
   }, [banners]);
@@ -105,8 +119,9 @@ export const useFilter = ({
         if (a.featured && !b.featured) return -1;
         if (!a.featured && b.featured) return 1;
       }
-      if (sortOrder === 'newest') return getDateValue(b) - getDateValue(a);
-      if (sortOrder === 'oldest') return getDateValue(a) - getDateValue(b);
+      // 같은 날짜면 등록 시각으로 2차 정렬 — 동일 날짜 묶음의 순서가 렌더마다 뒤섞이지 않게.
+      if (sortOrder === 'newest') return (getDateValue(b) - getDateValue(a)) || (getCreatedMs(b) - getCreatedMs(a));
+      if (sortOrder === 'oldest') return (getDateValue(a) - getDateValue(b)) || (getCreatedMs(a) - getCreatedMs(b));
       if (sortOrder === 'popular') return (b.liked === a.liked ? 0 : b.liked ? 1 : -1);
       if (sortOrder === 'score') return (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0);
       if (sortOrder === 'name') return (a.originalTitle || a.title || '').localeCompare(b.originalTitle || b.title || '');

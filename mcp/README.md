@@ -1,7 +1,7 @@
 # NEXUS Studio MCP 서버
 
 외부 AI(Claude Code / Claude Desktop / 기타 MCP 클라이언트)가 NEXUS Studio 의
-프롬프트 엔진·Gemini 렌더 파이프라인·픽셀 후처리 툴을 그대로 쓸 수 있게 노출하는
+프롬프트 엔진·Gemini 렌더 파이프라인·픽셀 후처리 툴과 Banner Codex 라이브러리를 그대로 쓸 수 있게 노출하는
 stdio MCP 서버.
 
 **단일 진실 소스** — 프롬프트 빌더와 옵션 카탈로그는 `src/` 의 실제 앱 모듈을 import 해서
@@ -77,6 +77,8 @@ args = ["c:\\work\\00_claude\\mcp\\nexus-mcp.bundle.mjs"]
 | `nexus_remove_background` | 단색 배경 키잉 + 배경색 역산(unmix) → 투명 PNG |
 | `nexus_split_character_effect` | 캐릭터(알파) / 발광 이펙트(스크린 블렌드) 레이어 분리 |
 | `nexus_design_rubric` | NEXUS 디자인 평가 루브릭(마크다운) |
+| `nexus_banner_codex_list` | Banner Codex 저장 배너 목록·검색·게임/연도/점수 필터 (읽기 전용) |
+| `nexus_banner_codex_get` | Banner Codex 배너 1건의 상세 메타데이터·이미지 URL 조회 (읽기 전용) |
 
 ## 기본 흐름
 

@@ -1,0 +1,71 @@
+{
+  "comment": "배너 코덱스 주간 자동 동기화 대상. share/pathPrefix 의 {year} 는 실행 시점 연도로 치환 (전년도 폴더도 함께 스캔). sizeKeyword 는 마스터 배너 파일 선택 키워드 — 블소·아이온 1180(1180x750_notice), 그 외 1200(Facebook_1200x630 등). minDate 이전 날짜 폴더는 건드리지 않음 — 과거 앱 수동 등록분과의 중복 방지 하한선이므로 수정하지 말 것. 새 게임 추가: targets 에 한 줄 추가하면 끝. promoShare/promoPathPrefix 는 브랜드웹 라이브러리(PromotionArchive) 프로모션 자동 등록용 — promoMinDate 이후 캠페인 폴더만.",
+  "minDate": "20260603",
+  "targets": [
+    {
+      "game": "블소",
+      "share": "//ppc-file/4.블레이드앤소울/{year}/배너",
+      "pathPrefix": "\\\\ppc-file\\4.블레이드앤소울\\{year}\\배너",
+      "sizeKeyword": "1180",
+      "promoShare": "//ppc-file/4.블레이드앤소울/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\4.블레이드앤소울\\{year}\\프로모션"
+    },
+    {
+      "game": "아이온",
+      "share": "//ppc-file/3.아이온/{year}/배너",
+      "pathPrefix": "\\\\ppc-file\\3.아이온\\{year}\\배너",
+      "sizeKeyword": "1180",
+      "promoShare": "//ppc-file/3.아이온/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\3.아이온\\{year}\\프로모션"
+    },
+    {
+      "game": "리니지",
+      "share": "//ppc-file/1.리니지/{year}/브랜드웹",
+      "pathPrefix": "\\\\ppc-file\\1.리니지\\{year}\\브랜드웹",
+      "sizeKeyword": "1200",
+      "promoShare": "//ppc-file/1.리니지/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\1.리니지\\{year}\\프로모션"
+    },
+    {
+      "game": "리니지2",
+      "share": "//ppc-file/2.리니지2/{year}/브랜드웹",
+      "pathPrefix": "\\\\ppc-file\\2.리니지2\\{year}\\브랜드웹",
+      "sizeKeyword": "1200",
+      "promoShare": "//ppc-file/2.리니지2/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\2.리니지2\\{year}\\프로모션"
+    },
+    {
+      "game": "리니지M",
+      "share": "//ppc-file/11.리니지M/{year}/브랜드웹",
+      "pathPrefix": "\\\\ppc-file\\11.리니지M\\{year}\\브랜드웹",
+      "sizeKeyword": "1200",
+      "promoShare": "//ppc-file/11.리니지M/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\11.리니지M\\{year}\\프로모션"
+    },
+    {
+      "game": "리니지2M",
+      "share": "//ppc-file/12.리니지2M/{year}/브랜드웹",
+      "pathPrefix": "\\\\ppc-file\\12.리니지2M\\{year}\\브랜드웹",
+      "sizeKeyword": "1200",
+      "promoShare": "//ppc-file/12.리니지2M/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\12.리니지2M\\{year}\\프로모션"
+    },
+    {
+      "game": "리니지클래식",
+      "share": "//ppc-file/18.리니지클래식/{year}/브랜드웹",
+      "pathPrefix": "\\\\ppc-file\\18.리니지클래식\\{year}\\브랜드웹",
+      "sizeKeyword": "1200",
+      "promoShare": "//ppc-file/18.리니지클래식/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\18.리니지클래식\\{year}\\프로모션"
+    },
+    {
+      "game": "아이온2",
+      "share": "//ppc-file/28.아이온2/{year}/브랜드웹",
+      "pathPrefix": "\\\\ppc-file\\28.아이온2\\{year}\\브랜드웹",
+      "sizeKeyword": "1200",
+      "promoShare": "//ppc-file/28.아이온2/{year}/프로모션",
+      "promoPathPrefix": "\\\\ppc-file\\28.아이온2\\{year}\\프로모션"
+    }
+  ],
+  "promoMinDate": "20260101"
+}

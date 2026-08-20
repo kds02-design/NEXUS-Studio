@@ -41,7 +41,7 @@ await client.connect(transport);
 const { tools } = await client.listTools();
 const names = tools.map((t) => t.name).sort();
 console.log("tools:", names.join(", "));
-for (const n of ["nexus_guide", "nexus_list_options", "nexus_render_image", "nexus_lightfx_prompt", "nexus_variation_prompt", "nexus_design_alternative_prompt", "nexus_item_bundle_prompt", "nexus_quality_up_prompt", "nexus_character_fx_prompt", "nexus_typecore_sovereign_prompt", "nexus_typecore_breeze_prompt", "nexus_remove_background", "nexus_split_character_effect", "nexus_design_rubric"]) {
+for (const n of ["nexus_guide", "nexus_list_options", "nexus_render_image", "nexus_lightfx_prompt", "nexus_variation_prompt", "nexus_design_alternative_prompt", "nexus_item_bundle_prompt", "nexus_quality_up_prompt", "nexus_character_fx_prompt", "nexus_typecore_sovereign_prompt", "nexus_typecore_breeze_prompt", "nexus_remove_background", "nexus_split_character_effect", "nexus_design_rubric", "nexus_banner_codex_list", "nexus_banner_codex_get", "nexus_brand_web_library_list", "nexus_brand_web_library_get", "nexus_promotion_library_list", "nexus_promotion_library_get", "nexus_prompt_arc_list", "nexus_prompt_arc_get"]) {
   ok(`tool:${n}`, names.includes(n));
 }
 
