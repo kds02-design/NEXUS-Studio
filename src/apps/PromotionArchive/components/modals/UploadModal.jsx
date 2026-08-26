@@ -78,6 +78,7 @@ const UploadModal = ({
                             {previewGroups.map((g, i) => (
                                 <div key={i} className="flex items-center gap-2 text-[10px] text-zinc-400 py-0.5">
                                     <span className="flex-1 truncate" title={g.title}>{g.title}</span>
+                                    {g.isBrandWeb && <span className="text-pink-400 font-bold">WEB {g.pageCount}P</span>}
                                     <span className={`font-mono ${g.hasPc ? 'text-emerald-400' : 'text-zinc-700'}`}>PC</span>
                                     <span className={`font-mono ${g.hasMo ? 'text-emerald-400' : 'text-zinc-700'}`}>MO</span>
                                 </div>
@@ -92,7 +93,7 @@ const UploadModal = ({
                 {/* 캠페인 0개일 때 경고. */}
                 {campaignCount === 0 && (
                     <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2">
-                        ⚠️ 등록될 캠페인이 0개입니다. 선택한 폴더에 '03.디자인/pc/' 또는 '03.디자인/mobile/' 직속 jpg/png 파일이 있는지 확인해주세요.
+                        ⚠️ 등록될 캠페인이 0개입니다. 선택한 폴더에 '03.디자인/pc/' 또는 '03.디자인/mobile/' 직속 jpg/png 파일이 있는지 확인해주세요. 브랜드웹은 '03.디자인/' 직속 이미지도 등록할 수 있습니다.
                     </div>
                 )}
 

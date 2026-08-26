@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivitySquare, Sliders, AlertCircle,
   ChevronRight, Check, Stars, Sparkles, Image as ImageIcon, Download, Save, Loader2,
-  Upload, X, Maximize2,
+  Upload, X, Maximize2, Scissors,
 } from "lucide-react";
 import { ScoreBar } from "./MatrixControls";
 import MatrixHeader from "./MatrixHeader";
@@ -32,7 +32,7 @@ export default function MatrixResultPanel({
   isOptimizing, onOptimize, isCompressing, onCompress, onCopy, isCopied, onSendToMotion,
   // Imagen 렌더링
   onRender, rendering, renderedImage, renderError,
-  onDownloadRendered, onSaveToPromptArc, savingToArc, isLoggedIn,
+  onDownloadRendered, onSaveToPromptArc, onSendToMaskForge, savingToArc, isLoggedIn,
   canRender, grade,
   // 기본 이미지 — image-to-image 렌더링의 실제 입력.
   // 사이드바 "Image Analyzer" 의 referenceImage 와 분리된 별도 state (baseImage).
@@ -346,6 +346,12 @@ export default function MatrixResultPanel({
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 text-[11px] font-semibold transition-colors"
                   >
                     <Download className="w-3.5 h-3.5" /> 다운로드
+                  </button>
+                  <button
+                    onClick={onSendToMaskForge}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:text-white hover:border-zinc-500 text-[11px] font-semibold transition-colors"
+                  >
+                    <Scissors className="w-3.5 h-3.5" /> Mask Forge로 투명화
                   </button>
                   <button
                     onClick={() => onSaveToPromptArc?.(promptText)}

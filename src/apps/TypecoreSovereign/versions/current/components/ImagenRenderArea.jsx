@@ -13,6 +13,7 @@ const ImagenRenderArea = ({
   setSelectedModel,
   onRender,
   rendering,
+  renderStage,
   renderedImage,
   renderError,
   onDownloadRendered,
@@ -64,7 +65,7 @@ const ImagenRenderArea = ({
           className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-all active:scale-95 whitespace-nowrap bg-indigo-500 hover:bg-indigo-400 text-white disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {rendering ? (
-            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 생성 중…</>
+            <><Loader2 className="w-3.5 h-3.5 animate-spin" /> {renderStage === 'optimizing' ? 'AI 최적화 중…' : '생성 중…'}</>
           ) : !canRender ? (
             <><ImageIcon className="w-3.5 h-3.5" /> Pro 전용</>
           ) : (

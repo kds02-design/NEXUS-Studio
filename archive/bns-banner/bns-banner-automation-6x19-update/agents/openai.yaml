@@ -1,3 +1,0 @@
-display_name: "블소 배너 자동화"
-short_description: "블소 배너 8종 제작·평가·투명 PNG/JPG 납품"
-default_prompt: "Use $bns-banner-automation to build and evaluate all eight Blade & Soul banner sizes, preserve approved user adjustments, and export the final set as JPG quality 80 plus verified transparent Toast and Ingame PNG files."

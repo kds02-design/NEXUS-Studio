@@ -25,6 +25,7 @@ import {
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts", "banner-codex-sync.config.json"), "utf8"));
 const DRY = process.argv.includes("--dry");
+const BRANDWEB_EVAL = process.argv.includes("--brandweb-eval");
 const stamp = () => new Date().toISOString().replace("T", " ").slice(0, 19);
 const log = (msg) => console.log(`[${stamp()}] ${msg}`);
 
@@ -93,8 +94,7 @@ const jpegResize = async (input, maxWidth, quality) => {
   return cv.toBuffer("image/jpeg", quality);
 };
 
-async function loadPromoEvalConfig() {
-  const type = CRITERIA_TYPES.promotion;
+async function loadPromoEvalConfig(type = CRITERIA_TYPES.promotion) {
   let items = [], rules = "";
   const versions = await db.collection(`evaluationCriteria/${type}/versions`).where("isActive", "==", true).limit(1).get();
   if (!versions.empty) {
@@ -127,7 +127,7 @@ async function loadPromoEvalConfig() {
 
   const introFilled = getIntroTemplateFor(type).replace("{{CRITERIA_LIST}}", formatCriteriaList(items));
   const ruleBlock = rules && rules.trim() ? `\n\n[채점 규칙]\n${rules.trim()}\n` : "";
-  return { items, weights: weightsMap(items), offset, introFilled, ruleBlock, anchorBlock, anchorImageParts };
+  return { type, items, weights: weightsMap(items), offset, introFilled, ruleBlock, anchorBlock, anchorImageParts };
 }
 
 const isInvalidDate = (val) => !val || ["null", "none", "unknown", "없음", "불명"].some(s => String(val).toLowerCase().includes(s));
@@ -135,7 +135,10 @@ const isInvalidDate = (val) => !val || ["null", "none", "unknown", "없음", "�
 async function evaluatePromo(evalCfg, imageBuffers, folderHint) {
   const SCORE_KEYS = evalCfg.items.map(c => c.id).filter(Boolean);
   const folderBlock = folderHint ? `\n\n[디자이너가 부여한 캠페인 폴더명]\n"${folderHint}"\n\n이 폴더명은 디자이너가 직접 작성한 캠페인의 공식 명칭에 가깝습니다. title 추출 시:\n- 이미지의 시각적 텍스트가 이 폴더명과 일치하거나 매우 유사하면 → 그 텍스트를 title로 채택.\n- 이미지의 가장 큰 텍스트와 폴더명이 명확히 다르면 → 이미지의 텍스트를 우선 (오타·신규 캠페인 가능성).\n- 단, 폴더명만 보고 만들지 마세요 — 이미지에 그 텍스트가 글자로 보일 때만 사용.\n` : "";
-  const prompt = `${evalCfg.introFilled}${evalCfg.ruleBlock}${evalCfg.anchorBlock}${folderBlock}`;
+  const representativeSetBlock = evalCfg.type === CRITERIA_TYPES.brandweb && imageBuffers.length > 1
+    ? `\n\n[브랜드웹 대표 평가 이미지 세트]\n- 첫 번째 이미지: 1차 메인 페이지\n- 두 번째 이미지: 1차 대표 서브 페이지\n- 두 이미지를 하나의 사이트 세트로 종합 평가하고 메인 페이지의 브랜드 임팩트를 우선하세요.\n`
+    : "";
+  const prompt = `${evalCfg.introFilled}${evalCfg.ruleBlock}${evalCfg.anchorBlock}${folderBlock}${representativeSetBlock}`;
   const SCORE_OBJ = { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } }, required: ["score", "reason"] };
   const responseSchema = {
     type: "OBJECT",
@@ -223,7 +226,7 @@ function evalPatch(result, existingTags = []) {
   return patch;
 }
 
-// ─── 캠페인 폴더 → pc/mobile 대표 파일 (직속 자식 · 최대 크기) ──────────────────
+// ─── 캠페인 폴더 → pc/mobile 대표 파일 (하위 납품 폴더 포함 · 최대 크기) ──────────
 function pickDeviceFiles(campaignAbs) {
   const subs = fs.readdirSync(campaignAbs, { withFileTypes: true }).filter(d => d.isDirectory());
   const designDir = subs.find(d => d.name.includes("디자인"));
@@ -234,10 +237,17 @@ function pickDeviceFiles(campaignAbs) {
       .find(d => d.isDirectory() && re.test(d.name.trim()));
     if (!dev) return null;
     const devAbs = path.join(designAbs, dev.name);
-    const files = fs.readdirSync(devAbs, { withFileTypes: true })
-      .filter(e => e.isFile() && ALLOWED_EXT.test(e.name) && !EXCLUDE_REGEX.test(e.name))
-      .map(e => { const f = path.join(devAbs, e.name); return { f, size: fs.statSync(f).size }; })
-      .sort((a, b) => b.size - a.size);
+    const files = [];
+    const walk = (dir) => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (EXCLUDE_REGEX.test(e.name) || /^(old|backup|bak|crop|m_crop|thumb|thumbnail)$/i.test(e.name.trim())) continue;
+        const f = path.join(dir, e.name);
+        if (e.isDirectory()) walk(f);
+        else if (e.isFile() && ALLOWED_EXT.test(e.name)) files.push({ f, size: fs.statSync(f).size });
+      }
+    };
+    walk(devAbs);
+    files.sort((a, b) => b.size - a.size);
     return files[0]?.f || null;
   };
   return { pcFile: pick(/^(pc|web)$/i), moFile: pick(/^(mo|mobile|m)$/i) };
@@ -260,13 +270,14 @@ existing.forEach(d => {
 const ownerUid = Object.entries(uidCount).sort((a, b) => b[1] - a[1])[0]?.[0] || "promo-sync";
 log(`기존 프로모션 ${existing.size}건 로드`);
 
-const evalCfg = GEMINI_KEY && !DRY ? await loadPromoEvalConfig() : null;
+const evalType = BRANDWEB_EVAL ? CRITERIA_TYPES.brandweb : CRITERIA_TYPES.promotion;
+const evalCfg = GEMINI_KEY && !DRY ? await loadPromoEvalConfig(evalType) : null;
 if (evalCfg) log(`평가 설정: 기준 ${evalCfg.items.length}항목 · offset ${evalCfg.offset} · 앵커 이미지 ${evalCfg.anchorImageParts.length}개`);
 
 const minDate = CONFIG.promoMinDate || "00000000";
 const nowYear = new Date().getFullYear();
 let ok = 0, skip = 0, fail = 0;
-for (const target of CONFIG.targets) {
+for (const target of (BRANDWEB_EVAL ? [] : CONFIG.targets)) {
   if (!target.promoShare) continue;
   for (const year of [String(nowYear), String(nowYear - 1)]) {
     const shareDir = target.promoShare.replaceAll("{year}", year);
@@ -335,9 +346,11 @@ if (evalCfg || DRY) {
   const pending = [];
   existing.forEach(d => {
     const b = d.data();
-    if (b.isWebAnalyzed) return;
-    if (!targetGames.has(b.game)) return;
-    if (Number(b.year) < minYear) return;
+    if (!BRANDWEB_EVAL && b.isWebAnalyzed) return;
+    if (BRANDWEB_EVAL) {
+      if (b.assetType !== "브랜드웹") return;
+    } else if (!targetGames.has(b.game)) return;
+    if (!BRANDWEB_EVAL && Number(b.year) < minYear) return;
     if (!b.full_image && !b.preview) return;
     pending.push({ id: d.id, b });
   });
@@ -346,7 +359,16 @@ if (evalCfg || DRY) {
     if (DRY) { log(`  ${b.game} · ${b.title} → [dry] 평가 대상`); evalOk++; continue; }
     try {
       const evalImages = [];
-      for (const url of [b.full_image, b.mobile_image]) {
+      const evalUrls = (() => {
+        if (!BRANDWEB_EVAL) return [b.full_image, b.mobile_image].filter(Boolean);
+        const pages = Array.isArray(b.pages) ? b.pages : [];
+        const phaseOnePc = pages.filter(p => p.device === "pc" && Number(p.sourcePhase || 1) === 1 && p.url);
+        const pc = phaseOnePc.length ? phaseOnePc : pages.filter(p => p.device === "pc" && p.url);
+        const main = pc.find(p => p.id === b.mainPageId) || pc[0];
+        const sub = pc.find(p => p.id !== main?.id);
+        return [main?.url || b.full_image || b.preview, sub?.url].filter((url, index, values) => url && values.indexOf(url) === index).slice(0, 2);
+      })();
+      for (const url of evalUrls) {
         if (!url) continue;
         const res = await fetch(url);
         if (res.ok) evalImages.push(await jpegResize(Buffer.from(await res.arrayBuffer()), 1280, 80));
@@ -361,7 +383,7 @@ if (evalCfg || DRY) {
       })();
       const r = await evaluatePromo(evalCfg, evalImages, folderHint);
       if (!r.ok) { log(`  ${b.game} · ${b.title} → 평가 실패: ${r.error}`); evalFail++; continue; }
-      await promoCol.doc(id).update(evalPatch(r, b.tags));
+      await promoCol.doc(id).update({ ...evalPatch(r, b.tags), evaluationImageUrls: evalUrls, evaluationImagePolicy: BRANDWEB_EVAL ? "phase1-main-plus-sub" : "pc-plus-mobile" });
       log(`  ${b.game} · ${b.title} → 평가 완료 (${r.webAiScore})`);
       evalOk++;
       await new Promise(r2 => setTimeout(r2, 400));

@@ -1,10 +1,25 @@
 // 광원·빛효과 옵션 패널 — KvEdit '광원·빛효과' 모드에서 사용.
 // 기존 ForgeSidebar 의 lightfx 브랜치를 이관. lightfx 상태/핸들러는 forge(useForgePrompt)에서 받는다.
 import { useState } from 'react';
-import { ChevronDown, UploadCloud, X, Wand2, Loader2, Sparkles, Sun, CircleHelp } from 'lucide-react';
+import { ChevronDown, UploadCloud, X, Wand2, Loader2, Sparkles, Sun, CircleHelp, UserRound, Type, PackageOpen, SlidersHorizontal } from 'lucide-react';
 import { LIGHTFX_CATEGORIES, LIGHTFX_FORMS, LIGHTFX_STYLES, LIGHTFX_COLORS, LIGHTFX_MATERIALS, LIGHTFX_GRAINS, LIGHTFX_BOKEHS } from '../constants/lightfx';
 import { BG_COLORS } from '../constants/variations';
 import { IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from '../../../lib/imagenRender';
+
+const QUICK_EFFECTS = [
+  {
+    id: 'character-outline', label: '캐릭터 외곽 이펙트', desc: '실루엣 가장자리에 절제된 림 블룸과 미세 글린트', icon: UserRound,
+    settings: { category: 'halo', form: 'charAura', style: 'soft', color: 'cyan', intensity: 'subtle', material: 'mist', grain: 'fine', bokeh: 'fine', text: '캐릭터 외곽의 선택된 가장자리에만 부드러운 림 블룸과 소수의 미세 글린트. 얼굴과 몸통 중앙은 비우고 전체 테두리 선처럼 보이지 않게' },
+  },
+  {
+    id: 'title-front', label: '타이틀 전방 이펙트', desc: '글자 앞에 얕게 교차하는 글린트·빛줄기·입자', icon: Type,
+    settings: { category: 'lightStreak', form: 'titleFront', style: 'sharp', color: 'gold', intensity: 'subtle', material: 'none', grain: 'fine', bokeh: 'fine', text: '타이틀 전방의 일부 하단과 모서리에만 짧은 글린트, 얇은 빛줄기와 미세 입자. 글자 가독성과 자형을 가리지 않게' },
+  },
+  {
+    id: 'item-front', label: '아이템 전방 이펙트', desc: '아이템 앞 접촉광과 상승 파티클로 입체감 강화', icon: PackageOpen,
+    settings: { category: 'particle', form: 'itemFront', style: 'magical', color: 'gold', intensity: 'medium', material: 'none', grain: 'fine', bokeh: 'fine', text: '아이템 전방 하단의 국소 접촉광, 앞쪽을 짧게 감싸는 위습과 소수의 상승 파티클. 아이템 본체와 보상 아이콘은 재현하거나 가리지 않게' },
+  },
+];
 
 function HelpPopover({ text }) {
   return (
@@ -54,6 +69,8 @@ function BgColorPicker({ value, onChange, hint }) {
 }
 
 export default function ForgeLightFxOptions({ forge }) {
+  const [activeQuickEffect, setActiveQuickEffect] = useState(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const {
     lightFxCategory, setLightFxCategory,
     lightFxForm, setLightFxForm,
@@ -75,6 +92,21 @@ export default function ForgeLightFxOptions({ forge }) {
     lightFxBgColor, setLightFxBgColor,
     isGeneratingLightFx, handleGenerateLightFx,
   } = forge;
+  const applyQuickEffect = (preset) => {
+    const s = preset.settings;
+    setActiveQuickEffect(preset.id);
+    setLightFxCategory(s.category);
+    setLightFxForm(s.form);
+    setLightFxStyle(s.style);
+    setLightFxColor(s.color);
+    setLightFxIntensity(s.intensity);
+    setLightFxMaterial(s.material);
+    setLightFxGrain(s.grain);
+    setLightFxBokeh(s.bokeh);
+    setLightFxShape('none');
+    setLightFxText(s.text);
+    setLightFxBgColor('black');
+  };
   return (
         <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-5 space-y-6 pb-16">
 
@@ -87,6 +119,37 @@ export default function ForgeLightFxOptions({ forge }) {
               광원·후광·파티클·빛효과를 순흑(#000000) 배경 위 발광 에셋으로 만듭니다. 스크린/애드 블렌드 합성 또는 투명 PNG 추출에 최적. <span className="text-zinc-400">로그인 시 PromptArc '광원 보관함'에 자동 저장.</span>
             </div>
           </div>
+
+          <section>
+            <div className="flex items-center justify-between mb-2.5">
+              <h3 className="text-[12px] font-semibold text-zinc-200">빠른 작업</h3>
+              <span className="text-[9px] text-zinc-600">목적을 고르면 권장값 자동 적용</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              {QUICK_EFFECTS.map(preset => {
+                const active = activeQuickEffect === preset.id;
+                const Icon = preset.icon;
+                return (
+                  <button key={preset.id} type="button" onClick={() => applyQuickEffect(preset)} className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${active ? 'border-[#76cee0]/60 bg-[#76cee0]/10' : 'border-zinc-800 bg-[#121215] hover:border-zinc-700'}`}>
+                    <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${active ? 'bg-[#76cee0] text-zinc-950' : 'bg-zinc-800 text-zinc-400'}`}><Icon className="h-4 w-4" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-[11px] font-bold ${active ? 'text-[#9de4ef]' : 'text-zinc-200'}`}>{preset.label}</span>
+                      <span className="mt-0.5 block text-[9px] leading-relaxed text-zinc-500">{preset.desc}</span>
+                    </span>
+                    {active && <span className="rounded-full bg-[#76cee0]/15 px-2 py-1 text-[8px] font-bold text-[#76cee0]">선택됨</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[9px] leading-relaxed text-zinc-600">아래 형태 참고에 캐릭터·타이틀·아이템 이미지를 올리면 원본은 그리지 않고 정렬된 빛효과만 생성합니다.</p>
+          </section>
+
+          <button type="button" onClick={() => setAdvancedOpen(v => !v)} className="flex h-10 w-full items-center justify-between rounded-lg border border-zinc-800 bg-[#101012] px-3 text-[10px] font-semibold text-zinc-400 hover:border-zinc-700 hover:text-zinc-200">
+            <span className="flex items-center gap-2"><SlidersHorizontal className="h-3.5 w-3.5" /> 상세 옵션 {advancedOpen ? '접기' : '열기'}</span>
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {advancedOpen && <>
 
           {/* 01 — 종류 */}
           <section>
@@ -340,6 +403,8 @@ export default function ForgeLightFxOptions({ forge }) {
             )}
           </section>
 
+          </>}
+
           {/* 형태 참고 (선택) — 빛이 감쌀 오브젝트 실루엣 */}
           <section className={lightFxBase ? 'opacity-40 pointer-events-none' : ''}>
             <h3 className="text-[12px] font-semibold text-zinc-300 mb-1 flex items-center gap-2">
@@ -399,7 +464,7 @@ export default function ForgeLightFxOptions({ forge }) {
           <BgColorPicker
             value={lightFxBgColor}
             onChange={setLightFxBgColor}
-            hint="발광 에셋이 깔릴 단색 배경입니다. 블랙은 스크린/애드 합성에 최적(단, 소프트 글로우는 누끼 시 검은 띠가 생길 수 있음). 깔끔한 누끼가 필요하면 크로마(그린·마젠타·블루)로 생성 후 마스크 포지로 보내세요."
+            hint="발광 에셋은 순흑 배경을 권장합니다. Mask Forge 이펙트 추출(cutoff 6, gamma 0.85, 색상 복원)로 소프트 글로우까지 투명화하세요. 크로마는 발광 감쇠와 색을 손상시킬 수 있습니다."
           />
 
           <section className="rounded-lg border border-zinc-800/70 bg-[#101012] p-2.5">

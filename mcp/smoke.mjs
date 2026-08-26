@@ -41,7 +41,7 @@ await client.connect(transport);
 const { tools } = await client.listTools();
 const names = tools.map((t) => t.name).sort();
 console.log("tools:", names.join(", "));
-for (const n of ["nexus_guide", "nexus_list_options", "nexus_render_image", "nexus_lightfx_prompt", "nexus_variation_prompt", "nexus_design_alternative_prompt", "nexus_item_bundle_prompt", "nexus_quality_up_prompt", "nexus_character_fx_prompt", "nexus_typecore_sovereign_prompt", "nexus_typecore_breeze_prompt", "nexus_remove_background", "nexus_split_character_effect", "nexus_design_rubric", "nexus_banner_codex_list", "nexus_banner_codex_get", "nexus_brand_web_library_list", "nexus_brand_web_library_get", "nexus_promotion_library_list", "nexus_promotion_library_get", "nexus_prompt_arc_list", "nexus_prompt_arc_get"]) {
+for (const n of ["nexus_guide", "nexus_list_options", "nexus_render_image", "nexus_frameforge_prompt", "nexus_lightfx_prompt", "nexus_variation_prompt", "nexus_design_alternative_prompt", "nexus_item_bundle_prompt", "nexus_quality_up_prompt", "nexus_character_fx_prompt", "nexus_typecore_sovereign_prompt", "nexus_typecore_breeze_prompt", "nexus_remove_ai", "nexus_remove_background", "nexus_split_character_effect", "nexus_design_rubric", "nexus_banner_codex_list", "nexus_banner_codex_get", "nexus_brand_web_library_list", "nexus_brand_web_library_get", "nexus_promotion_library_list", "nexus_promotion_library_get", "nexus_prompt_arc_list", "nexus_prompt_arc_get"]) {
   ok(`tool:${n}`, names.includes(n));
 }
 
@@ -59,6 +59,16 @@ const callText = async (name, args) => {
   ok("options:characterFx.bg", j.characterFx.bg.some((o) => o.id === "chroma"));
   ok("options:typecore.sovereign", j.typecore.sovereignArchetype.some((o) => o.id === "core_blade"));
   ok("options:typecore.breeze", j.typecore.breezePersona.some((o) => o.id === "bubble_pop"));
+  ok("options:frameforge.frame", j.frameforge.assetType.some((o) => o.id === "frame"));
+  ok("options:frameforge.silhouette", j.frameforge.silhouette.some((o) => o.id === "frame_wide" && o.for.includes("frame")));
+}
+
+// 2b) FrameForge — 앱의 실제 옵션/완성형 프롬프트 빌더 재사용
+{
+  const f = await callText("nexus_frameforge_prompt", { assetType: "frame", silhouette: "frame_wide", mood: "gold_kingdom", renderStyle: "illustrated", userText: "날짜 텍스트 뒤에 배치할 얇은 무림풍 장식" });
+  ok("frameforge:prompt", !f.isError && /frame|border|gold/i.test(f.text) && /날짜 텍스트/.test(f.text), f.text.slice(0, 160));
+  const invalid = await callText("nexus_frameforge_prompt", { assetType: "badge", silhouette: "frame_wide", mood: "dark_rpg" });
+  ok("frameforge:asset-silhouette-guard", invalid.isError && /사용할 수 없습니다/.test(invalid.text), invalid.text.slice(0, 160));
 }
 
 // 2a) Typecore 전용 프롬프트 — 앱 옵션/빌더 기반, 순흑 배경과 정확한 텍스트 락

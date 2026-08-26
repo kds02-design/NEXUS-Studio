@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Edit3, Settings } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../services/gemini';
-import { renderWithImagen, IMAGEN_MODELS } from '../../../../lib/imagenRender';
+import { renderWithImagen, IMAGEN_MODELS, DEFAULT_IMAGE_MODEL } from '../../../../lib/imagenRender';
 import { uploadBase64 } from '../../../../lib/storage';
 import { TEMP_TTL_MS } from '../../../../lib/promptArcSave';
 import { db, appId } from '../../../../lib/firebase';
@@ -15,6 +15,7 @@ import { useAuth } from '../../../../context/AuthContext';
 import { useGlobal } from '../../../../context/GlobalContext';
 
 import { useSovereignPromptCurrent } from './hooks/useSovereignPromptCurrent.js';
+import { optimizeBeforeRender } from './services/optimizeBeforeRender.js';
 import Sidebar from './components/Sidebar.jsx';
 import Workspace from './components/Workspace.jsx';
 import TuningModal from './components/TuningModal.jsx';
@@ -47,13 +48,17 @@ const App = ({ version, setVersion, versions } = {}) => {
   const [renderedImage, setRenderedImage] = useState(null);
   const [renderError, setRenderError] = useState(null);
   const [savingToArc, setSavingToArc] = useState(false);
-  const [selectedImagenModel, setSelectedImagenModel] = useState(IMAGEN_MODELS[0].id);
+  // Sovereign 최종 타이포 렌더는 품질 일관성을 위해 Gemini 3.0 Pro 로 고정한다.
+  // 프롬프트 최적화용 텍스트 모델과 이미지 생성 모델은 별개다.
+  const selectedImagenModel = DEFAULT_IMAGE_MODEL;
   // 자동 저장 결과 추적 — PromptArc doc id 가 있으면 "저장됨" 표시, null 이면 미저장.
   const [savedToArcId, setSavedToArcId] = useState(null);
   // 저장된 cloudinary URL 캐싱 — Render Matrix 송신 시 재업로드 회피.
   const [savedCloudinaryUrl, setSavedCloudinaryUrl] = useState(null);
   // Render Matrix 송신 진행 상태.
   const [sendingToRenderMatrix, setSendingToRenderMatrix] = useState(false);
+  const [renderStage, setRenderStage] = useState(null);
+  const renderOptimizationCacheRef = useRef(new Map());
 
   // 새 렌더 결과가 들어오면 저장 상태 초기화.
   useEffect(() => {
@@ -100,7 +105,18 @@ const App = ({ version, setVersion, versions } = {}) => {
     }
   }, [user, rp]);
 
-  // Render Matrix 로 송신 — 렌더된 이미지를 RenderMatrix edit 모드의 base image 로 자동 임포트.
+  const buildTypographyLock = useCallback(() => ({
+    exactText: rp.isEditMode ? '' : String(rp.inputText || ''),
+    lines: rp.isEditMode ? [] : String(rp.inputText || '').split('\n'),
+    rowCount: rp.isEditMode ? 0 : String(rp.inputText || '').split('\n').length,
+    aspectRatio: rp.aspectRatio,
+    occupancy: rp.occupancy,
+    layout: rp.layoutType,
+    sourceEngine: 'typecore-sovereign',
+    approvedShape: true,
+  }), [rp.isEditMode, rp.inputText, rp.aspectRatio, rp.occupancy, rp.layoutType]);
+
+  // Render Matrix 로 송신 — 승인된 글자 형태를 base image 로 임포트해 재질·입체를 생성.
   // 자동 저장된 cloudinary URL 이 있으면 재사용. 없으면 즉시 업로드.
   const handleSendToRenderMatrix = useCallback(async () => {
     if (!renderedImage?.dataUrl) return;
@@ -110,9 +126,12 @@ const App = ({ version, setVersion, versions } = {}) => {
       const text = rp.currentOutputContent || '';
       navigate('render-metrics', {
         source: 'typecore-sovereign',
-        mode: 'edit', // RenderMatrix 의 edit 뷰로 자동 전환되며 editImage(base image)에 들어감.
+        target: 'render-metrics',
+        timestamp: Date.now(),
+        mode: 'creation',
         prompt: { text, tags: ['TypecoreSovereign', 'Typography'] },
         image: { url, metadata: { from: 'TypecoreSovereign' } },
+        typographyLock: buildTypographyLock(),
       });
       rp.showToast?.('🚀 Render Matrix 로 보냈어요');
     } catch (e) {
@@ -121,7 +140,7 @@ const App = ({ version, setVersion, versions } = {}) => {
     } finally {
       setSendingToRenderMatrix(false);
     }
-  }, [renderedImage, savedCloudinaryUrl, navigate, rp]);
+  }, [renderedImage, savedCloudinaryUrl, navigate, rp, buildTypographyLock]);
 
   // 완전 자동 파이프라인 — 렌더된 이미지를 RenderMatrix 로 보내 자동으로 image-to-image 렌더까지 실행.
   // mode:'pipeline' 이면 RenderMatrix 가 base image 임포트 + 추천 옵션 자동 적용 + 자동 렌더한다.
@@ -132,16 +151,19 @@ const App = ({ version, setVersion, versions } = {}) => {
       const url = cloudUrl || await uploadBase64(image.dataUrl);
       navigate('render-metrics', {
         source: 'typecore-sovereign',
+        target: 'render-metrics',
+        timestamp: Date.now(),
         mode: 'pipeline',
         prompt: { text: rp.currentOutputContent || promptText || '', tags: ['TypecoreSovereign', 'Typography'] },
         image: { url, metadata: { from: 'TypecoreSovereign' } },
+        typographyLock: buildTypographyLock(),
       });
       rp.showToast?.('🤖 완전 자동 파이프라인 — Render Matrix 로 보냈어요');
     } catch (e) {
       console.error('[TypecoreSovereign] auto pipeline send failed', e);
       rp.showToast?.(`자동 파이프라인 전송 실패: ${e.message || e.code}`);
     }
-  }, [navigate, rp]);
+  }, [navigate, rp, buildTypographyLock]);
 
   const handleRender = useCallback(async (promptText) => {
     const renderPrompt = rp.currentRenderPrompt || promptText;
@@ -154,35 +176,61 @@ const App = ({ version, setVersion, versions } = {}) => {
     }
     const canGen = await rp.ensureCanGenerate?.('image');
     if (canGen === false) { setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)'); return; }
-    setRendering(true); setRenderError(null); setRenderedImage(null);
+    setRendering(true); setRenderStage('optimizing'); setRenderError(null); setRenderedImage(null);
     try {
+      const locks = {
+        exactText: rp.isEditMode ? '' : rp.inputText,
+        lines: rp.isEditMode ? [] : String(rp.inputText || '').split('\n'),
+        aspectRatio: rp.aspectRatio,
+        occupancy: rp.occupancy,
+        layout: rp.layoutType,
+      };
+      let effectiveRenderPrompt = renderPrompt;
+      try {
+        const optimized = await optimizeBeforeRender({
+          apiKey,
+          basePrompt: renderPrompt,
+          targetModel: selectedImagenModel,
+          locks,
+          cache: renderOptimizationCacheRef.current,
+        });
+        effectiveRenderPrompt = optimized.prompt;
+        rp.showToast?.(optimized.cacheHit ? '⚡ 검증된 최적화 프롬프트를 재사용했어요' : '✨ 렌더 전 AI 최적화 완료');
+      } catch (optimizationError) {
+        console.warn('[TypecoreSovereign] render-time optimization failed; using compiled prompt', optimizationError);
+        rp.showToast?.('AI 최적화 실패 — 검증된 조합 프롬프트로 렌더합니다');
+      }
+      setRenderStage('rendering');
       // 생성 모드: 텍스트만 / 리터칭 모드: 업로드한 대상 이미지를 reference 로 전달 (image-to-image).
       //   프롬프트의 "[UPLOAD BASE IMAGE AS REFERENCE]" 는 수동 복사용 안내 문구라
       //   실제 API 호출에선 제거 — 이미지가 인라인으로 첨부되므로 텍스트 지시가 오히려 혼선.
       const referenceImage = rp.isEditMode ? rp.editUploadedImage : null;
-      const cleanPrompt = renderPrompt.replace(/^\[UPLOAD BASE IMAGE AS REFERENCE\]\s*/, '');
+      const cleanPrompt = effectiveRenderPrompt.replace(/^\[UPLOAD BASE IMAGE AS REFERENCE\]\s*/, '');
       // Gemini Image 는 프롬프트 안의 비율 문장보다 imageConfig.aspectRatio 를 우선한다.
       // 텍스트 전용 생성에서 옵션 비율이 실제 API로 전달되지 않아 기본 1:1로 압축되던 문제를 해결.
       const ratioMap = { '2.76:1': '21:9', '2.39:1': '21:9' };
       const apiAspectRatio = rp.isEditMode ? undefined : (ratioMap[rp.aspectRatio] || rp.aspectRatio);
-      const result = await renderWithImagen(cleanPrompt, selectedImagenModel, referenceImage, { aspectRatio: apiAspectRatio });
+      const result = await renderWithImagen(cleanPrompt, selectedImagenModel, referenceImage, {
+        aspectRatio: apiAspectRatio,
+        imageSize: '1K',
+      });
       setRenderedImage(result);
       // PromptArc 자동 저장 → cloudinary URL 확보(파이프라인 전송 시 재업로드 회피).
       let cloudUrl = null;
       if (user?.uid && result?.dataUrl) {
-        const saved = await saveRenderToPromptArc(renderPrompt, result);
+        const saved = await saveRenderToPromptArc(effectiveRenderPrompt, result);
         cloudUrl = saved?.cloudinaryUrl || null;
       }
       // 완전 자동 파이프라인 — 인덱스 메뉴로 진입한 경우(autoPipelineMode)에만 RenderMatrix 로 자동 전송 + 자동 렌더.
       // 일반 진입 시엔 전송하지 않음 — 수동 "Render Matrix 로 보내기" 버튼은 그대로 사용 가능.
       if (autoPipelineMode) {
-        await autoSendToRenderMatrix(result, renderPrompt, cloudUrl);
+        await autoSendToRenderMatrix(result, effectiveRenderPrompt, cloudUrl);
       }
     } catch (e) {
       console.error('[TypecoreSovereign] imagen failed', e);
       setRenderError(e.message || String(e));
-    } finally { setRendering(false); }
-  }, [canRender, selectedImagenModel, user, saveRenderToPromptArc, autoSendToRenderMatrix, autoPipelineMode, rp]);
+    } finally { setRendering(false); setRenderStage(null); }
+  }, [apiKey, canRender, selectedImagenModel, user, saveRenderToPromptArc, autoSendToRenderMatrix, autoPipelineMode, rp]);
 
   const handleDownloadRendered = useCallback(() => {
     if (!renderedImage?.dataUrl) return;
@@ -199,10 +247,10 @@ const App = ({ version, setVersion, versions } = {}) => {
   }, [user, renderedImage, savingToArc, rp, saveRenderToPromptArc]);
 
   const imagen = {
-    imagenModels: IMAGEN_MODELS,
-    selectedModel: selectedImagenModel, setSelectedModel: setSelectedImagenModel,
+    imagenModels: IMAGEN_MODELS.filter((model) => model.id === DEFAULT_IMAGE_MODEL),
+    selectedModel: selectedImagenModel, setSelectedModel: () => {},
     onRender: handleRender,
-    rendering, renderedImage, renderError,
+    rendering, renderStage, renderedImage, renderError,
     onDownloadRendered: handleDownloadRendered,
     onSaveToPromptArc: handleSaveToPromptArc,
     savingToArc,

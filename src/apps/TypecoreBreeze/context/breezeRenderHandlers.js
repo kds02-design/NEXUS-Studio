@@ -17,6 +17,16 @@ const pickEn = (c) => {
 };
 
 export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditView, getPrompts, getEditPrompts }) => {
+  const buildTypographyLock = () => ({
+    exactText: isEditView() ? '' : String(b.inputText || ''),
+    lines: isEditView() ? [] : String(b.inputText || '').split('\n'),
+    rowCount: isEditView() ? 0 : String(b.inputText || '').split('\n').length,
+    aspectRatio: b.aspectRatio,
+    occupancy: b.occupancy,
+    layout: b.layoutType,
+    sourceEngine: 'typecore-breeze',
+    approvedShape: true,
+  });
   // 새 렌더 결과가 들어오면 PromptArc 저장 상태 자동 초기화 — useEffect 가 BreezeContext 에 있음.
   const saveRenderToPromptArc = async (promptText, image) => {
     if (!user?.uid || !image?.dataUrl) return;
@@ -112,8 +122,12 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
       // 입체감·재질감 옵션을 얹는 정상 흐름. (mode:'edit' 는 마이크로 에디트 뷰로 빠지므로 사용하지 않음)
       navigate?.('render-metrics', {
         source: 'typecore-breeze',
+        target: 'render-metrics',
+        mode: 'creation',
+        timestamp: Date.now(),
         prompt: { text, tags: ['TypecoreBreeze', 'Typography'] },
         image: { url, metadata: { from: 'TypecoreBreeze' } },
+        typographyLock: buildTypographyLock(),
       });
     } catch (e) {
       console.error('[TypecoreBreeze] send to RenderMatrix failed', e);
@@ -130,7 +144,11 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
       const url = b.savedCloudinaryUrl || await uploadBase64(b.renderedImage.dataUrl);
       navigate?.('mask-forge', {
         source: 'typecore-breeze',
+        target: 'mask-forge',
+        timestamp: Date.now(),
         image: { url, metadata: { from: 'TypecoreBreeze' } },
+        params: { method: 'luma', removeAiFallback: true },
+        typographyLock: buildTypographyLock(),
       });
     } catch (e) {
       console.error('[TypecoreBreeze] send to MaskForge failed', e);

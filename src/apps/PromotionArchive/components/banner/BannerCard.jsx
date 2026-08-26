@@ -39,44 +39,22 @@ const BannerCard = ({
     >
       <div className="relative w-full overflow-hidden bg-zinc-900 aspect-[4/5]">
         {(() => {
-          // 브랜드웹 — 메인 + 서브 2분할. 두 영역 모두 동일 비율(4:5 카드 / 위아래 50%/50% → 각 영역 16:10)
-          // 로 잘려서 두 이미지의 잘림 정도가 일관됨.
-          // 결정 우선순위:
-          //   메인: banner.mainPageId 가 가리키는 page > banner.full_image > 첫 PC > preview
-          //   서브: banner.subPageId 가 가리키는 page > banner.mobile_image > 첫 Mobile > 두 번째 PC
+          // 브랜드웹 — 첫 PC 메인 페이지 한 장만 썸네일로 사용.
           if (banner.assetType === '브랜드웹') {
             const pages = Array.isArray(banner.pages) ? banner.pages : [];
             const findPageUrl = (id) => (id ? pages.find(p => p?.id === id)?.url : null);
             const mainSrc =
               findPageUrl(banner.mainPageId)
-              || banner.full_image
               || pages.find(p => p?.device === 'pc')?.url
+              || banner.full_image
               || banner.preview
               || banner.imageUrl;
-            const firstMobile = pages.find(p => p?.device === 'mobile')?.url;
-            const pcAfterMain = pages.filter(p => p?.device === 'pc' && p?.url !== mainSrc)[0]?.url;
-            const subSrc =
-              findPageUrl(banner.subPageId)
-              || banner.mobile_image
-              || firstMobile
-              || pcAfterMain
-              || null;
-            const hasSub = !!subSrc && subSrc !== mainSrc;
-            const transform = selected ? 'scale-105' : 'group-hover:scale-105';
             return (
-              <div className="absolute inset-0 flex flex-col">
-                {/* 메인 — 위 50% (영역 비율 16:10) */}
-                <div className="relative w-full overflow-hidden border-b border-black/40" style={{ flex: hasSub ? '1 1 50%' : '1 1 100%' }}>
+              <div className="absolute inset-0 flex items-center bg-[#070707]">
+                <div className="relative w-full aspect-video overflow-hidden border-y border-white/[0.04] shadow-[0_0_28px_rgba(0,0,0,0.5)]">
                   <img src={mainSrc} alt={banner.title} loading="lazy"
-                    className={`w-full h-full object-cover object-top transition-transform duration-500 ${transform}`} />
+                    className={`absolute inset-0 w-full h-full object-cover object-top transition-transform duration-500 ${selected ? 'scale-105' : 'group-hover:scale-105'}`} />
                 </div>
-                {/* 서브 — 아래 50% (동일 16:10) */}
-                {hasSub && (
-                  <div className="relative w-full overflow-hidden" style={{ flex: '1 1 50%' }}>
-                    <img src={subSrc} alt={`${banner.title} sub`} loading="lazy"
-                      className={`w-full h-full object-cover object-top transition-transform duration-500 ${transform}`} />
-                  </div>
-                )}
               </div>
             );
           }

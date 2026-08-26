@@ -27,8 +27,42 @@ const THEME_COLOR = APP_MAP['theme-forge']?.color || '#FF9F1C';
 const FORM_STORAGE = 'frame-forge:form';
 const MAT_STORAGE = 'frame-forge:material';
 const COMPLETE_STORAGE = 'frame-forge:complete';
+const COMPLETE_SETTINGS_STORAGE = 'frame-forge:complete-settings:v1';
 const BATCH_OPTIONS = [8, 16, 32];
 const rnd = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+function defaultCompleteSelection(axes) {
+  const initial = Object.fromEntries(Object.entries(axes).map(([key, axis]) => [key, axis.opts[0]]));
+  initial.preset = axes.preset.opts.find((o) => o.key === 'black_thorn') || initial.preset;
+  initial.material = axes.material.opts.find((o) => o.ko === '전투로 단련된 흑철') || initial.material;
+  initial.ornament = axes.ornament.opts.find((o) => o.ko === '절제된 테두리') || initial.ornament;
+  initial.renderStyle = axes.renderStyle.opts.find((o) => o.key === 'illustrated') || initial.renderStyle;
+  return initial;
+}
+
+function restoreCompleteSettings(axes) {
+  const fallback = defaultCompleteSelection(axes);
+  try {
+    const saved = JSON.parse(localStorage.getItem(COMPLETE_SETTINGS_STORAGE) || 'null');
+    if (!saved?.selection) return { selection:fallback, userIntent:'', simpleMood:'dark_rpg', iconCreative:false };
+    const selection = { ...fallback };
+    for (const [axisKey, savedId] of Object.entries(saved.selection)) {
+      const axis = axes[axisKey];
+      if (!axis) continue;
+      selection[axisKey] = axis.opts.find((o) => (o.key || o.ko) === savedId) || selection[axisKey];
+    }
+    const validShape = axes.silhouette.opts.some((o) => o === selection.silhouette && (!o.for || o.for.includes(selection.assetType.key)));
+    if (!validShape) selection.silhouette = axes.silhouette.opts.find((o) => !o.for || o.for.includes(selection.assetType.key));
+    return {
+      selection,
+      userIntent:typeof saved.userIntent === 'string' ? saved.userIntent : '',
+      simpleMood:SIMPLE_MOODS.some((o) => o.key === saved.simpleMood) ? saved.simpleMood : '',
+      iconCreative:!!saved.iconCreative,
+    };
+  } catch {
+    return { selection:fallback, userIntent:'', simpleMood:'dark_rpg', iconCreative:false };
+  }
+}
 
 async function downloadTransparentPng(dataUrl) {
   const img = new Image();
@@ -497,27 +531,25 @@ function StagePanel({ kind, axes, randomKeys, storageKey, buildPrompt, ensureCan
   const [modalImage, setModalImage] = useState(null);
   const [transparentBusyId, setTransparentBusyId] = useState(null);
   const [savingIds, setSavingIds] = useState({});
-  const [userIntent, setUserIntent] = useState('');
-  const [simpleMood, setSimpleMood] = useState('dark_rpg');
+  const restoredComplete = useMemo(() => isComplete ? restoreCompleteSettings(axes) : null, [isComplete, axes]);
+  const [userIntent, setUserIntent] = useState(() => restoredComplete?.userIntent || '');
+  const [simpleMood, setSimpleMood] = useState(() => restoredComplete?.simpleMood || 'dark_rpg');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(true);
-  const [completeSelection, setCompleteSelection] = useState(() => {
-    const initial = Object.fromEntries(Object.entries(axes).map(([key, axis]) => [key, axis.opts[0]]));
-    if (kind === 'complete') {
-      initial.preset = axes.preset.opts.find((o) => o.key === 'black_thorn') || initial.preset;
-      initial.material = axes.material.opts.find((o) => o.ko === '전투로 단련된 흑철') || initial.material;
-      initial.ornament = axes.ornament.opts.find((o) => o.ko === '절제된 테두리') || initial.ornament;
-      initial.renderStyle = axes.renderStyle.opts.find((o) => o.key === 'illustrated') || initial.renderStyle;
-    }
-    return initial;
-  });
+  const [completeSelection, setCompleteSelection] = useState(() => restoredComplete?.selection || Object.fromEntries(Object.entries(axes).map(([key, axis]) => [key, axis.opts[0]])));
 
   useEffect(() => {
     try { localStorage.setItem(storageKey, JSON.stringify(queue)); } catch { /* quota */ }
   }, [queue, storageKey]);
 
   // 아이콘 창의적 재해석 토글 — 아이콘일 때만 의미. buildCompletePrompt 에 opts 로 전달.
-  const [iconCreative, setIconCreative] = useState(false);
+  const [iconCreative, setIconCreative] = useState(() => restoredComplete?.iconCreative || false);
+
+  useEffect(() => {
+    if (!isComplete) return;
+    const selection = Object.fromEntries(Object.entries(completeSelection).map(([key, value]) => [key, value?.key || value?.ko]));
+    try { localStorage.setItem(COMPLETE_SETTINGS_STORAGE, JSON.stringify({ selection, userIntent, simpleMood, iconCreative })); } catch { /* quota */ }
+  }, [isComplete, completeSelection, userIntent, simpleMood, iconCreative]);
 
   // 완성형 — 옵션/의도 변경 시 우측 프롬프트 실시간 갱신 (반영 버튼 없이도 즉시 반영).
   // buildPrompt(=buildCompletePrompt)·axes 는 안정적 참조라 사용자 액션에만 재실행된다.
@@ -531,6 +563,25 @@ function StagePanel({ kind, axes, randomKeys, storageKey, buildPrompt, ensureCan
   }, [isComplete, completeSelection, userIntent, iconCreative]);
 
   const togglePick = (key) => setPickKeys((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+
+  const randomizeComplete = () => {
+    setSimpleMood('');
+    setSettingsDirty(true);
+    setCompleteSelection((prev) => {
+      const candidates = axes.silhouette.opts.filter((shape) => !shape.for || shape.for.includes(prev.assetType.key));
+      return { ...prev,
+        silhouette:rnd(candidates), preset:rnd(axes.preset.opts), frameWeight:rnd(axes.frameWeight.opts),
+        material:rnd(axes.material.opts), interior:rnd(axes.interior.opts), ornament:rnd(axes.ornament.opts),
+      };
+    });
+    setNote('용도와 표현 방식은 유지하고 형태·스타일·재질을 새로 조합했습니다.');
+  };
+
+  const resetComplete = () => {
+    setCompleteSelection(defaultCompleteSelection(axes));
+    setUserIntent(''); setSimpleMood('dark_rpg'); setIconCreative(false); setAdvancedOpen(false);
+    setNote('기본 추천 설정으로 복원했습니다.');
+  };
 
   const handleGenerate = useCallback(() => {
     if (isComplete) {
@@ -730,6 +781,20 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                   return <button key={item.key} onClick={() => { setSettingsDirty(true); setCompleteSelection((prev) => ({ ...prev, renderStyle:option || prev.renderStyle })); }} className={`py-2.5 rounded-lg border text-[10px] font-bold ${on ? '' : 'text-zinc-400 border-zinc-700'}`} style={on ? OPTION_ACTIVE : undefined}>{item.ko}</button>;
                 })}
               </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-800 bg-black/20 p-3">
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] font-black text-zinc-300">현재 조합</div>
+                <div className="mt-1 text-[9px] leading-relaxed text-zinc-500">
+                  {completeSelection.silhouette?.ko} · {completeSelection.preset?.ko} · {completeSelection.material?.ko} · {completeSelection.interior?.ko}
+                </div>
+              </div>
+              <button onClick={randomizeComplete} className="text-[10px] font-bold px-3 py-2 rounded-lg border inline-flex items-center gap-1.5 hover:brightness-110" style={{ color:ACCENT, borderColor:`${ACCENT}55` }} title="사용 용도와 렌더 표현은 유지합니다">
+                <Shuffle size={12} /> 안전 랜덤 변형
+              </button>
+              <button onClick={resetComplete} className="text-[10px] font-bold px-3 py-2 rounded-lg border border-zinc-700 text-zinc-400 inline-flex items-center gap-1.5 hover:text-white">
+                <RotateCcw size={12} /> 기본값
+              </button>
             </div>
             {/* 아이콘 전용 — 창의적 재해석 토글. 일률적인 글리프 대신 게임풍으로 자유롭게 변형. */}
             {completeSelection.assetType?.key === 'icon' && (

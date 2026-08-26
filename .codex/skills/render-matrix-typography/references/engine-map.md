@@ -12,7 +12,8 @@ Mandatory defaults:
 - `editBudget=Locked`
 - strict original-letterform and alpha-silhouette lock
 - `cameraLens=Telephoto`
-- `projectionDepth=None`
+- general typography: `projectionDepth=None`
+- banner presets: `projectionDepth=Flat2D`, front-face bevel/carving only, `enableShadow=false`
 - surface/material/lighting changes only
 - no font substitution, outline growth, counter filling, horizontal squeeze, or extra text
 

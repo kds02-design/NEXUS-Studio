@@ -5,10 +5,10 @@
 // 검은 배경이라 (1) screen/add 블렌드로 그대로 합성하거나 (2) blackToTransparentPng 로 알파 추출
 // 둘 다 가능 — 변형 모드 결과와 동일한 파이프라인(투명 PNG 버튼)을 그대로 재사용한다.
 
-import { renderWithImagen } from '../../../lib/imagenRender';
-import { maskLightToBaseFootprint } from '../../../lib/lightAlphaTransform';
-import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID, LIGHTFX_FORM_BY_ID, LIGHTFX_MATERIAL_BY_ID, LIGHTFX_GRAIN_BY_ID, LIGHTFX_BOKEH_BY_ID } from '../constants/lightfx';
-import { DEFAULT_BG } from '../constants/variations';
+import { renderWithImagen } from '../../../lib/imagenRender.js';
+import { maskLightToBaseFootprint } from '../../../lib/lightAlphaTransform.js';
+import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID, LIGHTFX_FORM_BY_ID, LIGHTFX_MATERIAL_BY_ID, LIGHTFX_GRAIN_BY_ID, LIGHTFX_BOKEH_BY_ID } from '../constants/lightfx.js';
+import { DEFAULT_BG } from '../constants/variations.js';
 
 const DEFAULT_MODEL = 'gemini-3-pro-image-preview';
 
@@ -43,6 +43,8 @@ const REF_DETAIL_BLOCK = `EDGE-HUGGING DETAIL (refined & restrained): concentrat
 // 뒤쪽/배경 모드 — 피사체 뒤로 들어가는 효과. 실루엣을 따라가지 않고, 외곽선/라인을 만들지 않는다.
 const REF_BEHIND_BLOCK = `BEHIND / BACKDROP MODE — DO NOT TRACE THE SHAPE: the reference only shows WHERE the subject sits. Render the light as a free-form glow sitting BEHIND and around that position, as if backlighting the subject from behind. ★Do NOT trace, outline, rim-light, or reproduce the reference's silhouette, edges, or contour lines.★ There must be NO line art, NO edge outline of the subject, NO shape-following stroke — just a soft volumetric glow / rays / particles behind the subject's location, spreading naturally. The subject's outline must NEVER appear as a bright line in the result.`;
 
+const REF_FRONT_BLOCK = `FOREGROUND ACCENT MODE — LIGHT ONLY: use the reference only to locate the subject. Render a sparse, separable light pass that appears IN FRONT of selected lower edges, corners, or contact points. Keep the center readable and most of the canvas pure black. Do NOT trace the full silhouette, cover the subject area, reproduce any letter/object detail, or create an opaque smoke wall. Use only restrained glints, short wisps, fine particles, or localized contact glow.`;
+
 // 배치 형태(placement) 블록 — 빛이 피사체에 대해 어디에 놓이는지. 형태 참고가 있으면 그 위치에 앵커.
 // edgeHug=true(외곽 감싸기 폼)만 실루엣에 밀착; 그 외(뒤쪽/바닥/자유)는 위치 참조만 하고 형태는 안 따름.
 const placementBlock = (formHint, hasRef, edgeHug) => {
@@ -67,7 +69,7 @@ const SHAPE_HINT = {
   rectangle: 'arrange the entire light effect to form and follow a wide centered horizontal RECTANGLE outline — the luminous energy traces the rectangle edges, hollow darker center',
 };
 
-export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = 'medium', shape = 'none', index = 0, bg, materialHint = '', grainHint = '', bokehHint = '', edgeHug = false }) {
+export function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = 'medium', shape = 'none', index = 0, bg, materialHint = '', grainHint = '', bokehHint = '', edgeHug = false, refMode = 'behind' }) {
   const b = resolveBg(bg);
   const subject = userText && userText.trim() ? userText.trim() : categoryHint;
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
@@ -82,7 +84,7 @@ LIGHT QUALITY / STYLE: ${styleHint}.
 LIGHT COLOR: ${colorHint}. Keep the palette coherent around this color (subtle complementary accents are fine). This chosen color OVERRIDES any color present in the reference image — ignore the reference's own colors and render the glow in this selected color.
 INTENSITY: ${(hugging ? INTENSITY_HINT_REF : INTENSITY_HINT)[intensity] || (hugging ? INTENSITY_HINT_REF : INTENSITY_HINT).medium}.
 ${materialHint ? `MATERIAL / SURFACE: ${materialHint}. Apply this as the light's material and internal surface texture WITHIN its existing shape and placement — do NOT reshape the overall silhouette or turn it into that object; it stays the same light effect, just with this material feel. Still light-only emission, never a solid object or scene.\n` : ''}${grainHint ? `${grainHint}.\n` : ''}${bokehHint ? `${bokehHint}.\n` : ''}${SHAPE_HINT[shape] ? `OVERALL SHAPE (important): ${SHAPE_HINT[shape]}. The overall silhouette of the whole effect MUST clearly read as this shape. The guide outline itself must not be drawn — render light only.\n` : ''}
-${place ? `${place}\n` : ''}${hasRef ? `\n${REF_SHAPE_BLOCK}\n${hugging ? REF_DETAIL_BLOCK : REF_BEHIND_BLOCK}\n` : ''}
+${place ? `${place}\n` : ''}${hasRef ? `\n${REF_SHAPE_BLOCK}\n${hugging ? REF_DETAIL_BLOCK : refMode === 'front' ? REF_FRONT_BLOCK : REF_BEHIND_BLOCK}\n` : ''}
 ${lightFxBackgroundBlock(bg)}
 
 COMPOSITION: center the effect with breathing room; balanced, production-ready, clean. This is variation #${index + 1} — vary the arrangement of the accents versus other variations${hugging ? ' (without adding more light or filling more of the frame — keep every variation sparse and edge-bound)' : ', make its motion/arrangement visibly distinct'} while keeping the same effect type, style, and color.
@@ -91,7 +93,7 @@ FINAL: output ONE light effect (${subject}) glowing on ${bgName} — light only,
 }
 
 // 외부 Gemini / AI Studio 챗 붙여넣기용 컴팩트 버전.
-export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = 'medium', shape = 'none', bg, hasRef = false, materialHint = '', grainHint = '', bokehHint = '', edgeHug = false }) {
+export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = 'medium', shape = 'none', bg, hasRef = false, materialHint = '', grainHint = '', bokehHint = '', edgeHug = false, refMode = 'behind' }) {
   const hugging = !!(hasRef && edgeHug);
   const b = resolveBg(bg);
   const bgName = b.id === 'black' ? 'pure black #000000' : `a flat uniform ${b.label} (${b.hex})`;
@@ -102,6 +104,8 @@ export function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, 
 Effect: ${userText && userText.trim() ? userText.trim() : categoryHint}.
 Style: ${styleHint}. Color: ${colorHint}. Intensity: ${(hugging ? INTENSITY_HINT_REF : INTENSITY_HINT)[intensity] || (hugging ? INTENSITY_HINT_REF : INTENSITY_HINT).medium}.${materialHint ? `\nMaterial: ${materialHint} — surface texture within the same shape (still light-only, no object).` : ''}${grainHint ? `\n${grainHint}.` : ''}${bokehHint ? `\n${bokehHint}.` : ''}${SHAPE_HINT[shape] ? `\nOverall shape (important): ${SHAPE_HINT[shape]}; the whole effect must read as this shape, but do not draw the guide outline itself.` : ''}${formHint ? `\nPlacement: ${formHint}.` : ''}${hasRef ? (hugging
     ? `\nEDGE-HUGGING & RESTRAINED: hug the outer contour of the reference with a crisp thin rim light plus a few small tasteful glints at corners/tips; keep the interior and background almost fully dark — do NOT flood or fill the frame. Premium, sparse, understated.`
+    : refMode === 'front'
+      ? `\nFOREGROUND ACCENT — LIGHT ONLY: place sparse glints, short wisps, fine particles, or localized contact glow in front of selected lower edges/corners. Keep the center clear and most of the canvas black. Do NOT reproduce, cover, or fully outline the reference subject.`
     : `\nBEHIND / BACKDROP — DO NOT TRACE THE SHAPE: use the reference only to know where the subject sits; render a free-form glow behind/around that position. Do NOT trace, outline, or rim-light the silhouette — no edge line of the subject, no shape-following stroke.`)
 + `\nNO REPRODUCED OBJECTS: never redraw any orb, gem, crystal, emblem or item from the reference — replace each bright focal point with a pure abstract glow (no internal shapes), rendered in the chosen color which overrides the reference's own colors.` : ''}
 ${tail}`;
@@ -172,6 +176,7 @@ export async function renderLightFx(spec = {}) {
         bg: spec.bg,
         materialHint, grainHint, bokehHint,
         edgeHug,
+        refMode: form?.refMode || 'behind',
       });
   const compactPrompt = buildCompactLightFxPrompt({
     categoryHint: cat.promptHint,
@@ -183,6 +188,7 @@ export async function renderLightFx(spec = {}) {
     shape: spec.shape,
     bg: spec.bg,
     edgeHug,
+    refMode: form?.refMode || 'behind',
     hasRef: !!ref,
     materialHint, grainHint, bokehHint,
   });

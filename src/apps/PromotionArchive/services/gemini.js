@@ -260,7 +260,18 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     const textOnlyAnchors = (calib.anchors || []).filter(a => !a?.thumbnailUrl);
     const anchorBlock = `${fewShot.text || ''}${formatAnchorsForPrompt(textOnlyAnchors) || ''}`;
 
-    const prompt = `${introFilled}${ruleBlock}${anchorBlock}${folderBlock}`
+    const isBrandWebSet = (calibType === CRITERIA_TYPES.brandweb || calibType === CRITERIA_TYPES.brandwebSub)
+        && (Array.isArray(imagesBase64) ? imagesBase64.filter(Boolean).length : 1) > 1;
+    const representativeSetBlock = isBrandWebSet ? `
+
+[브랜드웹 대표 평가 이미지 세트]
+- 첫 번째 이미지: 1차 메인 페이지
+- 두 번째 이미지: 1차 대표 서브 페이지
+- 두 이미지를 하나의 브랜드 사이트 디자인 세트로 함께 평가하세요.
+- 첫 이미지의 브랜드 임팩트와 두 번째 이미지의 콘텐츠 구조·브랜드 연속성을 종합해 단일 점수를 작성하세요.
+- title/date/tags/summary는 두 이미지 정보를 종합하되 메인 페이지를 우선하세요.
+` : '';
+    const prompt = `${introFilled}${ruleBlock}${anchorBlock}${folderBlock}${representativeSetBlock}`
         + (userComment ? `\n\n[사용자 피드백]\n${userComment}\n` : '');
 
     const imageParts = (Array.isArray(imagesBase64) ? imagesBase64 : [imagesBase64])

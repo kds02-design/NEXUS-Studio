@@ -21,41 +21,43 @@ import ProfilePopover from "./ProfilePopover";
 import DashboardRecentPrompts from "./DashboardRecentPrompts";
 import IndexSearchBar from "./IndexSearchBar";
 import CommandPalette from "./CommandPalette";
-import SkillChat from "../skills-runtime/SkillChat";
 import LoginScreen from "./LoginScreen";
-import PromptArcApp from "../apps/PromptArc";
-import TypecoreSovereignApp from "../apps/TypecoreSovereign";
-import TypecoreBreezeApp from "../apps/TypecoreBreeze";
-import RenderMatrixApp from "../apps/RenderMatrix";
-import RenderMatrixPopApp from "../apps/RenderMatrixPop";
-import MotionMatrixApp from "../apps/MotionMatrix";
-import PromptBuilderApp from "../apps/PromptBuilder";
-import PromptBuilderV2App from "../apps/PromptBuilderV2";
-import RubiconForgeApp from "../apps/RubiconForge";
-import LogoForgeApp from "../apps/LogoForge";
-import DesignEvaluatorApp from "../apps/DesignEvaluator";
-import DesignLexiconApp from "../apps/DesignLexicon";
-import PromotionArchiveApp from "../apps/PromotionArchive";
-import BrandWebReviewApp from "../apps/BrandWebReview";
-import CompetitorRadarApp from "../apps/CompetitorRadar";
-import AssetLibraryApp from "../apps/AssetLibrary";
-import BannerCodexApp from "../apps/BannerCodex";
-import BannerCreatorApp from "../apps/BannerCreator";
-import NexusPreviewApp from "../apps/NexusPreview";
-import PromoSkinApp from "../apps/PromoSkin";
-import MaskForgeApp from "../apps/MaskForge";
-import ThemeForgeApp from "../apps/ThemeForge";
-import FrameForgeApp from "../apps/FrameForge";
-import VectorForgeApp from "../apps/VectorForge";
-import LumKeyApp from "../apps/LumKey";
-import FigmaL10nApp from "../apps/FigmaL10n";
-import BriefStudioApp from "../apps/BriefStudio";
-import NexusAdminApp from "../apps/NexusAdmin";
-import PromptAuditApp from "../apps/PromptAudit";
 import PlaceholderApp from "../apps/PlaceholderApp";
-// recharts 를 메인 번들에서 분리 — 앱 진입 시에만 로드
+
+// 서브앱은 실제 진입 시점에만 내려받는다. 정적 import를 사용하면 인덱스만 보는
+// 사용자도 이미지 처리·차트·PSD·Firebase 기능을 모두 초기 번들로 받게 된다.
+const PromptArcApp = lazy(() => import("../apps/PromptArc"));
+const TypecoreSovereignApp = lazy(() => import("../apps/TypecoreSovereign"));
+const TypecoreBreezeApp = lazy(() => import("../apps/TypecoreBreeze"));
+const RenderMatrixApp = lazy(() => import("../apps/RenderMatrix"));
+const RenderMatrixPopApp = lazy(() => import("../apps/RenderMatrixPop"));
+const MotionMatrixApp = lazy(() => import("../apps/MotionMatrix"));
+const PromptBuilderApp = lazy(() => import("../apps/PromptBuilder"));
+const PromptBuilderV2App = lazy(() => import("../apps/PromptBuilderV2"));
+const RubiconForgeApp = lazy(() => import("../apps/RubiconForge"));
+const LogoForgeApp = lazy(() => import("../apps/LogoForge"));
+const DesignEvaluatorApp = lazy(() => import("../apps/DesignEvaluator"));
+const DesignLexiconApp = lazy(() => import("../apps/DesignLexicon"));
+const PromotionArchiveApp = lazy(() => import("../apps/PromotionArchive"));
+const BrandWebReviewApp = lazy(() => import("../apps/BrandWebReview"));
+const CompetitorRadarApp = lazy(() => import("../apps/CompetitorRadar"));
+const AssetLibraryApp = lazy(() => import("../apps/AssetLibrary"));
+const BannerCodexApp = lazy(() => import("../apps/BannerCodex"));
+const BannerCreatorApp = lazy(() => import("../apps/BannerCreator"));
+const NexusPreviewApp = lazy(() => import("../apps/NexusPreview"));
+const PromoSkinApp = lazy(() => import("../apps/PromoSkin"));
+const MaskForgeApp = lazy(() => import("../apps/MaskForge"));
+const ThemeForgeApp = lazy(() => import("../apps/ThemeForge"));
+const FrameForgeApp = lazy(() => import("../apps/FrameForge"));
+const VectorForgeApp = lazy(() => import("../apps/VectorForge"));
+const LumKeyApp = lazy(() => import("../apps/LumKey"));
+const FigmaL10nApp = lazy(() => import("../apps/FigmaL10n"));
+const BriefStudioApp = lazy(() => import("../apps/BriefStudio"));
+const NexusAdminApp = lazy(() => import("../apps/NexusAdmin"));
+const PromptAuditApp = lazy(() => import("../apps/PromptAudit"));
 const DestinyObservatoryApp = lazy(() => import("../apps/DestinyObservatory"));
 const PetPersonaApp = lazy(() => import("../apps/PetPersona"));
+const SkillChat = lazy(() => import("../skills-runtime/SkillChat"));
 
 // 인덱스 스크롤 → Topbar 배경/블러 동적 계산.
 // 0px: 완전 투명 / 50px: 페이드인 시작 / 150px: 완전 불투명 + blur 16px.
@@ -885,6 +887,18 @@ function AppRouter({ appId, version, setVersion, versions }) {
   }
 }
 
+function AppLoading() {
+  const T = useTheme();
+  return (
+    <div role="status" aria-live="polite" style={{ height:"100%", display:"grid", placeItems:"center", color:T.textMuted }}>
+      <div style={{ display:"flex", alignItems:"center", gap:10, fontSize:12, letterSpacing:"0.04em" }}>
+        <span className="nx-app-loading-dot" aria-hidden="true" />
+        도구를 불러오는 중...
+      </div>
+    </div>
+  );
+}
+
 // Topbar 아래 노출되는 버전 선택 서브헤더 — versions 있는 앱에서만 사용.
 // position:fixed 로 두어 Topbar 와 동일하게 flow 에서 분리, 콘텐츠 위에 항상 떠 있음.
 function VersionSubHeader({ versions, selectedVersion, onSelect }) {
@@ -982,6 +996,8 @@ export default function Shell() {
       <style>{`
         * { box-sizing:border-box; }
         @keyframes fadeUp { from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)} }
+        @keyframes nxAppLoadingPulse { 0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1)} }
+        .nx-app-loading-dot { width:8px; height:8px; border-radius:999px; background:${T.accent}; animation:nxAppLoadingPulse 1s ease-in-out infinite; }
         ::-webkit-scrollbar{width:6px;height:6px}
         ::-webkit-scrollbar-track{background:transparent}
         ::-webkit-scrollbar-thumb{background:${T.border};border-radius:999px}
@@ -1019,15 +1035,20 @@ export default function Shell() {
       )}
       <div style={{ flex:1, overflow:"hidden", paddingTop: innerPaddingTop + subHeaderHeight, minHeight:0 }}>
         {/* 인덱스 재마운트 시 직전 스크롤 위치를 초기값으로 한 번 전달한다. */}
-        {/* eslint-disable-next-line react-hooks/refs */}
         {currentApp
           ? (app?.adminLocked && !isAdmin
             ? <AdminOnlyBlock />
-            : <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} />)
-          : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={indexScrollYRef.current}/>}
+            : <Suspense fallback={<AppLoading />}>
+                <AppRouter appId={currentApp} version={selectedVersion} setVersion={setSelectedVersion} versions={app?.versions} />
+              </Suspense>)
+          : <AppCardGrid onScroll={handleIndexScroll} initialScrollTop={scrollY}/>}
       </div>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} onLaunchSkill={(id) => setSkillChatId(id ?? "")} />
-      <SkillChat key={skillChatId ?? "closed"} openId={skillChatId} onClose={() => setSkillChatId(null)} />
+      {skillChatId !== null && (
+        <Suspense fallback={null}>
+          <SkillChat key={skillChatId} openId={skillChatId} onClose={() => setSkillChatId(null)} />
+        </Suspense>
+      )}
       {loginModalOpen && <LoginScreen asModal onClose={closeLoginModal} />}
       <Notification/>
     </div>

@@ -74,6 +74,7 @@ export function useRenderPrompt() {
 
   // ===== arc payload =====
   const [incomingFromArc, setIncomingFromArc] = useState(null);
+  const [typographyLock, setTypographyLock] = useState(null);
   const [arcRecommended, setArcRecommended] = useState(null);
   const [isArcAnalyzing, setIsArcAnalyzing] = useState(false);
   const consumedPayloadRef = useRef(null);
@@ -148,6 +149,7 @@ export function useRenderPrompt() {
     const isPipeline = payload.mode === 'pipeline';
     const isEditMode = payload.mode === 'edit';
     const payloadTs = payload.timestamp;
+    setTypographyLock(payload.typographyLock || null);
 
     (async () => {
       const mode = isPipeline ? 'pipeline' : isEditMode ? 'edit' : 'creation';
@@ -485,7 +487,8 @@ export function useRenderPrompt() {
     if (currentView === "editor") {
       const ir = generateIR(s, appOptions);
       setCurrentIR(ir);
-      setCompiledOutputs({ NanoBanana: compileNanoBanana(ir, s), ChatGPT: compileChatGPT(ir, s), Midjourney: compileMidjourney(ir, s) });
+      const lockSuffix = typographyLock?.exactText ? `\n\n[TYPOGRAPHY CONTENT LOCK — ABSOLUTE]\nExact text: ${JSON.stringify(typographyLock.exactText)}\nExact rows: ${JSON.stringify(typographyLock.lines || [])}\nPreserve spelling, row count, line breaks, glyph silhouettes, spacing, and approved composition exactly. Change material, depth, lighting, and FX only.` : '';
+      setCompiledOutputs({ NanoBanana: compileNanoBanana(ir, s) + lockSuffix, ChatGPT: compileChatGPT(ir, s) + lockSuffix, Midjourney: compileMidjourney(ir, s) + lockSuffix });
       setFeelSummary(buildFeelSummary(s, appOptions));
     } else if (currentView === "edit") {
       const ir = generateEditIR(s, appOptions);
@@ -515,7 +518,7 @@ export function useRenderPrompt() {
       autoPipelineReadyPendingRef.current = false;
       setAutoPipeline((s2) => (s2 ? { ...s2, status: 'ready' } : null));
     }
-  }, [directorPersona, complexity, typographyScale, cameraLens, frontRelief, projectionDepth, surfaceTreatment, energyCore, fxOrigin, fxIntensity, material, materialInt, dramaticTex, wearLevel, rimMaterial, rimThickness, rimColor, rimIntensity, enableGlint, background, renderEngine, userIntent, imageRatio, currentView, editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent, surfaceDetail, vfxPassMode, enableVfx, enableShadow, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity, motionImage, cameraMotion, vfxDynamics, motionIntent, appOptions, autoPipeline?.id]);
+  }, [directorPersona, complexity, typographyScale, cameraLens, frontRelief, projectionDepth, surfaceTreatment, energyCore, fxOrigin, fxIntensity, material, materialInt, dramaticTex, wearLevel, rimMaterial, rimThickness, rimColor, rimIntensity, enableGlint, background, renderEngine, userIntent, imageRatio, currentView, editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent, surfaceDetail, vfxPassMode, vfxPassOverlay, enableVfx, enableShadow, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity, motionImage, cameraMotion, vfxDynamics, motionIntent, appOptions, autoPipeline?.id, typographyLock]);
 
   // ===== send to Motion Metrics =====
   const sendToMotion = () => {
@@ -532,6 +535,16 @@ export function useRenderPrompt() {
       prompt: { text, tags: ['Render', material, energyCore].filter(Boolean), style: styleParts.join(' · ') },
       image: { url: '', metadata: {} },
       params: { fromModel: aiModel },
+    });
+  };
+
+  const sendToMaskForge = (imageUrl) => {
+    if (!imageUrl) return;
+    navigate('mask-forge', {
+      source: 'render-metrics', target: 'mask-forge', timestamp: Date.now(),
+      image: { url: imageUrl, metadata: { from: 'RenderMatrix', background } },
+      params: { method: 'luma', keyColor: background === 'RealBlack' ? '#000000' : undefined, removeAiFallback: true },
+      typographyLock,
     });
   };
 
@@ -589,6 +602,7 @@ export function useRenderPrompt() {
     baseImage, setBaseImage,
     // arc
     incomingFromArc, setIncomingFromArc,
+    typographyLock,
     arcRecommended, setArcRecommended,
     isArcAnalyzing,
     // 완전 자동 파이프라인
@@ -630,6 +644,6 @@ export function useRenderPrompt() {
     activeTroubleshoots, setActiveTroubleshoots,
     troubleshootHistory, setTroubleshootHistory,
     resetOptimized,
-    sendToMotion,
+    sendToMotion, sendToMaskForge,
   };
 }

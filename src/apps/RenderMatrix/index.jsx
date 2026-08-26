@@ -350,6 +350,7 @@ export default function RenderMatrixApp() {
           renderedImage={renderedImage}
           renderError={renderError}
           onDownloadRendered={handleDownloadRendered}
+          onSendToMaskForge={() => rp.sendToMaskForge?.(renderedImage?.dataUrl)}
           onSaveToPromptArc={handleSaveToPromptArc}
           savingToArc={savingToArc}
           isLoggedIn={!!user?.uid}

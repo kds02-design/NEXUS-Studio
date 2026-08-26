@@ -6,7 +6,7 @@ import { X, Sparkles, Cpu, CheckCircle2, Loader2, AlertTriangle, SkipForward } f
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db as firestore, appId } from "../../../../lib/firebase";
 import { analyzeWebDesign, prepareImageForAI, extractCampaignFolderHint } from "../../services/gemini";
-import { resolveWebCriteriaType } from "../../constants/webEvalCriteria";
+import { getBrandWebEvaluationImageUrls, resolveWebCriteriaType } from "../../constants/webEvalCriteria";
 
 const CONCURRENCY = 3;
 const promoDocRef = (id) => doc(firestore, "artifacts", appId, "public", "data", "promotion-banners", id);
@@ -53,11 +53,7 @@ const AiAnalysisModal = ({ isOpen, onClose, selectedIds, onComplete }) => {
       // 평가 이미지 — 브랜드웹은 메인(+서브) 1~2장, 그 외는 PC+Mobile 2장.
       const imgSources = (() => {
         if (banner.assetType === '브랜드웹') {
-          const pages = Array.isArray(banner.pages) ? banner.pages : [];
-          const findUrl = (id) => (id ? pages.find(p => p?.id === id)?.url : null);
-          const main = findUrl(banner.mainPageId) || banner.full_image || pages.find(p => p?.device === 'pc')?.url || banner.preview;
-          const sub = findUrl(banner.subPageId) || (banner.mainPageId ? null : (banner.mobile_image || pages.find(p => p?.device === 'mobile')?.url));
-          return [main, sub && sub !== main ? sub : null].filter(Boolean);
+          return getBrandWebEvaluationImageUrls(banner);
         }
         return [banner.full_image || banner.preview, banner.mobile_image].filter(Boolean);
       })();

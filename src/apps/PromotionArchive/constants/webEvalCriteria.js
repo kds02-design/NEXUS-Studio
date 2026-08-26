@@ -6,6 +6,18 @@ import { CRITERIA_TYPES } from "../../../lib/evaluationCriteria";
 // 브랜드웹 판정 — assetType === '브랜드웹'.
 export const isBrandWebBanner = (banner) => banner?.assetType === '브랜드웹';
 
+// 브랜드웹 대표 평가 세트: 1차 PC 메인 1장 + 1차 PC 서브 1장.
+export const getBrandWebEvaluationImageUrls = (banner) => {
+  const pages = Array.isArray(banner?.pages) ? banner.pages : [];
+  const phaseOnePc = pages.filter(page => page?.device === 'pc' && Number(page?.sourcePhase || 1) === 1 && page?.url);
+  const pc = phaseOnePc.length ? phaseOnePc : pages.filter(page => page?.device === 'pc' && page?.url);
+  const main = pc.find(page => page.id === banner?.mainPageId) || pc[0];
+  const sub = pc.find(page => page.id !== main?.id);
+  return [main?.url || banner?.full_image || banner?.preview, sub?.url]
+    .filter((url, index, values) => url && values.indexOf(url) === index)
+    .slice(0, 2);
+};
+
 // 브랜드웹 메인/서브 — 기본 'main'. 평가 렌즈 결정에만 사용 (필터/카드 표시와 무관).
 export const getBrandWebKind = (banner) => (banner?.brandWebKind === 'sub' ? 'sub' : 'main');
 
@@ -44,8 +56,9 @@ export const PROMOTION_INTRO_TEMPLATE = `당신은 브랜드 웹사이트 디자
 **⚠️ 이미지 입력 구조 (중요)**
 요청에는 여러 장의 이미지가 첨부됩니다:
   · 앞쪽 이미지들 = **앵커 참고 이미지** (점수 캘리브레이션 전용 — 메타데이터/점수 추출 대상 아님)
-  · "[평가 대상 이미지 — ...]" 마커 직후의 **마지막 이미지** = 진짜 분석 대상
-모든 메타데이터(title, date_info, tags, summary)와 모든 평가 점수는 **오직 마지막 평가 대상 이미지에서만** 추출하세요.
+  · "[평가 대상 이미지 — ...]" 마커 직후 이미지 = 진짜 분석 대상
+  · 대표 세트가 두 장이면 첫 장은 메인, 두 번째 장은 서브이며 **두 장을 함께** 평가
+모든 메타데이터(title, date_info, tags, summary)와 모든 평가 점수는 평가 대상 이미지에서만 추출하세요.
 앵커 이미지의 제목·날짜·태그를 그대로 가져오거나 혼합하는 것은 절대 금지.
 
 [임무 1: 메타데이터 추출 — 평가 대상 이미지만 보고 작성]

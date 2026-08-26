@@ -82,8 +82,48 @@ const PreviewModal = ({
   const moPages = useMemo(() => (isBrandWeb ? banner.pages.filter(p => p.device === 'mobile') : []), [isBrandWeb, banner]);
   const [pcPageIdx, setPcPageIdx] = useState(0);
   const [moPageIdx, setMoPageIdx] = useState(0);
+  const [pcAspectRatios, setPcAspectRatios] = useState({});
+  const [mobileAspectRatios, setMobileAspectRatios] = useState({});
+  const pcScrollRef = useRef(null);
+  const mobileScrollRef = useRef(null);
+  const isContinuousPc = useMemo(
+    () => /(?:DAEVA|DEVA|DAIVA)\s*LOOKBOOK|데바\s*룩북/i.test(banner?.title || ''),
+    [banner?.title]
+  );
+  const isContinuousMobile = useMemo(
+    () => /(?:DAEVA|DEVA|DAIVA)\s*LOOKBOOK|데바\s*룩북/i.test(banner?.title || ''),
+    [banner?.title]
+  );
+  const rememberMobileRatio = useCallback((page, event) => {
+    const image = event.currentTarget;
+    if (!image.naturalWidth || !image.naturalHeight) return;
+    const key = page.id || page.url;
+    const ratio = image.naturalHeight / image.naturalWidth;
+    setMobileAspectRatios(previous => previous[key] === ratio ? previous : { ...previous, [key]: ratio });
+  }, []);
+  const rememberPcRatio = useCallback((page, event) => {
+    const image = event.currentTarget;
+    if (!image.naturalWidth || !image.naturalHeight) return;
+    const key = page.id || page.url;
+    const ratio = image.naturalHeight / image.naturalWidth;
+    setPcAspectRatios(previous => previous[key] === ratio ? previous : { ...previous, [key]: ratio });
+  }, []);
   // 페이지 인덱스 reset — banner 가 바뀌면(다른 카드 열기) 0 으로.
-  useEffect(() => { setPcPageIdx(0); setMoPageIdx(0); }, [banner?.id]);
+  useEffect(() => { setPcPageIdx(0); setMoPageIdx(0); setPcAspectRatios({}); setMobileAspectRatios({}); }, [banner?.id]);
+
+  useEffect(() => {
+    if (!isContinuousPc || state.activeTab !== 'pc') return;
+    const container = pcScrollRef.current;
+    const target = container?.querySelector(`[data-pc-page-index="${pcPageIdx}"]`);
+    if (container && target) container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
+  }, [isContinuousPc, pcPageIdx, state.activeTab]);
+
+  useEffect(() => {
+    if (!isContinuousMobile || state.activeTab !== 'mobile') return;
+    const container = mobileScrollRef.current;
+    const target = container?.querySelector(`[data-mobile-page-index="${moPageIdx}"]`);
+    if (container && target) container.scrollTo({ top: target.offsetTop, behavior: 'smooth' });
+  }, [isContinuousMobile, moPageIdx, state.activeTab]);
 
   // 페이지 네비게이터 접기/펴기 — 모바일 뷰 하단과 겹치는 경우 사용자가 직접 숨길 수 있도록.
   // localStorage 영속화 (다음 진입 시 마지막 상태 복원).
@@ -101,6 +141,8 @@ const PreviewModal = ({
   const replacePageTargetRef = useRef(null);
   const handlePageWheel = useCallback((e) => {
     if (!isBrandWeb) return;
+    if (state.activeTab === 'mobile' && isContinuousMobile) return;
+    if (state.activeTab === 'pc' && isContinuousPc) return;
     const list = state.activeTab === 'pc' ? pcPages : moPages;
     const idx = state.activeTab === 'pc' ? pcPageIdx : moPageIdx;
     const setIdx = state.activeTab === 'pc' ? setPcPageIdx : setMoPageIdx;
@@ -115,7 +157,7 @@ const PreviewModal = ({
       setIdx(next);
       wheelLockRef.current = Date.now() + 550; // transition 시간 + 여유
     }
-  }, [isBrandWeb, state.activeTab, state.isActualSize, pcPages, moPages, pcPageIdx, moPageIdx]);
+  }, [isBrandWeb, state.activeTab, state.isActualSize, isContinuousPc, isContinuousMobile, pcPages, moPages, pcPageIdx, moPageIdx]);
   // 키보드 ←/→ ↑/↓ 도 지원.
   useEffect(() => {
     if (!isOpen || !isBrandWeb) return;
@@ -641,7 +683,7 @@ const PreviewModal = ({
             />
             {state.activeTab === "pc" ? (
               <div
-                ref={scrollRef}
+                ref={(node) => { scrollRef.current = node; pcScrollRef.current = node; }}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
@@ -660,28 +702,26 @@ const PreviewModal = ({
                   className={`flex flex-col items-center transition-all duration-700 ${state.isFullView ? "min-h-full p-0 justify-start" : "h-full py-4 px-6 justify-center"}`}
                 >
                   {state.isFullView ? (
-                    // 풀뷰 — 브랜드웹은 패럴렉스 cross-fade(한 페이지씩), 그 외는 단일 이미지.
+                    // 풀뷰 — 긴 브랜드웹은 가로 맞춤 연속 스크롤, 일반형은 패럴렉스 전환.
                     isBrandWeb && pcPages.length > 0 ? (
-                      <div
-                        className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[1920px]"} shadow-2xl relative aspect-video bg-black overflow-hidden`}
-                        onWheel={handlePageWheel}
-                      >
-                        {/* lineagew 캠페인 페이지 패턴 — translateY 로 한 페이지씩 위로 슬라이드. */}
-                        <div
-                          className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
-                          style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}
-                        >
-                          {pcPages.map((p, i) => (
-                            <div
-                              key={p.id || i}
-                              className="absolute left-0 right-0 h-full flex items-center justify-center"
-                              style={{ top: `${i * 100}%` }}
-                            >
-                              <img src={p.url} alt={p.name || `PC ${i + 1}`} draggable={false}
-                                className="max-w-full max-h-full w-full h-full object-contain block" />
-                            </div>
-                          ))}
-                        </div>
+                      <div className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[1920px]"} shadow-2xl relative bg-black ${isContinuousPc ? '' : 'aspect-video overflow-hidden'}`} onWheel={handlePageWheel}>
+                        {isContinuousPc ? (
+                          <div className="w-full bg-black">
+                            {pcPages.map((p, i) => (
+                              <img key={p.id || i} data-pc-page-index={i} src={p.url} alt={p.name || `PC ${i + 1}`}
+                                onLoad={(event) => rememberPcRatio(p, event)} draggable={false} className="w-full h-auto block m-0 p-0" />
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]" style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}>
+                            {pcPages.map((p, i) => (
+                              <div key={p.id || i} className="absolute left-0 right-0 h-full flex items-center justify-center" style={{ top: `${i * 100}%` }}>
+                                <img src={p.url} alt={p.name || `PC ${i + 1}`} onLoad={(event) => rememberPcRatio(p, event)} draggable={false}
+                                  className="max-w-full max-h-full w-full h-full object-contain block" />
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {highlightActive && jumpHighlight?.rect && state.activeTab === "pc" && <HighlightBox rect={jumpHighlight.rect} />}
                       </div>
                     ) : (
@@ -722,23 +762,25 @@ const PreviewModal = ({
                           </div>
                         </div>
                         {/* 컨텐츠 — 16:9 (PC 시안 표준). 브랜드웹은 vertical slide. bg-black 으로 letterbox 흰 라인 제거. */}
-                        <div className="relative w-full aspect-video bg-black overflow-hidden border-t border-[#35363a]" onWheel={handlePageWheel}>
+                        <div ref={pcScrollRef} className={`relative w-full aspect-video bg-black ${isContinuousPc ? 'overflow-y-auto scrollbar-hide' : 'overflow-hidden'} border-t border-[#35363a]`} onWheel={handlePageWheel}>
                           {isBrandWeb && pcPages.length > 0 ? (
-                            <div
-                              className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
-                              style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}
-                            >
-                              {pcPages.map((p, i) => (
-                                <div
-                                  key={p.id || i}
-                                  className="absolute left-0 right-0 h-full flex items-center justify-center"
-                                  style={{ top: `${i * 100}%` }}
-                                >
-                                  <img src={p.url} alt={p.name || `PC ${i + 1}`} draggable={false}
-                                    className="w-full h-full object-contain block" />
-                                </div>
-                              ))}
-                            </div>
+                            isContinuousPc ? (
+                              <div className="w-full bg-black">
+                                {pcPages.map((p, i) => (
+                                  <img key={p.id || i} data-pc-page-index={i} src={p.url} alt={p.name || `PC ${i + 1}`}
+                                    onLoad={(event) => rememberPcRatio(p, event)} draggable={false} className="w-full h-auto block m-0 p-0" />
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]" style={{ transform: `translateY(-${pcPageIdx * 100}%)`, transitionDuration: '700ms' }}>
+                                {pcPages.map((p, i) => (
+                                  <div key={p.id || i} className="absolute left-0 right-0 h-full flex items-center justify-center" style={{ top: `${i * 100}%` }}>
+                                    <img src={p.url} alt={p.name || `PC ${i + 1}`} onLoad={(event) => rememberPcRatio(p, event)} draggable={false}
+                                      className="w-full h-full object-contain block" />
+                                  </div>
+                                ))}
+                              </div>
+                            )
                           ) : (
                             <div className="absolute inset-0 overflow-y-auto scrollbar-hide bg-white">
                               <img src={pcImage} alt="PC" className="w-full h-auto block" draggable={false} />
@@ -770,25 +812,31 @@ const PreviewModal = ({
                     // 브랜드웹 모바일 풀뷰 — 고정 aspect-[9/16] 제거, viewport 높이 기반 산정.
                     // 24인치 1080p 에서 max-w-480 * 16/9 = 854px > 가용 높이 ~830px 이어서 하단이 잘리던 사고 해소.
                     <div
-                      className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} shadow-2xl relative bg-black overflow-hidden rounded-xl`}
+                      ref={mobileScrollRef}
+                      className={`${state.isActualSize ? "w-max m-auto" : "w-full max-w-[480px]"} shadow-2xl relative bg-black ${isContinuousMobile ? 'overflow-y-auto scrollbar-hide' : 'overflow-hidden'} rounded-xl`}
                       style={{ height: 'calc(100vh - 180px)' }}
                       onWheel={handlePageWheel}
                     >
-                      <div
-                        className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
-                        style={{ transform: `translateY(-${moPageIdx * 100}%)`, transitionDuration: '700ms' }}
-                      >
-                        {moPages.map((p, i) => (
-                          <div
-                            key={p.id || i}
-                            className="absolute left-0 right-0 h-full flex items-center justify-center"
-                            style={{ top: `${i * 100}%` }}
-                          >
-                            <img src={p.url} alt={p.name || `Mobile ${i + 1}`} draggable={false}
-                              className="w-full h-full object-contain block" />
-                          </div>
-                        ))}
-                      </div>
+                      {isContinuousMobile ? (
+                        <div className="w-full bg-black">
+                          {moPages.map((p, i) => (
+                            <img key={p.id || i} data-mobile-page-index={i} src={p.url} alt={p.name || `Mobile ${i + 1}`}
+                              onLoad={(event) => rememberMobileRatio(p, event)} draggable={false} className="w-full h-auto block m-0 p-0" />
+                          ))}
+                        </div>
+                      ) : (
+                        <div
+                          className="absolute inset-0 transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
+                          style={{ transform: `translateY(-${moPageIdx * 100}%)`, transitionDuration: '700ms' }}
+                        >
+                          {moPages.map((p, i) => (
+                            <div key={p.id || i} className="absolute left-0 right-0 h-full flex items-center justify-center" style={{ top: `${i * 100}%` }}>
+                              <img src={p.url} alt={p.name || `Mobile ${i + 1}`} onLoad={(event) => rememberMobileRatio(p, event)} draggable={false}
+                                className="w-full h-full object-contain block" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {highlightActive && jumpHighlight?.rect && state.activeTab === "mobile" && <HighlightBox rect={jumpHighlight.rect} />}
                     </div>
                   ) : (
@@ -854,23 +902,28 @@ const PreviewModal = ({
                       style={{ transform: 'translateZ(0)' }}
                     >
                       {/* 컨텐츠 영역 — 브랜드웹은 vertical slide. bg-black 으로 letterbox 흰 라인 제거. */}
-                      <div className="absolute inset-0 bg-black pt-[44px] pb-[24px] scrollbar-hide overflow-hidden" onWheel={handlePageWheel}>
+                      <div ref={mobileScrollRef} className={`absolute inset-0 bg-black pt-[44px] pb-[24px] scrollbar-hide ${isContinuousMobile ? 'overflow-y-auto' : 'overflow-hidden'}`} onWheel={handlePageWheel}>
                         {isBrandWeb && moPages.length > 0 ? (
-                          <div
-                            className="absolute inset-x-0 top-[44px] bottom-[24px] transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
-                            style={{ transform: `translateY(-${moPageIdx * 100}%)`, transitionDuration: '700ms' }}
-                          >
-                            {moPages.map((p, i) => (
-                              <div
-                                key={p.id || i}
-                                className="absolute left-0 right-0 h-full flex items-center justify-center"
-                                style={{ top: `${i * 100}%` }}
-                              >
-                                <img src={p.url} alt={p.name || `Mobile ${i + 1}`} draggable={false}
-                                  className="w-full h-full object-contain block" />
-                              </div>
-                            ))}
-                          </div>
+                          isContinuousMobile ? (
+                            <div className="w-full bg-black">
+                              {moPages.map((p, i) => (
+                                <img key={p.id || i} data-mobile-page-index={i} src={p.url} alt={p.name || `Mobile ${i + 1}`}
+                                  onLoad={(event) => rememberMobileRatio(p, event)} draggable={false} className="w-full h-auto block m-0 p-0" />
+                              ))}
+                            </div>
+                          ) : (
+                            <div
+                              className="absolute inset-x-0 top-[44px] bottom-[24px] transition-transform ease-[cubic-bezier(0.7,0,0.3,1)]"
+                              style={{ transform: `translateY(-${moPageIdx * 100}%)`, transitionDuration: '700ms' }}
+                            >
+                              {moPages.map((p, i) => (
+                                <div key={p.id || i} className="absolute left-0 right-0 h-full flex items-center justify-center" style={{ top: `${i * 100}%` }}>
+                                  <img src={p.url} alt={p.name || `Mobile ${i + 1}`} onLoad={(event) => rememberMobileRatio(p, event)} draggable={false}
+                                    className="w-full h-full object-contain block" />
+                                </div>
+                              ))}
+                            </div>
+                          )
                         ) : (
                           <div className="w-full h-full overflow-y-auto scrollbar-hide bg-white">
                             <img src={moImage} alt="Mobile" className="w-full h-auto block" draggable={false} />

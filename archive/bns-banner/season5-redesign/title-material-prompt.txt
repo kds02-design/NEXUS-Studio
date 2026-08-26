@@ -1,5 +1,0 @@
-Material-render this exact supplied flat Korean title while treating its letterform silhouette, spelling, counters, spacing, two-line structure, relative line sizes, and framing as immutable. Render each line exactly once. Do not redraw, substitute, duplicate, add, or remove any glyph.
-
-Apply Render Matrix premium fantasy material only: first line in subdued antique warm gold; second line in pale ivory-jade metal with a dark graphite inner bevel and a very thin copper-gold outer rim. Use shallow front-face carving, minimal side thickness, controlled upper-left key light, restrained specular highlights, and clean AAA MMORPG finish. Keep teal only as a tiny reflected accent, never as a broad border or interior fill. No red fill.
-
-Keep the background pure black for later transparency extraction. No plaque, backing plate, emblem, scene, particles, broad glow, duplicated title, extra text, font substitution, deep extrusion, thick cyan outline, teal-filled counters, or silhouette mutation.

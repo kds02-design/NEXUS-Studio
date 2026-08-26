@@ -7,7 +7,7 @@ import { IMAGEN_MODELS } from "../../../lib/imagenRender";
 import { transparentForSave } from "../../../lib/saveTransparent";
 import QualityEnhancer from "./QualityEnhancer";
 import PsdImportModal from "./PsdImportModal";
-import { renderBgCompose, renderBgGenerate, renderItemBundle, saveBundleToPromptArc, BUNDLE_LIGHT_OPTIONS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, saveFloatingToPromptArc, FLOATING_EFFECT_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_COLORS } from "../services/bgTools";
+import { renderBgCompose, renderBgGenerate, renderItemBundle, saveBundleToPromptArc, BUNDLE_LIGHT_OPTIONS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, saveFloatingToPromptArc, FLOATING_OUTPUT_OPTIONS, FLOATING_EFFECT_OPTIONS, FLOATING_FORM_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_GROUP_OPTIONS, FLOATING_COLORS, FLOATING_INTENSITY_OPTIONS, FLOATING_MOTION_OPTIONS, FLOATING_DENSITY_OPTIONS, resolveFloatingGroupPlan } from "../services/bgTools";
 import { colorKeyToTransparentPng } from "../../../lib/colorKeyExtract";
 import { renderCharEnhanced, saveCharToPromptArc, resolveCharBg, CHAR_LIGHT_OPTIONS, CHAR_PARTICLE_OPTIONS, CHAR_INTENSITY_OPTIONS, CHAR_BG_OPTIONS } from "../services/characterEnhancer";
 import { renderTitleEffect, saveTitleToPromptArc, TITLE_FX_EFFECTS, TITLE_FX_COLORS, TITLE_FX_DIRECTIONS, TITLE_FX_INTENSITY, TITLE_FX_BG_OPTIONS } from "../services/titleEffect";
@@ -72,13 +72,14 @@ function Dropzone({ T, accent, dataUrl, onFile, onClear, title, sub, accept = "i
   return <div onClick={() => fileRef.current?.click()} onDrop={(e) => { e.preventDefault(); setOver(false); read(e.dataTransfer.files?.[0]); }} onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} style={{ minHeight: 150, display: "grid", placeItems: "center", textAlign: "center", border: `1.5px dashed ${over ? accent : T.border}`, borderRadius: 12, padding: 20, background: over ? `${accent}14` : T.surface, cursor: "pointer", boxSizing: "border-box" }}><div><Upload size={20} color={accent} /><div style={{ marginTop: 8, color: T.text, fontSize: 13, fontWeight: 700 }}>{title}</div><div style={{ marginTop: 4, color: T.textMuted, fontSize: 11 }}>{sub || "클릭하거나 파일을 끌어 놓으세요"}</div></div><input ref={fileRef} type="file" accept={accept} hidden onChange={(e) => read(e.target.files?.[0])} /></div>;
 }
 
-function ResultView({ T, accent, url, busy, onRetry, filePrefix, transparentOnSave = false, colorKeyBlack = false, maxW }) {
+function ResultView({ T, accent, url, busy, onRetry, filePrefix, transparentOnSave = false, alreadyTransparent = false, colorKeyBlack = false, maxW }) {
   const { navigate } = useGlobal();
   const [txBusy, setTxBusy] = useState(false);
   const [maskSrc, setMaskSrc] = useState(null); // 자동 투명화 실패 시 Mask Forge 로 보낼 원본
   const anchor = (href, suffix) => { const a = document.createElement("a"); a.href = href; a.download = `${filePrefix}${suffix}_${Date.now()}.png`; a.click(); };
   // 오브젝트 결과는 저장 시 자동 투명화. 실패(복잡 배경) 시 원본 저장 + Mask Forge 안내.
   const download = async () => {
+    if (alreadyTransparent) { anchor(url, "_transparent"); return; }
     if (!transparentOnSave) { anchor(url, ""); return; }
     setTxBusy(true); setMaskSrc(null);
     // 불투명 아이템(검은 배경) → 마스크 포지 로컬 색상 키(구멍 보호). 그 외 → 배경 분석 자동 투명화.
@@ -96,7 +97,7 @@ function ResultView({ T, accent, url, busy, onRetry, filePrefix, transparentOnSa
     setTxBusy(false);
   };
   const toMaskForge = () => navigate("mask-forge", { source: "nexus-preview", image: { url: maskSrc || url, metadata: {} } });
-  return <section style={{ minHeight: 430, border: `1px solid ${T.border}`, background: T.surface, borderRadius: 14, padding: 16, boxSizing: "border-box" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, marginBottom: 12 }}>렌더 결과{transparentOnSave ? " · 저장 시 자동 투명화" : ""}</div>{url ? <><img src={url} alt="렌더 결과" style={{ width: "100%", maxWidth: maxW || "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 10, background: "#08090b", display: "block", margin: maxW ? "0 auto" : undefined }} /><div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button onClick={download} disabled={txBusy} style={{ ...secondaryBtn(T, accent), opacity: txBusy ? 0.6 : 1 }}>{txBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {transparentOnSave ? "투명 PNG 저장" : "PNG 다운로드"}</button><button onClick={onRetry} disabled={busy} style={secondaryBtn(T, accent)}><Wand2 size={14} /> 다시 렌더링</button></div>{maskSrc && <div style={{ marginTop: 8, fontSize: 11, color: T.textDim }}>배경이 복잡해 원본으로 저장했어요. <button onClick={toMaskForge} style={{ color: accent, background: "none", border: 0, cursor: "pointer", fontWeight: 700, padding: 0 }}>Mask Forge에서 배경 제거 →</button></div>}</> : <div style={{ minHeight: 350, display: "grid", placeItems: "center", color: T.textDim, fontSize: 13, border: `1px dashed ${T.border}`, borderRadius: 10 }}>{busy ? <><Loader2 className="animate-spin" size={22} /> 렌더링 중...</> : "왼쪽에서 설정한 뒤 바로 렌더링하세요."}</div>}</section>;
+  return <section style={{ minHeight: 430, border: `1px solid ${T.border}`, background: T.surface, borderRadius: 14, padding: 16, boxSizing: "border-box" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, marginBottom: 12 }}>렌더 결과{alreadyTransparent ? " · 투명 레이어 합성 완료" : transparentOnSave ? " · 저장 시 자동 투명화" : ""}</div>{url ? <><img src={url} alt="렌더 결과" style={{ width: "100%", maxWidth: maxW || "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 10, background: "#08090b", display: "block", margin: maxW ? "0 auto" : undefined }} /><div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button onClick={download} disabled={txBusy} style={{ ...secondaryBtn(T, accent), opacity: txBusy ? 0.6 : 1 }}>{txBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {alreadyTransparent || transparentOnSave ? "투명 PNG 저장" : "PNG 다운로드"}</button><button onClick={onRetry} disabled={busy} style={secondaryBtn(T, accent)}><Wand2 size={14} /> 다시 렌더링</button></div>{maskSrc && <div style={{ marginTop: 8, fontSize: 11, color: T.textDim }}>배경이 복잡해 원본으로 저장했어요. <button onClick={toMaskForge} style={{ color: accent, background: "none", border: 0, cursor: "pointer", fontWeight: 700, padding: 0 }}>Mask Forge에서 배경 제거 →</button></div>}</> : <div style={{ minHeight: 350, display: "grid", placeItems: "center", color: T.textDim, fontSize: 13, border: `1px dashed ${T.border}`, borderRadius: 10 }}>{busy ? <><Loader2 className="animate-spin" size={22} /> 렌더링 중...</> : "왼쪽에서 설정한 뒤 바로 렌더링하세요."}</div>}</section>;
 }
 
 
@@ -392,8 +393,9 @@ function ItemBundle({ T, accent }) {
   const [busy, setBusy] = useState(false), [result, setResult] = useState(null), [error, setError] = useState("");
   const [over, setOver] = useState(false);
   const [savedArc, setSavedArc] = useState(""); // "" | "saving" | "done" | "failed"
-  // 레이어 분리(PSD) 모드 — 아이템+후광+바닥광+전방을 각각 레이어로 렌더 → .psd 조립.
-  const [psdMode, setPsdMode] = useState(false);
+  // 기본은 투명 레이어 자동 합성. 필요할 때 단일 이미지 또는 편집용 PSD를 선택.
+  const [bundleOutput, setBundleOutput] = useState("layered-transparent");
+  const psdMode = bundleOutput === "psd";
   const [fxColor, setFxColor] = useState("gold");
   const [fxLayers, setFxLayers] = useState({ back: true, ground: true, front: true });
   const [psdBusy, setPsdBusy] = useState(false), [psdResult, setPsdResult] = useState(null);
@@ -445,6 +447,26 @@ function ItemBundle({ T, accent }) {
       });
       setPsdResult(res); setPsdProgress("");
     } catch (e) { setPsdError(e?.message || "레이어 렌더 중 오류가 발생했습니다."); setPsdProgress(""); }
+    finally { setPsdBusy(false); }
+  };
+  const runTransparent = async () => {
+    if (items.length < 2 || psdBusy || !(await ensureCanGenerate("image"))) return;
+    setPsdBusy(true); setResult(null); setError(""); setPsdProgress("아이템 투명 레이어 렌더 중…"); setSavedArc("");
+    try {
+      const res = await renderBundleLayers(items, {
+        layout, intent, imageSize: size, modelId: model,
+        color: fxColor, backGlow: fxLayers.back, groundLight: fxLayers.ground, frontEffect: fxLayers.front,
+        onProgress: setPsdProgress,
+      });
+      setResult(res.previewDataUrl); setPsdResult(res); setPsdProgress("");
+      if (user?.uid) {
+        setSavedArc("saving");
+        try {
+          await saveBundleToPromptArc(res.previewDataUrl, user, { light, ground: "none", bg: "transparent", layout, intent, itemCount: items.length, outputMode: "layered-transparent" });
+          setSavedArc("done");
+        } catch (e) { console.error("[ItemBundle] 투명 결과 PromptArc 저장 실패", e); setSavedArc("failed"); }
+      }
+    } catch (e) { setError(e?.message || "투명 레이어 합성 중 오류가 발생했습니다."); setPsdProgress(""); }
     finally { setPsdBusy(false); }
   };
   const downloadPsd = () => {
@@ -501,13 +523,17 @@ function ItemBundle({ T, accent }) {
         </div>
       </div>
 
-      {/* 4. 레이어 분리 (PSD) */}
+      {/* 4. 출력 방식 */}
       <div>
-        <span style={optionLabel}><Layers size={12} /> 4. 레이어 분리 (PSD)</span>
-        <button onClick={() => setPsdMode((v) => !v)} style={chip(psdMode)}>{psdMode ? "켜짐 · 4레이어 PSD" : "꺼짐 · 단일 이미지"}</button>
-        {psdMode && (
+        <span style={optionLabel}><Layers size={12} /> 4. 출력 방식</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          <button onClick={() => setBundleOutput("layered-transparent")} style={chip(bundleOutput === "layered-transparent")}>투명 레이어 자동 합성</button>
+          <button onClick={() => setBundleOutput("flat")} style={chip(bundleOutput === "flat")}>단일 이미지</button>
+          <button onClick={() => setBundleOutput("psd")} style={chip(bundleOutput === "psd")}>4레이어 PSD</button>
+        </div>
+        {bundleOutput !== "flat" && (
           <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-            <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.6 }}>아이템 + <strong>후광 · 바닥광 · 전방 이펙트</strong>를 각각 레이어로 렌더해 포토샵 <strong>.psd</strong> 한 파일로 조립합니다. (렌더 최대 4회 — 비용↑ · 이펙트는 순흑 위 빛만 렌더 후 Screen 합성)</div>
+            <div style={{ fontSize: 11, color: T.textDim, lineHeight: 1.6 }}>아이템과 <strong>후광 · 바닥광 · 전방 이펙트</strong>를 각각 렌더·투명화해 같은 좌표로 합성합니다. {psdMode ? "편집 가능한 PSD도 함께 만듭니다." : "최종 RGBA 투명 PNG로 바로 내보냅니다."} (렌더 최대 4회)</div>
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
               {[["back", "후광"], ["ground", "바닥광"], ["front", "전방 이펙트"]].map(([k, ko]) => <button key={k} onClick={() => setFxLayers((s) => ({ ...s, [k]: !s[k] }))} style={chip(fxLayers[k])}>{fxLayers[k] ? "✓ " : ""}{ko}</button>)}
             </div>
@@ -525,10 +551,10 @@ function ItemBundle({ T, accent }) {
       <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{["1K", "2K", "4K"].map((v) => <button key={v} onClick={() => setSize(v)} style={chip(size === v)}>{v}</button>)}</div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
         <ModelSelect T={T} model={model} onChange={setModel} />
-        <button onClick={psdMode ? runPsd : run} disabled={items.length < 2 || busy || psdBusy} style={primaryBtn(T, accent, items.length < 2 || busy || psdBusy)}>{(busy || psdBusy) ? <Loader2 size={15} className="animate-spin" /> : (psdMode ? <Layers size={15} /> : <Gift size={15} />)} {psdMode ? "PSD 레이어 렌더" : "꾸러미 렌더링"}</button>
+        <button onClick={psdMode ? runPsd : bundleOutput === "layered-transparent" ? runTransparent : run} disabled={items.length < 2 || busy || psdBusy} style={primaryBtn(T, accent, items.length < 2 || busy || psdBusy)}>{(busy || psdBusy) ? <Loader2 size={15} className="animate-spin" /> : (bundleOutput !== "flat" ? <Layers size={15} /> : <Gift size={15} />)} {psdMode ? "PSD 레이어 렌더" : bundleOutput === "layered-transparent" ? "투명 PNG 자동 합성" : "꾸러미 렌더링"}</button>
       </div>
-      {psdMode && psdBusy && psdProgress && <div style={{ color: T.textDim, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><Loader2 size={12} className="animate-spin" /> {psdProgress}</div>}
-      {psdMode && psdError && <div style={{ color: "#f87171", fontSize: 12 }}>{psdError}</div>}
+      {bundleOutput !== "flat" && psdBusy && psdProgress && <div style={{ color: T.textDim, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><Loader2 size={12} className="animate-spin" /> {psdProgress}</div>}
+      {bundleOutput !== "flat" && psdError && <div style={{ color: "#f87171", fontSize: 12 }}>{psdError}</div>}
       {items.length === 1 && <div style={{ color: T.textDim, fontSize: 12 }}>꾸러미 합성에는 아이템이 2장 이상 필요해요.</div>}
       {error && <div style={{ color: "#f87171", fontSize: 12 }}>{error}</div>}
       {savedArc === "saving" && <div style={{ color: T.textDim, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><Loader2 size={12} className="animate-spin" /> 프롬프트 아크에 저장 중…</div>}
@@ -556,7 +582,7 @@ function ItemBundle({ T, accent }) {
         </> : <div style={{ minHeight: 350, display: "grid", placeItems: "center", color: T.textDim, fontSize: 13, border: `1px dashed ${T.border}`, borderRadius: 10, textAlign: "center", padding: 16 }}>{psdBusy ? <div><Loader2 className="animate-spin" size={22} /><div style={{ marginTop: 8 }}>{psdProgress || "렌더링 중…"}</div></div> : "왼쪽에서 설정한 뒤 ‘PSD 레이어 렌더’를 눌러주세요. (아이템·후광·바닥광·전방 4레이어 .psd)"}</div>}
       </section>
     ) : (
-      <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="item-bundle" transparentOnSave colorKeyBlack maxW={800} />
+      <ResultView T={T} accent={accent} url={result} busy={busy || psdBusy} onRetry={bundleOutput === "layered-transparent" ? runTransparent : run} filePrefix="item-bundle" alreadyTransparent={bundleOutput === "layered-transparent"} transparentOnSave={bundleOutput === "flat"} colorKeyBlack={bundleOutput === "flat"} maxW={800} />
     )}
     {modal}
   </div>;
@@ -570,8 +596,19 @@ function FloatingItems({ T, accent }) {
   const fileRef = useRef(null);
   const [items, setItems] = useState([]); // dataURL[]
   const [effect, setEffect] = useState("bubble");
+  const [form, setForm] = useState("broken-orbit");
   const [layout, setLayout] = useState("each");
+  const [groupMode, setGroupMode] = useState("auto");
+  const [groupAssignments, setGroupAssignments] = useState([]);
+  const [primaryIndex, setPrimaryIndex] = useState(0);
+  const [groupConfirmed, setGroupConfirmed] = useState(false);
   const [color, setColor] = useState("auto");
+  const [intensity, setIntensity] = useState("medium");
+  const [motion, setMotion] = useState("clockwise");
+  const [density, setDensity] = useState("medium");
+  const [outputMode, setOutputMode] = useState("layered-transparent");
+  const [opening, setOpening] = useState(25);
+  const [frontCross, setFrontCross] = useState(10);
   const [bg, setBg] = useState("black");
   const [intent, setIntent] = useState("");
   const [size, setSize] = useState("2K");
@@ -583,25 +620,37 @@ function FloatingItems({ T, accent }) {
   const addFiles = (fileList) => {
     const files = [...(fileList || [])].filter((f) => f.type?.startsWith("image/"));
     if (!files.length) return;
-    files.slice(0, FLOATING_MAX).forEach((f) => {
-      const reader = new FileReader();
-      reader.onload = (e) => setItems((prev) => (prev.length >= FLOATING_MAX ? prev : [...prev, e.target.result]));
-      reader.readAsDataURL(f);
-    });
+    const selected = files.slice(0, Math.max(0, FLOATING_MAX - items.length));
+    Promise.all(selected.map((f) => new Promise((resolve, reject) => {
+      const reader = new FileReader(); reader.onload = (e) => resolve(e.target.result); reader.onerror = reject; reader.readAsDataURL(f);
+    }))).then((urls) => {
+      setItems((prev) => [...prev, ...urls].slice(0, FLOATING_MAX));
+      setGroupAssignments((prev) => [...prev, ...urls.map(() => "A")].slice(0, FLOATING_MAX));
+      setGroupConfirmed(false);
+    }).catch(() => setError("아이템 이미지를 읽지 못했습니다."));
   };
-  const removeItem = (i) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+  const removeItem = (i) => {
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+    setGroupAssignments((prev) => prev.filter((_, idx) => idx !== i));
+    setPrimaryIndex((prev) => Math.max(0, Math.min(prev, items.length - 2)));
+    setGroupConfirmed(false);
+  };
+  const groupPlan = resolveFloatingGroupPlan(items.length, groupMode, groupAssignments, primaryIndex);
+  const groupPlanLabel = groupPlan.groups.map((g) => `${g.id}: ${g.itemIndices.map((i) => `아이템 ${i}`).join(", ")}`).join(" / ");
 
   const run = async () => {
-    if (items.length < 1 || busy || !(await ensureCanGenerate("image"))) return;
+    if (items.length < 1 || busy) return;
+    if (groupPlan.requiresReview && !groupConfirmed) { setError("자동 그룹 제안을 확인하거나 그룹을 직접 지정해 주세요."); return; }
+    if (!(await ensureCanGenerate("image"))) return;
     setBusy(true); setResult(null); setError(""); setSavedArc("");
     try {
-      const url = await renderFloatingItems(items, { effect, layout, color, bg, intent, imageSize: size, modelId: model });
+      const url = await renderFloatingItems(items, { effect, form, layout, groupMode, groupAssignments: groupPlan.assignments, primaryIndex, color, intensity, motion, density, outputMode, opening, frontCross, bg: outputMode === "effect-only" ? "black" : bg, intent, imageSize: size, modelId: model });
       if (!url) throw new Error("렌더 결과가 비어 있습니다.");
       setResult(url);
       if (user?.uid) {
         setSavedArc("saving");
         try {
-          await saveFloatingToPromptArc(url, user, { effect, layout, color, bg, intent, itemCount: items.length });
+          await saveFloatingToPromptArc(url, user, { effect, form, layout, groupMode, groupAssignments: groupPlan.assignments, primaryIndex, color, intensity, motion, density, outputMode, opening, frontCross, bg: outputMode === "effect-only" ? "black" : bg, intent, itemCount: items.length });
           setSavedArc("done");
         } catch (e) {
           console.error("[FloatingItems] PromptArc 저장 실패", e);
@@ -641,18 +690,56 @@ function FloatingItems({ T, accent }) {
         )}
       </div>
 
+      {items.length > 0 && <div>
+        <span style={optionLabel}>2. 광원 묶음 방식</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {FLOATING_GROUP_OPTIONS.map((o) => <button key={o.key} onClick={() => { setGroupMode(o.key); setGroupConfirmed(o.key !== "auto"); }} style={chip(groupMode === o.key)}>{o.ko}</button>)}
+        </div>
+        {groupMode === "custom" && <div style={{ display: "grid", gap: 6, marginTop: 9 }}>
+          {items.map((url, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "42px 1fr 130px", gap: 8, alignItems: "center", padding: 6, border: `1px solid ${T.border}`, borderRadius: 8 }}>
+            <img src={url} alt="" style={{ width: 42, height: 42, objectFit: "contain", background: "#090a0d", borderRadius: 6 }} />
+            <span style={{ fontSize: 12, color: T.text }}>아이템 {i + 1}</span>
+            <select value={groupAssignments[i] || "A"} onChange={(e) => { const value = e.target.value; setGroupAssignments((prev) => Array.from({ length: items.length }, (_, idx) => idx === i ? value : (prev[idx] || "A"))); setGroupConfirmed(true); }} style={{ ...fieldStyle(T), padding: "7px 9px" }}>
+              {["A","B","C","D"].map((g) => <option key={g} value={g}>그룹 {g}</option>)}
+              <option value={`SOLO_${i + 1}`}>개별 광원</option>
+            </select>
+          </div>)}
+        </div>}
+        {groupMode === "primary-satellites" && <label style={{ display: "block", marginTop: 9 }}><span style={optionLabel}>중앙 핵심 아이템</span><select value={primaryIndex} onChange={(e) => { setPrimaryIndex(Number(e.target.value)); setGroupConfirmed(true); }} style={fieldStyle(T)}>{items.map((_, i) => <option key={i} value={i}>아이템 {i + 1}</option>)}</select></label>}
+        <div style={{ marginTop: 8, padding: 9, borderRadius: 8, background: T.card, color: T.textMuted, fontSize: 11, lineHeight: 1.55 }}>
+          <div>예상 구성: {groupPlanLabel || "없음"}</div>
+          <div>판단 신뢰도: {groupPlan.confidence} · {groupPlan.rationale}</div>
+          {groupPlan.requiresReview && !groupConfirmed && <button onClick={() => setGroupConfirmed(true)} style={{ ...chip(true), marginTop: 7 }}>이 구성 사용</button>}
+        </div>
+      </div>}
+
+      <div>
+        <span style={optionLabel}>3. 출력 방식</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {FLOATING_OUTPUT_OPTIONS.map((o) => <button key={o.key} onClick={() => setOutputMode(o.key)} style={chip(outputMode === o.key)}>{o.ko}</button>)}
+        </div>
+        <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>배너 자동화는 ‘효과만 분리’를 권장합니다. 원본 아이템은 생성하지 않고 합성 단계에서 그대로 사용합니다.</div>
+      </div>
+
       {/* 원형 이펙트 형태 */}
       <div>
-        <span style={optionLabel}><Sparkles size={12} /> 2. 원형 이펙트</span>
+        <span style={optionLabel}><Sparkles size={12} /> 4. 이펙트 재질</span>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
           {FLOATING_EFFECT_OPTIONS.map((o) => <button key={o.key} onClick={() => setEffect(o.key)} style={chip(effect === o.key)}>{o.ko}</button>)}
         </div>
         <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>아이템을 감싸는 링/구체 형태를 정합니다.</div>
       </div>
 
+      <div>
+        <span style={optionLabel}>5. 감싸는 형태</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          {FLOATING_FORM_OPTIONS.map((o) => <button key={o.key} onClick={() => setForm(o.key)} style={chip(form === o.key)}>{o.ko}</button>)}
+        </div>
+      </div>
+
       {/* 배치 — 개별 원 vs 한 원에 모아서 */}
       <div>
-        <span style={optionLabel}>3. 배치</span>
+        <span style={optionLabel}>6. 시각적 배열</span>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
           {FLOATING_LAYOUT_OPTIONS.map((o) => <button key={o.key} onClick={() => setLayout(o.key)} style={chip(layout === o.key)}>{o.ko}</button>)}
         </div>
@@ -661,20 +748,32 @@ function FloatingItems({ T, accent }) {
 
       {/* 이펙트 색 */}
       <div>
-        <span style={optionLabel}>4. 이펙트 색</span>
+        <span style={optionLabel}>7. 이펙트 색</span>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
           {FLOATING_COLORS.map((o) => <button key={o.key} onClick={() => setColor(o.key)} style={chip(color === o.key)}>{o.ko}</button>)}
         </div>
       </div>
 
-      {/* 배경 — 누끼 방식 */}
       <div>
-        <span style={optionLabel}>5. 배경 (누끼 작업용)</span>
+        <span style={optionLabel}>8. 강도 · 흐름 · 파티클</span>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 7 }}>{FLOATING_INTENSITY_OPTIONS.map((o) => <button key={o.key} onClick={() => setIntensity(o.key)} style={chip(intensity === o.key)}>{o.ko}</button>)}</div>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 7 }}>{FLOATING_MOTION_OPTIONS.map((o) => <button key={o.key} onClick={() => setMotion(o.key)} style={chip(motion === o.key)}>{o.ko}</button>)}</div>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{FLOATING_DENSITY_OPTIONS.map((o) => <button key={o.key} onClick={() => setDensity(o.key)} style={chip(density === o.key)}>{o.ko}</button>)}</div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <label><span style={optionLabel}>궤도 개방률 {opening}%</span><input type="range" min="0" max="50" step="5" value={opening} onChange={(e) => setOpening(Number(e.target.value))} style={{ width: "100%" }} /></label>
+        <label><span style={optionLabel}>전면 교차 {frontCross}%</span><input type="range" min="0" max="15" step="1" value={frontCross} onChange={(e) => setFrontCross(Number(e.target.value))} style={{ width: "100%" }} /></label>
+      </div>
+
+      {/* 배경 — 누끼 방식 */}
+      {outputMode !== "effect-only" && <div>
+        <span style={optionLabel}>9. 배경 (누끼 작업용)</span>
         <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
           {BUNDLE_BG_OPTIONS.map((o) => <button key={o.key} onClick={() => setBg(o.key)} style={chip(bg === o.key)}><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 3, background: o.fill, border: "1px solid rgba(255,255,255,.3)", marginRight: 6, verticalAlign: "-1px" }} />{o.ko}</button>)}
         </div>
         <div style={{ fontSize: 11, color: T.textDim, marginTop: 6 }}>블랙=발광 추출 · 크로마 그린=색상 키 · 화이트=레퍼런스. 저장 시 자동 투명화됩니다.</div>
-      </div>
+      </div>}
 
       <label><span style={optionLabel}>추가 지시 (선택)</span><textarea value={intent} onChange={(e) => setIntent(e.target.value)} rows={3} placeholder="예: 원을 살짝 겹쳐서 대각선으로 배치, 물방울 안에 작은 반짝임 추가." style={fieldStyle(T)} /></label>
 
@@ -688,7 +787,7 @@ function FloatingItems({ T, accent }) {
       {savedArc === "done" && <div style={{ color: accent, fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><FolderCheck size={13} /> 프롬프트 아크 내 폴더에 자동 저장됐어요.</div>}
       {savedArc === "failed" && <div style={{ color: "#f87171", fontSize: 12 }}>프롬프트 아크 저장에 실패했어요 (렌더 결과는 유지됩니다).</div>}
     </section>
-    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="floating-items" transparentOnSave maxW={800} />
+    <ResultView T={T} accent={accent} url={result} busy={busy} onRetry={run} filePrefix="floating-items" alreadyTransparent={outputMode === "layered-transparent"} transparentOnSave={outputMode === "effect-only"} colorKeyBlack={outputMode === "effect-only"} maxW={800} />
     {modal}
   </div>;
 }

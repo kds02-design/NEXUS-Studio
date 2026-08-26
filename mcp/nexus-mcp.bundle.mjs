@@ -122,6 +122,22 @@ var LIGHTFX_FORMS = [
     placementHint: "render glow that follows the letterform strokes of the referenced text \u2014 luminous emission tracing each stroke and outline, brightest along the letter edges; do NOT draw solid letters, glow only"
   },
   {
+    id: "titleFront",
+    label: "\uD0C0\uC774\uD2C0 \uC804\uBC29 FX",
+    desc: "\uD0C0\uC774\uD2C0 \uC55E \uAE00\uB9B0\uD2B8\xB7\uC785\uC790",
+    accent: "#f0abfc",
+    refMode: "front",
+    placementHint: "render a restrained FOREGROUND accent pass in front of the title position \u2014 sparse glints, short light streaks and fine particles crossing only selected lower edges and corners, with the title itself left completely absent"
+  },
+  {
+    id: "itemFront",
+    label: "\uC544\uC774\uD15C \uC804\uBC29 FX",
+    desc: "\uC544\uC774\uD15C \uC55E \uC811\uCD09\uAD11\xB7\uC785\uC790",
+    accent: "#fde68a",
+    refMode: "front",
+    placementHint: "render a restrained FOREGROUND accent pass in front of the item position \u2014 selective contact glow near the lower front edge, a few rising sparks and short wisps wrapping across small portions of the foreground, with the item itself left completely absent"
+  },
+  {
     id: "groundPool",
     label: "\uBC14\uB2E5 \uAD11 \uD480",
     desc: "\uD53C\uC0AC\uCCB4 \uC544\uB798 \uACE0\uC774\uB294 \uBE5B",
@@ -681,6 +697,7 @@ var REF_SHAPE_BLOCK = `SHAPING REFERENCE (a reference image is attached): use it
 CRITICAL \u2014 NO REPRODUCED OBJECTS: absolutely do NOT redraw, copy, or reconstruct any object from the reference \u2014 no orb, gem, crystal, emblem, medallion, jewel, badge, character, face, cloth, armor or any recognizable item. Bright or detailed areas inside the reference (a glowing orb, crystal, emblem, etc.) must NOT be reproduced as an object; instead replace each such focal point with a pure abstract GLOW \u2014 a soft luminous bloom at that position with no internal structure, facets, shapes or details. The final image is emitted light only on black, containing zero solid objects.`;
 var REF_DETAIL_BLOCK = `EDGE-HUGGING DETAIL (refined & restrained): concentrate the light TIGHTLY along the OUTER CONTOUR and key silhouette edges of the reference \u2014 a crisp thin rim/edge light that traces the outline, with a few small tasteful sparkle glints and short delicate filament rays only at corners and tips. Keep the interior and the surrounding area almost entirely dark/empty \u2014 the effect must NOT flood, fill, or wash over the whole frame. Prioritize a clean sharp edge trace over volume. Aim for premium, understated elegance: sparse, precise, high-craft accents \u2014 NOT a dense energetic explosion. Most of the canvas stays true black; the light is a fine luminous outline plus a handful of restrained highlights.`;
 var REF_BEHIND_BLOCK = `BEHIND / BACKDROP MODE \u2014 DO NOT TRACE THE SHAPE: the reference only shows WHERE the subject sits. Render the light as a free-form glow sitting BEHIND and around that position, as if backlighting the subject from behind. \u2605Do NOT trace, outline, rim-light, or reproduce the reference's silhouette, edges, or contour lines.\u2605 There must be NO line art, NO edge outline of the subject, NO shape-following stroke \u2014 just a soft volumetric glow / rays / particles behind the subject's location, spreading naturally. The subject's outline must NEVER appear as a bright line in the result.`;
+var REF_FRONT_BLOCK = `FOREGROUND ACCENT MODE \u2014 LIGHT ONLY: use the reference only to locate the subject. Render a sparse, separable light pass that appears IN FRONT of selected lower edges, corners, or contact points. Keep the center readable and most of the canvas pure black. Do NOT trace the full silhouette, cover the subject area, reproduce any letter/object detail, or create an opaque smoke wall. Use only restrained glints, short wisps, fine particles, or localized contact glow.`;
 var placementBlock = (formHint, hasRef, edgeHug) => {
   if (!formHint) return "";
   if (!hasRef) return `PLACEMENT / FORM: ${formHint}.`;
@@ -698,7 +715,7 @@ var SHAPE_HINT = {
   circle: "arrange the entire light effect to form and follow a clean centered CIRCLE / RING outline \u2014 the luminous energy traces the circular perimeter, brightest along the ring edge with a hollow darker center (do NOT fill the disc)",
   rectangle: "arrange the entire light effect to form and follow a wide centered horizontal RECTANGLE outline \u2014 the luminous energy traces the rectangle edges, hollow darker center"
 };
-function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = "medium", shape = "none", index = 0, bg, materialHint = "", grainHint = "", bokehHint = "", edgeHug = false }) {
+function buildLightFxPrompt({ categoryHint, styleHint, colorHint, userText, hasRef, formHint, intensity = "medium", shape = "none", index = 0, bg, materialHint = "", grainHint = "", bokehHint = "", edgeHug = false, refMode = "behind" }) {
   const b = resolveBg(bg);
   const subject = userText && userText.trim() ? userText.trim() : categoryHint;
   const bgName = b.id === "black" ? "pure black #000000" : `a flat uniform ${b.label} (${b.hex})`;
@@ -719,7 +736,7 @@ ${materialHint ? `MATERIAL / SURFACE: ${materialHint}. Apply this as the light's
 ${place ? `${place}
 ` : ""}${hasRef ? `
 ${REF_SHAPE_BLOCK}
-${hugging ? REF_DETAIL_BLOCK : REF_BEHIND_BLOCK}
+${hugging ? REF_DETAIL_BLOCK : refMode === "front" ? REF_FRONT_BLOCK : REF_BEHIND_BLOCK}
 ` : ""}
 ${lightFxBackgroundBlock(bg)}
 
@@ -727,7 +744,7 @@ COMPOSITION: center the effect with breathing room; balanced, production-ready, 
 
 FINAL: output ONE light effect (${subject}) glowing on ${bgName} \u2014 light only, no object, no text, no scene. Any orb/gem/crystal/emblem from the reference becomes a pure abstract glow, never a rendered object.`;
 }
-function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = "medium", shape = "none", bg, hasRef = false, materialHint = "", grainHint = "", bokehHint = "", edgeHug = false }) {
+function buildCompactLightFxPrompt({ categoryHint, styleHint, colorHint, userText, formHint, intensity = "medium", shape = "none", bg, hasRef = false, materialHint = "", grainHint = "", bokehHint = "", edgeHug = false, refMode = "behind" }) {
   const hugging = !!(hasRef && edgeHug);
   const b = resolveBg(bg);
   const bgName = b.id === "black" ? "pure black #000000" : `a flat uniform ${b.label} (${b.hex})`;
@@ -740,7 +757,8 @@ ${grainHint}.` : ""}${bokehHint ? `
 ${bokehHint}.` : ""}${SHAPE_HINT[shape] ? `
 Overall shape (important): ${SHAPE_HINT[shape]}; the whole effect must read as this shape, but do not draw the guide outline itself.` : ""}${formHint ? `
 Placement: ${formHint}.` : ""}${hasRef ? (hugging ? `
-EDGE-HUGGING & RESTRAINED: hug the outer contour of the reference with a crisp thin rim light plus a few small tasteful glints at corners/tips; keep the interior and background almost fully dark \u2014 do NOT flood or fill the frame. Premium, sparse, understated.` : `
+EDGE-HUGGING & RESTRAINED: hug the outer contour of the reference with a crisp thin rim light plus a few small tasteful glints at corners/tips; keep the interior and background almost fully dark \u2014 do NOT flood or fill the frame. Premium, sparse, understated.` : refMode === "front" ? `
+FOREGROUND ACCENT \u2014 LIGHT ONLY: place sparse glints, short wisps, fine particles, or localized contact glow in front of selected lower edges/corners. Keep the center clear and most of the canvas black. Do NOT reproduce, cover, or fully outline the reference subject.` : `
 BEHIND / BACKDROP \u2014 DO NOT TRACE THE SHAPE: use the reference only to know where the subject sits; render a free-form glow behind/around that position. Do NOT trace, outline, or rim-light the silhouette \u2014 no edge line of the subject, no shape-following stroke.`) + `
 NO REPRODUCED OBJECTS: never redraw any orb, gem, crystal, emblem or item from the reference \u2014 replace each bright focal point with a pure abstract glow (no internal shapes), rendered in the chosen color which overrides the reference's own colors.` : ""}
 ${tail}`;
@@ -1941,6 +1959,70 @@ ABSOLUTE RESTRICTIONS:
 This is a front-facing flat graphic, not a photograph and not a 3D render. Do not create extrusion, bevel, embossing, perspective, shadows, highlights, gradients, glow, bloom, atmospheric effects, realistic materials, environmental backgrounds, mockups, or extra text. Keep the native uniform solid background and a crisp, readable silhouette suitable for later material rendering.`;
 }
 
+// src/apps/FrameForge/frameforgeMcp.js
+var FRAMEFORGE_ASSET_TYPES = [
+  { key: "button", ko: "\uBC84\uD2BC", en: "an empty horizontal game menu button frame" },
+  { key: "box", ko: "\uBC15\uC2A4", en: "an empty game UI content box or panel frame" },
+  { key: "frame", ko: "\uD504\uB808\uC784", en: "an empty decorative game UI frame" },
+  { key: "badge", ko: "\uBC30\uC9C0", en: "an empty compact game UI badge frame" },
+  { key: "divider", ko: "\uB514\uBC14\uC774\uB354", en: "a single straight horizontal game UI divider line" },
+  { key: "icon", ko: "\uC544\uC774\uCF58", en: "a single standalone game UI icon glyph, no frame, no background plate" }
+];
+var FRAMEFORGE_SILHOUETTES = [
+  { key: "button_hex_3", for: ["button"], ko: "\uBFB0\uC871 \uC721\uAC01 3:1", en: "an elongated 3:1 pointed hexagon menu-button frame with sharp spear-tip ends" },
+  { key: "button_hex_4", for: ["button"], ko: "\uBFB0\uC871 \uC721\uAC01 4:1", en: "an ultra-wide 4:1 pointed hexagon button frame" },
+  { key: "button_cut", for: ["button"], ko: "\uCEF7\uCF54\uB108 \uBC84\uD2BC", en: "an elongated 3:1 button with precise clipped corners" },
+  { key: "button_pill", for: ["button"], ko: "\uD544 \uBC84\uD2BC", en: "a clean horizontal pill-shaped button" },
+  { key: "button_stadium", for: ["button"], ko: "\uC88C\uC6B0 \uC6D0\uD615", en: "a wide stadium-shaped button frame whose ends are perfect semicircles" },
+  { key: "button_round", for: ["button"], ko: "\uB77C\uC6B4\uB4DC \uBC84\uD2BC", en: "a wide softly rounded rectangular button" },
+  { key: "box_landscape", for: ["box"], ko: "\uAC00\uB85C \uBC15\uC2A4", en: "a wide landscape content box with a large usable interior" },
+  { key: "box_square", for: ["box"], ko: "\uC815\uC0AC\uAC01 \uBC15\uC2A4", en: "a square content box with a large usable interior" },
+  { key: "box_portrait", for: ["box"], ko: "\uC138\uB85C \uBC15\uC2A4", en: "a tall portrait content box with a large usable interior" },
+  { key: "box_tab", for: ["box"], ko: "\uD0ED \uBC15\uC2A4", en: "a rectangular content box with one small integrated top tab" },
+  { key: "box_banner", for: ["box"], ko: "\uD589\uC789 \uBC15\uC2A4", en: "a hanging banner-shaped content box with a pointed lower edge" },
+  { key: "frame_wide", for: ["frame"], ko: "\uC640\uC774\uB4DC \uD504\uB808\uC784", en: "a wide 16:9 decorative frame with a large open center" },
+  { key: "frame_square", for: ["frame"], ko: "\uC815\uC0AC\uAC01 \uD504\uB808\uC784", en: "a square decorative frame with a large open center" },
+  { key: "frame_portrait", for: ["frame"], ko: "\uC138\uB85C \uD504\uB808\uC784", en: "a portrait decorative frame with a large open center" },
+  { key: "circle_plate", for: ["frame"], ko: "\uC6D0\uD615 \uC7A5\uC2DD \uC0AC\uAC01\uD310", en: "a rectangular UI plate incorporating a circular medallion" },
+  { key: "perfect_circle", for: ["frame", "badge"], ko: "\uC644\uC804\uD55C \uC6D0", en: "one mathematically perfect circular silhouette" },
+  { key: "oval", for: ["frame", "badge"], ko: "\uD0C0\uC6D0\uD615", en: "a wide oval frame with a clean center and no rectangular backing" },
+  { key: "badge_shield", for: ["badge"], ko: "\uBC29\uD328 \uBC30\uC9C0", en: "a compact shield-shaped badge frame" },
+  { key: "badge_hex", for: ["badge"], ko: "\uC721\uAC01 \uBC30\uC9C0", en: "a compact regular hexagonal badge frame" },
+  { key: "badge_ribbon", for: ["badge"], ko: "\uB9AC\uBCF8 \uBC30\uC9C0", en: "a compact ribbon-shaped badge frame" },
+  { key: "divider_line", for: ["divider"], ko: "\uC77C\uC9C1\uC120", en: "one perfectly straight horizontal separator line" },
+  { key: "icon_arrow_right", for: ["icon"], ko: "\uD654\uC0B4\uD45C (\uC624\uB978\uCABD)", en: "a single bold arrow icon pointing right" },
+  { key: "icon_arrow_down", for: ["icon"], ko: "\uD654\uC0B4\uD45C (\uC544\uB798)", en: "a single bold arrow icon pointing down" },
+  { key: "icon_arrow_back", for: ["icon"], ko: "\uD654\uC0B4\uD45C (\uB4A4\uB85C)", en: "a single bold arrow icon pointing left" },
+  { key: "icon_scroll_down", for: ["icon"], ko: "\uC2A4\uD06C\uB864 \uB2E4\uC6B4 (\uC170\uBE0C\uB860)", en: "two stacked downward chevrons" },
+  { key: "icon_scroll_mouse", for: ["icon"], ko: "\uC2A4\uD06C\uB864 \uB2E4\uC6B4 (\uB9C8\uC6B0\uC2A4)", en: "a slim mouse outline and downward chevron" },
+  { key: "icon_chevron_down", for: ["icon"], ko: "\uC170\uBE0C\uB860 (\uC544\uB798)", en: "a single clean downward chevron" },
+  { key: "icon_nav_prev", for: ["icon"], ko: "\uC774\uB3D9 (\uC67C\uCABD)", en: "a clean left navigation chevron" },
+  { key: "icon_nav_next", for: ["icon"], ko: "\uC774\uB3D9 (\uC624\uB978\uCABD)", en: "a clean right navigation chevron" },
+  { key: "icon_play", for: ["icon"], ko: "\uC7AC\uC0DD (\uD50C\uB808\uC774)", en: "a single media play triangle" },
+  { key: "icon_play_circle", for: ["icon"], ko: "\uC601\uC0C1 \uD50C\uB808\uC774 (\uC6D0\uD615)", en: "a play triangle centered inside a circular ring" }
+];
+var FRAMEFORGE_MOODS = [
+  { key: "dark_rpg", ko: "\uC5B4\uB461\uACE0 \uAC15\uD55C RPG", preset: "black iron thorn armor", material: "battle-hardened dark steel", ornament: "restrained perimeter accents" },
+  { key: "gold_kingdom", ko: "\uD654\uB824\uD55C \uD669\uAE08 \uC655\uAD6D", preset: "fallen royal dynasty crest", material: "aged ancient gold", ornament: "small mirrored ornaments at four corners" },
+  { key: "magic", ko: "\uC2E0\uBE44\uB85C\uC6B4 \uB9C8\uBC95", preset: "subtle arcane glow line", material: "dark translucent magic crystal", ornament: "compact mirrored accents at both ends" },
+  { key: "nature", ko: "\uC790\uC5F0\uACFC \uC815\uB839", preset: "restrained leaf and spirit-light accents", material: "aged dark hardwood", ornament: "small mirrored ornaments at four corners" },
+  { key: "clean", ko: "\uAE54\uB054\uD558\uACE0 \uD604\uB300\uC801", preset: "clean contemporary product UI", material: "smooth matte surface", ornament: "restrained perimeter accents" },
+  { key: "futuristic", ko: "\uBBF8\uB798\uC801 SF", preset: "plain charcoal precision", material: "polished forged steel", ornament: "restrained perimeter accents" }
+];
+var FRAMEFORGE_RENDER_STYLES = [
+  { key: "illustrated", ko: "\uAC8C\uC784 \uC77C\uB7EC\uC2A4\uD2B8", en: "hand-painted game UI illustration with clear edges and readable color masses" },
+  { key: "realistic_3d", ko: "\uC0AC\uC2E4\uC801\uC778 3D", en: "high-end physically based 3D game UI render with controlled reflections" },
+  { key: "flat_graphic", ko: "\uC2EC\uD50C\uD55C 2D", en: "clean 2D vector-like game UI graphic with crisp silhouette and minimal shading" }
+];
+function buildFrameForgeMcpPrompt({ assetType, silhouette, mood, renderStyle, userText = "" }) {
+  const isIcon = assetType.key === "icon";
+  const isDivider = assetType.key === "divider";
+  const structure = isDivider ? "one perfectly straight, very wide and extremely thin separator line" : silhouette.en;
+  const interior = isIcon || isDivider ? "no interior panel" : "leave the center completely empty and visually open";
+  const intent = userText.trim() ? ` User intent: ${userText.trim()}.` : "";
+  return `Create ${assetType.en}, production-ready for a game UI. Structure: ${structure}. Style direction: ${mood.preset}. Ornament placement: ${mood.ornament}. Interior treatment: ${interior}. RENDER EXPRESSION LOCK: ${renderStyle.en}.${intent} Material and surface: ${mood.material}, refined finish and crisp controlled highlights. STRICT RESTRAINT: ornament may occupy at most 15% of the asset area; keep rails slim and nine-slice-safe where applicable. Front orthographic view, centered, generous safe padding, isolated on one perfectly flat high-contrast solid background for deterministic cutout. No text, no letters, no watermark, no extra objects, no perspective, no background texture, no gradient, no cast shadow, no runes or letter-like symbols. 4K game UI asset render.`;
+}
+
 // mcp/server.mjs
 var ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 var SKILLS_DIR = path.join(ROOT, "src", "skills");
@@ -1960,6 +2042,14 @@ function writeNexusAuth(value) {
   fs.mkdirSync(NEXUS_AUTH_DIR, { recursive: true });
   fs.writeFileSync(NEXUS_AUTH_PATH, JSON.stringify(value, null, 2), { mode: 384 });
 }
+function decodeFirebaseClaims(idToken) {
+  try {
+    const payload = String(idToken || "").split(".")[1];
+    return payload ? JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) : {};
+  } catch {
+    return {};
+  }
+}
 async function exchangeCustomToken(customToken) {
   const { apiKey } = firebaseConfig();
   if (!apiKey) throw new Error("Firebase API key\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
@@ -1974,9 +2064,10 @@ async function exchangeCustomToken(customToken) {
   );
   const body = await response.json();
   if (!response.ok) throw new Error(body?.error?.message || "Firebase custom token \uAD50\uD658 \uC2E4\uD328");
+  const claims = decodeFirebaseClaims(body.idToken);
   const auth = {
-    uid: body.localId,
-    email: body.email || null,
+    uid: body.localId || claims.user_id || claims.sub || null,
+    email: body.email || claims.email || null,
     idToken: body.idToken,
     refreshToken: body.refreshToken,
     expiresAt: Date.now() + Number(body.expiresIn || 3600) * 1e3,
@@ -1988,7 +2079,19 @@ async function exchangeCustomToken(customToken) {
 async function currentNexusAuth() {
   const auth = readNexusAuth();
   if (!auth?.refreshToken) return null;
-  if (auth.idToken && Number(auth.expiresAt || 0) > Date.now() + 6e4) return auth;
+  if (auth.idToken && Number(auth.expiresAt || 0) > Date.now() + 6e4) {
+    if (!auth.uid || !auth.email) {
+      const claims = decodeFirebaseClaims(auth.idToken);
+      const repaired = {
+        ...auth,
+        uid: auth.uid || claims.user_id || claims.sub || null,
+        email: auth.email || claims.email || null
+      };
+      writeNexusAuth(repaired);
+      return repaired;
+    }
+    return auth;
+  }
   const { apiKey } = firebaseConfig();
   const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
@@ -2069,6 +2172,27 @@ function geminiKey() {
   }
   return null;
 }
+function envValue(name) {
+  if (process.env[name]) return process.env[name];
+  try {
+    const env = fs.readFileSync(path.join(ROOT, ".env"), "utf8");
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = env.match(new RegExp(`^\\s*${escaped}\\s*=\\s*(.+?)\\s*$`, "m"));
+    if (m) return m[1].replace(/^['"]|['"]$/g, "");
+  } catch {
+  }
+  return null;
+}
+function removeBgAllowedRoots() {
+  const configured = envValue("REMOVE_BG_ALLOWED_ROOTS");
+  return (configured ? configured.split(";") : [ROOT]).map((value) => path.resolve(value.trim())).filter(Boolean);
+}
+function isInsideAllowedRoot(target, roots) {
+  return roots.some((root) => {
+    const relative = path.relative(root, target);
+    return relative === "" || !relative.startsWith("..") && !path.isAbsolute(relative);
+  });
+}
 function composeSkillsFs(ids2, ctx = {}) {
   const parts = [];
   for (const id of ids2) {
@@ -2091,6 +2215,30 @@ var idEnum = (arr) => z.enum(ids(arr));
 var text = (t) => ({ content: [{ type: "text", text: t }] });
 var errText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
 var data = (structuredContent, t) => ({ content: [{ type: "text", text: t }], structuredContent });
+async function remoteImageContent(url, { maxBytes = 5 * 1024 * 1024 } = {}) {
+  if (!url || !/^https:\/\//i.test(url)) return null;
+  const response = await fetch(url, { signal: AbortSignal.timeout(15e3) });
+  if (!response.ok) throw new Error(`\uC774\uBBF8\uC9C0 \uB2E4\uC6B4\uB85C\uB4DC \uC2E4\uD328 (${response.status})`);
+  const mimeType = String(response.headers.get("content-type") || "image/jpeg").split(";")[0];
+  if (!mimeType.startsWith("image/")) throw new Error(`\uC774\uBBF8\uC9C0\uAC00 \uC544\uB2CC \uC751\uB2F5\uC785\uB2C8\uB2E4: ${mimeType}`);
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > maxBytes) throw new Error(`\uC774\uBBF8\uC9C0\uAC00 ${Math.ceil(declared / 1024 / 1024)}MB\uB85C \uBBF8\uB9AC\uBCF4\uAE30 \uC81C\uD55C\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4.`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > maxBytes) throw new Error(`\uC774\uBBF8\uC9C0\uAC00 ${Math.ceil(bytes.length / 1024 / 1024)}MB\uB85C \uBBF8\uB9AC\uBCF4\uAE30 \uC81C\uD55C\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4.`);
+  return { type: "image", data: bytes.toString("base64"), mimeType };
+}
+async function dataWithRemoteImages(structuredContent, t, urls) {
+  const content = [{ type: "text", text: t }];
+  for (const url of urls.filter(Boolean).slice(0, 5)) {
+    try {
+      const preview = await remoteImageContent(url);
+      if (preview) content.push(preview);
+    } catch (error) {
+      console.warn(`[nexus-mcp] image preview skipped: ${error.message}`);
+    }
+  }
+  return { content, structuredContent };
+}
 var PURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 var READ_REMOTE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };
 var WRITE_LOCAL = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
@@ -2304,6 +2452,27 @@ async function firestoreRequest(documentPath, params = {}) {
   }
   return response.json();
 }
+async function firestoreCollectionAll(documentPath, { maxDocuments = 1e4 } = {}) {
+  const documents = [];
+  let pageToken;
+  do {
+    const payload = await firestoreRequest(documentPath, {
+      pageSize: 100,
+      pageToken,
+      showMissing: false
+    });
+    documents.push(...payload.documents || []);
+    pageToken = payload.nextPageToken || null;
+    if (documents.length >= maxDocuments) {
+      throw new Error(`\uC804\uCCB4 \uC815\uB82C \uC548\uC804 \uC81C\uD55C(${maxDocuments}\uAC74)\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4.`);
+    }
+  } while (pageToken);
+  return documents;
+}
+function scorePageOffset(pageToken) {
+  const match = String(pageToken || "").match(/^score:(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
 function normalizedTitleText(value) {
   return String(value || "").replace(/\r\n/g, "\n").trim();
 }
@@ -2461,6 +2630,12 @@ var brief = (arr, extra = []) => arr.map((o) => {
   return out;
 });
 var OPTION_CATALOG = () => ({
+  frameforge: {
+    assetType: brief(FRAMEFORGE_ASSET_TYPES),
+    silhouette: FRAMEFORGE_SILHOUETTES.map((o) => ({ id: o.key, label: o.ko, for: o.for })),
+    mood: brief(FRAMEFORGE_MOODS),
+    renderStyle: brief(FRAMEFORGE_RENDER_STYLES)
+  },
   lightfx: {
     category: brief(LIGHTFX_CATEGORIES, ["desc"]),
     form: brief(LIGHTFX_FORMS, ["desc"]),
@@ -2522,6 +2697,7 @@ server.registerTool("nexus_guide", {
 \u25A0 \uAE30\uBCF8 \uD750\uB984
 1) nexus_list_options \uB85C \uC635\uC158 \uCE74\uD0C8\uB85C\uADF8(id \uBAA9\uB85D) \uD655\uC778
 2) \uD504\uB86C\uD504\uD2B8 \uD234\uB85C \uAC80\uC99D\uB41C \uD504\uB85C\uB355\uC158 \uD504\uB86C\uD504\uD2B8 \uC0DD\uC131:
+   \xB7 nexus_frameforge_prompt     \u2014 FrameForge \uD504\uB808\uC784\xB7\uBC84\uD2BC\xB7\uBC15\uC2A4\xB7\uBC30\uC9C0\xB7\uB514\uBC14\uC774\uB354\xB7\uC544\uC774\uCF58 \uC0DD\uC131
    \xB7 nexus_lightfx_prompt        \u2014 \uAD11\uC6D0/\uBE5B\uD6A8\uACFC \uC5D0\uC14B (\uC21C\uD751/\uB2E8\uC0C9 \uBC30\uACBD, \uD569\uC131\uC6A9)
    \xB7 nexus_variation_prompt      \u2014 UI \uC5D0\uC14B \uB9AC\uC2A4\uD0A8(\uCEEC\uB7EC\xB7\uC7AC\uC9C8 \uC624\uBC84\uB808\uC774 \uD328\uC2A4, \uAD6C\uC870 \uBCF4\uC874)
    \xB7 nexus_design_alternative_prompt \u2014 \uB514\uC790\uC778 \uB300\uC548(\uBAA8\uD2F0\uD504\xB7\uC7AC\uC9C8 \uC7AC\uD574\uC11D, \uACE8\uACA9 \uC720\uC9C0)
@@ -2534,6 +2710,8 @@ server.registerTool("nexus_guide", {
 4) \uD6C4\uCC98\uB9AC \uD53D\uC140 \uD234:
    \xB7 nexus_remove_background     \u2014 \uB2E8\uC0C9 \uBC30\uACBD(\uBE14\uB799/\uD06C\uB85C\uB9C8) \uD0A4\uC789 \u2192 \uD22C\uBA85 PNG
    \xB7 nexus_split_character_effect \u2014 \uCE90\uB9AD\uD130/\uBC1C\uAD11 \uC774\uD399\uD2B8 \uBD84\uB9AC (\uC2A4\uD06C\uB9B0 \uBE14\uB80C\uB4DC \uB808\uC774\uC5B4)
+   \xB7 nexus_remove_ai             \u2014 \uC704 \uB85C\uCEEC \uBC29\uC2DD\uC758 QA\uAC00 \uC2E4\uD328\uD55C \uACBD\uC6B0\uC5D0\uB9CC \uC0AC\uC6A9\uD558\uB294 Remove.bg AI \uCD5C\uC885 fallback
+   \uD22C\uBA85\uD654 \uC6B0\uC120\uC21C\uC704: \uC0C9\uC0C1 \uD0A4\uC789/\uC774\uD399\uD2B8 \uC54C\uD30C/\uCE90\uB9AD\uD130 \uBD84\uB9AC \uAC19\uC740 \uB85C\uCEEC\xB7\uACB0\uC815\uC801 \uBC29\uC2DD \u2192 \uC54C\uD30C\xB7\uAC00\uC7A5\uC790\uB9AC\xB7\uB2EB\uD78C \uACF5\uAC04 QA \u2192 \uC2E4\uD328 \uC2DC\uC5D0\uB9CC nexus_remove_ai.
 5) nexus_design_rubric \u2014 \uACB0\uACFC\uBB3C \uD3C9\uAC00\uC6A9 \uB514\uC790\uC778 \uB8E8\uBE0C\uB9AD
 6) Banner Codex \uB77C\uC774\uBE0C\uB7EC\uB9AC:
    \xB7 nexus_banner_codex_list \u2014 \uC800\uC7A5 \uBC30\uB108 \uBAA9\uB85D\xB7\uAC80\uC0C9\xB7\uD544\uD130
@@ -2557,6 +2735,7 @@ server.registerTool("nexus_list_options", {
   description: "\uBAA8\uB4E0 \uD504\uB86C\uD504\uD2B8 \uD234\uC758 \uC120\uD0DD\uC9C0(id\xB7\uD55C\uAE00 \uB77C\uBCA8)\uB97C JSON \uC73C\uB85C \uBC18\uD658. \uD504\uB86C\uD504\uD2B8 \uD234 \uD638\uCD9C \uC804 \uCC38\uC870.",
   inputSchema: {},
   outputSchema: {
+    frameforge: z.record(z.string(), z.any()).describe("nexus_frameforge_prompt \uC120\uD0DD\uC9C0"),
     lightfx: z.record(z.string(), z.any()).describe("nexus_lightfx_prompt \uC120\uD0DD\uC9C0"),
     variation: z.record(z.string(), z.any()).describe("nexus_variation_prompt \uC120\uD0DD\uC9C0"),
     designAlternative: z.record(z.string(), z.any()).describe("nexus_design_alternative_prompt \uC120\uD0DD\uC9C0"),
@@ -2569,6 +2748,47 @@ server.registerTool("nexus_list_options", {
 }, async () => {
   const catalog = OPTION_CATALOG();
   return data(catalog, JSON.stringify(catalog, null, 2));
+});
+server.registerTool("nexus_frameforge_prompt", {
+  title: "FrameForge UI \uC5D0\uC14B \uD504\uB86C\uD504\uD2B8",
+  description: "Nexus FrameForge \uC571\uC758 \uC2E4\uC81C \uC635\uC158\uACFC buildCompletePrompt \uC5D4\uC9C4\uC73C\uB85C \uD504\uB808\uC784\xB7\uBC84\uD2BC\xB7\uBC15\uC2A4\xB7\uBC30\uC9C0\xB7\uB514\uBC14\uC774\uB354\xB7\uC544\uC774\uCF58 \uC0DD\uC131 \uD504\uB86C\uD504\uD2B8\uB97C \uB9CC\uB4ED\uB2C8\uB2E4. \uACB0\uACFC\uB97C nexus_render_image\uC5D0 \uC804\uB2EC\uD558\uC138\uC694.",
+  inputSchema: {
+    assetType: z.enum(FRAMEFORGE_ASSET_TYPES.map((o) => o.key)).describe("\uC6A9\uB3C4: button, box, frame, badge, divider, icon"),
+    silhouette: z.enum(FRAMEFORGE_SILHOUETTES.map((o) => o.key)).describe("nexus_list_options\uC758 frameforge.silhouette id. \uC120\uD0DD\uD55C assetType\uACFC for\uAC00 \uC77C\uCE58\uD574\uC57C \uD568"),
+    mood: z.enum(FRAMEFORGE_MOODS.map((o) => o.key)).default("dark_rpg").describe("\uBD84\uC704\uAE30 \uD504\uB9AC\uC14B"),
+    renderStyle: z.enum(FRAMEFORGE_RENDER_STYLES.map((o) => o.key)).default("illustrated").describe("\uB80C\uB354 \uD45C\uD604 \uBC29\uC2DD"),
+    userText: z.string().max(1e3).optional().describe("\uCD94\uAC00 \uC81C\uC791 \uC758\uB3C4. \uACB0\uACFC \uC5D0\uC14B \uB0B4\uBD80\uC5D0 \uC2E4\uC81C \uAE00\uC790\uB97C \uC0DD\uC131\uD558\uB77C\uB294 \uC758\uBBF8\uB85C \uC0AC\uC6A9\uD558\uC9C0 \uC54A\uC74C")
+  },
+  outputSchema: {
+    prompt: z.string(),
+    renderHint: z.string(),
+    resolvedOptions: z.record(z.string(), z.any()),
+    nextTool: z.literal("nexus_render_image")
+  },
+  annotations: PURE
+}, async (a) => {
+  const assetType = FRAMEFORGE_ASSET_TYPES.find((o) => o.key === a.assetType);
+  const silhouette = FRAMEFORGE_SILHOUETTES.find((o) => o.key === a.silhouette);
+  if (!silhouette?.for?.includes(a.assetType)) {
+    return errText(`FrameForge \uD615\uD0DC '${a.silhouette}'\uB294 \uC6A9\uB3C4 '${a.assetType}'\uC5D0 \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.`);
+  }
+  const mood = FRAMEFORGE_MOODS.find((o) => o.key === a.mood) || FRAMEFORGE_MOODS[0];
+  const renderStyle = FRAMEFORGE_RENDER_STYLES.find((o) => o.key === a.renderStyle) || FRAMEFORGE_RENDER_STYLES[0];
+  const prompt = buildFrameForgeMcpPrompt({ assetType, silhouette, mood, renderStyle, userText: a.userText || "" });
+  const resolvedOptions = {
+    assetType: assetType.key,
+    silhouette: silhouette.key,
+    mood: mood.key,
+    preset: mood.preset,
+    material: mood.material,
+    ornament: mood.ornament,
+    interior: "empty",
+    renderStyle: renderStyle.key
+  };
+  const renderHint = "\uCC38\uC870 \uC774\uBBF8\uC9C0 \uC5C6\uC74C \xB7 \uD504\uB86C\uD504\uD2B8\uC758 \uB2E8\uC0C9 \uACE0\uB300\uBE44 \uBC30\uACBD \uC720\uC9C0 \xB7 Pro 1K \uB610\uB294 Flash 1K \uCD08\uC548 \xB7 \uB80C\uB354 \uD6C4 nexus_remove_background\uB85C \uD22C\uBA85\uD654";
+  return data({ prompt, renderHint, resolvedOptions, nextTool: "nexus_render_image" }, `${prompt}
+
+[\uB80C\uB354 \uD78C\uD2B8] ${renderHint}`);
 });
 server.registerTool("nexus_typecore_sovereign_prompt", {
   title: "Typecore Sovereign \uD0C0\uC774\uD2C0 \uD504\uB86C\uD504\uD2B8",
@@ -2913,6 +3133,75 @@ server.registerTool("nexus_character_fx_prompt", {
 [\uB80C\uB354 \uD78C\uD2B8] ${renderHint} \u2014 \uC774\uD6C4 ${bgResolved === "black" ? "nexus_split_character_effect \uB85C \uCE90\uB9AD\uD130/\uC774\uD399\uD2B8 \uBD84\uB9AC" : "nexus_remove_background \uB85C \uD0A4\uC789"} \uAC00\uB2A5`;
   return data({ prompt, renderHint, resolvedBg: bgResolved, nextTool }, full);
 });
+server.registerTool("nexus_remove_ai", {
+  title: "\uBC30\uACBD \uC81C\uAC70 (Remove.bg AI)",
+  description: "\uC0C9\uC0C1 \uD0A4\uC789\xB7\uC774\uD399\uD2B8 \uC54C\uD30C\xB7\uCE90\uB9AD\uD130 \uBD84\uB9AC \uB4F1 \uB85C\uCEEC \uD22C\uBA85\uD654\uAC00 \uC2E4\uD328\uD558\uAC70\uB098 QA\uB97C \uD1B5\uACFC\uD558\uC9C0 \uBABB\uD588\uC744 \uB54C\uB9CC \uC0AC\uC6A9\uD558\uB294 \uCD5C\uC885 fallback. Remove.bg AI \uD53C\uC0AC\uCCB4 \uC138\uADF8\uBA58\uD14C\uC774\uC158\uC73C\uB85C \uD5C8\uC6A9\uB41C \uB85C\uCEEC \uC774\uBBF8\uC9C0\uC758 \uBC30\uACBD\uC744 \uC81C\uAC70\uD574 \uD22C\uBA85 PNG\uB85C \uC800\uC7A5. \uC774\uBBF8\uC9C0\uB97C \uC678\uBD80 Remove.bg API\uB85C \uC804\uC1A1\uD558\uACE0 \uACC4\uC815 \uD06C\uB808\uB527\uC744 \uC0AC\uC6A9\uD560 \uC218 \uC788\uC73C\uBBC0\uB85C \uD638\uCD9C\uB9C8\uB2E4 \uBA85\uC2DC\uC801 \uD655\uC778\uC774 \uD544\uC694\uD568. REMOVE_BG_API_KEY \uBC0F REMOVE_BG_ALLOWED_ROOTS \uC0AC\uC6A9.",
+  inputSchema: {
+    imagePath: z.string().describe("REMOVE_BG_ALLOWED_ROOTS \uC544\uB798\uC758 \uC785\uB825 \uC774\uBBF8\uC9C0 \uACBD\uB85C(png\xB7jpg\xB7webp)"),
+    confirmExternalUpload: z.literal(true).describe("\uC774\uBBF8\uC9C0\uB97C Remove.bg\uB85C \uC804\uC1A1\uD558\uACE0 \uD06C\uB808\uB527\uC774 \uC0AC\uC6A9\uB420 \uC218 \uC788\uC74C\uC744 \uC774\uBC88 \uD638\uCD9C\uC5D0 \uD55C\uD574 \uBA85\uC2DC\uC801\uC73C\uB85C \uD655\uC778"),
+    size: z.enum(["auto", "preview", "full"]).default("auto").describe("Remove.bg \uCD9C\uB825 \uD06C\uAE30. auto \uAD8C\uC7A5"),
+    outputPath: z.string().optional().describe("\uD5C8\uC6A9\uB41C \uB8E8\uD2B8 \uC544\uB798\uC758 \uC800\uC7A5 \uACBD\uB85C(.png). \uC0DD\uB7B5 \uC2DC .tmp/mcp-out \uC544\uB798 \uC790\uB3D9")
+  },
+  outputSchema: {
+    outputPath: z.string().describe("\uC800\uC7A5\uB41C \uD22C\uBA85 PNG \uC808\uB300\uACBD\uB85C"),
+    size: z.string(),
+    creditsCharged: z.string().nullable(),
+    freeCallsRemaining: z.string().nullable()
+  },
+  annotations: { ...WRITE_LOCAL, openWorldHint: true }
+}, async (a) => {
+  const key = envValue("REMOVE_BG_API_KEY");
+  if (!key) return errText("REMOVE_BG_API_KEY \uAC00 \uC5C6\uC2B5\uB2C8\uB2E4 \u2014 \uD658\uACBD\uBCC0\uC218 \uB610\uB294 \uB9AC\uD3EC \uB8E8\uD2B8 .env \uC5D0 \uC124\uC815\uD558\uC138\uC694 (VITE_ \uC811\uB450\uC0AC \uC544\uB2D8).");
+  const allowedRoots = removeBgAllowedRoots();
+  const input = path.resolve(a.imagePath);
+  if (!isInsideAllowedRoot(input, allowedRoots)) return errText(`\uD5C8\uC6A9\uB418\uC9C0 \uC54A\uC740 \uC785\uB825 \uACBD\uB85C\uC785\uB2C8\uB2E4. REMOVE_BG_ALLOWED_ROOTS: ${allowedRoots.join("; ")}`);
+  const out = a.outputPath ? path.resolve(a.outputPath) : path.join(ensureOutDir(OUT_DIR), `remove-ai-${Date.now()}.png`);
+  if (!isInsideAllowedRoot(out, allowedRoots)) return errText(`\uD5C8\uC6A9\uB418\uC9C0 \uC54A\uC740 \uCD9C\uB825 \uACBD\uB85C\uC785\uB2C8\uB2E4. REMOVE_BG_ALLOWED_ROOTS: ${allowedRoots.join("; ")}`);
+  let bytes;
+  try {
+    bytes = fs.readFileSync(input);
+  } catch (e) {
+    return errText(`\uC774\uBBF8\uC9C0\uB97C \uC5F4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4: ${input} \u2014 \uACBD\uB85C\uB97C \uD655\uC778\uD558\uC138\uC694. (${e.message})`);
+  }
+  if (bytes.length > 22 * 1024 * 1024) return errText("Remove.bg \uC785\uB825 \uC81C\uD55C\uC744 \uCD08\uACFC\uD588\uC2B5\uB2C8\uB2E4 \u2014 22MB \uC774\uD558 \uC774\uBBF8\uC9C0\uB97C \uC0AC\uC6A9\uD558\uC138\uC694.");
+  let response;
+  try {
+    response = await fetch("https://api.remove.bg/v1.0/removebg", {
+      method: "POST",
+      headers: { "X-Api-Key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ image_file_b64: bytes.toString("base64"), size: a.size }),
+      signal: AbortSignal.timeout(12e4)
+    });
+  } catch (e) {
+    return errText(`Remove.bg \uC694\uCCAD \uC2E4\uD328: ${e.message}`);
+  }
+  if (!response.ok) {
+    let message = `Remove.bg ${response.status}`;
+    if (response.status === 402) message = "Remove.bg \uD06C\uB808\uB527\uC774 \uBD80\uC871\uD569\uB2C8\uB2E4.";
+    else if (response.status === 403) message = "REMOVE_BG_API_KEY\uAC00 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4.";
+    else if (response.status === 429) message = "Remove.bg \uC694\uCCAD\uC774 \uB108\uBB34 \uB9CE\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uC2DC\uB3C4\uD558\uC138\uC694.";
+    else {
+      try {
+        message = (await response.json())?.errors?.[0]?.title || message;
+      } catch {
+      }
+    }
+    return errText(message);
+  }
+  try {
+    ensureOutDir(path.dirname(out));
+    fs.writeFileSync(out, Buffer.from(await response.arrayBuffer()));
+  } catch (e) {
+    return errText(`\uACB0\uACFC \uC800\uC7A5 \uC2E4\uD328: ${out} \u2014 \uCD9C\uB825 \uACBD\uB85C\uB97C \uD655\uC778\uD558\uC138\uC694. (${e.message})`);
+  }
+  const creditsCharged = response.headers.get("X-Credits-Charged");
+  const freeCallsRemaining = response.headers.get("X-Free-Calls");
+  return data(
+    { outputPath: out, size: a.size, creditsCharged, freeCallsRemaining },
+    `\uC800\uC7A5 \uC644\uB8CC: ${out}
+Remove.bg AI \xB7 size=${a.size}${creditsCharged ? ` \xB7 \uC0AC\uC6A9 \uD06C\uB808\uB527 ${creditsCharged}` : ""}${freeCallsRemaining ? ` \xB7 \uBB34\uB8CC \uD638\uCD9C \uC794\uC5EC ${freeCallsRemaining}` : ""}`
+  );
+});
 server.registerTool("nexus_remove_background", {
   title: "\uBC30\uACBD \uC81C\uAC70 (\uD0A4\uC789)",
   description: "\uB2E8\uC0C9 \uBC30\uACBD(\uBE14\uB799/\uD06C\uB85C\uB9C8 \uADF8\uB9B0/\uD654\uC774\uD2B8/\uC784\uC758 \uC0C9) \uC774\uBBF8\uC9C0\uB97C \uC0C9\uAC70\uB9AC \uD0A4\uC789 + \uBC30\uACBD\uC0C9 \uC5ED\uC0B0(unmix)\uC73C\uB85C \uD22C\uBA85 PNG \uB85C \uBCC0\uD658. \uBC1C\uAD11 \uC774\uD399\uD2B8 \uCD94\uCD9C\uC5D0\uB3C4 \uC0AC\uC6A9 (bg=black).",
@@ -3074,7 +3363,7 @@ server.registerTool("nexus_design_rubric", {
 });
 server.registerTool("nexus_banner_codex_list", {
   title: "Banner Codex \uBC30\uB108 \uBAA9\uB85D",
-  description: "NEXUS Studio Banner Codex\uC5D0 \uC800\uC7A5\uB41C \uBC30\uB108\uB97C \uC77D\uAE30 \uC804\uC6A9\uC73C\uB85C \uC870\uD68C\uD569\uB2C8\uB2E4. \uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uAC8C\uC784\xB7\uC5F0\uB3C4\xB7\uC810\uC218 \uD544\uD130\uC640 \uD398\uC774\uC9C0 \uD1A0\uD070\uC744 \uC9C0\uC6D0\uD569\uB2C8\uB2E4.",
+  description: "NEXUS Studio Banner Codex\uC5D0 \uC800\uC7A5\uB41C \uBC30\uB108\uB97C \uC77D\uAE30 \uC804\uC6A9\uC73C\uB85C \uC870\uD68C\uD569\uB2C8\uB2E4. \uC81C\uBAA9\xB7\uD0DC\uADF8\xB7\uAC8C\uC784\xB7\uC5F0\uB3C4\xB7\uC810\uC218 \uD544\uD130\uC640 \uD398\uC774\uC9C0 \uD1A0\uD070\uC744 \uC9C0\uC6D0\uD558\uBA70, \uC0C1\uC704 5\uAC1C \uC378\uB124\uC77C\uC744 MCP \uC774\uBBF8\uC9C0\uB85C \uC9C1\uC811 \uD45C\uC2DC\uD569\uB2C8\uB2E4.",
   inputSchema: {
     pageSize: z.number().int().min(1).max(100).default(30).describe("\uD55C \uBC88\uC5D0 \uAC00\uC838\uC62C Firestore \uBB38\uC11C \uC218 (\uCD5C\uB300 100)"),
     pageToken: z.string().optional().describe("\uC774\uC804 \uC751\uB2F5\uC758 nextPageToken \u2014 \uB2E4\uC74C \uD398\uC774\uC9C0 \uC870\uD68C \uC2DC \uC804\uB2EC"),
@@ -3082,7 +3371,7 @@ server.registerTool("nexus_banner_codex_list", {
     game: z.string().optional().describe("\uAC8C\uC784\uBA85 \uC815\uD655 \uC77C\uCE58 \uD544\uD130"),
     year: z.union([z.string(), z.number()]).optional().describe("\uC5F0\uB3C4 \uD544\uD130"),
     minScore: z.number().min(0).max(100).optional().describe("\uCD5C\uC18C \uD3C9\uAC00 \uC810\uC218"),
-    sort: z.enum(["newest", "oldest", "score"]).default("newest").describe("\uD604\uC7AC \uD398\uC774\uC9C0 \uACB0\uACFC \uC815\uB82C")
+    sort: z.enum(["newest", "oldest", "score"]).default("newest").describe("\uC815\uB82C \u2014 score\uB294 \uC804\uCCB4 \uCEEC\uB809\uC158 \uD3C9\uAC00\uC21C")
   },
   outputSchema: {
     banners: z.array(z.record(z.string(), z.any())),
@@ -3094,7 +3383,8 @@ server.registerTool("nexus_banner_codex_list", {
 }, async (a) => {
   try {
     const { projectId } = firebaseConfig();
-    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/banners`, {
+    const collectionPath = `artifacts/${encodeURIComponent(projectId)}/public/data/banners`;
+    const payload = a.sort === "score" ? { documents: await firestoreCollectionAll(collectionPath), nextPageToken: null } : await firestoreRequest(collectionPath, {
       pageSize: a.pageSize,
       pageToken: a.pageToken,
       showMissing: false
@@ -3112,9 +3402,16 @@ server.registerTool("nexus_banner_codex_list", {
       return true;
     });
     filtered.sort((x, y) => a.sort === "score" ? Number(y.score || 0) - Number(x.score || 0) : a.sort === "oldest" ? bannerTimestamp(x.createdAt) - bannerTimestamp(y.createdAt) : bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt));
-    const banners = filtered.map(bannerSummary);
-    const result = { banners, returned: banners.length, scanned: decoded.length, nextPageToken: payload.nextPageToken || null };
-    return data(result, JSON.stringify(result, null, 2));
+    const offset = a.sort === "score" ? scorePageOffset(a.pageToken) : 0;
+    const pageItems = a.sort === "score" ? filtered.slice(offset, offset + a.pageSize) : filtered;
+    const banners = pageItems.map(bannerSummary);
+    const nextPageToken = a.sort === "score" ? offset + banners.length < filtered.length ? `score:${offset + banners.length}` : null : payload.nextPageToken || null;
+    const result = { banners, returned: banners.length, scanned: decoded.length, nextPageToken };
+    return dataWithRemoteImages(
+      result,
+      JSON.stringify(result, null, 2),
+      banners.map((banner) => banner.thumbnailUrl || banner.imageUrl)
+    );
   } catch (e) {
     return errText(`Banner Codex \uBAA9\uB85D \uC870\uD68C \uC2E4\uD328: ${e.message}`);
   }

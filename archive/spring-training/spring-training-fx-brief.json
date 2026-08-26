@@ -1,7 +1,0 @@
-{
-  "mode": "character-light",
-  "engine": "RubiconForge Light FX + NexusPreview Character Up",
-  "concept": "봄 숲 배경의 우측 햇빛을 받는 독초거사, 얇은 연두-금빛 림라이트, 부드러운 후광, 성긴 꽃가루 입자, 캐릭터 형상 재생성 금지",
-  "prompt": "Use the input character only as a silhouette placement reference. Generate LIGHT ONLY on pure black #000000. Create a sparse thin edge-hugging rim, restrained backlight bloom, a few tiny glints, and optional short wisps. Direction: 봄 숲 배경의 우측 햇빛을 받는 독초거사, 얇은 연두-금빛 림라이트, 부드러운 후광, 성긴 꽃가루 입자, 캐릭터 형상 재생성 금지. Keep the interior and most of the canvas black. Never reproduce the face, body, clothes, weapon, text, scene, or any solid object.",
-  "avoid": "reproduced character, solid silhouette fill, dense particles, full-frame haze, large lens flare, excessive bloom"
-}

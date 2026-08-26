@@ -1,6 +1,7 @@
 // 스킬 매니페스트 — NEXUS Preview 이미지 생성기들.
 // 각 앱의 기존 render 함수·옵션 상수를 그대로 재사용. 이미지 입력형은 file/files 슬롯 사용.
-import { renderBgGenerate, renderItemBundle, BUNDLE_LIGHT_OPTIONS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, FLOATING_EFFECT_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_COLORS } from "../apps/NexusPreview/services/bgTools";
+import { renderBgGenerate, renderItemBundle, BUNDLE_LIGHT_OPTIONS, BUNDLE_LAYOUT_OPTIONS, renderFloatingItems, FLOATING_OUTPUT_OPTIONS, FLOATING_EFFECT_OPTIONS, FLOATING_FORM_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_GROUP_OPTIONS, FLOATING_COLORS, FLOATING_INTENSITY_OPTIONS, FLOATING_MOTION_OPTIONS, FLOATING_DENSITY_OPTIONS } from "../apps/NexusPreview/services/bgTools";
+import { renderBundleLayers } from "../apps/NexusPreview/services/bundleLayers";
 import { renderEnhanced } from "../apps/NexusPreview/services/qualityEnhancer";
 import { renderCharEnhanced, CHAR_LIGHT_OPTIONS, CHAR_PARTICLE_OPTIONS, CHAR_INTENSITY_OPTIONS } from "../apps/NexusPreview/services/characterEnhancer";
 import { renderTitleEffect, TITLE_FX_EFFECTS, TITLE_FX_COLORS, TITLE_FX_INTENSITY } from "../apps/NexusPreview/services/titleEffect";
@@ -70,29 +71,38 @@ export const titleFxSkill = {
 
 export const itemBundleSkill = {
   id: "nexus-bundle", label: "아이템 꾸러미", sub: "Item Bundle", color: NP, action: "image", transparent: "auto", // 블랙 배경 → 루마/색상 키
-  intro: "아이템 이미지 여러 장을 형태 그대로 하나의 보상 꾸러미로 합성해요. 원하는 연출을 적고 아이템들을 올려주세요 (2장 이상).\n바닥 이펙트는 RubiconForge 광원 효과(바닥 이펙트·그라운드)에서 따로 만들어 겹쳐 쓰세요.",
+  intro: "아이템·후광·바닥광·전방 효과를 각각 투명 레이어로 만든 뒤 자동 합성해 최종 RGBA PNG로 내보냅니다. 원하는 연출을 적고 아이템들을 올려주세요 (2장 이상).",
   placeholder: "원하는 연출 (없으면 ‘기본’ 입력)…",
   freeTextKey: "intent",
   slots: [
     { key: "items", label: "아이템 이미지", question: "아이템 이미지를 2장 이상 올려주세요.", type: "files", min: 2, required: true },
+    { key: "outputMode", label: "출력 방식", question: "투명 레이어 합성인가요, 단일 이미지인가요?", options: [{ id: "layered-transparent", label: "투명 레이어 자동 합성" }, { id: "flat", label: "단일 이미지" }], default: "layered-transparent" },
     { key: "light", label: "빛효과", question: "빛효과는?", options: kv(BUNDLE_LIGHT_OPTIONS), default: "soft" },
     { key: "layout", label: "배치", question: "배치는?", options: kv(BUNDLE_LAYOUT_OPTIONS), default: "normal" },
   ],
-  render: (v) => wrap(renderItemBundle(v.items, { light: v.light, ground: "none", bg: "black", layout: v.layout, intent: v.intent || "", imageSize: "2K" })),
+  render: (v) => wrap(v.outputMode === "flat"
+    ? renderItemBundle(v.items, { light: v.light, ground: "none", bg: "black", layout: v.layout, intent: v.intent || "", imageSize: "2K" })
+    : renderBundleLayers(v.items, { layout: v.layout, intent: v.intent || "", imageSize: "2K", color: "gold", backGlow: true, groundLight: true, frontEffect: true }).then((r) => r.previewDataUrl)),
 };
 
 export const floatingItemsSkill = {
   id: "nexus-floating", label: "공중부양 아이템", sub: "Floating Items", color: NP, action: "image", transparent: "auto",
-  intro: "아이템을 물방울·번개·금빛·회오리 등 원형 이펙트로 감싸 공중에 띄워요. 원 하나에 1개 또는 여러 개. 느낌을 적고 아이템을 올려주세요 (1장 이상).\n예: “금빛 회오리로 화려하게”",
+  intro: "통합 마스터를 만든 뒤 효과와 아이템을 같은 좌표의 두 레이어로 분리·투명화하고, 자동 합성한 투명 PNG를 내보냅니다.",
   placeholder: "원하는 연출 (없으면 ‘자동’ 입력)…",
   freeTextKey: "intent",
   slots: [
     { key: "items", label: "아이템 이미지", question: "아이템 이미지를 올려주세요 (1장 이상).", type: "files", min: 1, required: true },
-    { key: "effect", label: "원형 이펙트", question: "원형 이펙트는?", options: kv(FLOATING_EFFECT_OPTIONS), default: "bubble" },
-    { key: "layout", label: "배치", question: "배치는? (개별 원 / 한 원에 모아서)", options: kv(FLOATING_LAYOUT_OPTIONS), default: "each" },
+    { key: "outputMode", label: "출력 방식", question: "투명 레이어 합성인가요, 다른 출력이 필요한가요?", options: kv(FLOATING_OUTPUT_OPTIONS), default: "layered-transparent" },
+    { key: "effect", label: "이펙트 재질", question: "이펙트 재질은?", options: kv(FLOATING_EFFECT_OPTIONS), default: "gold" },
+    { key: "form", label: "형태", question: "아이템을 어떤 형태로 감쌀까요?", options: kv(FLOATING_FORM_OPTIONS), default: "broken-orbit" },
+    { key: "layout", label: "배치", question: "아이템 배치는?", options: kv(FLOATING_LAYOUT_OPTIONS), default: "each" },
+    { key: "groupMode", label: "광원 묶음", question: "아이템들이 하나의 보상 세트인가요, 각각의 보상인가요?", options: kv(FLOATING_GROUP_OPTIONS.filter((o) => o.key !== "custom")), default: "all" },
     { key: "color", label: "이펙트 색", question: "이펙트 색은?", options: kv(FLOATING_COLORS), default: "auto" },
+    { key: "intensity", label: "강도", question: "효과 강도는?", options: kv(FLOATING_INTENSITY_OPTIONS), default: "medium" },
+    { key: "motion", label: "흐름", question: "효과 흐름은?", options: kv(FLOATING_MOTION_OPTIONS), default: "clockwise" },
+    { key: "density", label: "파티클", question: "파티클 밀도는?", options: kv(FLOATING_DENSITY_OPTIONS), default: "medium" },
   ],
-  render: (v) => wrap(renderFloatingItems(v.items, { effect: v.effect, layout: v.layout, color: v.color, bg: "black", intent: v.intent || "", imageSize: "2K" })),
+  render: (v) => wrap(renderFloatingItems(v.items, { outputMode: v.outputMode || "layered-transparent", effect: v.effect, form: v.form, layout: v.layout, groupMode: v.groupMode || "all", groupAssignments: v.groupAssignments || [], primaryIndex: v.primaryIndex || 0, color: v.color, intensity: v.intensity, motion: v.motion, density: v.density, opening: 25, frontCross: 10, bg: "black", intent: v.intent || "", imageSize: "2K" })),
 };
 
 export const nexusPreviewSkills = [bgGenerateSkill, bgQualitySkill, charEnhanceSkill, titleFxSkill, itemBundleSkill, floatingItemsSkill];

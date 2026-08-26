@@ -6,7 +6,8 @@
 // (esbuild 로 번들 — scripts: npm run mcp:build). 앱에서 프롬프트를 고치면 MCP 도 따라간다.
 //
 // 실행: node mcp/nexus-mcp.bundle.mjs   (stdio transport)
-// 키: 환경변수 GEMINI_API_KEY 또는 리포 루트 .env 의 GEMINI_API_KEY (VITE_ 아님 — 서버 전용).
+// 키: 환경변수 또는 리포 루트 .env 의 서버 전용 키(VITE_ 접두사 아님).
+// Gemini: GEMINI_API_KEY · Remove.bg AI: REMOVE_BG_API_KEY
 
 import fs from "node:fs";
 import path from "node:path";
@@ -47,6 +48,7 @@ import { staticOptions as sovereignOptions } from "../src/apps/TypecoreSovereign
 import { getOptionEn as sovereignOptionEn } from "../src/apps/TypecoreSovereign/versions/current/constants/utils";
 import { resolveSovereignOptions, SCRIPT_PRESETS as sovereignPresets } from "../src/apps/TypecoreSovereign/versions/current/services/sovereignOptions";
 import { compileSovereignImagenPrompt } from "../src/apps/TypecoreSovereign/versions/current/services/compileSovereignImagenPrompt";
+import { FRAMEFORGE_ASSET_TYPES, FRAMEFORGE_SILHOUETTES, FRAMEFORGE_MOODS, FRAMEFORGE_RENDER_STYLES, buildFrameForgeMcpPrompt } from "../src/apps/FrameForge/frameforgeMcp.js";
 
 // ─── 경로/키 ─────────────────────────────────────────────────────────────────
 // 번들은 <repo>/mcp/ 에 있으므로 루트는 한 단계 위.
@@ -68,6 +70,13 @@ function writeNexusAuth(value) {
   fs.writeFileSync(NEXUS_AUTH_PATH, JSON.stringify(value, null, 2), { mode: 0o600 });
 }
 
+function decodeFirebaseClaims(idToken) {
+  try {
+    const payload = String(idToken || "").split(".")[1];
+    return payload ? JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) : {};
+  } catch { return {}; }
+}
+
 async function exchangeCustomToken(customToken) {
   const { apiKey } = firebaseConfig();
   if (!apiKey) throw new Error("Firebase API key가 없습니다.");
@@ -82,9 +91,10 @@ async function exchangeCustomToken(customToken) {
   );
   const body = await response.json();
   if (!response.ok) throw new Error(body?.error?.message || "Firebase custom token 교환 실패");
+  const claims = decodeFirebaseClaims(body.idToken);
   const auth = {
-    uid: body.localId,
-    email: body.email || null,
+    uid: body.localId || claims.user_id || claims.sub || null,
+    email: body.email || claims.email || null,
     idToken: body.idToken,
     refreshToken: body.refreshToken,
     expiresAt: Date.now() + Number(body.expiresIn || 3600) * 1000,
@@ -97,7 +107,19 @@ async function exchangeCustomToken(customToken) {
 async function currentNexusAuth() {
   const auth = readNexusAuth();
   if (!auth?.refreshToken) return null;
-  if (auth.idToken && Number(auth.expiresAt || 0) > Date.now() + 60000) return auth;
+  if (auth.idToken && Number(auth.expiresAt || 0) > Date.now() + 60000) {
+    if (!auth.uid || !auth.email) {
+      const claims = decodeFirebaseClaims(auth.idToken);
+      const repaired = {
+        ...auth,
+        uid: auth.uid || claims.user_id || claims.sub || null,
+        email: auth.email || claims.email || null,
+      };
+      writeNexusAuth(repaired);
+      return repaired;
+    }
+    return auth;
+  }
   const { apiKey } = firebaseConfig();
   const response = await fetch(`https://securetoken.googleapis.com/v1/token?key=${encodeURIComponent(apiKey)}`, {
     method: "POST",
@@ -171,6 +193,29 @@ function geminiKey() {
   return null;
 }
 
+function envValue(name) {
+  if (process.env[name]) return process.env[name];
+  try {
+    const env = fs.readFileSync(path.join(ROOT, ".env"), "utf8");
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const m = env.match(new RegExp(`^\\s*${escaped}\\s*=\\s*(.+?)\\s*$`, "m"));
+    if (m) return m[1].replace(/^['"]|['"]$/g, "");
+  } catch { /* .env 없음 */ }
+  return null;
+}
+
+function removeBgAllowedRoots() {
+  const configured = envValue("REMOVE_BG_ALLOWED_ROOTS");
+  return (configured ? configured.split(";") : [ROOT]).map((value) => path.resolve(value.trim())).filter(Boolean);
+}
+
+function isInsideAllowedRoot(target, roots) {
+  return roots.some((root) => {
+    const relative = path.relative(root, target);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  });
+}
+
 // ─── fs 기반 composeSkills — lib/skills.js 의 Vite glob 대응 Node 재구현 ───────
 // 스킬 본문(src/skills/**/*.md)은 파일 그대로 읽으므로 앱과 항상 동일 내용.
 function composeSkillsFs(ids, ctx = {}) {
@@ -194,6 +239,35 @@ const text = (t) => ({ content: [{ type: "text", text: t }] });
 const errText = (t) => ({ content: [{ type: "text", text: t }], isError: true });
 // 구조화 응답: 사람이 읽는 text + 클라이언트가 파싱하는 structuredContent 를 함께 반환.
 const data = (structuredContent, t) => ({ content: [{ type: "text", text: t }], structuredContent });
+
+// 원격 이미지 URL을 MCP ImageContent 로 변환한다. URL 문자열만 반환하면 일부 클라이언트가
+// 보안상 원격 이미지를 즉시 렌더하지 않으므로, 목록 미리보기는 작은 썸네일을 base64 로 첨부한다.
+// 과도한 응답 크기를 막기 위해 호출당 최대 5개, 이미지당 5MB 로 제한한다.
+async function remoteImageContent(url, { maxBytes = 5 * 1024 * 1024 } = {}) {
+  if (!url || !/^https:\/\//i.test(url)) return null;
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  if (!response.ok) throw new Error(`이미지 다운로드 실패 (${response.status})`);
+  const mimeType = String(response.headers.get("content-type") || "image/jpeg").split(";")[0];
+  if (!mimeType.startsWith("image/")) throw new Error(`이미지가 아닌 응답입니다: ${mimeType}`);
+  const declared = Number(response.headers.get("content-length") || 0);
+  if (declared > maxBytes) throw new Error(`이미지가 ${Math.ceil(declared / 1024 / 1024)}MB로 미리보기 제한을 초과했습니다.`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length > maxBytes) throw new Error(`이미지가 ${Math.ceil(bytes.length / 1024 / 1024)}MB로 미리보기 제한을 초과했습니다.`);
+  return { type: "image", data: bytes.toString("base64"), mimeType };
+}
+
+async function dataWithRemoteImages(structuredContent, t, urls) {
+  const content = [{ type: "text", text: t }];
+  for (const url of urls.filter(Boolean).slice(0, 5)) {
+    try {
+      const preview = await remoteImageContent(url);
+      if (preview) content.push(preview);
+    } catch (error) {
+      console.warn(`[nexus-mcp] image preview skipped: ${error.message}`);
+    }
+  }
+  return { content, structuredContent };
+}
 
 // ─── 툴 동작 힌트 (MCP annotations) ───────────────────────────────────────────
 // 클라이언트가 read-only/파괴성/멱등성/외부호출 여부를 판단하는 데 쓴다.
@@ -424,6 +498,29 @@ async function firestoreRequest(documentPath, params = {}) {
   return response.json();
 }
 
+async function firestoreCollectionAll(documentPath, { maxDocuments = 10000 } = {}) {
+  const documents = [];
+  let pageToken;
+  do {
+    const payload = await firestoreRequest(documentPath, {
+      pageSize: 100,
+      pageToken,
+      showMissing: false,
+    });
+    documents.push(...(payload.documents || []));
+    pageToken = payload.nextPageToken || null;
+    if (documents.length >= maxDocuments) {
+      throw new Error(`전체 정렬 안전 제한(${maxDocuments}건)을 초과했습니다.`);
+    }
+  } while (pageToken);
+  return documents;
+}
+
+function scorePageOffset(pageToken) {
+  const match = String(pageToken || '').match(/^score:(\d+)$/);
+  return match ? Number(match[1]) : 0;
+}
+
 function normalizedTitleText(value) {
   return String(value || "").replace(/\r\n/g, "\n").trim();
 }
@@ -566,6 +663,12 @@ const brief = (arr, extra = []) => arr.map((o) => {
   return out;
 });
 const OPTION_CATALOG = () => ({
+  frameforge: {
+    assetType: brief(FRAMEFORGE_ASSET_TYPES),
+    silhouette: FRAMEFORGE_SILHOUETTES.map((o) => ({ id: o.key, label: o.ko, for: o.for })),
+    mood: brief(FRAMEFORGE_MOODS),
+    renderStyle: brief(FRAMEFORGE_RENDER_STYLES),
+  },
   lightfx: {
     category: brief(LIGHTFX_CATEGORIES, ["desc"]),
     form: brief(LIGHTFX_FORMS, ["desc"]),
@@ -630,6 +733,7 @@ server.registerTool("nexus_guide", {
 ■ 기본 흐름
 1) nexus_list_options 로 옵션 카탈로그(id 목록) 확인
 2) 프롬프트 툴로 검증된 프로덕션 프롬프트 생성:
+   · nexus_frameforge_prompt     — FrameForge 프레임·버튼·박스·배지·디바이더·아이콘 생성
    · nexus_lightfx_prompt        — 광원/빛효과 에셋 (순흑/단색 배경, 합성용)
    · nexus_variation_prompt      — UI 에셋 리스킨(컬러·재질 오버레이 패스, 구조 보존)
    · nexus_design_alternative_prompt — 디자인 대안(모티프·재질 재해석, 골격 유지)
@@ -642,6 +746,8 @@ server.registerTool("nexus_guide", {
 4) 후처리 픽셀 툴:
    · nexus_remove_background     — 단색 배경(블랙/크로마) 키잉 → 투명 PNG
    · nexus_split_character_effect — 캐릭터/발광 이펙트 분리 (스크린 블렌드 레이어)
+   · nexus_remove_ai             — 위 로컬 방식의 QA가 실패한 경우에만 사용하는 Remove.bg AI 최종 fallback
+   투명화 우선순위: 색상 키잉/이펙트 알파/캐릭터 분리 같은 로컬·결정적 방식 → 알파·가장자리·닫힌 공간 QA → 실패 시에만 nexus_remove_ai.
 5) nexus_design_rubric — 결과물 평가용 디자인 루브릭
 6) Banner Codex 라이브러리:
    · nexus_banner_codex_list — 저장 배너 목록·검색·필터
@@ -666,6 +772,7 @@ server.registerTool("nexus_list_options", {
   description: "모든 프롬프트 툴의 선택지(id·한글 라벨)를 JSON 으로 반환. 프롬프트 툴 호출 전 참조.",
   inputSchema: {},
   outputSchema: {
+    frameforge: z.record(z.string(), z.any()).describe("nexus_frameforge_prompt 선택지"),
     lightfx: z.record(z.string(), z.any()).describe("nexus_lightfx_prompt 선택지"),
     variation: z.record(z.string(), z.any()).describe("nexus_variation_prompt 선택지"),
     designAlternative: z.record(z.string(), z.any()).describe("nexus_design_alternative_prompt 선택지"),
@@ -678,6 +785,46 @@ server.registerTool("nexus_list_options", {
 }, async () => {
   const catalog = OPTION_CATALOG();
   return data(catalog, JSON.stringify(catalog, null, 2));
+});
+
+server.registerTool("nexus_frameforge_prompt", {
+  title: "FrameForge UI 에셋 프롬프트",
+  description: "Nexus FrameForge 앱의 실제 옵션과 buildCompletePrompt 엔진으로 프레임·버튼·박스·배지·디바이더·아이콘 생성 프롬프트를 만듭니다. 결과를 nexus_render_image에 전달하세요.",
+  inputSchema: {
+    assetType: z.enum(FRAMEFORGE_ASSET_TYPES.map((o) => o.key)).describe("용도: button, box, frame, badge, divider, icon"),
+    silhouette: z.enum(FRAMEFORGE_SILHOUETTES.map((o) => o.key)).describe("nexus_list_options의 frameforge.silhouette id. 선택한 assetType과 for가 일치해야 함"),
+    mood: z.enum(FRAMEFORGE_MOODS.map((o) => o.key)).default("dark_rpg").describe("분위기 프리셋"),
+    renderStyle: z.enum(FRAMEFORGE_RENDER_STYLES.map((o) => o.key)).default("illustrated").describe("렌더 표현 방식"),
+    userText: z.string().max(1000).optional().describe("추가 제작 의도. 결과 에셋 내부에 실제 글자를 생성하라는 의미로 사용하지 않음"),
+  },
+  outputSchema: {
+    prompt: z.string(),
+    renderHint: z.string(),
+    resolvedOptions: z.record(z.string(), z.any()),
+    nextTool: z.literal("nexus_render_image"),
+  },
+  annotations: PURE,
+}, async (a) => {
+  const assetType = FRAMEFORGE_ASSET_TYPES.find((o) => o.key === a.assetType);
+  const silhouette = FRAMEFORGE_SILHOUETTES.find((o) => o.key === a.silhouette);
+  if (!silhouette?.for?.includes(a.assetType)) {
+    return errText(`FrameForge 형태 '${a.silhouette}'는 용도 '${a.assetType}'에 사용할 수 없습니다.`);
+  }
+  const mood = FRAMEFORGE_MOODS.find((o) => o.key === a.mood) || FRAMEFORGE_MOODS[0];
+  const renderStyle = FRAMEFORGE_RENDER_STYLES.find((o) => o.key === a.renderStyle) || FRAMEFORGE_RENDER_STYLES[0];
+  const prompt = buildFrameForgeMcpPrompt({ assetType, silhouette, mood, renderStyle, userText: a.userText || "" });
+  const resolvedOptions = {
+    assetType: assetType.key,
+    silhouette: silhouette.key,
+    mood: mood.key,
+    preset: mood.preset,
+    material: mood.material,
+    ornament: mood.ornament,
+    interior: "empty",
+    renderStyle: renderStyle.key,
+  };
+  const renderHint = "참조 이미지 없음 · 프롬프트의 단색 고대비 배경 유지 · Pro 1K 또는 Flash 1K 초안 · 렌더 후 nexus_remove_background로 투명화";
+  return data({ prompt, renderHint, resolvedOptions, nextTool: "nexus_render_image" }, `${prompt}\n\n[렌더 힌트] ${renderHint}`);
 });
 
 server.registerTool("nexus_typecore_sovereign_prompt", {
@@ -1007,6 +1154,72 @@ server.registerTool("nexus_character_fx_prompt", {
 });
 
 // ─── 픽셀 툴 ──────────────────────────────────────────────────────────────────
+server.registerTool("nexus_remove_ai", {
+  title: "배경 제거 (Remove.bg AI)",
+  description: "색상 키잉·이펙트 알파·캐릭터 분리 등 로컬 투명화가 실패하거나 QA를 통과하지 못했을 때만 사용하는 최종 fallback. Remove.bg AI 피사체 세그멘테이션으로 허용된 로컬 이미지의 배경을 제거해 투명 PNG로 저장. 이미지를 외부 Remove.bg API로 전송하고 계정 크레딧을 사용할 수 있으므로 호출마다 명시적 확인이 필요함. REMOVE_BG_API_KEY 및 REMOVE_BG_ALLOWED_ROOTS 사용.",
+  inputSchema: {
+    imagePath: z.string().describe("REMOVE_BG_ALLOWED_ROOTS 아래의 입력 이미지 경로(png·jpg·webp)"),
+    confirmExternalUpload: z.literal(true).describe("이미지를 Remove.bg로 전송하고 크레딧이 사용될 수 있음을 이번 호출에 한해 명시적으로 확인"),
+    size: z.enum(["auto", "preview", "full"]).default("auto").describe("Remove.bg 출력 크기. auto 권장"),
+    outputPath: z.string().optional().describe("허용된 루트 아래의 저장 경로(.png). 생략 시 .tmp/mcp-out 아래 자동"),
+  },
+  outputSchema: {
+    outputPath: z.string().describe("저장된 투명 PNG 절대경로"),
+    size: z.string(),
+    creditsCharged: z.string().nullable(),
+    freeCallsRemaining: z.string().nullable(),
+  },
+  annotations: { ...WRITE_LOCAL, openWorldHint: true },
+}, async (a) => {
+  const key = envValue("REMOVE_BG_API_KEY");
+  if (!key) return errText("REMOVE_BG_API_KEY 가 없습니다 — 환경변수 또는 리포 루트 .env 에 설정하세요 (VITE_ 접두사 아님).");
+  const allowedRoots = removeBgAllowedRoots();
+  const input = path.resolve(a.imagePath);
+  if (!isInsideAllowedRoot(input, allowedRoots)) return errText(`허용되지 않은 입력 경로입니다. REMOVE_BG_ALLOWED_ROOTS: ${allowedRoots.join("; ")}`);
+  const out = a.outputPath
+    ? path.resolve(a.outputPath)
+    : path.join(ensureOutDir(OUT_DIR), `remove-ai-${Date.now()}.png`);
+  if (!isInsideAllowedRoot(out, allowedRoots)) return errText(`허용되지 않은 출력 경로입니다. REMOVE_BG_ALLOWED_ROOTS: ${allowedRoots.join("; ")}`);
+  let bytes;
+  try { bytes = fs.readFileSync(input); }
+  catch (e) { return errText(`이미지를 열 수 없습니다: ${input} — 경로를 확인하세요. (${e.message})`); }
+  if (bytes.length > 22 * 1024 * 1024) return errText("Remove.bg 입력 제한을 초과했습니다 — 22MB 이하 이미지를 사용하세요.");
+
+  let response;
+  try {
+    response = await fetch("https://api.remove.bg/v1.0/removebg", {
+      method: "POST",
+      headers: { "X-Api-Key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ image_file_b64: bytes.toString("base64"), size: a.size }),
+      signal: AbortSignal.timeout(120000),
+    });
+  } catch (e) {
+    return errText(`Remove.bg 요청 실패: ${e.message}`);
+  }
+  if (!response.ok) {
+    let message = `Remove.bg ${response.status}`;
+    if (response.status === 402) message = "Remove.bg 크레딧이 부족합니다.";
+    else if (response.status === 403) message = "REMOVE_BG_API_KEY가 올바르지 않습니다.";
+    else if (response.status === 429) message = "Remove.bg 요청이 너무 많습니다. 잠시 후 다시 시도하세요.";
+    else {
+      try { message = (await response.json())?.errors?.[0]?.title || message; } catch {}
+    }
+    return errText(message);
+  }
+  try {
+    ensureOutDir(path.dirname(out));
+    fs.writeFileSync(out, Buffer.from(await response.arrayBuffer()));
+  } catch (e) {
+    return errText(`결과 저장 실패: ${out} — 출력 경로를 확인하세요. (${e.message})`);
+  }
+  const creditsCharged = response.headers.get("X-Credits-Charged");
+  const freeCallsRemaining = response.headers.get("X-Free-Calls");
+  return data(
+    { outputPath: out, size: a.size, creditsCharged, freeCallsRemaining },
+    `저장 완료: ${out}\nRemove.bg AI · size=${a.size}${creditsCharged ? ` · 사용 크레딧 ${creditsCharged}` : ""}${freeCallsRemaining ? ` · 무료 호출 잔여 ${freeCallsRemaining}` : ""}`,
+  );
+});
+
 server.registerTool("nexus_remove_background", {
   title: "배경 제거 (키잉)",
   description: "단색 배경(블랙/크로마 그린/화이트/임의 색) 이미지를 색거리 키잉 + 배경색 역산(unmix)으로 투명 PNG 로 변환. 발광 이펙트 추출에도 사용 (bg=black).",
@@ -1161,7 +1374,7 @@ server.registerTool("nexus_design_rubric", {
 
 server.registerTool("nexus_banner_codex_list", {
   title: "Banner Codex 배너 목록",
-  description: "NEXUS Studio Banner Codex에 저장된 배너를 읽기 전용으로 조회합니다. 제목·태그·게임·연도·점수 필터와 페이지 토큰을 지원합니다.",
+  description: "NEXUS Studio Banner Codex에 저장된 배너를 읽기 전용으로 조회합니다. 제목·태그·게임·연도·점수 필터와 페이지 토큰을 지원하며, 상위 5개 썸네일을 MCP 이미지로 직접 표시합니다.",
   inputSchema: {
     pageSize: z.number().int().min(1).max(100).default(30).describe("한 번에 가져올 Firestore 문서 수 (최대 100)"),
     pageToken: z.string().optional().describe("이전 응답의 nextPageToken — 다음 페이지 조회 시 전달"),
@@ -1169,7 +1382,7 @@ server.registerTool("nexus_banner_codex_list", {
     game: z.string().optional().describe("게임명 정확 일치 필터"),
     year: z.union([z.string(), z.number()]).optional().describe("연도 필터"),
     minScore: z.number().min(0).max(100).optional().describe("최소 평가 점수"),
-    sort: z.enum(["newest", "oldest", "score"]).default("newest").describe("현재 페이지 결과 정렬"),
+    sort: z.enum(["newest", "oldest", "score"]).default("newest").describe("정렬 — score는 전체 컬렉션 평가순"),
   },
   outputSchema: {
     banners: z.array(z.record(z.string(), z.any())),
@@ -1181,11 +1394,14 @@ server.registerTool("nexus_banner_codex_list", {
 }, async (a) => {
   try {
     const { projectId } = firebaseConfig();
-    const payload = await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/banners`, {
-      pageSize: a.pageSize,
-      pageToken: a.pageToken,
-      showMissing: false,
-    });
+    const collectionPath = `artifacts/${encodeURIComponent(projectId)}/public/data/banners`;
+    const payload = a.sort === "score"
+      ? { documents: await firestoreCollectionAll(collectionPath), nextPageToken: null }
+      : await firestoreRequest(collectionPath, {
+          pageSize: a.pageSize,
+          pageToken: a.pageToken,
+          showMissing: false,
+        });
     const decoded = (payload.documents || []).map(decodeFirestoreDocument);
     const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
     const filtered = decoded.filter((banner) => {
@@ -1204,9 +1420,18 @@ server.registerTool("nexus_banner_codex_list", {
       : a.sort === "oldest"
         ? bannerTimestamp(x.createdAt) - bannerTimestamp(y.createdAt)
         : bannerTimestamp(y.createdAt) - bannerTimestamp(x.createdAt));
-    const banners = filtered.map(bannerSummary);
-    const result = { banners, returned: banners.length, scanned: decoded.length, nextPageToken: payload.nextPageToken || null };
-    return data(result, JSON.stringify(result, null, 2));
+    const offset = a.sort === "score" ? scorePageOffset(a.pageToken) : 0;
+    const pageItems = a.sort === "score" ? filtered.slice(offset, offset + a.pageSize) : filtered;
+    const banners = pageItems.map(bannerSummary);
+    const nextPageToken = a.sort === "score"
+      ? (offset + banners.length < filtered.length ? `score:${offset + banners.length}` : null)
+      : (payload.nextPageToken || null);
+    const result = { banners, returned: banners.length, scanned: decoded.length, nextPageToken };
+    return dataWithRemoteImages(
+      result,
+      JSON.stringify(result, null, 2),
+      banners.map((banner) => banner.thumbnailUrl || banner.imageUrl),
+    );
   } catch (e) {
     return errText(`Banner Codex 목록 조회 실패: ${e.message}`);
   }

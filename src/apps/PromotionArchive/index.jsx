@@ -23,7 +23,7 @@ import WebDesignEvalModal from './components/modals/WebDesignEvalModal';
 import ConfirmWorkspace from './components/modals/ConfirmWorkspace';
 import { analyzeWebDesign, prepareImageForAI, loadActiveWebCriteria, extractCampaignFolderHint } from './services/gemini';
 import { CRITERIA_TYPES } from '../../lib/evaluationCriteria';
-import { resolveWebCriteriaType } from './constants/webEvalCriteria';
+import { getBrandWebEvaluationImageUrls, resolveWebCriteriaType } from './constants/webEvalCriteria';
 import Sidebar from './components/layout/Sidebar';
 import Header from './components/layout/Header';
 import FloatingActionBar from './components/layout/FloatingActionBar';
@@ -93,7 +93,7 @@ const hasYearSegment = (path) => /\\(20\d{2})\\/.test(path || '');
 //   - 디바이스 폴더(pc/mobile/web), 기존 '03.디자인', '디자인' segment 제거 후 끝에 재부착
 const NON_STANDARD_SECTION = /^(promotion|brandweb|brand[\s_-]?web|promo)$/i;
 const DEVICE_FOLDER = /^(pc|mobile|web|mo|m|design)$/i;
-const buildCanonicalSegments = (parts, { gameFolder, yearStr }) => {
+const buildCanonicalSegments = (parts, { gameFolder, yearStr, section = 'promotion' }) => {
     // 게임 segment — 인자 우선, 없으면 parts 에서 찾기.
     let gameSeg = gameFolder || '';
     if (!gameSeg) {
@@ -123,13 +123,14 @@ const buildCanonicalSegments = (parts, { gameFolder, yearStr }) => {
     const segments = [];
     if (gameSeg) segments.push(gameSeg);
     if (year) segments.push(year);
-    segments.push('프로모션');
+    const sectionFolder = section === 'brandweb' ? '브랜드웹' : '프로모션';
+    segments.push(sectionFolder);
 
     if (campaign) {
         segments.push(campaign);
     } else {
         // 캠페인 폴더 패턴이 없으면 알려진 segment 를 제외하고 마지막에 남는 폴더를 캠페인으로 추정.
-        const reserved = new Set([gameSeg, year, '프로모션', '03.디자인']);
+        const reserved = new Set([gameSeg, year, '프로모션', '브랜드웹', '03.디자인']);
         const remaining = parts.filter(p => {
             if (!p) return false;
             if (reserved.has(p)) return false;
@@ -156,23 +157,70 @@ const buildCanonicalSegments = (parts, { gameFolder, yearStr }) => {
 // 어느 패턴에도 안 맞으면 null (수동 분류 필요).
 const inferSectionFromPath = (path) => {
     if (!path || typeof path !== 'string') return null;
-    if (/[\\/]브랜드웹/.test(path) || /brand[\s_-]?web/i.test(path)) return 'brandweb';
+    if (/(^|[\\/])브랜드\s*웹/.test(path) || /brand[\s_-]?web/i.test(path)) return 'brandweb';
     if (/[\\/]프로모션[\\/]/.test(path) || /promotion|promo/i.test(path)) return 'promotion';
     return null;
 };
 
 // File 의 webkitRelativePath 에서 부모 폴더만 추출 → 정식 형식으로 정규화 + prefix 부착.
 //   \\ppc-file\{게임폴더}\{연도}\프로모션\{캠페인}\03.디자인\
-const buildCanonicalPath = (file, game, year) => {
+const buildCanonicalPath = (file, game, year, section = 'promotion') => {
     if (!file) return '';
     const rel = file.webkitRelativePath || file.name || '';
     const parts = rel.split('/');
     parts.pop(); // 파일명 제거 → 부모 폴더만
 
     const gameFolder = getGameFolder(game);
-    const segments = buildCanonicalSegments(parts, { gameFolder, yearStr: year });
+    const segments = buildCanonicalSegments(parts, { gameFolder, yearStr: year, section });
     if (segments.length === 0) return getCanonicalPrefix();
     return getCanonicalPrefix() + segments.join('\\') + '\\';
+};
+
+const normalizeComparablePath = (value) => String(value || '')
+    .toLowerCase()
+    .replace(/[\\/]+/g, '\\')
+    .replace(/\\$/, '');
+
+const brandWebSeries = (title) => {
+    const withoutDate = String(title || '').replace(/^(?:[A-Za-z]+_)?20\d{6}_\s*/, '').trim();
+    const match = withoutDate.match(/^(.*?)_([1-9]\d*)차$/);
+    return match ? { key: match[1].replace(/\s+/g, '').toLowerCase(), title: match[1].trim() } : null;
+};
+
+const sampleEvenly = (items, limit) => {
+    if (items.length <= limit) return items;
+    const indexes = new Set();
+    for (let i = 0; i < limit; i++) indexes.add(Math.round((i * (items.length - 1)) / (limit - 1)));
+    return [...indexes].sort((a, b) => a - b).map(index => items[index]);
+};
+
+const aion2VersionPhase = (game, name, sourcePath = '') => {
+    if (game !== '아이온2') return 1;
+    return Number(String(sourcePath).match(/[\\/]v([1-9]\d*)(?:[\\/]|$)/i)?.[1]
+        || String(name || '').match(/[_-]v([1-9]\d*)(?=\.[^.]+$)/i)?.[1]
+        || 1);
+};
+
+const limitBrandWebPages = (pages, game) => {
+    const seen = new Set();
+    const realPages = pages.filter(page => {
+        const path = page.file?.webkitRelativePath || '';
+        const phase = game === '아이온2' ? aion2VersionPhase(game, page.name, path) : (path.match(/_([1-9]\d*)차(?:[\\/]|_)/)?.[1] || '1');
+        const stem = String(page.name || '').toLowerCase().replace(/\.[^.]+$/, '').replace(game === '아이온2' ? /$^/ : /[_-]v\d+$/i, '').replace(/20\d{6}/g, '');
+        const numbers = [...stem.matchAll(/(?:^|[_\s-])(\d{1,2})(?=[_\s-]|$)/g)].map(match => Number(match[1]));
+        if (numbers.length < 2) return true;
+        const key = `${page.device}|${phase}|${numbers[0]}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+    const pc = realPages.filter(page => page.device === 'pc').sort((a, b) => {
+        if (game !== '아이온2') return 0;
+        const score = page => (aion2VersionPhase(game, page.name, page.file?.webkitRelativePath) === 1 ? 100 : 0) + (/(?:^|[_-])1메인(?=[_.-]|$)|main|메인/i.test(page.name) ? 20 : 0);
+        return score(b) - score(a);
+    });
+    const mobile = realPages.filter(page => page.device === 'mobile');
+    return [...sampleEvenly(pc, 10), ...sampleEvenly(mobile, 10)];
 };
 
 // 기존 doc 의 path 한 건 정규화 — game/year 매핑에 따라 누락된 segment 를 채워 넣음.
@@ -228,6 +276,22 @@ const promoDocRef = (id) => doc(db, 'artifacts', appId, 'public', 'data', 'promo
 const isDataUrl = (s) => typeof s === 'string' && s.startsWith('data:');
 async function uploadBannerImagesToCloud(banner) {
   const out = { ...banner };
+  if (Array.isArray(out.pages)) {
+    const uploadedBySource = new Map();
+    out.pages = await Promise.all(out.pages.map(async (page) => ({
+      ...page,
+      url: isDataUrl(page?.url)
+        ? await (async () => {
+            const uploaded = await uploadBase64(page.url);
+            uploadedBySource.set(page.url, uploaded);
+            return uploaded;
+          })()
+        : page?.url,
+    })));
+    out.preview = uploadedBySource.get(out.preview) || out.preview;
+    out.full_image = uploadedBySource.get(out.full_image) || out.full_image;
+    out.mobile_image = uploadedBySource.get(out.mobile_image) || out.mobile_image;
+  }
   if (isDataUrl(out.preview)) out.preview = await uploadBase64(out.preview);
   if (isDataUrl(out.full_image)) out.full_image = await uploadBase64(out.full_image);
   if (isDataUrl(out.mobile_image)) out.mobile_image = await uploadBase64(out.mobile_image);
@@ -677,7 +741,9 @@ function App() {
             const groups = {};
             // 블랙리스트 — 원본 키 비주얼이 아닌 보조 파일 제외.
             // 명세상 '개발 / 팝업 / popup' 만 핵심이지만 Thumbs.db·dotfile 같은 시스템 노이즈도 같이 차단.
-            const excludeRegex = /개발|팝업|popup|Thumbs\.db|^\./i;
+            const excludeRegex = /개발|팝업|popup|Thumbs\.db|^\.|(^|[_\s-])(pop|layer\d*|button|state|thumb|thumbnail|menu|gnb|navi(?:gation)?|nav|open|레이어|버튼|상태|메뉴|네비|내비|중앙|폴라로이드|내용)([_\s.-]|$)/i;
+            const mobileMenuSuffix = /_00(?:(?:_[a-z]{2,4})?_v\d+)?(?=\.[^.]+$)/i;
+            const mobileMainSuffix = /_01(?:_v\d+)?(?=\.[^.]+$)/i;
             // 허용 확장자 — jpg/jpeg/png 만 통과. psd/ai/gif/webp/tif 등은 모두 제외.
             const allowedExtRegex = /\.(jpe?g|png)$/i;
 
@@ -691,6 +757,7 @@ function App() {
                 }
 
                 const pathParts = file.webkitRelativePath.split('/');
+                const sourceSection = inferSectionFromPath(file.webkitRelativePath) || 'promotion';
 
                 // [필수] 디자인 폴더 식별 — '디자인' segment 가 없으면 키 비주얼이 아니므로 무시.
                 const designIndex = pathParts.findIndex(p => p.includes('디자인'));
@@ -701,32 +768,71 @@ function App() {
                 //   → pathParts.length 는 designIndex + 3 이어야 함.
                 // crop / m_crop / banner 같은 하위 폴더는 자동 무시 — 키 비주얼이 가공물·잘림본과
                 // 한 그룹에 섞이지 않음.
-                if (pathParts.length !== designIndex + 3) return;
+                const isDesignDirect = pathParts.length === designIndex + 2;
+                const isDeviceDirect = pathParts.length === designIndex + 3;
+                if (!isDeviceDirect && !(sourceSection === 'brandweb' && isDesignDirect)) return;
 
-                const deviceFolder = pathParts[designIndex + 1] || '';
-                let type = null;
+                const deviceFolder = isDeviceDirect ? (pathParts[designIndex + 1] || '') : '';
+                let type = isDesignDirect ? 'pc' : null;
                 if (/^(pc|web)$/i.test(deviceFolder)) type = 'pc';
                 else if (/^(mo|mobile|m)$/i.test(deviceFolder)) type = 'mobile';
+                if (sourceSection === 'brandweb' && type === 'pc' && /^m_/i.test(file.name)) return;
+                if (sourceSection === 'brandweb' && type === 'mobile' && mobileMenuSuffix.test(file.name)) return;
                 if (!type) return;
 
                 // 타이틀 — 디자인 폴더 바로 위 segment (캠페인 폴더명).
                 const title = pathParts[designIndex - 1].trim() || '미분류';
+                const series = sourceSection === 'brandweb' ? brandWebSeries(title) : null;
 
-                if (!groups[title]) groups[title] = { title, pcCandidates: [], moCandidates: [] };
+                const groupKey = `${sourceSection}:${series?.key || title}`;
+                if (!groups[groupKey]) groups[groupKey] = { title: series?.title || title, section: sourceSection, pcCandidates: [], moCandidates: [] };
 
-                if (type === 'pc') groups[title].pcCandidates.push(file);
-                else groups[title].moCandidates.push(file);
+                if (type === 'pc') groups[groupKey].pcCandidates.push(file);
+                else groups[groupKey].moCandidates.push(file);
             });
 
-            const groupItems = Object.values(groups).map(g => ({
-                title: g.title,
-                pcFile: g.pcCandidates.sort((a, b) => b.size - a.size)[0] || null,
-                mobileFile: g.moCandidates.sort((a, b) => b.size - a.size)[0] || null
-            }));
+            const groupItems = Object.values(groups).map(g => {
+                if (g.section === 'brandweb') {
+                    const allPages = sortPagesByName([
+                        ...g.pcCandidates.map(file => ({ file, name: file.name, device: 'pc' })),
+                        ...g.moCandidates.map(file => ({ file, name: file.name, device: 'mobile' })),
+                    ]).sort((a, b) => {
+                        if (a.device !== 'mobile' || b.device !== 'mobile') return 0;
+                        return Number(mobileMainSuffix.test(b.name)) - Number(mobileMainSuffix.test(a.name));
+                    });
+                    return {
+                        title: g.title,
+                        section: g.section,
+                        pageFiles: limitBrandWebPages(allPages, uploadSettings.game),
+                        sourceFiles: [...g.pcCandidates, ...g.moCandidates],
+                        pcFile: g.pcCandidates[0] || null,
+                        mobileFile: g.moCandidates[0] || null,
+                    };
+                }
+                return {
+                    title: g.title,
+                    section: g.section,
+                    pcFile: g.pcCandidates.sort((a, b) => b.size - a.size)[0] || null,
+                    mobileFile: g.moCandidates.sort((a, b) => b.size - a.size)[0] || null,
+                };
+            });
 
             const itemsToProcess = [...directItems, ...groupItems].filter(item => {
                 if (!item.pcFile && !item.mobileFile) return false;
-                const isDup = allBanners.some(b => b.game === uploadSettings.game && b.title.replace(/\s+/g, '') === item.title.replace(/\s+/g, ''));
+                const itemSection = item.section || 'promotion';
+                const sourceFiles = item.sourceFiles || [item.pageFiles?.[0]?.file || item.pcFile || item.mobileFile].filter(Boolean);
+                const candidatePaths = [...new Set(sourceFiles
+                    .filter(file => file?.webkitRelativePath)
+                    .map(file => buildCanonicalPath(file, uploadSettings.game, uploadSettings.year, itemSection)))];
+                const isDup = allBanners.some(b => {
+                    const bannerSection = b.section || (b.assetType === '브랜드웹' ? 'brandweb' : 'promotion');
+                    if (b.game !== uploadSettings.game || bannerSection !== itemSection) return false;
+                    if (candidatePaths.length) {
+                        const knownPaths = [b.path, ...(Array.isArray(b.sourcePaths) ? b.sourcePaths : [])].filter(Boolean);
+                        return candidatePaths.some(candidatePath => knownPaths.some(path => normalizeComparablePath(path) === normalizeComparablePath(candidatePath)));
+                    }
+                    return b.title.replace(/\s+/g, '') === item.title.replace(/\s+/g, '');
+                });
                 return !isDup;
             });
 
@@ -765,6 +871,53 @@ function App() {
                 await new Promise(resolve => setTimeout(resolve, 50));
 
                 try {
+                    if (item.section === 'brandweb') {
+                        const processedPages = [];
+                        for (let pageIndex = 0; pageIndex < item.pageFiles.length; pageIndex++) {
+                            const page = item.pageFiles[pageIndex];
+                            setProcessingMessage(`[${item.title}] 페이지 최적화 중... (${pageIndex + 1}/${item.pageFiles.length})`);
+                            const data = await processAndCropImage(page.file, page.device === 'mobile');
+                            processedPages.push({
+                                id: `page_${Date.now()}_${pageIndex}`,
+                                name: page.name,
+                                device: page.device,
+                                sourcePhase: aion2VersionPhase(uploadSettings.game, page.name, page.file?.webkitRelativePath),
+                                url: data.detail,
+                                order: pageIndex,
+                            });
+                        }
+                        if (!processedPages.length) throw new Error('이미지 로드 실패');
+
+                        const pcPages = processedPages.filter(page => page.device === 'pc');
+                        const mobilePages = processedPages.filter(page => page.device === 'mobile');
+                        const firstPage = pcPages[0] || mobilePages[0];
+                        const sourceFile = item.pageFiles[0]?.file;
+                        const sourcePaths = [...new Set((item.sourceFiles || [sourceFile])
+                            .filter(file => file?.webkitRelativePath)
+                            .map(file => buildCanonicalPath(file, uploadSettings.game, uploadSettings.year, 'brandweb')))];
+                        chunkBanners.push({
+                            title: item.title,
+                            assetType: '브랜드웹',
+                            game: uploadSettings.game,
+                            year: uploadSettings.year,
+                            path: buildCanonicalPath(sourceFile, uploadSettings.game, uploadSettings.year, 'brandweb'),
+                            sourcePaths,
+                            section: 'brandweb',
+                            preview: firstPage.url,
+                            full_image: pcPages[0]?.url || firstPage.url,
+                            mobile_image: mobilePages[0]?.url || '',
+                            pages: processedPages,
+                            pageCount: processedPages.length,
+                            created_at: new Date().toISOString(),
+                            liked: 0,
+                            tags: [],
+                            history: [],
+                        });
+                        successCount++;
+                        if (chunkBanners.length >= CHUNK) await flushChunk();
+                        continue;
+                    }
+
                     const [pcData, moData] = await Promise.all([
                         item.pcFile ? processAndCropImage(item.pcFile, false) : Promise.resolve(null),
                         item.mobileFile ? processAndCropImage(item.mobileFile, true) : Promise.resolve(null)
@@ -773,7 +926,7 @@ function App() {
                     if (!pcData && !moData) throw new Error("이미지 로드 실패");
 
                     const sourceFile = item.pcFile || item.mobileFile;
-                    const canonicalPath = buildCanonicalPath(sourceFile, uploadSettings.game, uploadSettings.year);
+                    const canonicalPath = buildCanonicalPath(sourceFile, uploadSettings.game, uploadSettings.year, 'promotion');
                     // section 추론은 원본 webkitRelativePath 에서 해야 함 —
                     // canonicalPath 는 정규화 과정에서 항상 '\프로모션\' 을 강제 삽입하므로
                     // 거기서 추론하면 브랜드웹 폴더에서 업로드해도 'promotion' 으로 잘못 분류됨.
@@ -1213,7 +1366,7 @@ function App() {
     // 같은 카드의 PC 페이지는 그대로 유지. 한 번에 여러 장 업로드 가능.
     const handleAddMobilePagesToBanner = useCallback(async (files) => {
         if (!selectedBanner) return;
-        const arr = Array.from(files || []).filter(f => f.type?.startsWith('image/'));
+        const arr = Array.from(files || []).filter(f => f.type?.startsWith('image/') && !/_00(?:(?:_[a-z]{2,4})?_v\d+)?(?=\.[^.]+$)/i.test(f.name || '') && !/(^|[_-])layer\d*(?=[_.-]|$)/i.test(f.name || ''));
         if (arr.length === 0) return;
         try {
             // dataURL → Cloudinary URL
@@ -1238,10 +1391,11 @@ function App() {
                 noteCount: 0,
             }));
             const nextPages = [...existingPages, ...newPages];
+            const preferredMobile = newPages.find(page => /_01(?:_v\d+)?(?:\.[^.]+)?$/i.test(page.name || ''));
             const updateData = {
                 pages: nextPages,
                 pageCount: nextPages.length,
-                mobile_image: selectedBanner.mobile_image || newPages[0].url,
+                mobile_image: preferredMobile?.url || selectedBanner.mobile_image || newPages[0].url,
             };
             await updateDoc(promoDocRef(selectedBanner.id), updateData);
             const updated = { ...selectedBanner, ...updateData };
@@ -1497,11 +1651,7 @@ function App() {
                                 // 평가에 보낼 이미지 소스 — 브랜드웹은 메인(+서브) 1~2장, 그 외는 PC+Mobile 2장.
                                 const imgSources = (() => {
                                     if (target.assetType === '브랜드웹') {
-                                        const pages = Array.isArray(target.pages) ? target.pages : [];
-                                        const findUrl = (id) => (id ? pages.find(p => p?.id === id)?.url : null);
-                                        const main = findUrl(target.mainPageId) || target.full_image || pages.find(p => p?.device === 'pc')?.url || target.preview;
-                                        const sub = findUrl(target.subPageId) || (target.mainPageId ? null : (target.mobile_image || pages.find(p => p?.device === 'mobile')?.url));
-                                        return [main, sub && sub !== main ? sub : null].filter(Boolean);
+                                        return getBrandWebEvaluationImageUrls(target);
                                     }
                                     return [target.full_image || target.preview, target.mobile_image].filter(Boolean);
                                 })();

@@ -69,6 +69,7 @@ export const INITIAL_OPTIONS = {
   ],
   surfaceTreatments: [
     { id: "Standard", name: "Standard (표준)", en: "standard physical surface reaction" },
+    { id: "Crystalline", name: "결정형 굴절 (Crystalline)", en: "subtle crystalline optical reaction contained within the front face, crisp internal refraction without changing the silhouette" },
     { id: "SmoothFillet", name: "둥근 굴곡 (Smooth)", en: "elegant smooth filleted transitions" },
     { id: "MultiFaceted", name: "다각 면치기 (Faceted)", en: "highly luminous angular geometric facets" },
     { id: "HammeredFinish", name: "망치 자국 (Hammered)", en: "hand-hammered dimpled organic surface" },
@@ -80,6 +81,7 @@ export const INITIAL_OPTIONS = {
     { id: "ColdMist", name: "냉기와 안개 흐름", en: "rising cold mist and flowing icy vapor" },
     { id: "Sparkling", name: "반짝이는 빛/광택", en: "sparkling light effects and intense glossy lens flares" },
     { id: "Electricity", name: "흐르는 전류/스파크", en: "flowing static electricity and micro lightning arcs" },
+    { id: "Flame", name: "불꽃/화염", en: "controlled flame filaments flowing across the front face and contained mainly inside the letter strokes, with only a few short edge tongues, no large exterior fire plume and no silhouette obstruction" },
     { id: "MicroParticles", name: "미세 파티클 발산", en: "emitting luminous micro floating particles" },
     { id: "MagmaEmbers", name: "불티와 아지랑이", en: "No flames, only very subtle glowing dust and faint residual heat shimmer at sharp edges" },
     { id: "DarkAura", name: "다크 오라", en: "subtle dark wispy shadowy aura creeping tightly" },
@@ -101,6 +103,20 @@ export const INITIAL_OPTIONS = {
     { id: "PolishedGold", name: "유광 골드 (Polished Gold)", en: "high-gloss mirror-polished 24-karat gold, brilliant liquid-metal reflections flowing across the front face, intense crisp specular highlights, deep saturated warm golden hue with rich amber shadow tones, jewelry-showroom grade polish, luxurious dazzling shine, reflections stay on the surface and never fill in the carved recesses of the letterforms" },
     { id: "GoldFoil", name: "금박 포일 (Gold Foil)", en: "luxurious hot-stamped gold foil, ultra-glossy mirror-like specular reflections, thin metallic foil sheet with subtle crinkled micro-wrinkles catching the light, premium print-finishing aesthetic" },
     { id: "AgedGilt", name: "낡은 금박 (Aged Gilt)", en: "antique gold leaf gilding pressed onto an old bible book cover, extremely thin hand-applied gilt foil, softly dulled warm sheen instead of mirror gloss, edges and high points gently rubbed off and flaked away revealing the darker base underneath, centuries-old gilt lettering aesthetic" },
+    // 배너 실전용 컬러 재질 — 금속 계열만으로는 시즌/보상/여름 배너의 색상 위계를
+    // 만들기 어려워, 형태를 덮지 않는 불투명·반투명 마감으로 분리한다.
+    { id: "CrimsonEnamel", name: "크림슨 에나멜 (Crimson Enamel)", en: "deep premium crimson red vitreous enamel over a dense metal core, glossy lacquered front face, controlled ruby reflections, dark burgundy shadow tones, crisp gold-friendly edges, fully opaque color that preserves every counter and carved detail" },
+    { id: "JadeCeramic", name: "비취 세라믹 (Jade Ceramic)", en: "polished pale jade ceramic with restrained milky translucency only at the thinnest edges, elegant celadon green body, subtle mineral clouding contained inside the strokes, solid readable core and crisp silhouette" },
+    { id: "AquaGlass", name: "아쿠아 글라스 (Aqua Glass)", en: "bright aqua-blue architectural glass with a frosted opaque core, clean cyan edge refraction, sunlit water-like highlights contained inside the letterforms, high readability without transparent holes or background bleed" },
+    { id: "PearlEnamel", name: "펄 아이보리 (Pearl Ivory)", en: "warm ivory pearl enamel with a fine satin nacre sheen, softly luminous premium surface, restrained champagne reflections on bevels, opaque clean body with strong readability and no glitter noise" },
+    // 기존 금속·원소 계열과 겹치지 않는 실무형 표현 재질. 외곽 3D 몸통이 아니라
+    // 정면(face) 내부에서만 재질감이 읽히도록 정의한다.
+    { id: "HolographicChrome", name: "홀로그램 크롬 (Holographic Chrome)", en: "bright satin silver chrome front face with restrained cyan, violet and rose holographic interference bands contained inside the strokes, crisp neutral highlights, fully readable counters, no rainbow haze outside the silhouette" },
+    { id: "NeonGlass", name: "네온 글라스 (Neon Glass)", en: "opaque deep midnight glass front face with clean cyan and magenta luminous channels inset inside the strokes, crisp bright edges, readable solid core, no detached light tubes or ambient fog" },
+    { id: "DarkWood", name: "다크 월넛 목각 (Dark Walnut)", en: "premium dark walnut wood front face, fine natural grain following the letter strokes, shallow hand-carved highlights, warm honey edge polish, dense solid readable core" },
+    { id: "EmbossedLeather", name: "엠보스 가죽 (Embossed Leather)", en: "dense oxblood full-grain leather front face, refined micro pebble texture, subtle pressed emboss highlights, dark burgundy body and warm brass-friendly edges, crisp silhouette" },
+    { id: "PaperCutout", name: "프리미엄 페이퍼 (Paper Cutout)", en: "premium warm white art-paper front face with subtle cotton fibers, clean precision-cut edges, gentle printed shadow only within the face, flat graphic silhouette with no stacked rear layers" },
+    { id: "CandyResin", name: "캔디 레진 (Candy Resin)", en: "glossy translucent coral candy resin front face with an opaque luminous core, smooth rounded internal highlights, jewel-like color depth contained inside the strokes, crisp readable edges" },
     { id: "RoughStone", name: "거친 석재 (Rough Stone)", en: "Raw porous rough stone texture" },
     { id: "VolcanicRock", name: "단단한 화산암 (Volcanic Rock)", en: "Solid dark hardened volcanic rock, deep porous texture, physically un-meltable structure" },
     { id: "FrostedGlass", name: "반투명 유리 (Frosted)", en: "Frosted sandblasted glass" },

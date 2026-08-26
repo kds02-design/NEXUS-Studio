@@ -174,10 +174,10 @@ export default function ArcDetailModal({
       };
     }
     if (targetId === 'render-metrics') {
-      // 렌더링 → 마이크로 에디트 모드로 진입, editImage 자동 임포트.
+      // 승인 시안을 base image 로 사용해 재질·입체 생성 모드로 진입.
       return {
         ...stamp,
-        mode: 'edit',
+        mode: 'creation',
         prompt: { ...basePrompt, style: prompt.optimizedModel || '' },
         image: { url: imageUrl },
         params: {},
@@ -185,12 +185,10 @@ export default function ArcDetailModal({
     }
     if (targetId === 'mask-forge') {
       // 투명화 — 이미지 성격에 맞는 방식 프리셋:
-      //   광원(순흑) → 로컬 색상 키 + 검정 키컬러 / 키비주얼(복잡) → Remove.bg AI / 그 외 오브젝트 → 로컬 색상 키(자동 감지).
-      const params = imageNature === 'kv'
-        ? { method: 'api' }
-        : imageNature === 'lightfx'
+      //   모든 이미지가 로컬 키잉으로 먼저 진입한다. Remove AI는 로컬 방식 실패 후 사용자가 선택하는 fallback이다.
+      const params = imageNature === 'lightfx'
           ? { method: 'luma', keyColor: '#000000' }
-          : { method: 'luma' };
+          : { method: 'luma', removeAiFallback: true };
       return { ...stamp, prompt: basePrompt, image: { url: imageUrl, metadata: {} }, params };
     }
     if (targetId === 'motion-metrics') {

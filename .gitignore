@@ -8,6 +8,8 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.tools/
+.tmp/
 dist
 dist-ssr
 dist-destiny
@@ -37,6 +39,16 @@ service-account.json
 
 .vercel
 
+# Local experiments, generated assets, and one-off production work
+output/
+archive/
+banner-jobs/
+banner-layout-core20/
+photographer-layout-update/
+skill-upgrades/
+TT/
+figma-plugins/
+
 # ThemeForge Ultra bot — 로그인 프로필(쿠키)·생성물은 커밋 금지
 .ultra-profile/
 theme-output/
@@ -51,3 +63,5 @@ banner-evaluation/season4/
 # MCP 스모크/픽셀 툴 임시 산출물
 .tmp/*.png
 .tmp/mcp-out/
+
+.env*

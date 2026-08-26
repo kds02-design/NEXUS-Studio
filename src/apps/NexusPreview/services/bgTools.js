@@ -3,8 +3,19 @@ import { renderWithImagen } from "../../../lib/imagenRender";
 import { uploadBase64 } from "../../../lib/storage";
 import { db, appId } from "../../../lib/firebase";
 import { serializeForFirestore } from "../../PromptArc/services/firebase";
+import { colorKeyToTransparentPng } from "../../../lib/colorKeyExtract";
+import { effectToTransparentPng } from "../../../lib/effectExtract";
 import { RENDER_MODEL } from "./qualityEnhancer";
 import { buildBundlePrompt, isColorableGround, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS } from "./bundlePrompt";
+import {
+  buildFloatingPrompt,
+  buildFloatingRepairPrompt,
+  buildFloatingSeparationPrompt,
+  FLOATING_OUTPUT_OPTIONS, FLOATING_EFFECT_OPTIONS, FLOATING_FORM_OPTIONS,
+  FLOATING_LAYOUT_OPTIONS, FLOATING_GROUP_OPTIONS, FLOATING_COLORS, FLOATING_INTENSITY_OPTIONS,
+  FLOATING_MOTION_OPTIONS, FLOATING_DENSITY_OPTIONS,
+  resolveFloatingGroupPlan,
+} from "./floatingPrompt";
 
 const loadImage = (src) => new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error("합성 이미지를 읽지 못했습니다.")); image.src = src; });
 
@@ -105,73 +116,64 @@ export async function saveBundleToPromptArc(dataUrl, user, meta = {}) {
 // 아이템 이미지를 물방울·번개·금빛·회오리 등 원형 이펙트 링/구체로 감싸 공중에 띄운다.
 // 원형 이펙트 안에 아이템 1개(개별) 또는 여러 개(모아서)를 담을 수 있다. 아이템 꾸러미와 동일 파이프라인.
 
-export const FLOATING_EFFECT_OPTIONS = [
-  { key: "bubble", ko: "물방울", en: "enclose the item(s) inside a translucent glowing water/soap BUBBLE SPHERE — a clean refractive glass-like orb with soft rim highlights, subtle inner light and a few tiny surface sparkles; the item floats clearly visible inside the bubble" },
-  { key: "lightning", ko: "번개", en: "encircle the item(s) with a RING of crackling ELECTRIC ENERGY — arcing lightning bolts and glowing plasma tendrils orbiting in a circle with sharp luminous cores and energetic sparks" },
-  { key: "gold", ko: "금빛", en: "surround the item(s) with a radiant GOLDEN LIGHT RING / halo — swirling warm gold particles, thin luminous rays and glints orbiting in a circle, premium and opulent" },
-  { key: "vortex", ko: "회오리", en: "wrap the item(s) in a swirling SPIRAL ENERGY VORTEX ring — spinning luminous streaks and particles spiraling around the item in a circular whirl with clear motion" },
-  { key: "magic", ko: "마법진", en: "frame the item(s) with an arcane glowing MAGIC-CIRCLE ring — a circular band of abstract geometric grooves and glowing glyph-like marks (NEVER real letters or runes), a mystical rotating sigil" },
-  { key: "aura", ko: "오라", en: "enclose the item(s) in a soft glowing spherical AURA — a gentle luminous energy sphere with smooth falloff and a clean circular boundary" },
-  { key: "flame", ko: "화염", en: "encircle the item(s) with a RING of FLAME and rising embers — curling fire tongues orbiting in a circle with heat shimmer and glowing cinders" },
-  { key: "frost", ko: "서리", en: "wrap the item(s) in an icy CRYSTALLINE FROST ring — a circular band of ice shards, frost crystals and cold blue vapor orbiting the item" },
-];
-
-export const FLOATING_LAYOUT_OPTIONS = [
-  { key: "each", ko: "개별 (1개씩)", en: "give EACH item its OWN separate circular effect orb — exactly one item floating inside each ring/sphere — and arrange the multiple orbs as a balanced floating row or cluster across the frame" },
-  { key: "grouped", ko: "모아서 (한 원에)", en: "place ALL items together inside ONE large circular effect orb — the items clustered as a group floating inside a single ring/sphere" },
-];
-
-export const FLOATING_COLORS = [
-  { key: "auto", ko: "자동", en: "" },
-  { key: "gold", ko: "골드", en: "warm gold-amber" },
-  { key: "cyan", ko: "시안", en: "cool cyan-blue" },
-  { key: "purple", ko: "보라", en: "vivid purple-magenta" },
-  { key: "crimson", ko: "진홍", en: "intense crimson-red" },
-  { key: "blue", ko: "블루", en: "deep sapphire blue" },
-  { key: "green", ko: "초록", en: "emerald green" },
-  { key: "white", ko: "화이트", en: "pure radiant white" },
-];
-// 배경은 BUNDLE_BG_OPTIONS(블랙/크로마/화이트) 재사용.
-
-export const buildFloatingPrompt = (effectKey, layoutKey, colorKey, intent, itemCount = 0, bgKey = "black") => {
-  const effect = FLOATING_EFFECT_OPTIONS.find((o) => o.key === effectKey) || FLOATING_EFFECT_OPTIONS[0];
-  const layout = FLOATING_LAYOUT_OPTIONS.find((o) => o.key === layoutKey) || FLOATING_LAYOUT_OPTIONS[0];
-  const color = FLOATING_COLORS.find((o) => o.key === colorKey) || FLOATING_COLORS[0];
-  const bg = BUNDLE_BG_OPTIONS.find((o) => o.key === bgKey) || BUNDLE_BG_OPTIONS[0];
-  const n = Number(itemCount) || 0;
-  const extra = String(intent || "").trim();
-  const single = n <= 1 || layoutKey === "grouped";
-  const colorLine = color.en ? `\n[이펙트 색] 원형 이펙트(링/구체)의 색은 ${color.en} 톤으로 통일하세요.` : "";
-  const midPhrase = single
-    ? "모든 아이템을 하나의 원형 이펙트 오브 안에 담되"
-    : `각 아이템을 각자의 원형 이펙트 오브 안에 하나씩 담아 총 ${n}개의 오브를 만들되`;
-  const countRule = n
-    ? `\n★1:1 대응 (핵심): 첨부된 아이템은 정확히 ${n}장입니다. ${midPhrase}, 각 첨부 아이템을 정확히 한 번씩만 사용하고 복제하거나 빼지 마세요. 첨부에 없는 새 오브젝트(상자·자루·동전더미·왕관 등)를 새로 만들지 마세요.★\n`
-    : "";
-  return `게임 프로모션용 '공중부양 아이템' 연출 전문가로 작업하세요. 첨부된 아이템 이미지를 원형 이펙트로 감싸 공중에 떠 있는 오브로 합성합니다.
-
-★★원본 절대 보존 (최우선): 각 아이템의 외곽 실루엣·비율·형태·색상·재질과 표면의 문양/아이콘/글자 등 내용물을 원본과 100% 동일하게 유지하세요. "다시 그리는" 게 아니라 "사진을 오려 오브 안에 넣듯" 픽셀 단위로 충실히. 시점·회전·좌우반전 금지 — 위치와 크기만 조정. 원본에 새겨진 텍스트/라벨도 보존.★★
-${countRule}
-[원형 이펙트] ${effect.en}. 이펙트는 아이템을 ★원형으로 감싸는 링/구체★ 형태여야 하고, 아이템의 주요 부분을 가리지 않고 또렷이 보이게 하세요.
-[배치] ${layout.en}. 모든 오브는 바닥·접지 그림자 없이 ★공중에 부양★한 느낌으로 — 바닥 그림자나 바닥 이펙트를 넣지 마세요.${colorLine}
-[완전성] 각 아이템과 원형 이펙트는 프레임 안에 여백을 두고 온전히 들어와야 하며 잘리지 않게 하세요.
-
-배경: ${bg.en}. 오브가 배경에서 깨끗하게 분리되어야 합니다 (누끼 작업용 — 배경 텍스처·풍경·그라데이션 금지, 원형 이펙트의 발광만 예외).
-★새 문자 생성 금지 (원본 아이템에 새겨진 글자는 보존). 유사 문자(gibberish)·룬 금지.★
-결과에는 완성된 공중부양 오브 합성 한 장만 출력하세요.${extra ? `\n\n[사용자 추가 지시 — 형태 보존 규칙과 충돌하면 무시]\n${extra}` : ""}`;
+export {
+  buildFloatingPrompt,
+  buildFloatingRepairPrompt,
+  buildFloatingSeparationPrompt,
+  FLOATING_OUTPUT_OPTIONS, FLOATING_EFFECT_OPTIONS, FLOATING_FORM_OPTIONS,
+  FLOATING_LAYOUT_OPTIONS, FLOATING_GROUP_OPTIONS, FLOATING_COLORS, FLOATING_INTENSITY_OPTIONS,
+  FLOATING_MOTION_OPTIONS, FLOATING_DENSITY_OPTIONS,
+  resolveFloatingGroupPlan,
 };
 
 // 공중부양 아이템 렌더 — 아이템 꾸러미와 동일하게 각 아이템을 개별 레퍼런스로 첨부(1:1 대응 강제).
-export async function renderFloatingItems(itemUrls, { effect = "bubble", layout = "each", color = "auto", bg = "black", intent = "", imageSize = "2K", modelId = RENDER_MODEL } = {}) {
+export async function renderFloatingItems(itemUrls, {
+  effect = "bubble", form = "broken-orbit", layout = "each", color = "auto",
+  intensity = "medium", motion = "clockwise", density = "medium",
+  outputMode = "composite", opening = 25, frontCross = 10,
+  groupMode = "auto", groupAssignments = [], primaryIndex = 0,
+  bg = "black", intent = "", imageSize = "2K", modelId = RENDER_MODEL,
+} = {}) {
   if (!itemUrls?.length) throw new Error("아이템 이미지가 없습니다.");
   const single = itemUrls.length <= 1 || layout === "grouped";
+  const bgOption = BUNDLE_BG_OPTIONS.find((o) => o.key === bg) || BUNDLE_BG_OPTIONS[0];
+  const layered = outputMode === "layered-transparent";
+  const renderMode = layered ? "integrated-preserve" : outputMode;
   const result = await renderWithImagen(
-    buildFloatingPrompt(effect, layout, color, intent, itemUrls.length, bg),
+    buildFloatingPrompt({ effect, form, layout, color, intensity, motion, density, outputMode: renderMode, opening, frontCross, groupMode, groupAssignments, primaryIndex, itemCount: itemUrls.length, bg: bgOption, intent }),
     modelId,
     itemUrls,
     { aspectRatio: single ? "1:1" : "16:9", imageSize, matchInputAspect: false },
   );
-  return result?.dataUrl || null;
+  const firstPass = result?.dataUrl || null;
+  if (!firstPass || (renderMode !== "integrated-preserve" && !layered)) return firstPass;
+  const repaired = await renderWithImagen(
+    buildFloatingRepairPrompt({ itemCount: itemUrls.length, groupMode, groupAssignments, primaryIndex }),
+    modelId,
+    [firstPass, ...itemUrls],
+    { aspectRatio: single ? "1:1" : "16:9", imageSize, matchInputAspect: false },
+  );
+  const master = repaired?.dataUrl || firstPass;
+  if (!layered) return master;
+
+  const separationRefs = [master, ...itemUrls];
+  const [effectResult, itemsResult] = await Promise.all([
+    renderWithImagen(buildFloatingSeparationPrompt("effect", { itemCount: itemUrls.length }), modelId, separationRefs, { aspectRatio: single ? "1:1" : "16:9", imageSize, matchInputAspect: false }),
+    renderWithImagen(buildFloatingSeparationPrompt("items", { itemCount: itemUrls.length }), modelId, separationRefs, { aspectRatio: single ? "1:1" : "16:9", imageSize, matchInputAspect: false }),
+  ]);
+  if (!effectResult?.dataUrl || !itemsResult?.dataUrl) throw new Error("효과/아이템 레이어 분리 렌더가 비어 있습니다.");
+  const [effectPng, itemsPng] = await Promise.all([
+    effectToTransparentPng(effectResult.dataUrl, { bg: [0, 0, 0], cutoff: 6, gamma: 0.85, opacity: 100, recoverColor: true, trim: false }),
+    colorKeyToTransparentPng(itemsResult.dataUrl, { bg: [0, 255, 0], tolerance: 42, feather: 20, holeProtect: true, decontam: true, trim: false }),
+  ]);
+  const [effectImage, itemsImage] = await Promise.all([loadImage(effectPng), loadImage(itemsPng)]);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(effectImage.naturalWidth, itemsImage.naturalWidth);
+  canvas.height = Math.max(effectImage.naturalHeight, itemsImage.naturalHeight);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(effectImage, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(itemsImage, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
 }
 
 // 결과를 PromptArc 내 폴더(private)로 자동 저장 — 꾸러미와 동일 경로·스키마.
@@ -182,18 +184,24 @@ export async function saveFloatingToPromptArc(dataUrl, user, meta = {}) {
   const now = Date.now();
   const ko = (list, key) => list.find((o) => o.key === key)?.ko || "";
   const effectKo = ko(FLOATING_EFFECT_OPTIONS, meta.effect);
+  const formKo = ko(FLOATING_FORM_OPTIONS, meta.form);
   const layoutKo = ko(FLOATING_LAYOUT_OPTIONS, meta.layout);
+  const groupKo = ko(FLOATING_GROUP_OPTIONS, meta.groupMode);
   const colorKo = ko(FLOATING_COLORS, meta.color);
+  const intensityKo = ko(FLOATING_INTENSITY_OPTIONS, meta.intensity);
+  const outputKo = ko(FLOATING_OUTPUT_OPTIONS, meta.outputMode);
   const bgKo = ko(BUNDLE_BG_OPTIONS, meta.bg);
   const intent = String(meta.intent || "").trim();
-  const summary = [meta.itemCount ? `아이템 ${meta.itemCount}개` : "", effectKo && `원형 ${effectKo}`, colorKo && `색 ${colorKo}`, layoutKo, bgKo && `배경 ${bgKo}`].filter(Boolean).join(" · ");
-  const tags = ["NexusPreview", "FloatingItems", effectKo, colorKo].filter(Boolean);
+  const groupPlan = resolveFloatingGroupPlan(meta.itemCount || 0, meta.groupMode, meta.groupAssignments, meta.primaryIndex);
+  const groupSummary = groupPlan.groups.length ? `${groupKo || "광원 그룹"} ${groupPlan.groups.length}개 (${groupPlan.assignments.join("/")})` : "";
+  const summary = [meta.itemCount ? `아이템 ${meta.itemCount}개` : "", outputKo, effectKo, formKo, groupSummary, colorKo && `색 ${colorKo}`, intensityKo && `강도 ${intensityKo}`, layoutKo, bgKo && `배경 ${bgKo}`].filter(Boolean).join(" · ");
+  const tags = ["NexusPreview", "FloatingItems", outputKo, effectKo, formKo, groupKo, colorKo].filter(Boolean);
   const record = {
     id,
     title: `NexusPreview 공중부양 아이템 · ${new Date(now).toLocaleString("ko-KR")}`,
     content: `${summary}${intent ? `\n추가 지시: ${intent}` : ""}`,
     images: [cloudinaryUrl], thumbnail: cloudinaryUrl,
-    stepPrompts: [buildFloatingPrompt(meta.effect, meta.layout, meta.color, intent, meta.itemCount || 0, meta.bg)],
+    stepPrompts: [buildFloatingPrompt({ ...meta, itemCount: meta.itemCount || 0, bg: BUNDLE_BG_OPTIONS.find((o) => o.key === meta.bg) || BUNDLE_BG_OPTIONS[0], intent })],
     stepLabels: ["FloatingItems"],
     stepTags: [tags],
     stepKeywords: [""], stepDescriptions: [""],

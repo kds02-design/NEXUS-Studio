@@ -57,6 +57,10 @@ export const LIGHTFX_FORMS = [
     placementHint: 'render an AURA tracing the character/figure silhouette outline — a luminous rim-light contour wrapping the body shape, brightest along the silhouette edge and softly bleeding outward, following the organic outline' },
   { id: 'textGlow',   label: '텍스트 글로우',    desc: '글자 획을 따라 발광', accent: '#f0abfc', edgeHug: true,
     placementHint: 'render glow that follows the letterform strokes of the referenced text — luminous emission tracing each stroke and outline, brightest along the letter edges; do NOT draw solid letters, glow only' },
+  { id: 'titleFront', label: '타이틀 전방 FX',    desc: '타이틀 앞 글린트·입자', accent: '#f0abfc', refMode: 'front',
+    placementHint: 'render a restrained FOREGROUND accent pass in front of the title position — sparse glints, short light streaks and fine particles crossing only selected lower edges and corners, with the title itself left completely absent' },
+  { id: 'itemFront',  label: '아이템 전방 FX',    desc: '아이템 앞 접촉광·입자', accent: '#fde68a', refMode: 'front',
+    placementHint: 'render a restrained FOREGROUND accent pass in front of the item position — selective contact glow near the lower front edge, a few rising sparks and short wisps wrapping across small portions of the foreground, with the item itself left completely absent' },
   { id: 'groundPool', label: '바닥 광 풀',       desc: '피사체 아래 고이는 빛', accent: '#a5b4fc',
     placementHint: 'render a pool of light gathering BENEATH the subject — a bright elliptical ground glow and soft cast radiance as if the object emits light onto the floor below, brightest at the base and fading upward/outward' },
 ];

@@ -22,7 +22,7 @@ npm run mcp:test    # SDK 클라이언트로 12개 툴 전수 스모크 (Gemini 
 ### Claude Code
 
 ```bash
-claude mcp add nexus-studio -- node c:\work\00_claude\mcp\nexus-mcp.bundle.mjs
+claude mcp add nexus-studio -- node --use-system-ca c:\work\00_claude\mcp\nexus-mcp.bundle.mjs
 ```
 
 ### Claude Desktop (`claude_desktop_config.json`)
@@ -32,7 +32,7 @@ claude mcp add nexus-studio -- node c:\work\00_claude\mcp\nexus-mcp.bundle.mjs
   "mcpServers": {
     "nexus-studio": {
       "command": "node",
-      "args": ["c:\\work\\00_claude\\mcp\\nexus-mcp.bundle.mjs"]
+      "args": ["--use-system-ca", "c:\\work\\00_claude\\mcp\\nexus-mcp.bundle.mjs"]
     }
   }
 }
@@ -41,7 +41,7 @@ claude mcp add nexus-studio -- node c:\work\00_claude\mcp\nexus-mcp.bundle.mjs
 ### Codex CLI
 
 ```bash
-codex mcp add nexus-studio -- node c:\work\00_claude\mcp\nexus-mcp.bundle.mjs
+codex mcp add nexus-studio -- node --use-system-ca c:\work\00_claude\mcp\nexus-mcp.bundle.mjs
 ```
 
 또는 `~/.codex/config.toml` 에 직접:
@@ -49,17 +49,21 @@ codex mcp add nexus-studio -- node c:\work\00_claude\mcp\nexus-mcp.bundle.mjs
 ```toml
 [mcp_servers.nexus-studio]
 command = "node"
-args = ["c:\\work\\00_claude\\mcp\\nexus-mcp.bundle.mjs"]
+args = ["--use-system-ca", "c:\\work\\00_claude\\mcp\\nexus-mcp.bundle.mjs"]
 ```
 
 그 외 Cursor·Gemini CLI 등 MCP 지원 클라이언트도 같은 방식(command: `node`, args: 번들 경로)으로 등록하면 된다.
 
-### Gemini API 키
+### 서버 API 키
 
 `nexus_render_image` 만 키가 필요하다. 우선순위:
 
 1. 환경변수 `GEMINI_API_KEY`
 2. 리포 루트 `.env` 의 `GEMINI_API_KEY` (자동 인식 — 웹앱 프록시와 같은 서버 전용 키, `VITE_` 접두사 아님)
+
+`nexus_remove_ai`는 같은 우선순위로 `REMOVE_BG_API_KEY`를 읽는다. 전송 가능한 폴더는 세미콜론으로 구분한 `REMOVE_BG_ALLOWED_ROOTS`로 제한하며, 미설정 시 리포 루트만 허용한다. 브라우저 Mask Forge의 `localStorage('mask-forge:apiKey')`와 MCP 프로세스는 저장소를 공유하지 않으므로 MCP용 키를 별도로 설정해야 한다.
+
+투명화는 `nexus_remove_background` 색상 키잉, 효과 알파 추출, `nexus_split_character_effect` 같은 로컬·결정적 방법을 먼저 사용한다. 실제 알파 픽셀, 외곽 프린지, 닫힌 글자 공간, 어두운 재질 보존 QA가 실패한 경우에만 `nexus_remove_ai`를 최종 fallback으로 호출한다.
 
 ## 툴 목록
 
@@ -68,12 +72,14 @@ args = ["c:\\work\\00_claude\\mcp\\nexus-mcp.bundle.mjs"]
 | `nexus_guide` | 사용법 개요 — 처음이면 이것부터 |
 | `nexus_list_options` | 모든 옵션 id·한글 라벨 카탈로그(JSON) |
 | `nexus_render_image` | Gemini 이미지 모델 호출 → PNG 저장 (참조 이미지 파일 첨부 가능) |
+| `nexus_frameforge_prompt` | FrameForge 프레임·버튼·박스·배지·디바이더·아이콘 완성형 프롬프트 |
 | `nexus_lightfx_prompt` | RubiconForge 광원/빛효과 — 순흑/단색 배경 합성용 발광 에셋 |
 | `nexus_variation_prompt` | RubiconForge 리스킨 — 컬러·재질 오버레이 패스(구조 보존) |
 | `nexus_design_alternative_prompt` | RubiconForge 디자인 대안 — 모티프·재질 재해석(골격 유지) |
 | `nexus_item_bundle_prompt` | NexusPreview 아이템 꾸러미 — 원본 절대 보존 합성 (참조 = 아이템당 1장) |
 | `nexus_quality_up_prompt` | NexusPreview KV 배경 품질 향상 — 캐릭터·타이틀 보존 가드 포함 |
 | `nexus_character_fx_prompt` | NexusPreview 캐릭터 연출 — 형태 99%·얼굴 99.9% 보존, 분리 최적 배경 자동 |
+| `nexus_remove_ai` | 로컬 투명화·QA 실패 시 최종 fallback: Remove.bg AI 피사체 세그멘테이션 → 투명 PNG (`REMOVE_BG_API_KEY`, 허용 루트, 호출별 외부 전송 확인 필요) |
 | `nexus_remove_background` | 단색 배경 키잉 + 배경색 역산(unmix) → 투명 PNG |
 | `nexus_split_character_effect` | 캐릭터(알파) / 발광 이펙트(스크린 블렌드) 레이어 분리 |
 | `nexus_design_rubric` | NEXUS 디자인 평가 루브릭(마크다운) |
