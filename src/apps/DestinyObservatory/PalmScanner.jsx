@@ -17,11 +17,18 @@ const LINE_META = [
   { key: "fate", name: "운명선", element: "금", hint: "일과 방향성의 흐름" },
 ];
 
-const LINE_ANCHOR_CONFIG = {
-  heart: { map: "horizontal", fallback: [0.5, 0.25], regions: [[0.1, 0.9, 0.12, 0.36]] },
-  head: { map: "horizontal", fallback: [0.5, 0.47], regions: [[0.1, 0.9, 0.35, 0.58]] },
-  life: { map: "all", fallback: [0.34, 0.65], regions: [[0.08, 0.48, 0.38, 0.9], [0.52, 0.92, 0.38, 0.9]] },
-  fate: { map: "vertical", fallback: [0.5, 0.7], regions: [[0.35, 0.65, 0.4, 0.92]] },
+const LINE_TRACE_CONFIG = {
+  heart: { map: "horizontal", samples: 34, search: 0.12, anchor: 0.58 },
+  head: { map: "horizontal", samples: 34, search: 0.13, anchor: 0.52 },
+  life: { map: "all", samples: 36, search: 0.11, anchor: 0.53 },
+  fate: { map: "vertical", samples: 30, search: 0.1, anchor: 0.56 },
+};
+
+const LINE_COLORS = {
+  heart: "#f04e45",
+  head: "#4b89dc",
+  life: "#55b89a",
+  fate: "#e9e4d6",
 };
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,42 +50,157 @@ function buildLine(meta, score) {
   return { ...meta, score, level, tone };
 }
 
-function findLineAnchor(key, edgeMaps, width, height, palmBounds) {
-  const config = LINE_ANCHOR_CONFIG[key];
-  const source = edgeMaps[config.map];
-  let best = null;
+function cubicPoint(start, controlA, controlB, end, t) {
+  const inverse = 1 - t;
+  return {
+    u: inverse ** 3 * start.u + 3 * inverse ** 2 * t * controlA.u + 3 * inverse * t ** 2 * controlB.u + t ** 3 * end.u,
+    v: inverse ** 3 * start.v + 3 * inverse ** 2 * t * controlA.v + 3 * inverse * t ** 2 * controlB.v + t ** 3 * end.v,
+  };
+}
 
-  for (const [x0, x1, y0, y1] of config.regions) {
-    const minX = Math.max(7, Math.round(palmBounds.minX + palmBounds.width * x0));
-    const maxX = Math.min(width - 8, Math.round(palmBounds.minX + palmBounds.width * x1));
-    const minY = Math.max(7, Math.round(palmBounds.minY + palmBounds.height * y0));
-    const maxY = Math.min(height - 8, Math.round(palmBounds.minY + palmBounds.height * y1));
-    const centerX = (minX + maxX) / 2;
-    const centerY = (minY + maxY) / 2;
+function lineTemplatePoint(key, t) {
+  if (key === "heart") {
+    return { u: -0.43 + 0.9 * t, v: 0.75 - Math.sin(Math.PI * t) * 0.045 + (t - 0.5) * 0.025 };
+  }
+  if (key === "head") {
+    return { u: -0.45 + 0.94 * t, v: 0.65 - 0.15 * t + Math.sin(Math.PI * t) * 0.02 };
+  }
+  if (key === "life") {
+    return cubicPoint(
+      { u: -0.42, v: 0.72 },
+      { u: -0.65, v: 0.57 },
+      { u: -0.57, v: 0.23 },
+      { u: -0.2, v: 0.09 },
+      t,
+    );
+  }
+  return cubicPoint(
+    { u: 0.02, v: 0.12 },
+    { u: -0.04, v: 0.31 },
+    { u: 0.05, v: 0.55 },
+    { u: 0, v: 0.73 },
+    t,
+  );
+}
 
-    for (let y = minY; y <= maxY; y += 4) {
-      for (let x = minX; x <= maxX; x += 4) {
-        let local = 0;
-        for (let yy = -6; yy <= 6; yy += 3) {
-          for (let xx = -6; xx <= 6; xx += 3) local += source[(y + yy) * width + x + xx] || 0;
-        }
-        const dx = Math.abs(x - centerX) / Math.max(1, maxX - minX);
-        const dy = Math.abs(y - centerY) / Math.max(1, maxY - minY);
-        const score = local * (1 - (dx + dy) * 0.12);
-        if (!best || score > best.score) best = { x, y, score };
-      }
+function buildRidgeMap(gray, maskPixels, edgeMaps, width, height) {
+  const stride = width + 1;
+  const integral = new Float64Array((width + 1) * (height + 1));
+  for (let y = 1; y <= height; y += 1) {
+    let row = 0;
+    for (let x = 1; x <= width; x += 1) {
+      row += gray[(y - 1) * width + x - 1];
+      integral[y * stride + x] = integral[(y - 1) * stride + x] + row;
     }
   }
 
-  if (!best || best.score < 1) {
-    return {
-      x: Number(((palmBounds.minX + palmBounds.width * config.fallback[0]) / width * 100).toFixed(1)),
-      y: Number(((palmBounds.minY + palmBounds.height * config.fallback[1]) / height * 100).toFixed(1)),
-    };
+  const boxMean = (x, y, radius) => {
+    const left = Math.max(0, x - radius);
+    const right = Math.min(width - 1, x + radius);
+    const top = Math.max(0, y - radius);
+    const bottom = Math.min(height - 1, y + radius);
+    const sum = integral[(bottom + 1) * stride + right + 1]
+      - integral[top * stride + right + 1]
+      - integral[(bottom + 1) * stride + left]
+      + integral[top * stride + left];
+    return sum / ((right - left + 1) * (bottom - top + 1));
+  };
+
+  const ridge = new Float32Array(width * height);
+  for (let y = 6; y < height - 6; y += 1) {
+    for (let x = 6; x < width - 6; x += 1) {
+      const index = y * width + x;
+      if (maskPixels[index * 4 + 3] === 0) continue;
+      const darkness = Math.max(0, boxMean(x, y, 6) - boxMean(x, y, 1));
+      ridge[index] = darkness * 2.4 + Math.min(36, edgeMaps.all[index] * 0.09);
+    }
   }
+  return ridge;
+}
+
+function tracePalmLine(key, ridgeMap, edgeMaps, maskPixels, width, height, geometry) {
+  const config = LINE_TRACE_CONFIG[key];
+  const wrist = geometry.landmarks[0];
+  const middle = geometry.landmarks[9];
+  const indexMcp = geometry.landmarks[5];
+  const pinkyMcp = geometry.landmarks[17];
+  const acrossX = pinkyMcp.x - indexMcp.x;
+  const acrossY = pinkyMcp.y - indexMcp.y;
+  const palmWidth = Math.max(1, Math.hypot(acrossX, acrossY));
+  const cross = { x: acrossX / palmWidth, y: acrossY / palmWidth };
+  const expected = Array.from({ length: config.samples }, (_, index) => {
+    const t = index / (config.samples - 1);
+    const template = lineTemplatePoint(key, t);
+    return {
+      x: wrist.x + (middle.x - wrist.x) * template.v + cross.x * palmWidth * template.u,
+      y: wrist.y + (middle.y - wrist.y) * template.v + cross.y * palmWidth * template.u,
+    };
+  });
+  const searchRadius = Math.max(7, Math.round(palmWidth * config.search));
+  const offsets = [];
+  for (let offset = -searchRadius; offset <= searchRadius; offset += 2) offsets.push(offset);
+  const candidates = expected.map((point, pointIndex) => {
+    const previous = expected[Math.max(0, pointIndex - 1)];
+    const next = expected[Math.min(expected.length - 1, pointIndex + 1)];
+    const tangentLength = Math.max(1, Math.hypot(next.x - previous.x, next.y - previous.y));
+    const normal = { x: -(next.y - previous.y) / tangentLength, y: (next.x - previous.x) / tangentLength };
+    return offsets.map((offset) => {
+      const x = Math.round(point.x + normal.x * offset);
+      const y = Math.round(point.y + normal.y * offset);
+      const pixelIndex = y * width + x;
+      const valid = x >= 2 && x < width - 2 && y >= 2 && y < height - 2 && maskPixels[pixelIndex * 4 + 3] > 0;
+      const directionalEdge = valid ? edgeMaps[config.map][pixelIndex] : 0;
+      const response = valid ? ridgeMap[pixelIndex] + Math.min(24, directionalEdge * 0.055) : -1000;
+      return { x, y, offset, response };
+    });
+  });
+
+  const scores = candidates.map(() => new Float32Array(offsets.length));
+  const parents = candidates.map(() => new Int16Array(offsets.length));
+  candidates[0].forEach((candidate, index) => {
+    scores[0][index] = candidate.response - Math.abs(candidate.offset) * 0.025;
+    parents[0][index] = -1;
+  });
+  for (let pointIndex = 1; pointIndex < candidates.length; pointIndex += 1) {
+    candidates[pointIndex].forEach((candidate, candidateIndex) => {
+      let bestScore = -Infinity;
+      let bestParent = 0;
+      candidates[pointIndex - 1].forEach((previous, previousIndex) => {
+        const continuityPenalty = Math.abs(candidate.offset - previous.offset) * 0.38;
+        const score = scores[pointIndex - 1][previousIndex] + candidate.response - continuityPenalty;
+        if (score > bestScore) {
+          bestScore = score;
+          bestParent = previousIndex;
+        }
+      });
+      scores[pointIndex][candidateIndex] = bestScore;
+      parents[pointIndex][candidateIndex] = bestParent;
+    });
+  }
+
+  let bestIndex = 0;
+  const lastScores = scores.at(-1);
+  for (let index = 1; index < lastScores.length; index += 1) {
+    if (lastScores[index] > lastScores[bestIndex]) bestIndex = index;
+  }
+  const traced = new Array(candidates.length);
+  for (let pointIndex = candidates.length - 1; pointIndex >= 0; pointIndex -= 1) {
+    traced[pointIndex] = candidates[pointIndex][bestIndex];
+    bestIndex = parents[pointIndex][bestIndex];
+  }
+  const validPoints = traced.filter((point) => point.response > -100);
+  const averageResponse = validPoints.reduce((sum, point) => sum + Math.max(0, point.response), 0) / Math.max(1, validPoints.length);
+  const anchorPoint = traced[Math.round((traced.length - 1) * config.anchor)];
   return {
-    x: Number(clamp((best.x / width) * 100, 8, 92).toFixed(1)),
-    y: Number(clamp((best.y / height) * 100, 10, 90).toFixed(1)),
+    anchor: {
+      x: Number(clamp((anchorPoint.x / width) * 100, 8, 92).toFixed(1)),
+      y: Number(clamp((anchorPoint.y / height) * 100, 10, 90).toFixed(1)),
+    },
+    path: traced.map((point) => ({
+      x: Number(((point.x / width) * 100).toFixed(2)),
+      y: Number(((point.y / height) * 100).toFixed(2)),
+    })),
+    clarity: clamp(Math.round(34 + averageResponse * 1.9)),
   };
 }
 
@@ -167,15 +289,15 @@ async function analyzePalmImage(file) {
           overlayFrame.data[index] = magnitude > 180 ? 240 : 245;
           overlayFrame.data[index + 1] = magnitude > 180 ? 78 : 135;
           overlayFrame.data[index + 2] = magnitude > 180 ? 69 : 15;
-          overlayFrame.data[index + 3] = clamp(Math.round((magnitude - 60) * 0.72), 34, 190);
+          overlayFrame.data[index + 3] = clamp(Math.round((magnitude - 60) * 0.42), 24, 112);
         }
       }
     }
     overlayContext.putImageData(overlayFrame, 0, 0);
     overlayContext.lineCap = "round";
     overlayContext.lineJoin = "round";
-    overlayContext.strokeStyle = "rgba(245,135,15,.72)";
-    overlayContext.lineWidth = 1.35;
+    overlayContext.strokeStyle = "rgba(245,135,15,.48)";
+    overlayContext.lineWidth = 1.1;
     HAND_CONNECTIONS.forEach(([from, to]) => {
       const a = geometry.landmarks[from];
       const b = geometry.landmarks[to];
@@ -200,15 +322,39 @@ async function analyzePalmImage(file) {
     const densityScore = Math.min(1, centralDensity / 10);
     const quality = clamp(Math.round(resolution * 20 + brightnessScore * 15 + contrastScore * 20 + densityScore * 15 + geometry.confidence * 30));
 
-    const heartScore = clamp(Math.round(44 + contrast * 0.52 + centralDensity * 1.2));
-    const headScore = clamp(Math.round(50 + (155 - Math.abs(145 - brightness)) * 0.1 + edgeDensity * 0.8));
-    const lifeScore = clamp(Math.round(42 + resolution * 22 + centralDensity * 1.5));
-    const fateScore = clamp(Math.round(38 + contrast * 0.38 + edgeDensity * 1.25));
-    const lineScores = { heart: heartScore, head: headScore, life: lifeScore, fate: fateScore };
-    const lines = LINE_META.map((meta) => ({
-      ...buildLine(meta, lineScores[meta.key]),
-      anchor: findLineAnchor(meta.key, edgeMaps, width, height, geometry.palmBounds),
-    }));
+    const ridgeMap = buildRidgeMap(gray, maskPixels, edgeMaps, width, height);
+    const baseScores = {
+      heart: clamp(Math.round(44 + contrast * 0.52 + centralDensity * 1.2)),
+      head: clamp(Math.round(50 + (155 - Math.abs(145 - brightness)) * 0.1 + edgeDensity * 0.8)),
+      life: clamp(Math.round(42 + resolution * 22 + centralDensity * 1.5)),
+      fate: clamp(Math.round(38 + contrast * 0.38 + edgeDensity * 1.25)),
+    };
+    const lines = LINE_META.map((meta) => {
+      const trace = tracePalmLine(meta.key, ridgeMap, edgeMaps, maskPixels, width, height, geometry);
+      const score = clamp(Math.round(baseScores[meta.key] * 0.42 + trace.clarity * 0.58));
+      return { ...buildLine(meta, score), ...trace };
+    });
+
+    lines.forEach((line) => {
+      overlayContext.save();
+      overlayContext.beginPath();
+      line.path.forEach((point, index) => {
+        const x = point.x / 100 * width;
+        const y = point.y / 100 * height;
+        if (index === 0) overlayContext.moveTo(x, y);
+        else overlayContext.lineTo(x, y);
+      });
+      overlayContext.strokeStyle = LINE_COLORS[line.key];
+      overlayContext.lineWidth = 2.35;
+      overlayContext.globalAlpha = 0.9;
+      overlayContext.shadowColor = LINE_COLORS[line.key];
+      overlayContext.shadowBlur = 5;
+      overlayContext.stroke();
+      overlayContext.restore();
+    });
+
+    const lineScores = Object.fromEntries(lines.map((line) => [line.key, line.score]));
+    const { heart: heartScore, head: headScore, life: lifeScore, fate: fateScore } = lineScores;
 
     const currentState = {
       energy: clamp(Math.round(lifeScore * 0.72 + brightnessScore * 28)),
@@ -224,7 +370,7 @@ async function analyzePalmImage(file) {
         : "그림자나 초점 때문에 선 검출이 약해요. 손바닥을 펴고 밝은 곳에서 다시 찍어보세요.";
 
     return {
-      version: 3,
+      version: 4,
       createdAt: Date.now(),
       previewUrl: base.toDataURL("image/jpeg", 0.82),
       overlayUrl: overlay.toDataURL("image/png"),
