@@ -1,12 +1,10 @@
 import { useRef, useState } from "react";
 import { C, OH_GLYPH } from "./shared";
 import { drawNormalizedHand, HAND_CONNECTIONS, recognizePalm } from "./handLandmarker";
+import { analyzePalmWithVision } from "./palmVision";
 
 const STAGES = [
-  [32, "손바닥 인식 완료"],
-  [52, "21개 랜드마크 정렬 중"],
-  [72, "손바닥 내부 선 후보 추적 중"],
-  [86, "선의 깊이와 흐름 비교 중"],
+  [86, "검출 좌표와 손바닥 영역 검증 중"],
   [100, "관측 결과 정리 중"],
 ];
 
@@ -17,13 +15,6 @@ const LINE_META = [
   { key: "fate", name: "운명선", element: "금", hint: "일과 방향성의 흐름" },
 ];
 
-const LINE_TRACE_CONFIG = {
-  heart: { map: "horizontal", samples: 34, search: 0.075, anchor: 0.58 },
-  head: { map: "horizontal", samples: 34, search: 0.08, anchor: 0.7 },
-  life: { map: "all", samples: 36, search: 0.085, anchor: 0.48 },
-  fate: { map: "vertical", samples: 30, search: 0.07, anchor: 0.38 },
-};
-
 const LINE_COLORS = {
   heart: "#f04e45",
   head: "#4b89dc",
@@ -32,10 +23,10 @@ const LINE_COLORS = {
 };
 
 const LINE_LABEL_LAYOUT = {
-  heart: { side: "before", top: -16 },
-  head: { side: "after", top: -30 },
-  life: { side: "after", top: -13 },
-  fate: { side: "after", top: 8 },
+  heart: { side: "before", top: -19, anchor: 0.57 },
+  head: { side: "after", top: -24, anchor: 0.68 },
+  life: { side: "after", top: -12, anchor: 0.48 },
+  fate: { side: "after", top: 7, anchor: 0.42 },
 };
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -55,39 +46,6 @@ function buildLine(meta, score) {
       ? `${meta.hint}이 무난하고 균형 있게 보여요.`
       : `${meta.hint}이 가늘고 세심하게 나타나요.`;
   return { ...meta, score, level, tone };
-}
-
-function cubicPoint(start, controlA, controlB, end, t) {
-  const inverse = 1 - t;
-  return {
-    u: inverse ** 3 * start.u + 3 * inverse ** 2 * t * controlA.u + 3 * inverse * t ** 2 * controlB.u + t ** 3 * end.u,
-    v: inverse ** 3 * start.v + 3 * inverse ** 2 * t * controlA.v + 3 * inverse * t ** 2 * controlB.v + t ** 3 * end.v,
-  };
-}
-
-function lineTemplatePoint(key, t) {
-  if (key === "heart") {
-    return { u: -0.43 + 0.9 * t, v: 0.75 - Math.sin(Math.PI * t) * 0.045 + (t - 0.5) * 0.025 };
-  }
-  if (key === "head") {
-    return { u: -0.45 + 0.94 * t, v: 0.65 - 0.15 * t + Math.sin(Math.PI * t) * 0.02 };
-  }
-  if (key === "life") {
-    return cubicPoint(
-      { u: -0.42, v: 0.72 },
-      { u: -0.65, v: 0.57 },
-      { u: -0.57, v: 0.23 },
-      { u: -0.2, v: 0.09 },
-      t,
-    );
-  }
-  return cubicPoint(
-    { u: 0.02, v: 0.12 },
-    { u: -0.04, v: 0.31 },
-    { u: 0.05, v: 0.55 },
-    { u: 0, v: 0.73 },
-    t,
-  );
 }
 
 function buildRidgeMap(gray, maskPixels, edgeMaps, width, height) {
@@ -144,61 +102,76 @@ function smoothTrace(points, passes = 3) {
   return smoothed;
 }
 
-function tracePalmLine(key, ridgeMap, edgeMaps, maskPixels, width, height, geometry) {
-  const config = LINE_TRACE_CONFIG[key];
-  const wrist = geometry.landmarks[0];
-  const middle = geometry.landmarks[9];
-  const indexMcp = geometry.landmarks[5];
-  const pinkyMcp = geometry.landmarks[17];
-  const acrossX = pinkyMcp.x - indexMcp.x;
-  const acrossY = pinkyMcp.y - indexMcp.y;
-  const palmWidth = Math.max(1, Math.hypot(acrossX, acrossY));
-  const cross = { x: acrossX / palmWidth, y: acrossY / palmWidth };
-  const expected = Array.from({ length: config.samples }, (_, index) => {
-    const t = index / (config.samples - 1);
-    const template = lineTemplatePoint(key, t);
-    return {
-      x: wrist.x + (middle.x - wrist.x) * template.v + cross.x * palmWidth * template.u,
-      y: wrist.y + (middle.y - wrist.y) * template.v + cross.y * palmWidth * template.u,
-    };
+function pointInPolygon(point, polygon) {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const a = polygon[i];
+    const b = polygon[j];
+    const intersects = ((a.y > point.y) !== (b.y > point.y))
+      && point.x < ((b.x - a.x) * (point.y - a.y)) / ((b.y - a.y) || 0.00001) + a.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function resamplePolyline(source, count = 32) {
+  if (source.length < 2) return source;
+  const lengths = [0];
+  for (let index = 1; index < source.length; index += 1) {
+    lengths.push(lengths.at(-1) + Math.hypot(source[index].x - source[index - 1].x, source[index].y - source[index - 1].y));
+  }
+  const total = lengths.at(-1);
+  if (total < 1) return source;
+  return Array.from({ length: count }, (_, index) => {
+    const target = total * index / (count - 1);
+    let segment = 1;
+    while (segment < lengths.length - 1 && lengths[segment] < target) segment += 1;
+    const start = source[segment - 1];
+    const end = source[segment];
+    const span = Math.max(0.00001, lengths[segment] - lengths[segment - 1]);
+    const ratio = (target - lengths[segment - 1]) / span;
+    return { x: start.x + (end.x - start.x) * ratio, y: start.y + (end.y - start.y) * ratio };
   });
-  const searchRadius = Math.max(7, Math.round(palmWidth * config.search));
-  const offsets = [];
-  for (let offset = -searchRadius; offset <= searchRadius; offset += 2) offsets.push(offset);
+}
+
+function refineVisionLine(visionLine, ridgeMap, maskPixels, width, height, geometry) {
+  const source = visionLine.points.map((point) => ({ x: point.x / 1000 * width, y: point.y / 1000 * height }));
+  const insideRatio = source.filter((point) => pointInPolygon(point, geometry.palmPolygon)).length / source.length;
+  if (insideRatio < 0.72) return null;
+
+  const expected = resamplePolyline(source, 32);
+  const palmWidth = Math.max(1, geometry.palmBounds?.width || Math.hypot(
+    geometry.landmarks[17].x - geometry.landmarks[5].x,
+    geometry.landmarks[17].y - geometry.landmarks[5].y,
+  ));
+  const searchRadius = clamp(Math.round(palmWidth * 0.018), 2, 6);
+  const offsets = Array.from({ length: searchRadius * 2 + 1 }, (_, index) => index - searchRadius);
   const candidates = expected.map((point, pointIndex) => {
-    const previous = expected[Math.max(0, pointIndex - 1)];
-    const next = expected[Math.min(expected.length - 1, pointIndex + 1)];
-    const tangentLength = Math.max(1, Math.hypot(next.x - previous.x, next.y - previous.y));
-    const normal = { x: -(next.y - previous.y) / tangentLength, y: (next.x - previous.x) / tangentLength };
+    const before = expected[Math.max(0, pointIndex - 1)];
+    const after = expected[Math.min(expected.length - 1, pointIndex + 1)];
+    const length = Math.max(1, Math.hypot(after.x - before.x, after.y - before.y));
+    const normal = { x: -(after.y - before.y) / length, y: (after.x - before.x) / length };
     return offsets.map((offset) => {
       const x = Math.round(point.x + normal.x * offset);
       const y = Math.round(point.y + normal.y * offset);
       const pixelIndex = y * width + x;
-      const valid = x >= 2 && x < width - 2 && y >= 2 && y < height - 2 && maskPixels[pixelIndex * 4 + 3] > 0;
-      const directionalEdge = valid ? edgeMaps[config.map][pixelIndex] : 0;
-      const response = valid ? ridgeMap[pixelIndex] + Math.min(24, directionalEdge * 0.055) : -1000;
-      return { x, y, offset, response };
+      const valid = x >= 2 && x < width - 2 && y >= 2 && y < height - 2
+        && maskPixels[pixelIndex * 4 + 3] > 0 && pointInPolygon({ x, y }, geometry.palmPolygon);
+      return { x, y, offset, response: valid ? ridgeMap[pixelIndex] - Math.abs(offset) * 0.45 : -1000 };
     });
   });
 
   const scores = candidates.map(() => new Float32Array(offsets.length));
   const parents = candidates.map(() => new Int16Array(offsets.length));
-  candidates[0].forEach((candidate, index) => {
-    scores[0][index] = candidate.response - Math.abs(candidate.offset) * 0.025;
-    parents[0][index] = -1;
-  });
+  candidates[0].forEach((candidate, index) => { scores[0][index] = candidate.response; parents[0][index] = -1; });
   for (let pointIndex = 1; pointIndex < candidates.length; pointIndex += 1) {
     candidates[pointIndex].forEach((candidate, candidateIndex) => {
       let bestScore = -Infinity;
       let bestParent = 0;
       candidates[pointIndex - 1].forEach((previous, previousIndex) => {
-        const offsetJump = Math.abs(candidate.offset - previous.offset);
-        const continuityPenalty = offsetJump * 1.25 + Math.max(0, offsetJump - 4) * 3.5;
-        const score = scores[pointIndex - 1][previousIndex] + candidate.response - continuityPenalty;
-        if (score > bestScore) {
-          bestScore = score;
-          bestParent = previousIndex;
-        }
+        const jump = Math.abs(candidate.offset - previous.offset);
+        const score = scores[pointIndex - 1][previousIndex] + candidate.response - jump * 2.8 - Math.max(0, jump - 2) * 5;
+        if (score > bestScore) { bestScore = score; bestParent = previousIndex; }
       });
       scores[pointIndex][candidateIndex] = bestScore;
       parents[pointIndex][candidateIndex] = bestParent;
@@ -207,32 +180,38 @@ function tracePalmLine(key, ridgeMap, edgeMaps, maskPixels, width, height, geome
 
   let bestIndex = 0;
   const lastScores = scores.at(-1);
-  for (let index = 1; index < lastScores.length; index += 1) {
-    if (lastScores[index] > lastScores[bestIndex]) bestIndex = index;
-  }
+  for (let index = 1; index < lastScores.length; index += 1) if (lastScores[index] > lastScores[bestIndex]) bestIndex = index;
   const traced = new Array(candidates.length);
   for (let pointIndex = candidates.length - 1; pointIndex >= 0; pointIndex -= 1) {
     traced[pointIndex] = candidates[pointIndex][bestIndex];
     bestIndex = parents[pointIndex][bestIndex];
   }
-  const validPoints = traced.filter((point) => point.response > -100);
-  const averageResponse = validPoints.reduce((sum, point) => sum + Math.max(0, point.response), 0) / Math.max(1, validPoints.length);
-  const smoothed = smoothTrace(traced);
-  const anchorPoint = smoothed[Math.round((smoothed.length - 1) * config.anchor)];
+  if (traced.some((point) => point.response <= -900)) return null;
+  const smoothed = smoothTrace(traced, 2);
+  const length = smoothed.slice(1).reduce((sum, point, index) => sum + Math.hypot(point.x - smoothed[index].x, point.y - smoothed[index].y), 0);
+  const spanX = Math.max(...smoothed.map((point) => point.x)) - Math.min(...smoothed.map((point) => point.x));
+  if (length < palmWidth * 0.28) return null;
+  if (["heart", "head"].includes(visionLine.key) && spanX < palmWidth * 0.2) return null;
+
+  const averageRidge = traced.reduce((sum, point) => sum + Math.max(0, point.response), 0) / traced.length;
+  const score = clamp(Math.round(visionLine.clarity * 0.55 + visionLine.confidence * 35 + Math.min(10, averageRidge * 0.3)));
+  const anchorAt = LINE_LABEL_LAYOUT[visionLine.key]?.anchor ?? 0.5;
+  const anchorPoint = smoothed[Math.round((smoothed.length - 1) * anchorAt)];
   return {
     anchor: {
-      x: Number(clamp((anchorPoint.x / width) * 100, 8, 92).toFixed(1)),
-      y: Number(clamp((anchorPoint.y / height) * 100, 10, 90).toFixed(1)),
+      x: Number(clamp(anchorPoint.x / width * 100, 8, 92).toFixed(1)),
+      y: Number(clamp(anchorPoint.y / height * 100, 10, 90).toFixed(1)),
     },
     path: smoothed.map((point) => ({
-      x: Number(((point.x / width) * 100).toFixed(2)),
-      y: Number(((point.y / height) * 100).toFixed(2)),
+      x: Number((point.x / width * 100).toFixed(2)),
+      y: Number((point.y / height * 100).toFixed(2)),
     })),
-    clarity: clamp(Math.round(34 + averageResponse * 1.9)),
+    score,
+    confidence: visionLine.confidence,
   };
 }
 
-async function analyzePalmImage(file) {
+async function analyzePalmImage(file, onStage) {
   const objectUrl = URL.createObjectURL(file);
   try {
     const image = await new Promise((resolve, reject) => {
@@ -250,7 +229,9 @@ async function analyzePalmImage(file) {
     const context = base.getContext("2d", { willReadFrequently: true });
 
     const geometry = await recognizePalm(image, width, height);
+    onStage?.(32, "손바닥 인식 완료 · 21개 관절점 정렬 중");
     drawNormalizedHand(context, image, geometry, width, height);
+    const previewUrl = base.toDataURL("image/jpeg", 0.9);
 
     const maskCanvas = document.createElement("canvas");
     maskCanvas.width = width;
@@ -313,11 +294,6 @@ async function analyzePalmImage(file) {
         if (magnitude > 70) {
           edgeCount += 1;
           palmEdgeCount += 1;
-          const index = (y * width + x) * 4;
-          overlayFrame.data[index] = magnitude > 180 ? 240 : 245;
-          overlayFrame.data[index + 1] = magnitude > 180 ? 78 : 135;
-          overlayFrame.data[index + 2] = magnitude > 180 ? 69 : 15;
-          overlayFrame.data[index + 3] = clamp(Math.round((magnitude - 60) * 0.42), 24, 112);
         }
       }
     }
@@ -350,18 +326,21 @@ async function analyzePalmImage(file) {
     const densityScore = Math.min(1, centralDensity / 10);
     const quality = clamp(Math.round(resolution * 20 + brightnessScore * 15 + contrastScore * 20 + densityScore * 15 + geometry.confidence * 30));
 
+    onStage?.(58, "Google AI가 실제 손금선을 식별 중");
+    const vision = await analyzePalmWithVision(previewUrl, geometry);
+    onStage?.(78, "검출 좌표와 손바닥 영역 검증 중");
     const ridgeMap = buildRidgeMap(gray, maskPixels, edgeMaps, width, height);
-    const baseScores = {
-      heart: clamp(Math.round(44 + contrast * 0.52 + centralDensity * 1.2)),
-      head: clamp(Math.round(50 + (155 - Math.abs(145 - brightness)) * 0.1 + edgeDensity * 0.8)),
-      life: clamp(Math.round(42 + resolution * 22 + centralDensity * 1.5)),
-      fate: clamp(Math.round(38 + contrast * 0.38 + edgeDensity * 1.25)),
-    };
-    const lines = LINE_META.map((meta) => {
-      const trace = tracePalmLine(meta.key, ridgeMap, edgeMaps, maskPixels, width, height, geometry);
-      const score = clamp(Math.round(baseScores[meta.key] * 0.42 + trace.clarity * 0.58));
-      return { ...buildLine(meta, score), ...trace };
-    });
+    const metaByKey = Object.fromEntries(LINE_META.map((meta) => [meta.key, meta]));
+    const lines = vision.lines
+      .map((visionLine) => {
+        const refined = refineVisionLine(visionLine, ridgeMap, maskPixels, width, height, geometry);
+        return refined ? { ...buildLine(metaByKey[visionLine.key], refined.score), ...refined } : null;
+      })
+      .filter(Boolean);
+    const requiredCount = lines.filter((line) => ["heart", "head", "life"].includes(line.key)).length;
+    if (requiredCount < 2) {
+      throw new Error("실제 손바닥 영역 안에서 주요 손금선을 충분히 확인하지 못했습니다. 손바닥을 정면으로 펴고 다시 찍어주세요.");
+    }
 
     lines.forEach((line) => {
       overlayContext.save();
@@ -383,7 +362,11 @@ async function analyzePalmImage(file) {
     });
 
     const lineScores = Object.fromEntries(lines.map((line) => [line.key, line.score]));
-    const { heart: heartScore, head: headScore, life: lifeScore, fate: fateScore } = lineScores;
+    const detectedAverage = lines.reduce((sum, line) => sum + line.score, 0) / lines.length;
+    const heartScore = lineScores.heart ?? detectedAverage;
+    const headScore = lineScores.head ?? detectedAverage;
+    const lifeScore = lineScores.life ?? detectedAverage;
+    const fateScore = lineScores.fate ?? detectedAverage;
 
     const currentState = {
       energy: clamp(Math.round(lifeScore * 0.72 + brightnessScore * 28)),
@@ -399,9 +382,10 @@ async function analyzePalmImage(file) {
         : "그림자나 초점 때문에 선 검출이 약해요. 손바닥을 펴고 밝은 곳에서 다시 찍어보세요.";
 
     return {
-      version: 5,
+      version: 6,
+      analysisMode: "gemini-vision",
       createdAt: Date.now(),
-      previewUrl: base.toDataURL("image/jpeg", 0.82),
+      previewUrl,
       overlayUrl: overlay.toDataURL("image/png"),
       quality,
       qualityNote,
@@ -414,6 +398,7 @@ async function analyzePalmImage(file) {
         confidence: Math.round(geometry.confidence * 100),
         landmarkCount: geometry.landmarks.length,
       },
+      vision: { model: vision.model, transmitted: true },
       metrics: {
         brightness: Math.round(brightness),
         contrast: Math.round(contrast),
@@ -434,8 +419,16 @@ export function PalmScanner({ value, onChange }) {
   const [progress, setProgress] = useState(value ? 100 : 0);
   const [stage, setStage] = useState(value ? "손금 관측 완료" : "");
   const [error, setError] = useState("");
+  const [aiConsent, setAiConsent] = useState(false);
 
-  const choosePhoto = () => inputRef.current?.click();
+  const choosePhoto = () => {
+    if (!aiConsent) {
+      setError("Google AI 정밀 분석 전송에 동의한 뒤 사진을 선택해 주세요.");
+      return;
+    }
+    setError("");
+    inputRef.current?.click();
+  };
 
   const handleFile = async (event) => {
     const file = event.target.files?.[0];
@@ -453,7 +446,11 @@ export function PalmScanner({ value, onChange }) {
     onChange(null);
 
     try {
-      const result = await analyzePalmImage(file);
+      const result = await analyzePalmImage(file, (nextProgress, label) => {
+        if (run !== runRef.current) return;
+        setProgress(nextProgress);
+        setStage(label);
+      });
       if (run !== runRef.current) return;
       setAnalysis(result);
       setStatus("scanning");
@@ -501,16 +498,22 @@ export function PalmScanner({ value, onChange }) {
       <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} style={{ display: "none" }} />
 
       {!analysis && status === "idle" && (
-        <button type="button" onClick={choosePhoto} style={{
-          width: "100%", minHeight: 196, padding: 22, cursor: "pointer", border: `1px dashed ${C.gold}`,
-          background: "linear-gradient(145deg,rgba(245,135,15,.11),rgba(240,78,69,.035))", color: C.ink,
-        }}>
-          <span aria-hidden style={{ display: "block", fontSize: 40, color: C.gold, marginBottom: 12 }}>✋</span>
-          <span className="destiny-display" style={{ display: "block", fontSize: 21, color: C.goldSoft }}>손바닥 촬영·사진 선택</span>
-          <span style={{ display: "block", marginTop: 9, color: C.dim, fontSize: 11.5, lineHeight: 1.7 }}>
-            손가락을 편 상태로 손바닥 전체가 나오게 찍어주세요.<br />밝고 그림자가 적을수록 선이 잘 보여요.
-          </span>
-        </button>
+        <>
+          <label style={{ display: "flex", gap: 9, alignItems: "flex-start", marginBottom: 10, padding: "10px 11px", border: `1px solid ${aiConsent ? C.목 : C.line}`, color: aiConsent ? C.목 : C.dim, fontSize: 10.5, lineHeight: 1.55, cursor: "pointer" }}>
+            <input type="checkbox" checked={aiConsent} onChange={(event) => { setAiConsent(event.target.checked); setError(""); }} style={{ marginTop: 2, accentColor: C.gold }} />
+            <span>정규화된 손바닥 사진 1장, 주요 관절 좌표, 손 방향을 Google Gemini API로 전송하여 정밀 분석하는 데 동의합니다.</span>
+          </label>
+          <button type="button" onClick={choosePhoto} style={{
+            width: "100%", minHeight: 196, padding: 22, cursor: "pointer", border: `1px dashed ${C.gold}`,
+            background: "linear-gradient(145deg,rgba(245,135,15,.11),rgba(240,78,69,.035))", color: C.ink,
+          }}>
+            <span aria-hidden style={{ display: "block", fontSize: 40, color: C.gold, marginBottom: 12 }}>✋</span>
+            <span className="destiny-display" style={{ display: "block", fontSize: 21, color: C.goldSoft }}>손바닥 촬영·사진 선택</span>
+            <span style={{ display: "block", marginTop: 9, color: C.dim, fontSize: 11.5, lineHeight: 1.7 }}>
+              손가락을 편 상태로 손바닥 전체가 나오게 찍어주세요.<br />밝고 그림자가 적을수록 실제 선을 안정적으로 찾을 수 있어요.
+            </span>
+          </button>
+        </>
       )}
 
       {status === "preparing" && !analysis && (
@@ -562,13 +565,13 @@ export function PalmScanner({ value, onChange }) {
 
       {(analysis || busy) && (
         <button type="button" onClick={busy ? undefined : reset} disabled={busy} style={{ width: "100%", marginTop: 10, padding: "11px 14px", cursor: busy ? "wait" : "pointer", border: `1px solid ${C.line}`, background: "transparent", color: busy ? C.dim : C.ink, fontSize: 12 }}>
-          {busy ? "손금선을 추적하고 있어요" : "다른 사진으로 다시 관측"}
+          {busy ? "AI가 실제 손금선을 확인하고 있어요" : "다른 사진으로 다시 관측"}
         </button>
       )}
 
       {error && <p role="alert" style={{ margin: "9px 0 0", color: C.goldSoft, fontSize: 11.5 }}>{error}</p>}
       <p style={{ color: C.dim, fontSize: 10.5, lineHeight: 1.65, margin: "10px 0 0" }}>
-        첫 분석 때 약 8MB 손 인식 모델을 내려받습니다. 사진은 기기 안에서 처리되며 서버로 전송하거나 저장하지 않습니다. 손바닥과 21개 랜드마크를 찾은 경우에만 선 후보 분석을 진행합니다.
+        손 인식은 기기에서 먼저 처리됩니다. 동의한 경우에만 정규화된 손바닥 사진과 주요 관절 좌표가 Google Gemini API로 전송됩니다. 앱 서버에는 사진을 저장하지 않으며, AI와 손바닥 영역 검증을 모두 통과한 선만 표시합니다.
       </p>
     </div>
   );
@@ -590,7 +593,7 @@ export function PalmResult({ palm, compact = false }) {
       </div>
       <p style={{ margin: "0 0 12px", color: C.dim, fontSize: 11.5, lineHeight: 1.65 }}>{palm.qualityNote}</p>
       <div style={{ margin: "0 0 10px", padding: "8px 10px", border: `1px solid ${C.목}`, color: C.목, fontSize: 10.5, letterSpacing: .4 }}>
-        손바닥 인식 완료 · {palm.hand.handedness} · 랜드마크 {palm.hand.landmarkCount}개 · 신뢰도 {palm.hand.confidence}%
+        AI 정밀 손금 분석 완료 · {palm.hand.handedness} · 랜드마크 {palm.hand.landmarkCount}개 · 손 인식 신뢰도 {palm.hand.confidence}%
       </div>
       <div style={{ display: "grid", gap: 7 }}>
         {palm.lines.map((line) => (
