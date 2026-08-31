@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { C, OH_GLYPH } from "./shared";
+import { drawNormalizedHand, HAND_CONNECTIONS, recognizePalm } from "./handLandmarker";
 
 const STAGES = [
-  [18, "이미지 정렬 중"],
-  [42, "손바닥 대비 측정 중"],
-  [67, "주요 선 후보 추적 중"],
+  [32, "손바닥 인식 완료"],
+  [52, "21개 랜드마크 정렬 중"],
+  [72, "손바닥 내부 선 후보 추적 중"],
   [86, "선의 깊이와 흐름 비교 중"],
   [100, "관측 결과 정리 중"],
 ];
@@ -17,10 +18,10 @@ const LINE_META = [
 ];
 
 const LINE_ANCHOR_CONFIG = {
-  heart: { map: "horizontal", fallback: [50, 31], regions: [[0.18, 0.82, 0.23, 0.39]] },
-  head: { map: "horizontal", fallback: [50, 46], regions: [[0.18, 0.82, 0.38, 0.56]] },
-  life: { map: "all", fallback: [35, 61], regions: [[0.2, 0.48, 0.43, 0.78], [0.52, 0.8, 0.43, 0.78]] },
-  fate: { map: "vertical", fallback: [50, 67], regions: [[0.38, 0.62, 0.48, 0.83]] },
+  heart: { map: "horizontal", fallback: [0.5, 0.25], regions: [[0.1, 0.9, 0.12, 0.36]] },
+  head: { map: "horizontal", fallback: [0.5, 0.47], regions: [[0.1, 0.9, 0.35, 0.58]] },
+  life: { map: "all", fallback: [0.34, 0.65], regions: [[0.08, 0.48, 0.38, 0.9], [0.52, 0.92, 0.38, 0.9]] },
+  fate: { map: "vertical", fallback: [0.5, 0.7], regions: [[0.35, 0.65, 0.4, 0.92]] },
 };
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,16 +43,16 @@ function buildLine(meta, score) {
   return { ...meta, score, level, tone };
 }
 
-function findLineAnchor(key, edgeMaps, width, height) {
+function findLineAnchor(key, edgeMaps, width, height, palmBounds) {
   const config = LINE_ANCHOR_CONFIG[key];
   const source = edgeMaps[config.map];
   let best = null;
 
   for (const [x0, x1, y0, y1] of config.regions) {
-    const minX = Math.round(width * x0);
-    const maxX = Math.round(width * x1);
-    const minY = Math.round(height * y0);
-    const maxY = Math.round(height * y1);
+    const minX = Math.max(7, Math.round(palmBounds.minX + palmBounds.width * x0));
+    const maxX = Math.min(width - 8, Math.round(palmBounds.minX + palmBounds.width * x1));
+    const minY = Math.max(7, Math.round(palmBounds.minY + palmBounds.height * y0));
+    const maxY = Math.min(height - 8, Math.round(palmBounds.minY + palmBounds.height * y1));
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
 
@@ -69,7 +70,12 @@ function findLineAnchor(key, edgeMaps, width, height) {
     }
   }
 
-  if (!best || best.score < 1) return { x: config.fallback[0], y: config.fallback[1] };
+  if (!best || best.score < 1) {
+    return {
+      x: Number(((palmBounds.minX + palmBounds.width * config.fallback[0]) / width * 100).toFixed(1)),
+      y: Number(((palmBounds.minY + palmBounds.height * config.fallback[1]) / height * 100).toFixed(1)),
+    };
+  }
   return {
     x: Number(clamp((best.x / width) * 100, 8, 92).toFixed(1)),
     y: Number(clamp((best.y / height) * 100, 10, 90).toFixed(1)),
@@ -93,12 +99,22 @@ async function analyzePalmImage(file) {
     base.height = height;
     const context = base.getContext("2d", { willReadFrequently: true });
 
-    const scale = Math.max(width / image.width, height / image.height);
-    const sourceWidth = width / scale;
-    const sourceHeight = height / scale;
-    const sourceX = Math.max(0, (image.width - sourceWidth) / 2);
-    const sourceY = Math.max(0, (image.height - sourceHeight) / 2);
-    context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, width, height);
+    const geometry = await recognizePalm(image, width, height);
+    drawNormalizedHand(context, image, geometry, width, height);
+
+    const maskCanvas = document.createElement("canvas");
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const maskContext = maskCanvas.getContext("2d");
+    maskContext.beginPath();
+    geometry.palmPolygon.forEach((point, index) => {
+      if (index === 0) maskContext.moveTo(point.x, point.y);
+      else maskContext.lineTo(point.x, point.y);
+    });
+    maskContext.closePath();
+    maskContext.fillStyle = "#fff";
+    maskContext.fill();
+    const maskPixels = maskContext.getImageData(0, 0, width, height).data;
 
     const frame = context.getImageData(0, 0, width, height);
     const pixels = frame.data;
@@ -127,7 +143,8 @@ async function analyzePalmImage(file) {
       vertical: new Float32Array(width * height),
     };
     let edgeCount = 0;
-    let centralEdgeCount = 0;
+    let palmEdgeCount = 0;
+    let palmPixelCount = 0;
 
     for (let y = 1; y < height - 1; y += 1) {
       for (let x = 1; x < width - 1; x += 1) {
@@ -138,12 +155,14 @@ async function analyzePalmImage(file) {
           + at(y + 1, x - 1) + 2 * at(y + 1, x) + at(y + 1, x + 1);
         const magnitude = Math.sqrt(gx * gx + gy * gy);
         const pixelIndex = y * width + x;
+        if (maskPixels[pixelIndex * 4 + 3] === 0) continue;
+        palmPixelCount += 1;
         edgeMaps.all[pixelIndex] = magnitude;
         edgeMaps.horizontal[pixelIndex] = Math.abs(gy);
         edgeMaps.vertical[pixelIndex] = Math.abs(gx);
         if (magnitude > 70) {
           edgeCount += 1;
-          if (x > width * 0.16 && x < width * 0.84 && y > height * 0.12 && y < height * 0.88) centralEdgeCount += 1;
+          palmEdgeCount += 1;
           const index = (y * width + x) * 4;
           overlayFrame.data[index] = magnitude > 180 ? 240 : 245;
           overlayFrame.data[index + 1] = magnitude > 180 ? 78 : 135;
@@ -153,15 +172,33 @@ async function analyzePalmImage(file) {
       }
     }
     overlayContext.putImageData(overlayFrame, 0, 0);
+    overlayContext.lineCap = "round";
+    overlayContext.lineJoin = "round";
+    overlayContext.strokeStyle = "rgba(245,135,15,.72)";
+    overlayContext.lineWidth = 1.35;
+    HAND_CONNECTIONS.forEach(([from, to]) => {
+      const a = geometry.landmarks[from];
+      const b = geometry.landmarks[to];
+      overlayContext.beginPath();
+      overlayContext.moveTo(a.x, a.y);
+      overlayContext.lineTo(b.x, b.y);
+      overlayContext.stroke();
+    });
+    overlayContext.fillStyle = "rgba(233,228,214,.86)";
+    geometry.landmarks.forEach((point) => {
+      overlayContext.beginPath();
+      overlayContext.arc(point.x, point.y, 1.65, 0, Math.PI * 2);
+      overlayContext.fill();
+    });
 
     const total = (width - 2) * (height - 2);
     const edgeDensity = (edgeCount / total) * 100;
-    const centralDensity = (centralEdgeCount / (width * height * 0.52)) * 100;
+    const centralDensity = (palmEdgeCount / Math.max(1, palmPixelCount)) * 100;
     const resolution = Math.min(1, Math.min(image.width / 720, image.height / 900));
     const brightnessScore = 1 - Math.min(1, Math.abs(brightness - 138) / 138);
     const contrastScore = Math.min(1, contrast / 58);
     const densityScore = Math.min(1, centralDensity / 10);
-    const quality = clamp(Math.round(resolution * 35 + brightnessScore * 24 + contrastScore * 25 + densityScore * 16));
+    const quality = clamp(Math.round(resolution * 20 + brightnessScore * 15 + contrastScore * 20 + densityScore * 15 + geometry.confidence * 30));
 
     const heartScore = clamp(Math.round(44 + contrast * 0.52 + centralDensity * 1.2));
     const headScore = clamp(Math.round(50 + (155 - Math.abs(145 - brightness)) * 0.1 + edgeDensity * 0.8));
@@ -170,7 +207,7 @@ async function analyzePalmImage(file) {
     const lineScores = { heart: heartScore, head: headScore, life: lifeScore, fate: fateScore };
     const lines = LINE_META.map((meta) => ({
       ...buildLine(meta, lineScores[meta.key]),
-      anchor: findLineAnchor(meta.key, edgeMaps, width, height),
+      anchor: findLineAnchor(meta.key, edgeMaps, width, height, geometry.palmBounds),
     }));
 
     const currentState = {
@@ -187,7 +224,7 @@ async function analyzePalmImage(file) {
         : "그림자나 초점 때문에 선 검출이 약해요. 손바닥을 펴고 밝은 곳에서 다시 찍어보세요.";
 
     return {
-      version: 2,
+      version: 3,
       createdAt: Date.now(),
       previewUrl: base.toDataURL("image/jpeg", 0.82),
       overlayUrl: overlay.toDataURL("image/png"),
@@ -196,6 +233,12 @@ async function analyzePalmImage(file) {
       lines,
       strongest,
       currentState,
+      hand: {
+        detected: true,
+        handedness: geometry.handedness,
+        confidence: Math.round(geometry.confidence * 100),
+        landmarkCount: geometry.landmarks.length,
+      },
       metrics: {
         brightness: Math.round(brightness),
         contrast: Math.round(contrast),
@@ -231,7 +274,7 @@ export function PalmScanner({ value, onChange }) {
     setAnalysis(null);
     setStatus("preparing");
     setProgress(5);
-    setStage("사진을 안전하게 읽는 중");
+    setStage("손바닥 탐지 모델 준비 중");
     onChange(null);
 
     try {
@@ -324,7 +367,7 @@ export function PalmScanner({ value, onChange }) {
               );
             })}
             <div style={{ position: "absolute", left: 14, right: 14, bottom: 12, display: "flex", justifyContent: "space-between", color: C.ink, fontSize: 9, letterSpacing: 1.5, textShadow: "0 1px 4px #000" }}>
-              <span>PALM TRACE / LOCAL</span><span>{analysis.metrics.resolution}</span>
+              <span>PALM FOUND · {analysis.hand.handedness} {analysis.hand.confidence}%</span><span>{analysis.metrics.resolution}</span>
             </div>
           </div>
 
@@ -350,7 +393,7 @@ export function PalmScanner({ value, onChange }) {
 
       {error && <p role="alert" style={{ margin: "9px 0 0", color: C.goldSoft, fontSize: 11.5 }}>{error}</p>}
       <p style={{ color: C.dim, fontSize: 10.5, lineHeight: 1.65, margin: "10px 0 0" }}>
-        사진은 이 기기에서 축소·분석되며 서버로 전송하거나 저장하지 않습니다. 현재 버전은 이미지 품질과 선 후보를 시각화하는 재미용 베타입니다.
+        첫 분석 때 약 8MB 손 인식 모델을 내려받습니다. 사진은 기기 안에서 처리되며 서버로 전송하거나 저장하지 않습니다. 손바닥과 21개 랜드마크를 찾은 경우에만 선 후보 분석을 진행합니다.
       </p>
     </div>
   );
@@ -371,6 +414,9 @@ export function PalmResult({ palm, compact = false }) {
         </div>
       </div>
       <p style={{ margin: "0 0 12px", color: C.dim, fontSize: 11.5, lineHeight: 1.65 }}>{palm.qualityNote}</p>
+      <div style={{ margin: "0 0 10px", padding: "8px 10px", border: `1px solid ${C.목}`, color: C.목, fontSize: 10.5, letterSpacing: .4 }}>
+        손바닥 인식 완료 · {palm.hand.handedness} · 랜드마크 {palm.hand.landmarkCount}개 · 신뢰도 {palm.hand.confidence}%
+      </div>
       <div style={{ display: "grid", gap: 7 }}>
         {palm.lines.map((line) => (
           <div key={line.key} style={{ display: "grid", gridTemplateColumns: "68px 1fr auto", alignItems: "center", gap: 8, padding: "9px 10px", border: `1px solid ${C.line}`, background: "rgba(24,24,22,.35)" }}>
