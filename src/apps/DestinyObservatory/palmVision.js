@@ -60,6 +60,29 @@ function cleanLine(line) {
   };
 }
 
+function parseStructuredResponse(parts) {
+  const texts = (Array.isArray(parts) ? parts : [])
+    .filter((part) => typeof part?.text === "string" && part.text.trim() && part.thought !== true)
+    .map((part) => part.text.trim());
+  const attempts = [...texts].reverse();
+  if (texts.length > 1) attempts.push(texts.join("\n"));
+
+  for (const attempt of attempts) {
+    const unfenced = attempt
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+    const firstBrace = unfenced.indexOf("{");
+    const lastBrace = unfenced.lastIndexOf("}");
+    const candidates = [unfenced];
+    if (firstBrace >= 0 && lastBrace > firstBrace) candidates.push(unfenced.slice(firstBrace, lastBrace + 1));
+    for (const candidate of candidates) {
+      try { return JSON.parse(candidate); } catch { /* 다음 후보를 확인한다. */ }
+    }
+  }
+  throw new SyntaxError("structured palm response is not valid JSON");
+}
+
 export async function analyzePalmWithVision(imageDataUrl, geometry) {
   const image = stripDataUrl(imageDataUrl);
   const landmarkIndices = [0, 5, 9, 13, 17];
@@ -105,6 +128,7 @@ Rules:
         generationConfig: {
           temperature: 0.1,
           maxOutputTokens: 4096,
+          thinkingConfig: { thinkingBudget: 0 },
           responseMimeType: "application/json",
           responseSchema: RESPONSE_SCHEMA,
         },
@@ -116,12 +140,12 @@ Rules:
       throw new Error(`AI 손금 분석을 완료하지 못했습니다. (${response.status}${detail ? ` · ${detail.slice(0, 90)}` : ""})`);
     }
     const payload = await response.json();
-    const text = (payload.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("").trim();
-    if (!text) {
+    const parts = payload.candidates?.[0]?.content?.parts || [];
+    if (!parts.some((part) => typeof part?.text === "string" && part.text.trim() && part.thought !== true)) {
       const finishReason = payload.candidates?.[0]?.finishReason;
       throw new Error(`AI 손금 분석 결과가 비어 있습니다.${finishReason ? ` (${finishReason})` : ""} 다시 촬영해 주세요.`);
     }
-    const parsed = JSON.parse(text);
+    const parsed = parseStructuredResponse(parts);
     if (parsed.image_valid !== true) {
       throw new Error(parsed.rejection_reason || "AI가 손금선을 확실히 확인하지 못했습니다. 밝은 곳에서 다시 촬영해 주세요.");
     }
