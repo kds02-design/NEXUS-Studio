@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { C, OH_GLYPH } from "./shared";
-import { drawNormalizedHand, HAND_CONNECTIONS, recognizePalm } from "./handLandmarker";
+import { drawNormalizedHand, recognizePalm } from "./handLandmarker";
 import { analyzePalmWithVision } from "./palmVision";
 
 const STAGES = [
@@ -167,22 +167,42 @@ function refineVisionLine(visionLine, ridgeMap, maskPixels, width, height, geome
     geometry.landmarks[17].x - geometry.landmarks[5].x,
     geometry.landmarks[17].y - geometry.landmarks[5].y,
   ));
-  const searchRadius = clamp(Math.round(palmWidth * 0.018), 2, 6);
-  const offsets = Array.from({ length: searchRadius * 2 + 1 }, (_, index) => index - searchRadius);
-  const candidates = expected.map((point, pointIndex) => {
+  const samples = expected.map((point, pointIndex) => {
     const before = expected[Math.max(0, pointIndex - 1)];
     const after = expected[Math.min(expected.length - 1, pointIndex + 1)];
     const length = Math.max(1, Math.hypot(after.x - before.x, after.y - before.y));
-    const normal = { x: -(after.y - before.y) / length, y: (after.x - before.x) / length };
-    return offsets.map((offset) => {
-      const x = Math.round(point.x + normal.x * offset);
-      const y = Math.round(point.y + normal.y * offset);
-      const pixelIndex = y * width + x;
-      const valid = x >= 2 && x < width - 2 && y >= 2 && y < height - 2
-        && maskPixels[pixelIndex * 4 + 3] > 0 && pointInPolygon({ x, y }, analysisPolygon);
-      return { x, y, offset, response: valid ? ridgeMap[pixelIndex] - Math.abs(offset) * 0.45 : -1000 };
-    });
+    return { point, normal: { x: -(after.y - before.y) / length, y: (after.x - before.x) / length } };
   });
+  const responseAt = ({ point, normal }, offset) => {
+    const x = Math.round(point.x + normal.x * offset);
+    const y = Math.round(point.y + normal.y * offset);
+    if (x < 2 || x >= width - 2 || y < 2 || y >= height - 2) return null;
+    const pixelIndex = y * width + x;
+    if (maskPixels[pixelIndex * 4 + 3] === 0 || !pointInPolygon({ x, y }, analysisPolygon)) return null;
+    return { x, y, response: ridgeMap[pixelIndex] };
+  };
+
+  const globalRadius = clamp(Math.round(palmWidth * 0.06), 10, 36);
+  let globalOffset = 0;
+  let globalScore = -Infinity;
+  for (let offset = -globalRadius; offset <= globalRadius; offset += 2) {
+    const responses = samples.map((sample) => responseAt(sample, offset)).filter(Boolean);
+    if (responses.length < samples.length * 0.8) continue;
+    const average = responses.reduce((sum, candidate) => sum + candidate.response, 0) / responses.length;
+    const score = average - Math.abs(offset) * 0.1;
+    if (score > globalScore) { globalScore = score; globalOffset = offset; }
+  }
+
+  const fineRadius = clamp(Math.round(palmWidth * 0.024), 5, 14);
+  const offsets = Array.from({ length: fineRadius * 2 + 1 }, (_, index) => index - fineRadius);
+  const candidates = samples.map((sample) => offsets.map((offset) => {
+      const position = responseAt(sample, globalOffset + offset);
+      const x = position?.x ?? Math.round(sample.point.x + sample.normal.x * (globalOffset + offset));
+      const y = position?.y ?? Math.round(sample.point.y + sample.normal.y * (globalOffset + offset));
+      const pixelIndex = y * width + x;
+      const response = position ? ridgeMap[pixelIndex] - Math.abs(offset) * 0.32 : -1000;
+      return { x, y, offset, response };
+    }));
 
   const scores = candidates.map(() => new Float32Array(offsets.length));
   const parents = candidates.map(() => new Int16Array(offsets.length));
@@ -193,7 +213,7 @@ function refineVisionLine(visionLine, ridgeMap, maskPixels, width, height, geome
       let bestParent = 0;
       candidates[pointIndex - 1].forEach((previous, previousIndex) => {
         const jump = Math.abs(candidate.offset - previous.offset);
-        const score = scores[pointIndex - 1][previousIndex] + candidate.response - jump * 2.8 - Math.max(0, jump - 2) * 5;
+        const score = scores[pointIndex - 1][previousIndex] + candidate.response - jump * 2.1 - Math.max(0, jump - 3) * 4.5;
         if (score > bestScore) { bestScore = score; bestParent = previousIndex; }
       });
       scores[pointIndex][candidateIndex] = bestScore;
@@ -244,8 +264,8 @@ async function analyzePalmImage(file, onStage) {
       node.src = objectUrl;
     });
 
-    const width = 360;
-    const height = 450;
+    const width = 720;
+    const height = 900;
     const base = document.createElement("canvas");
     base.width = width;
     base.height = height;
@@ -254,7 +274,7 @@ async function analyzePalmImage(file, onStage) {
     const geometry = await recognizePalm(image, width, height);
     onStage?.(32, "손바닥 인식 완료 · 21개 관절점 정렬 중");
     drawNormalizedHand(context, image, geometry, width, height);
-    const previewUrl = base.toDataURL("image/jpeg", 0.9);
+    const previewUrl = base.toDataURL("image/jpeg", 0.91);
     geometry.analysisPolygon = expandPolygon(geometry.palmPolygon, 1.18, width, height);
 
     const maskCanvas = document.createElement("canvas");
@@ -291,7 +311,6 @@ async function analyzePalmImage(file, onStage) {
     overlay.width = width;
     overlay.height = height;
     const overlayContext = overlay.getContext("2d");
-    const overlayFrame = overlayContext.createImageData(width, height);
     const edgeMaps = {
       all: new Float32Array(width * height),
       horizontal: new Float32Array(width * height),
@@ -321,25 +340,8 @@ async function analyzePalmImage(file, onStage) {
         }
       }
     }
-    overlayContext.putImageData(overlayFrame, 0, 0);
     overlayContext.lineCap = "round";
     overlayContext.lineJoin = "round";
-    overlayContext.strokeStyle = "rgba(245,135,15,.48)";
-    overlayContext.lineWidth = 1.1;
-    HAND_CONNECTIONS.forEach(([from, to]) => {
-      const a = geometry.landmarks[from];
-      const b = geometry.landmarks[to];
-      overlayContext.beginPath();
-      overlayContext.moveTo(a.x, a.y);
-      overlayContext.lineTo(b.x, b.y);
-      overlayContext.stroke();
-    });
-    overlayContext.fillStyle = "rgba(233,228,214,.86)";
-    geometry.landmarks.forEach((point) => {
-      overlayContext.beginPath();
-      overlayContext.arc(point.x, point.y, 1.65, 0, Math.PI * 2);
-      overlayContext.fill();
-    });
 
     const total = (width - 2) * (height - 2);
     const edgeDensity = (edgeCount / total) * 100;
@@ -351,7 +353,7 @@ async function analyzePalmImage(file, onStage) {
     const quality = clamp(Math.round(resolution * 20 + brightnessScore * 15 + contrastScore * 20 + densityScore * 15 + geometry.confidence * 30));
 
     onStage?.(58, "Google AI가 실제 손금선을 식별 중");
-    const vision = await analyzePalmWithVision(previewUrl, geometry);
+    const vision = await analyzePalmWithVision(previewUrl, geometry, { width, height });
     onStage?.(78, "검출 좌표와 손바닥 영역 검증 중");
     const ridgeMap = buildRidgeMap(gray, maskPixels, edgeMaps, width, height);
     const metaByKey = Object.fromEntries(LINE_META.map((meta) => [meta.key, meta]));
@@ -377,7 +379,7 @@ async function analyzePalmImage(file, onStage) {
       }
       overlayContext.lineTo(points.at(-1).x, points.at(-1).y);
       overlayContext.strokeStyle = LINE_COLORS[line.key];
-      overlayContext.lineWidth = 1.8;
+      overlayContext.lineWidth = 3.2;
       overlayContext.globalAlpha = 0.84;
       overlayContext.shadowColor = LINE_COLORS[line.key];
       overlayContext.shadowBlur = 5;

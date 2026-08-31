@@ -83,17 +83,17 @@ function parseStructuredResponse(parts) {
   throw new SyntaxError("structured palm response is not valid JSON");
 }
 
-export async function analyzePalmWithVision(imageDataUrl, geometry) {
+export async function analyzePalmWithVision(imageDataUrl, geometry, imageSize = { width: 720, height: 900 }) {
   const image = stripDataUrl(imageDataUrl);
   const landmarkIndices = [0, 5, 9, 13, 17];
   const landmarkGuide = Object.fromEntries(landmarkIndices.map((index) => [index, {
-    x: Math.round(geometry.landmarks[index].x / 360 * 1000),
-    y: Math.round(geometry.landmarks[index].y / 450 * 1000),
+    x: Math.round(geometry.landmarks[index].x / imageSize.width * 1000),
+    y: Math.round(geometry.landmarks[index].y / imageSize.height * 1000),
   }]));
   const prompt = `Analyze the clean, normalized PALM photograph as a computer-vision tracing task.
 
 Image geometry:
-- Canvas is 360 x 450, fingers point upward and wrist points downward.
+- Image is a high-resolution normalized 4:5 palm crop (${imageSize.width} x ${imageSize.height}); fingers point upward and wrist points downward.
 - Return every point as x,y integers normalized from 0 to 1000 relative to the entire image.
 - Detected hand: ${geometry.handedness}.
 - Landmark guide (0 wrist, 5 index MCP, 9 middle MCP, 13 ring MCP, 17 little MCP): ${JSON.stringify(landmarkGuide)}
@@ -105,7 +105,7 @@ Trace only the CENTER of genuinely visible principal palm creases. Do not draw a
 - fate: optional central longitudinal crease from the wrist area toward the middle-finger direction. Mark detected=false when it is absent or ambiguous.
 
 Rules:
-- For each detected line return 8 to 18 ordered points that follow the same continuous visible crease.
+- For each detected line return 16 to 28 ordered points that follow the exact same continuous visible crease at pixel-level precision.
 - Never connect separate wrinkles, skin texture, shadows, finger joints, the hand outline, or background edges.
 - confidence is 0..1 for semantic identity; clarity is 0..100 for visual visibility.
 - If a principal line cannot be followed confidently, detected=false and points=[] instead of guessing.
