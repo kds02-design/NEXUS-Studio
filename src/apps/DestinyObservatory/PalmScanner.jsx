@@ -18,10 +18,10 @@ const LINE_META = [
 ];
 
 const LINE_TRACE_CONFIG = {
-  heart: { map: "horizontal", samples: 34, search: 0.12, anchor: 0.58 },
-  head: { map: "horizontal", samples: 34, search: 0.13, anchor: 0.52 },
-  life: { map: "all", samples: 36, search: 0.11, anchor: 0.53 },
-  fate: { map: "vertical", samples: 30, search: 0.1, anchor: 0.56 },
+  heart: { map: "horizontal", samples: 34, search: 0.075, anchor: 0.58 },
+  head: { map: "horizontal", samples: 34, search: 0.08, anchor: 0.7 },
+  life: { map: "all", samples: 36, search: 0.085, anchor: 0.48 },
+  fate: { map: "vertical", samples: 30, search: 0.07, anchor: 0.38 },
 };
 
 const LINE_COLORS = {
@@ -29,6 +29,13 @@ const LINE_COLORS = {
   head: "#4b89dc",
   life: "#55b89a",
   fate: "#e9e4d6",
+};
+
+const LINE_LABEL_LAYOUT = {
+  heart: { side: "before", top: -16 },
+  head: { side: "after", top: -30 },
+  life: { side: "after", top: -13 },
+  fate: { side: "after", top: 8 },
 };
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -118,6 +125,25 @@ function buildRidgeMap(gray, maskPixels, edgeMaps, width, height) {
   return ridge;
 }
 
+function smoothTrace(points, passes = 3) {
+  let smoothed = points.map((point) => ({ ...point }));
+  for (let pass = 0; pass < passes; pass += 1) {
+    smoothed = smoothed.map((point, index, source) => {
+      if (index === 0 || index === source.length - 1) return point;
+      const before = source[Math.max(0, index - 2)];
+      const previous = source[index - 1];
+      const next = source[index + 1];
+      const after = source[Math.min(source.length - 1, index + 2)];
+      return {
+        ...point,
+        x: before.x * 0.08 + previous.x * 0.22 + point.x * 0.4 + next.x * 0.22 + after.x * 0.08,
+        y: before.y * 0.08 + previous.y * 0.22 + point.y * 0.4 + next.y * 0.22 + after.y * 0.08,
+      };
+    });
+  }
+  return smoothed;
+}
+
 function tracePalmLine(key, ridgeMap, edgeMaps, maskPixels, width, height, geometry) {
   const config = LINE_TRACE_CONFIG[key];
   const wrist = geometry.landmarks[0];
@@ -166,7 +192,8 @@ function tracePalmLine(key, ridgeMap, edgeMaps, maskPixels, width, height, geome
       let bestScore = -Infinity;
       let bestParent = 0;
       candidates[pointIndex - 1].forEach((previous, previousIndex) => {
-        const continuityPenalty = Math.abs(candidate.offset - previous.offset) * 0.38;
+        const offsetJump = Math.abs(candidate.offset - previous.offset);
+        const continuityPenalty = offsetJump * 1.25 + Math.max(0, offsetJump - 4) * 3.5;
         const score = scores[pointIndex - 1][previousIndex] + candidate.response - continuityPenalty;
         if (score > bestScore) {
           bestScore = score;
@@ -190,13 +217,14 @@ function tracePalmLine(key, ridgeMap, edgeMaps, maskPixels, width, height, geome
   }
   const validPoints = traced.filter((point) => point.response > -100);
   const averageResponse = validPoints.reduce((sum, point) => sum + Math.max(0, point.response), 0) / Math.max(1, validPoints.length);
-  const anchorPoint = traced[Math.round((traced.length - 1) * config.anchor)];
+  const smoothed = smoothTrace(traced);
+  const anchorPoint = smoothed[Math.round((smoothed.length - 1) * config.anchor)];
   return {
     anchor: {
       x: Number(clamp((anchorPoint.x / width) * 100, 8, 92).toFixed(1)),
       y: Number(clamp((anchorPoint.y / height) * 100, 10, 90).toFixed(1)),
     },
-    path: traced.map((point) => ({
+    path: smoothed.map((point) => ({
       x: Number(((point.x / width) * 100).toFixed(2)),
       y: Number(((point.y / height) * 100).toFixed(2)),
     })),
@@ -338,15 +366,16 @@ async function analyzePalmImage(file) {
     lines.forEach((line) => {
       overlayContext.save();
       overlayContext.beginPath();
-      line.path.forEach((point, index) => {
-        const x = point.x / 100 * width;
-        const y = point.y / 100 * height;
-        if (index === 0) overlayContext.moveTo(x, y);
-        else overlayContext.lineTo(x, y);
-      });
+      const points = line.path.map((point) => ({ x: point.x / 100 * width, y: point.y / 100 * height }));
+      overlayContext.moveTo(points[0].x, points[0].y);
+      for (let index = 1; index < points.length - 1; index += 1) {
+        const midpoint = { x: (points[index].x + points[index + 1].x) / 2, y: (points[index].y + points[index + 1].y) / 2 };
+        overlayContext.quadraticCurveTo(points[index].x, points[index].y, midpoint.x, midpoint.y);
+      }
+      overlayContext.lineTo(points.at(-1).x, points.at(-1).y);
       overlayContext.strokeStyle = LINE_COLORS[line.key];
-      overlayContext.lineWidth = 2.35;
-      overlayContext.globalAlpha = 0.9;
+      overlayContext.lineWidth = 1.8;
+      overlayContext.globalAlpha = 0.84;
       overlayContext.shadowColor = LINE_COLORS[line.key];
       overlayContext.shadowBlur = 5;
       overlayContext.stroke();
@@ -370,7 +399,7 @@ async function analyzePalmImage(file) {
         : "그림자나 초점 때문에 선 검출이 약해요. 손바닥을 펴고 밝은 곳에서 다시 찍어보세요.";
 
     return {
-      version: 4,
+      version: 5,
       createdAt: Date.now(),
       previewUrl: base.toDataURL("image/jpeg", 0.82),
       overlayUrl: overlay.toDataURL("image/png"),
@@ -504,11 +533,11 @@ export function PalmScanner({ value, onChange }) {
             {!busy && analysis.lines.map((line) => {
               const left = line.anchor?.x ?? 50;
               const top = line.anchor?.y ?? 50;
-              const labelToLeft = left > 64;
+              const labelLayout = LINE_LABEL_LAYOUT[line.key] || { side: left > 64 ? "before" : "after", top: -10 };
               return (
                 <div key={line.key} style={{ position: "absolute", left: `${left}%`, top: `${top}%`, width: 0, height: 0 }}>
                   <span className="palm-point keep-round" style={{ position: "absolute", left: -4, top: -4, width: 8, height: 8, background: C[line.element], boxShadow: `0 0 10px ${C[line.element]}` }} />
-                  <span style={{ position: "absolute", top: -10, ...(labelToLeft ? { right: 10 } : { left: 10 }), whiteSpace: "nowrap", padding: "3px 6px", fontSize: 9, letterSpacing: 1, color: C.ink, background: "rgba(12,12,11,.78)", border: `1px solid ${C[line.element]}` }}>{line.name}</span>
+                  <span style={{ position: "absolute", top: labelLayout.top, ...(labelLayout.side === "before" ? { right: 10 } : { left: 10 }), whiteSpace: "nowrap", padding: "3px 6px", fontSize: 9, letterSpacing: 1, color: C.ink, background: "rgba(12,12,11,.84)", border: `1px solid ${C[line.element]}` }}>{line.name}</span>
                 </div>
               );
             })}
