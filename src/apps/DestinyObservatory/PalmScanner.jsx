@@ -114,6 +114,17 @@ function pointInPolygon(point, polygon) {
   return inside;
 }
 
+function expandPolygon(polygon, scale, width, height) {
+  const center = polygon.reduce((sum, point) => ({
+    x: sum.x + point.x / polygon.length,
+    y: sum.y + point.y / polygon.length,
+  }), { x: 0, y: 0 });
+  return polygon.map((point) => ({
+    x: clamp(center.x + (point.x - center.x) * scale, 0, width),
+    y: clamp(center.y + (point.y - center.y) * scale, 0, height),
+  }));
+}
+
 function resamplePolyline(source, count = 32) {
   if (source.length < 2) return source;
   const lengths = [0];
@@ -135,11 +146,23 @@ function resamplePolyline(source, count = 32) {
 }
 
 function refineVisionLine(visionLine, ridgeMap, maskPixels, width, height, geometry) {
+  const analysisPolygon = geometry.analysisPolygon || geometry.palmPolygon;
   const source = visionLine.points.map((point) => ({ x: point.x / 1000 * width, y: point.y / 1000 * height }));
-  const insideRatio = source.filter((point) => pointInPolygon(point, geometry.palmPolygon)).length / source.length;
-  if (insideRatio < 0.72) return null;
+  const insideRatio = source.filter((point) => pointInPolygon(point, analysisPolygon)).length / source.length;
+  if (insideRatio < 0.58) return null;
 
-  const expected = resamplePolyline(source, 32);
+  const runs = source.reduce((result, point) => {
+    if (pointInPolygon(point, analysisPolygon)) {
+      if (!result.length || result.at(-1).closed) result.push({ points: [], closed: false });
+      result.at(-1).points.push(point);
+    } else if (result.length) {
+      result.at(-1).closed = true;
+    }
+    return result;
+  }, []);
+  const visibleSource = runs.sort((a, b) => b.points.length - a.points.length)[0]?.points || [];
+  if (visibleSource.length < 4) return null;
+  const expected = resamplePolyline(visibleSource, 32);
   const palmWidth = Math.max(1, geometry.palmBounds?.width || Math.hypot(
     geometry.landmarks[17].x - geometry.landmarks[5].x,
     geometry.landmarks[17].y - geometry.landmarks[5].y,
@@ -156,7 +179,7 @@ function refineVisionLine(visionLine, ridgeMap, maskPixels, width, height, geome
       const y = Math.round(point.y + normal.y * offset);
       const pixelIndex = y * width + x;
       const valid = x >= 2 && x < width - 2 && y >= 2 && y < height - 2
-        && maskPixels[pixelIndex * 4 + 3] > 0 && pointInPolygon({ x, y }, geometry.palmPolygon);
+        && maskPixels[pixelIndex * 4 + 3] > 0 && pointInPolygon({ x, y }, analysisPolygon);
       return { x, y, offset, response: valid ? ridgeMap[pixelIndex] - Math.abs(offset) * 0.45 : -1000 };
     });
   });
@@ -232,13 +255,14 @@ async function analyzePalmImage(file, onStage) {
     onStage?.(32, "손바닥 인식 완료 · 21개 관절점 정렬 중");
     drawNormalizedHand(context, image, geometry, width, height);
     const previewUrl = base.toDataURL("image/jpeg", 0.9);
+    geometry.analysisPolygon = expandPolygon(geometry.palmPolygon, 1.18, width, height);
 
     const maskCanvas = document.createElement("canvas");
     maskCanvas.width = width;
     maskCanvas.height = height;
     const maskContext = maskCanvas.getContext("2d");
     maskContext.beginPath();
-    geometry.palmPolygon.forEach((point, index) => {
+    geometry.analysisPolygon.forEach((point, index) => {
       if (index === 0) maskContext.moveTo(point.x, point.y);
       else maskContext.lineTo(point.x, point.y);
     });
@@ -338,8 +362,8 @@ async function analyzePalmImage(file, onStage) {
       })
       .filter(Boolean);
     const requiredCount = lines.filter((line) => ["heart", "head", "life"].includes(line.key)).length;
-    if (requiredCount < 2) {
-      throw new Error("실제 손바닥 영역 안에서 주요 손금선을 충분히 확인하지 못했습니다. 손바닥을 정면으로 펴고 다시 찍어주세요.");
+    if (requiredCount < 1) {
+      throw new Error("실제 손바닥 영역 안에서 확실한 주요 손금선을 확인하지 못했습니다. 손바닥을 정면으로 펴고 다시 찍어주세요.");
     }
 
     lines.forEach((line) => {

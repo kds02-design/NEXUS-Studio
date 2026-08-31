@@ -86,7 +86,8 @@ Rules:
 - Never connect separate wrinkles, skin texture, shadows, finger joints, the hand outline, or background edges.
 - confidence is 0..1 for semantic identity; clarity is 0..100 for visual visibility.
 - If a principal line cannot be followed confidently, detected=false and points=[] instead of guessing.
-- image_valid=false if blur, glare, crop, overlays, or shadows prevent reliable tracing.
+- image_valid=true when at least one principal line can be traced reliably, even if other lines are unclear or partially cropped.
+- image_valid=false only when no principal line can be traced because blur, glare, crop, overlays, or shadows are too severe.
 - This is visual localization only, not medical diagnosis and not a fortune interpretation.`;
 
   const controller = new AbortController();
@@ -116,7 +117,10 @@ Rules:
     }
     const payload = await response.json();
     const text = (payload.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("").trim();
-    if (!text) throw new Error("AI 손금 분석 결과가 비어 있습니다. 다시 촬영해 주세요.");
+    if (!text) {
+      const finishReason = payload.candidates?.[0]?.finishReason;
+      throw new Error(`AI 손금 분석 결과가 비어 있습니다.${finishReason ? ` (${finishReason})` : ""} 다시 촬영해 주세요.`);
+    }
     const parsed = JSON.parse(text);
     if (parsed.image_valid !== true) {
       throw new Error(parsed.rejection_reason || "AI가 손금선을 확실히 확인하지 못했습니다. 밝은 곳에서 다시 촬영해 주세요.");
@@ -127,11 +131,11 @@ Rules:
       .filter((line) => {
         if (!["heart", "head", "life", "fate"].includes(line.key) || keys.has(line.key)) return false;
         keys.add(line.key);
-        return line.detected && line.confidence >= 0.52 && line.points.length >= 6;
+        return line.detected && line.confidence >= 0.42 && line.points.length >= 6;
       });
     const requiredCount = lines.filter((line) => ["heart", "head", "life"].includes(line.key)).length;
-    if (requiredCount < 2) {
-      throw new Error("AI가 주요 손금선을 충분히 구분하지 못했습니다. 손바닥에 초점을 맞춰 밝은 곳에서 다시 찍어주세요.");
+    if (requiredCount < 1) {
+      throw new Error("AI가 확실한 주요 손금선을 구분하지 못했습니다. 손바닥에 초점을 맞춰 밝은 곳에서 다시 찍어주세요.");
     }
     return { model: PALM_VISION_MODEL, lines };
   } catch (error) {
