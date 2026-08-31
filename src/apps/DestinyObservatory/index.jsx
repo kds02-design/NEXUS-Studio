@@ -7,6 +7,7 @@ import {
 import { C, OH_GLYPH, OH_EASY, LUCK_COLOR, inp, buildChartBrief } from "./shared";
 import { Panel, Eyebrow } from "./ui";
 import { shareResult, hasKakaoKey } from "../../lib/kakaoShare";
+import { PalmResult, PalmScanner } from "./PalmScanner";
 
 // AI 섹션 4종 — firebase/AuthContext 의존이라 lazy 분리. 독립 PWA(destiny.html)에선 로드되지 않음.
 const OracleSection = lazy(() => import("./AiSections").then((m) => ({ default: m.OracleSection })));
@@ -448,6 +449,7 @@ export default function App({ standalone = false }) {
   const [petCount, setPetCount] = useState("");
   const [hobbies, setHobbies] = useState([]);
   const [art, setArt] = useState("");
+  const [palm, setPalm] = useState(null);
   const [phase, setPhase] = useState("input");
   const [R, setR] = useState(null);
   const [err, setErr] = useState("");
@@ -466,7 +468,7 @@ export default function App({ standalone = false }) {
     const saju = computeSaju(y, m, d, hour);
     const daewoon = computeDaewoon(saju, gender, y, m, d);
     const F = fuse({ mbti, blood, zodiac, saju, env, gender, birth, hour });
-    setR({ y, m, d, zodiac, saju, daewoon, F, hour, pet, rel, petType, petCount, hobbies, art, name });
+    setR({ y, m, d, zodiac, saju, daewoon, F, hour, pet, rel, petType, petCount, hobbies, art, name, palm });
     setPhase("reading");
     setTimeout(() => setPhase("result"), 1150);
   };
@@ -605,13 +607,18 @@ export default function App({ standalone = false }) {
               <p style={{ color: C.dim, fontSize: 11, margin: "10px 0 0" }}>취미·공간의 기운이 용신을 채우는지 봐서, 생활 개운 조언을 드려요.</p>
             </Panel>
 
+            <Panel>
+              <Eyebrow>07 · 손금 관측 (선택)</Eyebrow>
+              <PalmScanner value={palm} onChange={setPalm} />
+            </Panel>
+
             {err && <p style={{ textAlign: "center", color: C.goldSoft, fontSize: 12.5, margin: "0 0 -4px", fontWeight: 600 }}>{err}</p>}
             <button onClick={observe} style={{ ...btnGold, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span className="destiny-display" style={{ fontSize: 19 }}>운명 관측하기</span>
               <span style={{ fontSize: 22, lineHeight: 1 }}>→</span>
             </button>
             <p style={{ textAlign: "center", color: C.dim, fontSize: 11, margin: 0, lineHeight: 1.6 }}>
-              ※ 재미로 보는 콘텐츠입니다. 사주는 절기·간지 규칙 기반 간이 계산이며 만세력 정밀도와는 차이가 있습니다.
+              ※ 재미로 보는 콘텐츠입니다. 사주는 간이 계산이며, 손금은 사진에서 검출한 선 후보를 전통 해석에 연결한 베타 기능입니다.
             </p>
           </div>
         )}
@@ -767,6 +774,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
     `[ 부족한 에너지를 채워주는 유형 ]\n${PERSON[F.yong].t}\n이런 MBTI: ${PERSON_MBTI[F.yong].join(", ")}\n\n` +
     ((R.pet || R.rel || hasLife) ? `[ 반려동물·관계·생활 ]\n${petLine ? "반려동물 — " + petLine + "\n" : ""}${relLine ? "관계 — " + relLine + "\n" : ""}${lifeLine ? "취미·공간 — " + lifeLine + "\n" : ""}\n` : "") +
     (R.name ? `[ 이름 풀이 ]\n${nameLine}\n\n` : "") +
+    (R.palm ? `[ 손금 관측 · 베타 ]\n사진 품질 ${R.palm.quality} · 가장 선명한 선 ${R.palm.strongest.name}(${R.palm.strongest.level})\n현재 관측: 활력 ${R.palm.currentState.energy} / 집중 ${R.palm.currentState.focus} / 안정 ${R.palm.currentState.stability}\n\n` : "") +
     `[ 인생 12영역 요약 ]\n가장 잘 풀리는 영역: ${bestGung.dom}(${bestGung.t}) · 신경 쓸 영역: ${warnGung.dom}(${warnGung.t})\n\n` +
     `[ 삼재 ]\n${sj.inSamjae ? `지금 삼재 기간(${sj.years[0]}~${sj.years[2]}년, 올해는 ${sj.phase})` : `지금은 삼재 아님 · 다음 삼재 ${sj.years[0]}~${sj.years[2]}년`}\n\n` +
     `[ 오늘의 타로 ]\n${todayCard[1]} (${todayCard[0]}) · ${todayCard[2]}\n${todayCard[3]}\n\n` +
@@ -832,6 +840,24 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
         </div>
         <p style={{ fontSize: 12.5, color: C.dim, margin: "10px 0 0", lineHeight: 1.6 }}>{F.synergy.d}</p>
       </Panel>
+
+      {R.palm && (
+        <Panel>
+          <Eyebrow>현재 손금 관측 · 촬영 이미지 기반</Eyebrow>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ position: "relative", width: "100%", maxWidth: 260, margin: "0 auto", aspectRatio: "4 / 5", overflow: "hidden", border: `1px solid ${C.line}`, background: C.bg2 }}>
+              <img src={R.palm.previewUrl} alt="관측한 손바닥" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "saturate(.75) brightness(.82)" }} />
+              <img src={R.palm.overlayUrl} alt="검출된 손금선" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", mixBlendMode: "screen", opacity: .7 }} />
+            </div>
+            <div>
+              <PalmResult palm={R.palm} />
+            </div>
+          </div>
+          <p style={{ margin: "12px 0 0", color: C.dim, fontSize: 10.5, lineHeight: 1.6 }}>
+            손금 결과는 타고난 오행 점수와 섞지 않고, 촬영 당시의 현재 관측 레이어로 분리해 보여줍니다.
+          </p>
+        </Panel>
+      )}
 
       <Panel>
         <Eyebrow>네 기운의 오행 환산</Eyebrow>
