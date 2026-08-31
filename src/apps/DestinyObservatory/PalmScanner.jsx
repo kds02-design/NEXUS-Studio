@@ -16,6 +16,13 @@ const LINE_META = [
   { key: "fate", name: "운명선", element: "금", hint: "일과 방향성의 흐름" },
 ];
 
+const LINE_ANCHOR_CONFIG = {
+  heart: { map: "horizontal", fallback: [50, 31], regions: [[0.18, 0.82, 0.23, 0.39]] },
+  head: { map: "horizontal", fallback: [50, 46], regions: [[0.18, 0.82, 0.38, 0.56]] },
+  life: { map: "all", fallback: [35, 61], regions: [[0.2, 0.48, 0.43, 0.78], [0.52, 0.8, 0.43, 0.78]] },
+  fate: { map: "vertical", fallback: [50, 67], regions: [[0.38, 0.62, 0.48, 0.83]] },
+};
+
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 
@@ -33,6 +40,40 @@ function buildLine(meta, score) {
       ? `${meta.hint}이 무난하고 균형 있게 보여요.`
       : `${meta.hint}이 가늘고 세심하게 나타나요.`;
   return { ...meta, score, level, tone };
+}
+
+function findLineAnchor(key, edgeMaps, width, height) {
+  const config = LINE_ANCHOR_CONFIG[key];
+  const source = edgeMaps[config.map];
+  let best = null;
+
+  for (const [x0, x1, y0, y1] of config.regions) {
+    const minX = Math.round(width * x0);
+    const maxX = Math.round(width * x1);
+    const minY = Math.round(height * y0);
+    const maxY = Math.round(height * y1);
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+
+    for (let y = minY; y <= maxY; y += 4) {
+      for (let x = minX; x <= maxX; x += 4) {
+        let local = 0;
+        for (let yy = -6; yy <= 6; yy += 3) {
+          for (let xx = -6; xx <= 6; xx += 3) local += source[(y + yy) * width + x + xx] || 0;
+        }
+        const dx = Math.abs(x - centerX) / Math.max(1, maxX - minX);
+        const dy = Math.abs(y - centerY) / Math.max(1, maxY - minY);
+        const score = local * (1 - (dx + dy) * 0.12);
+        if (!best || score > best.score) best = { x, y, score };
+      }
+    }
+  }
+
+  if (!best || best.score < 1) return { x: config.fallback[0], y: config.fallback[1] };
+  return {
+    x: Number(clamp((best.x / width) * 100, 8, 92).toFixed(1)),
+    y: Number(clamp((best.y / height) * 100, 10, 90).toFixed(1)),
+  };
 }
 
 async function analyzePalmImage(file) {
@@ -80,6 +121,11 @@ async function analyzePalmImage(file) {
     overlay.height = height;
     const overlayContext = overlay.getContext("2d");
     const overlayFrame = overlayContext.createImageData(width, height);
+    const edgeMaps = {
+      all: new Float32Array(width * height),
+      horizontal: new Float32Array(width * height),
+      vertical: new Float32Array(width * height),
+    };
     let edgeCount = 0;
     let centralEdgeCount = 0;
 
@@ -91,6 +137,10 @@ async function analyzePalmImage(file) {
         const gy = -at(y - 1, x - 1) - 2 * at(y - 1, x) - at(y - 1, x + 1)
           + at(y + 1, x - 1) + 2 * at(y + 1, x) + at(y + 1, x + 1);
         const magnitude = Math.sqrt(gx * gx + gy * gy);
+        const pixelIndex = y * width + x;
+        edgeMaps.all[pixelIndex] = magnitude;
+        edgeMaps.horizontal[pixelIndex] = Math.abs(gy);
+        edgeMaps.vertical[pixelIndex] = Math.abs(gx);
         if (magnitude > 70) {
           edgeCount += 1;
           if (x > width * 0.16 && x < width * 0.84 && y > height * 0.12 && y < height * 0.88) centralEdgeCount += 1;
@@ -117,12 +167,11 @@ async function analyzePalmImage(file) {
     const headScore = clamp(Math.round(50 + (155 - Math.abs(145 - brightness)) * 0.1 + edgeDensity * 0.8));
     const lifeScore = clamp(Math.round(42 + resolution * 22 + centralDensity * 1.5));
     const fateScore = clamp(Math.round(38 + contrast * 0.38 + edgeDensity * 1.25));
-    const lines = LINE_META.map((meta) => buildLine(meta, {
-      heart: heartScore,
-      head: headScore,
-      life: lifeScore,
-      fate: fateScore,
-    }[meta.key]));
+    const lineScores = { heart: heartScore, head: headScore, life: lifeScore, fate: fateScore };
+    const lines = LINE_META.map((meta) => ({
+      ...buildLine(meta, lineScores[meta.key]),
+      anchor: findLineAnchor(meta.key, edgeMaps, width, height),
+    }));
 
     const currentState = {
       energy: clamp(Math.round(lifeScore * 0.72 + brightnessScore * 28)),
@@ -138,7 +187,7 @@ async function analyzePalmImage(file) {
         : "그림자나 초점 때문에 선 검출이 약해요. 손바닥을 펴고 밝은 곳에서 다시 찍어보세요.";
 
     return {
-      version: 1,
+      version: 2,
       createdAt: Date.now(),
       previewUrl: base.toDataURL("image/jpeg", 0.82),
       overlayUrl: overlay.toDataURL("image/png"),
@@ -258,18 +307,19 @@ export function PalmScanner({ value, onChange }) {
       {analysis && (
         <>
           <div style={{ position: "relative", width: "100%", aspectRatio: "4 / 5", overflow: "hidden", border: `1px solid ${busy ? C.gold : C.line}`, background: "#0c0c0b" }}>
-            <img src={analysis.previewUrl} alt="분석할 손바닥" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", filter: busy ? "saturate(.7) contrast(1.06) brightness(.78)" : "saturate(.82) contrast(1.04) brightness(.86)" }} />
-            <img src={analysis.overlayUrl} alt="검출된 손바닥 선" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: busy ? 0.72 : 0.58, mixBlendMode: "screen" }} />
+            <img src={analysis.previewUrl} alt="분석할 손바닥" style={{ width: "100%", height: "100%", objectFit: "fill", display: "block", filter: busy ? "saturate(.7) contrast(1.06) brightness(.78)" : "saturate(.82) contrast(1.04) brightness(.86)" }} />
+            <img src={analysis.overlayUrl} alt="검출된 손바닥 선" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", display: "block", opacity: busy ? 0.72 : 0.58, mixBlendMode: "screen", pointerEvents: "none" }} />
             <div className="palm-grid" aria-hidden style={{ position: "absolute", inset: 0, backgroundImage: `linear-gradient(${C.line} 1px,transparent 1px),linear-gradient(90deg,${C.line} 1px,transparent 1px)`, backgroundSize: "32px 32px" }} />
             {busy && <div className="palm-scan-line" aria-hidden style={{ position: "absolute", left: 0, right: 0, top: "5%", height: 2, background: C.gold, boxShadow: `0 0 8px ${C.gold},0 0 24px ${C.goldSoft}` }} />}
             <div aria-hidden style={{ position: "absolute", inset: 12, border: `1px solid rgba(245,135,15,.5)`, boxShadow: "inset 0 0 34px rgba(245,135,15,.06)" }} />
-            {!busy && analysis.lines.map((line, index) => {
-              const positions = [[22, 30], [67, 42], [24, 63], [58, 72]];
-              const [left, top] = positions[index];
+            {!busy && analysis.lines.map((line) => {
+              const left = line.anchor?.x ?? 50;
+              const top = line.anchor?.y ?? 50;
+              const labelToLeft = left > 64;
               return (
-                <div key={line.key} style={{ position: "absolute", left: `${left}%`, top: `${top}%`, transform: "translate(-50%,-50%)", display: "flex", alignItems: "center", gap: 5 }}>
-                  <span className="palm-point keep-round" style={{ width: 8, height: 8, background: C[line.element], boxShadow: `0 0 10px ${C[line.element]}` }} />
-                  <span style={{ padding: "3px 6px", fontSize: 9, letterSpacing: 1, color: C.ink, background: "rgba(12,12,11,.78)", border: `1px solid ${C[line.element]}` }}>{line.name}</span>
+                <div key={line.key} style={{ position: "absolute", left: `${left}%`, top: `${top}%`, width: 0, height: 0 }}>
+                  <span className="palm-point keep-round" style={{ position: "absolute", left: -4, top: -4, width: 8, height: 8, background: C[line.element], boxShadow: `0 0 10px ${C[line.element]}` }} />
+                  <span style={{ position: "absolute", top: -10, ...(labelToLeft ? { right: 10 } : { left: 10 }), whiteSpace: "nowrap", padding: "3px 6px", fontSize: 9, letterSpacing: 1, color: C.ink, background: "rgba(12,12,11,.78)", border: `1px solid ${C[line.element]}` }}>{line.name}</span>
                 </div>
               );
             })}
@@ -341,4 +391,3 @@ export function PalmResult({ palm, compact = false }) {
     </div>
   );
 }
-

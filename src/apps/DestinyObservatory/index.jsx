@@ -846,8 +846,8 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
           <Eyebrow>현재 손금 관측 · 촬영 이미지 기반</Eyebrow>
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ position: "relative", width: "100%", maxWidth: 260, margin: "0 auto", aspectRatio: "4 / 5", overflow: "hidden", border: `1px solid ${C.line}`, background: C.bg2 }}>
-              <img src={R.palm.previewUrl} alt="관측한 손바닥" style={{ width: "100%", height: "100%", objectFit: "cover", filter: "saturate(.75) brightness(.82)" }} />
-              <img src={R.palm.overlayUrl} alt="검출된 손금선" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", mixBlendMode: "screen", opacity: .7 }} />
+              <img src={R.palm.previewUrl} alt="관측한 손바닥" style={{ width: "100%", height: "100%", objectFit: "fill", display: "block", filter: "saturate(.75) brightness(.82)" }} />
+              <img src={R.palm.overlayUrl} alt="검출된 손금선" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill", display: "block", mixBlendMode: "screen", opacity: .7, pointerEvents: "none" }} />
             </div>
             <div>
               <PalmResult palm={R.palm} />
