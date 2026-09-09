@@ -1,212 +1,129 @@
-// Marching Squares + Catmull-Rom bezier fitting → SVG path.
-// 원본 VECTORIZER 알고리즘을 그대로 옮긴 순수 JS 함수. React 의존성 없음.
+// Vector Forge 엔진 — potrace(wasm) 기반 비트맵 → SVG 변환. (브라우저 전용 래퍼)
 //
-// vectorize(canvas, opts, onProgress) → { svg, stats: { outerN, holeN, totalPts, sizeKB } }
-//   onProgress(pct, msg) — 진행률(0–100) + 단계 메시지 콜백 (선택)
+// 파이프라인: 원본 해상도 유지 → (선택) 미세 블러 → 휘도 이진화(수동/Otsu 자동) → potrace 추적
+//   → 절대 px 좌표 정규화 → 단일 <path fill-rule="evenodd"> SVG 조립 + 통계.
+//
+// 순수 로직(이진화·좌표 정규화·SVG 조립·프리셋)은 lib/vectorCore.js 에 있고 Claude 스킬(nexus-vector-forge) 과 공유한다.
+// 예전 엔진(Marching Squares + Catmull-Rom 보간)은 vectorizeLegacy.js 에 비교용으로 남겨둠.
+// potrace 는 코너 검출(alphamax) 과 최소자승 베지어 피팅(opttolerance) 이 분리된 별도 단계라
+// Illustrator Image Trace(흑백 로고 모드) 와 같은 계열의 결과를 낸다.
+//
+// 공개 API
+//   vectorize(canvas, opts, onProgress) → Promise<{ svg, paths, stats }>
+//   binarize(canvas, opts)              → { imageData, threshold, inkRatio, mask }   (미리보기·QA 용)
+//   tracePaths(imageData, potraceOpts)  → potrace 원시 출력 (디버깅용)
 
-export function vectorize(canvas, opts, onProgress = () => {}) {
-  const { threshold = 128, blur = 0.5, alpha = 1.0, optimize = 0.2, turd = 8, invert = false, fg = '#000000', bg = '#ffffff' } = opts;
-  const W = canvas.width;
-  const H = canvas.height;
-  const tNorm = threshold / 255;
+import { potrace, init as initPotrace } from 'esm-potrace-wasm';
+import { vectorizeLegacy } from './vectorizeLegacy';
+import {
+  DEFAULT_OPTIONS, PRESETS, REFINE_LEVELS, otsuThreshold, binarizeRGBA, maskToRGBA, normalizePotracePath, buildSvg, refinePath,
+} from '../../../lib/vectorCore';
 
-  onProgress(5, '이미지 분석 중...');
+export { DEFAULT_OPTIONS, PRESETS, REFINE_LEVELS, otsuThreshold };
 
-  // 1) blur 적용 후 휘도 추출
-  const tmpC = document.createElement('canvas');
-  tmpC.width = W; tmpC.height = H;
-  const tc = tmpC.getContext('2d');
+export const ENGINES = [
+  { id: 'potrace', label: 'Potrace', desc: '코너 검출 + 베지어 피팅 (권장)' },
+  { id: 'legacy',  label: 'Legacy',  desc: 'Marching Squares (이전 엔진, 비교용)' },
+];
+
+// 최대 처리 변(px). 이 이상은 비율 유지 다운스케일 — 메모리 가드. 4096 이면 타이틀 2K·4K 모두 원본 그대로.
+export const MAX_EDGE = 4096;
+
+let initPromise = null;
+export function ensurePotrace() {
+  if (!initPromise) initPromise = initPotrace();
+  return initPromise;
+}
+
+// 캔버스 → 이진 ImageData. blur 는 이진화 전 미세 블러(계단 노이즈 완화용, 기본 0).
+export function binarize(canvas, opts = {}) {
+  const { blur = 0 } = opts;
+  const W = canvas.width; const H = canvas.height;
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  const tc = tmp.getContext('2d', { willReadFrequently: true });
   if (blur > 0) tc.filter = `blur(${blur}px)`;
   tc.drawImage(canvas, 0, 0);
-  const data = tc.getImageData(0, 0, W, H).data;
+  const src = tc.getImageData(0, 0, W, H).data;
+  const { mask, threshold, inkRatio } = binarizeRGBA(src, W, H, opts);
+  const out = new ImageData(maskToRGBA(mask, W, H), W, H);
+  return { imageData: out, threshold, inkRatio, mask };
+}
 
-  const field = new Float32Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    field[i] = (data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114) / 255;
+// 저수준: 이진 ImageData → potrace 원시 패스 배열 (pathonly) 또는 전체 SVG (pathonly=false). QA·디버깅용 공개.
+export async function tracePaths(imageData, potraceOpts = {}) {
+  await ensurePotrace();
+  return potrace(imageData, { pathonly: true, extractcolors: false, turdsize: 2, turnpolicy: 4, alphamax: 1, opticurve: 1, opttolerance: 0.2, ...potraceOpts });
+}
+
+// 메인 진입점. canvas 는 원본 해상도(MAX_EDGE 이내) 그대로.
+export async function vectorize(canvas, opts = {}, onProgress = () => {}) {
+  const o = { ...DEFAULT_OPTIONS, ...opts };
+  const W = canvas.width; const H = canvas.height;
+  if (!W || !H) throw new Error('빈 캔버스');
+
+  if (o.engine === 'legacy') {
+    onProgress(5, '레거시 엔진…');
+    const r = vectorizeLegacy(canvas, {
+      threshold: o.threshold, blur: o.blur, alpha: o.alphaMax, optimize: o.optTolerance, turd: Math.max(1, Math.round(Math.sqrt(o.turdSize * 2))),
+      invert: o.invert, fg: o.fg, bg: o.bg,
+    }, onProgress);
+    return { svg: r.svg, paths: [], stats: { ...r.stats, width: W, height: H, threshold: o.threshold, inkRatio: 0, engine: 'legacy' } };
   }
 
-  onProgress(20, '이진화...');
+  onProgress(5, 'potrace 초기화…');
+  await ensurePotrace();
 
-  const ins = (v) => (invert ? v > tNorm : v < tNorm);
+  onProgress(15, '이진화…');
+  const { imageData, threshold, inkRatio } = binarize(canvas, o);
 
-  // Marching squares 코드별 교차 엣지 매핑 (4비트)
-  const MS = [
-    null, [[3, 2]], [[2, 1]], [[3, 1]],
-    [[1, 0]], [[3, 0], [1, 2]], [[2, 0]], [[3, 0]],
-    [[0, 3]], [[0, 2]], [[0, 1], [2, 3]], [[0, 1]],
-    [[1, 3]], [[1, 2]], [[2, 3]], null,
-  ];
-
-  const lerp = (x0, y0, v0, x1, y1, v1) => {
-    const d = v1 - v0;
-    if (Math.abs(d) < 1e-9) return [(x0 + x1) / 2, (y0 + y1) / 2];
-    const k = (tNorm - v0) / d;
-    return [x0 + k * (x1 - x0), y0 + k * (y1 - y0)];
-  };
-
-  onProgress(30, '윤곽선 추출...');
-
-  const segs = [];
-  for (let cy = 0; cy < H - 1; cy++) {
-    for (let cx = 0; cx < W - 1; cx++) {
-      const tl = field[cy * W + cx];
-      const tr = field[cy * W + cx + 1];
-      const bl = field[(cy + 1) * W + cx];
-      const br = field[(cy + 1) * W + cx + 1];
-      const code = (ins(tl) ? 8 : 0) | (ins(tr) ? 4 : 0) | (ins(br) ? 2 : 0) | (ins(bl) ? 1 : 0);
-      const edges = MS[code];
-      if (!edges) continue;
-      const ep = [
-        lerp(cx, cy, tl, cx + 1, cy, tr),
-        lerp(cx + 1, cy, tr, cx + 1, cy + 1, br),
-        lerp(cx + 1, cy + 1, br, cx, cy + 1, bl),
-        lerp(cx, cy + 1, bl, cx, cy, tl),
-      ];
-      for (let p = 0; p < edges.length; p++) {
-        segs.push([ep[edges[p][0]], ep[edges[p][1]]]);
-      }
-    }
-  }
-
-  onProgress(50, '패스 연결...');
-
-  // 인접 세그먼트 → 체인으로 연결
-  const K = (pt) => `${Math.round(pt[0] * 8)}_${Math.round(pt[1] * 8)}`;
-  const adj = {};
-  for (let s = 0; s < segs.length; s++) {
-    const k0 = K(segs[s][0]);
-    const k1 = K(segs[s][1]);
-    if (!adj[k0]) adj[k0] = []; adj[k0].push([s, 0]);
-    if (!adj[k1]) adj[k1] = []; adj[k1].push([s, 1]);
-  }
-  const used = new Uint8Array(segs.length);
-  const polys = [];
-  for (let s = 0; s < segs.length; s++) {
-    if (used[s]) continue;
-    used[s] = 1;
-    const chain = [segs[s][0], segs[s][1]];
-    for (let go = true; go;) {
-      go = false;
-      const cd = adj[K(chain[chain.length - 1])];
-      if (cd) for (let c = 0; c < cd.length; c++) {
-        const si = cd[c][0];
-        if (used[si]) continue;
-        used[si] = 1;
-        chain.push(cd[c][1] === 0 ? segs[si][1] : segs[si][0]);
-        go = true; break;
-      }
-    }
-    for (let go2 = true; go2;) {
-      go2 = false;
-      const cd2 = adj[K(chain[0])];
-      if (cd2) for (let c = 0; c < cd2.length; c++) {
-        const si2 = cd2[c][0];
-        if (used[si2]) continue;
-        used[si2] = 1;
-        chain.unshift(cd2[c][1] === 0 ? segs[si2][1] : segs[si2][0]);
-        go2 = true; break;
-      }
-    }
-    if (chain.length > 4) polys.push(chain);
-  }
-
-  onProgress(65, '노이즈 제거...');
-
-  const polyArea = (pts) => {
-    let a = 0; const n = pts.length;
-    for (let i = 0; i < n; i++) { const j = (i + 1) % n; a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]; }
-    return Math.abs(a) / 2;
-  };
-  const signedArea = (pts) => {
-    let a = 0; const n = pts.length;
-    for (let i = 0; i < n; i++) { const j = (i + 1) % n; a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]; }
-    return a / 2;
-  };
-  const sub = (a, b) => [a[0] - b[0], a[1] - b[1]];
-  const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
-  const norm = (v) => Math.sqrt(v[0] * v[0] + v[1] * v[1]);
-
-  const minArea = turd * turd * 0.5;
-  const filtered = polys.filter((p) => polyArea(p) >= minArea);
-
-  onProgress(78, '베지어 피팅...');
-
-  // Ramer-Douglas-Peucker 단순화
-  const rdp = (pts, eps) => {
-    if (pts.length <= 2) return pts;
-    const ax = pts[0][0], ay = pts[0][1];
-    const bx = pts[pts.length - 1][0], by = pts[pts.length - 1][1];
-    const L = Math.hypot(bx - ax, by - ay);
-    let maxD = 0; let idx = 0;
-    for (let i = 1; i < pts.length - 1; i++) {
-      const d = L < 1e-9
-        ? Math.hypot(pts[i][0] - ax, pts[i][1] - ay)
-        : Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / L;
-      if (d > maxD) { maxD = d; idx = i; }
-    }
-    if (maxD > eps) return rdp(pts.slice(0, idx + 1), eps).slice(0, -1).concat(rdp(pts.slice(idx), eps));
-    return [pts[0], pts[pts.length - 1]];
-  };
-
-  const fr = (n) => Math.round(n * 100) / 100;
-
-  const dParts = [];
-  let outerN = 0;
-  let holeN = 0;
-  let totalPts = 0;
-
-  filtered.forEach((rawPts) => {
-    const pts = rdp(rawPts, optimize > 0 ? optimize * 2 : 0.3);
-    if (pts.length < 3) return;
-    totalPts += pts.length;
-    if (signedArea(pts) > 0) outerN++; else holeN++;
-
-    let d = `M${fr(pts[0][0])} ${fr(pts[0][1])}`;
-    const n = pts.length;
-    const ext = pts.concat(pts.slice(0, 3));
-    for (let i = 0; i < n; i++) {
-      const p0 = ext[i];
-      const p1 = ext[i + 1];
-      const p2 = ext[i + 2];
-      const p3 = ext[i + 3] || ext[0];
-      const d1 = sub(p1, p0);
-      const d2 = sub(p2, p1);
-      const n1 = norm(d1);
-      const n2 = norm(d2);
-      let cosA = (n1 > 0 && n2 > 0) ? dot(d1, d2) / (n1 * n2) : 1;
-      cosA = Math.max(-1, Math.min(1, cosA));
-      const ang = Math.acos(cosA) / Math.PI;
-      if (ang > (1 - alpha + 0.01) && alpha < 1.34) {
-        d += ` L${fr(p2[0])} ${fr(p2[1])}`;
-      } else {
-        const t = Math.max(0.1, 1 - 0.5 * (1 - alpha));
-        const cp1 = [p1[0] + (p2[0] - p0[0]) * t / 6, p1[1] + (p2[1] - p0[1]) * t / 6];
-        const cp2 = [p2[0] - (p3[0] - p1[0]) * t / 6, p2[1] - (p3[1] - p1[1]) * t / 6];
-        d += ` C${fr(cp1[0])} ${fr(cp1[1])} ${fr(cp2[0])} ${fr(cp2[1])} ${fr(p2[0])} ${fr(p2[1])}`;
-      }
-    }
-    dParts.push(`${d}Z`);
+  onProgress(35, '윤곽 추적 + 베지어 피팅…');
+  let raw = await potrace(imageData, {
+    pathonly: true,
+    extractcolors: false,
+    turdsize: Math.max(0, Math.round(o.turdSize)),
+    turnpolicy: o.turnPolicy,
+    alphamax: o.alphaMax,
+    opticurve: o.optCurve ? 1 : 0,
+    opttolerance: o.optTolerance,
   });
+  if (!Array.isArray(raw)) raw = String(raw).split('M').filter(Boolean).map((p) => `M${p}`);
 
-  onProgress(92, 'SVG 생성...');
+  onProgress(75, '좌표 정규화…');
+  let outerN = 0; let holeN = 0; let rawPts = 0;
+  let paths = [];
+  for (const r of raw) {
+    if (!r || !r.trim()) continue;
+    const n = normalizePotracePath(r, H);
+    if (!n.d) continue;
+    paths.push(n.d);
+    outerN += 1; holeN += Math.max(0, n.subpaths - 1); rawPts += n.anchors;
+  }
 
-  const svg = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`,
-    `  <rect width="${W}" height="${H}" fill="${bg}"/>`,
-    dParts.length ? `  <path fill="${fg}" fill-rule="evenodd" d="${dParts.join(' ')}"/>` : '',
-    '</svg>',
-  ].join('\n');
+  // 정리 단계 — 직선화 · 꺾임 복원 · 각도 스냅 (lib/vectorCore refinePath). 'off' 면 그대로.
+  let totalPts = rawPts; let refine = { level: o.refine || 'off', snapAngles: [], snapped: 0 };
+  if (o.refine && o.refine !== 'off') {
+    onProgress(85, '직선·꺾임 정리…');
+    const r = refinePath(paths.join(' '), { level: o.refine, width: W, height: H });
+    paths = [r.d];
+    totalPts = r.after.anchors;
+    refine = { level: r.level, snapAngles: r.snapAngles, snapped: r.snapped, lines: r.after.lines, curves: r.after.curves };
+  }
+
+  onProgress(92, 'SVG 조립…');
+  const svg = buildSvg({ width: W, height: H, paths, fg: o.fg, bg: o.bg, transparentBg: o.transparentBg });
 
   onProgress(100, '완료');
-
   return {
     svg,
+    paths,
     stats: {
-      outerN,
-      holeN,
-      totalPts,
+      outerN, holeN, totalPts, rawPts,
       sizeKB: Math.round(svg.length / 102.4) / 10,
+      width: W, height: H,
+      threshold, inkRatio,
+      engine: 'potrace',
+      refine,
     },
   };
 }

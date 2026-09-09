@@ -29,6 +29,7 @@ Create custom-drawn letterforms based on ${ir.activeCoreData.shortTitle}. ${G(ir
 
 CONTROLLED MODIFICATION:
 ${isEnhanceModeEnabled ? `Use ${enhanceMode} mode within a ${ir.modIntensityEn} change budget. Allowed: ${G(ir.modAllowedEn)} Forbidden: ${G(ir.modForbiddenEn)} Maintain at least ${ir.readabilityFloorEn} readability.` : 'Keep the structure controlled, coherent, and highly readable.'} ${ir.momentumActive ? `Apply controlled motion through ${G(ir.kineticEn)}, ${G(ir.slantEn)}, and ${G(ir.slicingEn)}, without changing the text.` : ''}
+${ir.narrativeDirectiveEn ? `\n${ir.narrativeDirectiveEn}` : ''}
 
 COMPOSITION:
 ${ir.cgTextInstruction}. ${G(ir.layoutEn)} ${G(ir.mmoSilhouetteEn)}. The typography occupancy is ${G(ir.occupancyEn)}. Use ${ir.aspectRatio} canvas framing and keep comfortable margins on every side.

@@ -1,24 +1,38 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { NEXUS_QUALITY_GATE, criteriaSnapshot, validateCriteria } from '../../../../src/lib/designEvaluationCore.js';
+import { loadActiveNexusCriteria } from '../../../../scripts/lib/nexus-evaluation-criteria.mjs';
 
-// Nexus banner rubric — the DesignEvaluator banner mode uses the SAME criteria and weights
-// as Banner Codex (src/lib/evaluationCriteria.js `promo` defaults). One rubric, one source.
-const WEIGHTS = {
-  impression: 14, concept: 9, layout: 8, typography: 18, color: 8,
-  readability: 9, brand: 8, flow: 8, detail: 14, conversion: 4,
-};
-const KEYS = Object.keys(WEIGHTS);
-
-const argv = process.argv.slice(2);
-const opt = {};
-for (let i = 0; i < argv.length; i += 2) opt[argv[i].replace(/^--/, '')] = argv[i + 1];
+const argv = process.argv.slice(2), opt = {};
+for (let index = 0; index < argv.length; index += 1) {
+  const token = argv[index];
+  if (!token.startsWith('--')) continue;
+  const key = token.slice(2);
+  if (key === 'strict-live') opt[key] = true;
+  else opt[key] = argv[++index];
+}
 if (!opt.input) {
-  console.error('Usage: node evaluation-gate.mjs --input evaluation.json [--output correction-plan.json]');
+  console.error('Usage: node evaluation-gate.mjs --input evaluation.json [--criteria criteria.json] [--strict-live] [--output correction-plan.json]');
   process.exit(2);
 }
 
 const data = JSON.parse(fs.readFileSync(path.resolve(opt.input), 'utf8'));
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(scriptDir, '../../../..');
+let criteriaState;
+if (opt.criteria) {
+  criteriaState = JSON.parse(fs.readFileSync(path.resolve(opt.criteria), 'utf8'));
+  criteriaState.source ||= 'provided-snapshot';
+} else {
+  criteriaState = await loadActiveNexusCriteria({ type: 'banner', projectRoot, strictLive: !!opt['strict-live'] });
+}
+const validation = validateCriteria(criteriaState.criteria || []);
+if (!validation.valid) throw new Error('Invalid or empty Nexus criteria snapshot');
+const criteria = criteriaSnapshot(validation.normalized);
+const KEYS = criteria.map((item) => item.id);
+const WEIGHTS = Object.fromEntries(criteria.map((item) => [item.id, item.weight]));
 const frames = Array.isArray(data) ? data : data.frames;
 if (!Array.isArray(frames) || !frames.length) throw new Error('Input must contain a non-empty frames array');
 
@@ -54,8 +68,11 @@ const results = frames.map((frame) => {
   const weightedOverall = Math.round((metrics.reduce((a, m) => a + m.score * m.weight, 0) / totalWeight) * 10) / 10;
 
   const hardFailures = Array.isArray(frame.hardFailures) ? frame.hardFailures.filter(Boolean) : [];
-  const lowMetrics = metrics.filter((m) => m.score < 75).sort((a, b) => a.score - b.score);
-  const pass = weightedOverall >= 85 && !lowMetrics.length && !hardFailures.length;
+  const gate = criteriaState.gate || NEXUS_QUALITY_GATE;
+  const lowMetrics = metrics.filter((m) => m.score < gate.everyMetric).sort((a, b) => a.score - b.score);
+  const pass = weightedOverall >= gate.overall
+    && !metrics.some((m) => m.score < gate.everyMetric)
+    && hardFailures.length <= gate.hardFailures;
 
   return {
     frame: frame.frame || frame.name,
@@ -68,7 +85,18 @@ const results = frames.map((frame) => {
   };
 });
 
-const report = { pass: results.every((r) => r.pass), rubric: 'nexus-banner (== banner-codex promo)', frames: results };
+const report = {
+  pass: results.every((result) => result.pass),
+  rubric: 'nexus-banner (active Nexus criteria)',
+  criteriaType: criteriaState.criteriaType,
+  criteriaVersionId: criteriaState.criteriaVersionId,
+  criteriaVersionName: criteriaState.criteriaVersionName,
+  criteriaSource: criteriaState.source,
+  criteriaStale: !!criteriaState.stale,
+  criteriaSyncWarning: criteriaState.syncWarning || '',
+  criteria,
+  frames: results,
+};
 const json = `${JSON.stringify(report, null, 2)}\n`;
 if (opt.output) fs.writeFileSync(path.resolve(opt.output), json, 'utf8');
 else process.stdout.write(json);

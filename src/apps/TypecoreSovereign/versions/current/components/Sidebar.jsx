@@ -8,17 +8,19 @@
 //     끝 모양·간격·질감·장식 등 미세 옵션은 드롭다운 대신 "세부 요구사항 직접 입력"
 //     텍스트로 통합 — 십자가 모티프처럼 옵션에 없는 요구도 같은 경로로 받는다.
 //   - 친근 라벨 + 작은 보조 설명 + 호버 시 원래 전문 용어 노출.
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   LayoutTemplate, Sparkles, Sparkles as SparkleIcon,
   ChevronDown, ChevronRight, Wand, FastForward, Loader2, X, FileUp, RefreshCcw,
-  Image as ImageIcon, Box as BoxIcon, Highlighter, Bot,
+  Image as ImageIcon, Box as BoxIcon, Highlighter, Cpu, Copy, History,
   MessageSquare, Edit3, SlidersHorizontal, PenTool, Sliders, Type, Shield, PencilLine,
 } from 'lucide-react';
+import { APP_MAP } from '../../../../../config/apps.js';
 import { DropdownControl } from './PrimitiveUI.jsx';
 import { coreArchetypes } from '../constants/personas.jsx';
 import { staticOptions } from '../constants/options.js';
 import { sliderDesc } from '../constants/utils.js';
+import { NARRATIVE_INTENSITIES, NARRATIVE_MUTATIONS, NARRATIVE_SCOPES } from '../../../../../lib/narrativeTypography.js';
 import SectionGroup, { SectionGroupAccent } from '../../../../../components/SectionGroup.jsx';
 
 // 친근 라벨 사전 — 전문용어를 평이한 한국어로 매핑. 원래 용어는 title 툴팁으로 보존.
@@ -46,8 +48,8 @@ const GUARD_OPTIONS = [
   { id: 'guard_noise',    label: '잡효과 차단',  hint: '불필요한 이펙트·노이즈 억제' },
 ];
 
-// 고급 옵션 액센트 — 앱 컬러(#A29BFE)로 Quick Start(에메랄드)와 시각 구분.
-const ADV = '#A29BFE';
+// 고급 옵션 액센트 — APP_REGISTRY 의 앱 컬러로 Quick Start(에메랄드)와 시각 구분. 하드코딩 금지.
+const ADV = APP_MAP['typecore-sovereign']?.color || '#A29BFE';
 
 // 라벨 + 작은 보조 설명을 그리는 공통 헤더.
 const FieldHeader = ({ icon, label, hint, right }) => (
@@ -87,9 +89,10 @@ const StepCard = ({ step, accent = '#A29BFE', title, hint, pro, children }) => (
 
 const Sidebar = ({ rp, version, setVersion, versions }) => {
   const editImageRef = useRef(null);
+  const creationImageRef = useRef(null);
 
   const {
-    isSidebarOpen, isEditMode, setCurrentView,
+    isSidebarOpen, setIsSidebarOpen, isEditMode, setCurrentView,
     coreArchetype, setCoreArchetype, handleCoreArchetypeChange, coreDropdownOpen, setCoreDropdownOpen,
     inputText, setInputText, customDesignInjections, setCustomDesignInjections,
     openTuningRoom, openEditTuningRoom, handleExpandIntent, isExpandingIntent,
@@ -99,8 +102,18 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
     editInstruction, setEditInstruction, isEditExpandingIntent, handleEditExpandIntent,
     editFeelAdjust, setEditFeelAxis, resetEditFeelAdjust,
     applyAiRecInEdit, setApplyAiRecInEdit, applyAutoRefine, setApplyAutoRefine,
-    setIsImportModalOpen, handleReset, aiRecSummary,
+    setIsImportModalOpen, handleReset, extractRecipe, aiRecSummary,
+    incomingFromArc, setIncomingFromArc,
+    creationUploadedImage, setCreationUploadedImage,
+    isCreationDragging, isAnalyzingCreation,
+    handleCreationDragOver, handleCreationDragLeave, handleCreationDrop, handleCreationImageUpload,
+    analyzeCreationImage,
+    showDraftRestore, restoreDraft, dismissDraftRestore,
     dynamicOptions, scriptType, handleScriptPresetChange,
+    narrativeIntensity, setNarrativeIntensity,
+    narrativeScope, setNarrativeScope,
+    narrativeMutation, setNarrativeMutation,
+    narrativeTarget, setNarrativeTarget,
     customShapeText, setCustomShapeText, isTranslatingShape,
     stemWeight, setStemWeight, charWidth, setCharWidth, charProportion, setCharProportion,
     activeGuards, toggleGuard,
@@ -127,7 +140,19 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
   };
 
   // 디테일 내부 아코디언 — 한 번에 하나만 열림. 모드별 첫 진입 섹션.
-  const [openByMode, setOpenByMode] = useState({ editor: 'layout', edit: 'retouch' });
+  // SectionGroup 이 controlled 모드라 storageKey 를 무시하므로, 열림 맵 자체를 localStorage 에 영속화.
+  const SECTIONS_LS_KEY = 'nx:typecore-sovereign:sections';
+  const [openByMode, setOpenByMode] = useState(() => {
+    const fallback = { editor: 'layout', edit: 'retouch' };
+    try {
+      const raw = localStorage.getItem(SECTIONS_LS_KEY);
+      if (raw) return { ...fallback, ...JSON.parse(raw) };
+    } catch {}
+    return fallback;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(SECTIONS_LS_KEY, JSON.stringify(openByMode)); } catch {}
+  }, [openByMode]);
   const currentMode = isEditMode ? 'edit' : 'editor';
   const openSection = openByMode[currentMode];
   const toggleSection = (key) => (next) => {
@@ -141,14 +166,49 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
     onToggle: toggleSection(key),
   });
 
+  // 초기화 2단계 확인 — window.confirm 대신 인라인 재클릭. 첫 클릭 후 3초 내 재클릭 시 실행.
+  const [confirmReset, setConfirmReset] = useState(false);
+  const confirmResetTimerRef = useRef(null);
+  const handleResetClick = () => {
+    if (confirmResetTimerRef.current) clearTimeout(confirmResetTimerRef.current);
+    if (confirmReset) {
+      setConfirmReset(false);
+      handleReset();
+    } else {
+      setConfirmReset(true);
+      confirmResetTimerRef.current = setTimeout(() => setConfirmReset(false), 3000);
+    }
+  };
+
+  // 프로젝트 컨벤션 — 사이드바 빈 공간 클릭 시 접기/펴기 (햄버거 버튼 없음).
+  const handleSidebarClick = (e) => {
+    const isInteractive = e.target.closest('button, input, textarea, label, select, a, img, span, [data-no-collapse]');
+    if (!isInteractive) setIsSidebarOpen(false);
+  };
+
   if (!isSidebarOpen) {
-    return <aside className="w-0 border-none opacity-0 m-0 p-0 shrink-0 bg-transparent rounded-2xl flex flex-col relative overflow-hidden transition-all duration-300 z-50" />;
+    // 접힌 상태 — 좁은 레일. 클릭하면 다시 펼침.
+    return (
+      <aside
+        onClick={() => setIsSidebarOpen(true)}
+        title="사이드바 펼치기"
+        className="w-[56px] shrink-0 border border-zinc-800/80 bg-[#141414] rounded-[16px] flex flex-col items-center gap-3 py-4 cursor-pointer hover:bg-[#191919] shadow-2xl relative overflow-hidden transition-all duration-300 z-50"
+      >
+        <ChevronRight className="w-4 h-4 text-zinc-500" />
+        <div className="text-[10px] font-bold tracking-widest text-zinc-500" style={{ writingMode: 'vertical-rl' }}>
+          옵션 패널
+        </div>
+      </aside>
+    );
   }
 
   const activePersona = coreArchetypes.find(p => p.id === coreArchetype);
 
   return (
-    <aside className="w-[380px] shrink-0 border border-zinc-800/80 bg-[#141414] rounded-[16px] flex flex-col shadow-2xl relative overflow-hidden transition-all duration-300 z-50">
+    <aside
+      onClick={handleSidebarClick}
+      className="w-[380px] shrink-0 border border-zinc-800/80 bg-[#141414] rounded-[16px] flex flex-col shadow-2xl relative overflow-hidden transition-all duration-300 z-50"
+    >
       {/* 상단 헤더 — 생성/리터칭 토글 (기존 유지) */}
       <div className="shrink-0 z-20 border-b border-zinc-800/80 bg-[#1A1A1A]">
         <div className="p-4">
@@ -171,6 +231,41 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
 
+        {/* 드래프트 복원 배너 — 이전 세션의 작업 상태가 남아 있을 때만 노출 */}
+        {showDraftRestore && (
+          <div className="px-3 py-2.5 rounded-[10px] border border-amber-500/30 bg-amber-500/10 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+            <History className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="flex-1 min-w-0 text-[10px] font-bold text-amber-200/90 leading-snug">이전 작업 드래프트가 있어요</span>
+            <button onClick={restoreDraft} className="shrink-0 px-2 py-1 rounded-md text-[9.5px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition-colors">복원</button>
+            <button onClick={dismissDraftRestore} className="shrink-0 px-2 py-1 rounded-md text-[9.5px] font-bold text-zinc-500 hover:text-zinc-300 transition-colors">무시</button>
+          </div>
+        )}
+
+        {/* PromptArc 수신 배너 — payload 로 진입했을 때 자동 설정 안내 */}
+        {incomingFromArc && (
+          <div className="px-3 py-2.5 rounded-[10px] border border-[#6C5CE7]/40 bg-[#6C5CE7]/10 flex items-start gap-2 animate-in fade-in slide-in-from-top-2">
+            <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: ADV }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] font-bold tracking-wide" style={{ color: ADV }}>PromptArc에서 전달됨</div>
+              <div className="text-[9.5px] text-zinc-400 mt-0.5 leading-snug">
+                {incomingFromArc.hasImage
+                  ? (isAnalyzingCreation ? '이미지 분석 중… 옵션을 자동 설정하고 있어요' : '이미지 분석으로 옵션이 자동 설정됐어요')
+                  : '이미지 없이 텍스트만 적용됐어요'}
+              </div>
+              {incomingFromArc.tags?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {incomingFromArc.tags.slice(0, 6).map((t, i) => (
+                    <span key={i} className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-zinc-300">#{t}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={() => setIncomingFromArc(null)} className="text-zinc-500 hover:text-zinc-300 shrink-0" title="배너 닫기">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* ═════════ Quick Start (Creation 모드) ═════════ */}
         {!isEditMode && (
           <>
@@ -184,6 +279,48 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                 className={`w-full bg-[#0A0A0A] font-black outline-none text-white border border-zinc-800 rounded-[8px] px-3 py-2 focus:border-emerald-500/50 transition-all resize-none ${inputText.includes('\n') || inputText.length > 10 ? 'text-[13px] leading-tight' : 'text-[15px] leading-tight'}`}
               />
             </StepCard>
+
+            {/* 레퍼런스 이미지 역설계 (선택) — 이미지를 올리면 스타일을 분석해 옵션을 자동 설정.
+                리터칭 모드 대상 이미지 드롭존과 동일 패턴. */}
+            <div className="rounded-[12px] border border-dashed border-zinc-800 bg-[#121212] p-3">
+              <FieldHeader
+                icon={<Cpu className="w-3 h-3 text-zinc-500" />}
+                label="레퍼런스 이미지 (선택)"
+                hint="이미지를 올리면 스타일을 분석해 옵션이 자동 설정돼요"
+                right={isAnalyzingCreation ? <Loader2 className="w-3 h-3 animate-spin text-emerald-400" /> : null}
+              />
+              <div
+                data-no-collapse
+                onClick={() => creationImageRef.current?.click()}
+                onDragOver={handleCreationDragOver}
+                onDragLeave={handleCreationDragLeave}
+                onDrop={handleCreationDrop}
+                className={`relative rounded-[8px] border border-dashed border-zinc-700/60 p-3 text-center cursor-pointer transition-all min-h-[84px] flex flex-col items-center justify-center ${isCreationDragging ? 'bg-[#262626] border-emerald-500/50' : 'bg-[#0F0F0F] hover:bg-[#1A1A1A]'}`}
+              >
+                {creationUploadedImage ? (
+                  <div className="flex flex-col items-center justify-center w-full gap-2">
+                    <img src={creationUploadedImage} className="h-14 object-contain rounded border border-zinc-700/50 shadow" />
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); analyzeCreationImage(creationUploadedImage); }}
+                        disabled={isAnalyzingCreation}
+                        className="text-[9px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white px-2.5 py-1 rounded-full flex items-center gap-1 transition-colors disabled:opacity-50"
+                      >
+                        {isAnalyzingCreation ? <Loader2 className="w-3 h-3 animate-spin" /> : <Cpu className="w-3 h-3" />} 다시 분석
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); setCreationUploadedImage(null); }} className="text-[9px] font-bold text-red-400 hover:text-red-300 flex items-center gap-1 px-2.5 py-1 bg-red-500/10 rounded-full border border-red-500/20"><X className="w-3 h-3" /> 제거</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-[10px] font-bold text-[#a6a6a6] flex flex-col items-center gap-1">
+                    <ImageIcon className="w-5 h-5 opacity-40" />
+                    <span className="text-zinc-400">레퍼런스 업로드</span>
+                    <span className="text-[9px] text-zinc-600 font-normal">클릭하거나 드래그</span>
+                  </div>
+                )}
+                <input type="file" ref={creationImageRef} className="hidden" accept="image/*" onChange={handleCreationImageUpload} />
+              </div>
+            </div>
 
             {/* ② 페르소나 + 슬라이더 */}
             <StepCard step="2" title={FRIENDLY.persona.label} hint={FRIENDLY.persona.hint} pro={FRIENDLY.persona.pro}>
@@ -246,6 +383,29 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
                   ? `${staticOptions.shapePresets.find(s => s.id === scriptType)?.hint || ''} — 세부 옵션이 자동으로 맞춰졌어요.`
                   : '마음에 드는 모양을 하나 골라보세요. 획 두께·끝 모양이 한 번에 설정돼요.'}
               </p>
+              {staticOptions.shapePresets.find(s => s.id === scriptType)?.narrative && (
+                <div className="mt-2.5 rounded-[10px] border border-emerald-500/20 bg-emerald-950/10 p-2.5 space-y-2.5">
+                  <div>
+                    <div className="text-[10px] font-bold text-emerald-300">스토리 글리프</div>
+                    <div className="text-[9px] text-zinc-500 mt-0.5">중립적인 글자에 한 가지 서사 단서만 적용합니다.</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <DropdownControl label="서사 강도" data={NARRATIVE_INTENSITIES} value={narrativeIntensity} onChange={setNarrativeIntensity} />
+                    <DropdownControl label="변형 범위" data={NARRATIVE_SCOPES} value={narrativeScope} onChange={setNarrativeScope} />
+                  </div>
+                  <DropdownControl label="변형 방식" data={NARRATIVE_MUTATIONS} value={narrativeMutation} onChange={setNarrativeMutation} />
+                  <label className="block">
+                    <span className="block text-[9px] font-bold text-zinc-500 mb-1">대상 글자 (선택)</span>
+                    <input
+                      value={narrativeTarget}
+                      onChange={(e) => setNarrativeTarget(e.target.value)}
+                      maxLength={4}
+                      placeholder="비우면 자동 선택"
+                      className="w-full rounded-md border border-zinc-800 bg-[#111] px-2.5 py-2 text-[10px] text-zinc-200 outline-none focus:border-emerald-500/60"
+                    />
+                  </label>
+                </div>
+              )}
             </StepCard>
 
             {/* 분위기 묘사 (선택) — 작게, 보조 영역 */}
@@ -287,6 +447,7 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
             {/* ① 타깃 이미지 */}
             <StepCard step="1" title={FRIENDLY.target.label} hint={FRIENDLY.target.hint} pro={FRIENDLY.target.pro}>
               <div
+                data-no-collapse
                 onClick={() => editImageRef.current?.click()}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -548,14 +709,21 @@ const Sidebar = ({ rp, version, setVersion, versions }) => {
           )}
         </div>
 
-        {/* ═════════ Import / Reset (Creation only) ═════════ */}
+        {/* ═════════ Import / Export / Reset (Creation only) ═════════ */}
         {!isEditMode && (
-          <div className="grid grid-cols-2 gap-2 mt-1">
+          <div className="grid grid-cols-3 gap-2 mt-1">
             <button onClick={() => setIsImportModalOpen(true)} title="프롬프트로 설정 복원" className="py-2 rounded-[8px] bg-[#1C1C1C] border border-zinc-800 hover:bg-[#262626] hover:text-white text-zinc-400 flex items-center justify-center gap-2 transition-colors">
               <FileUp className="w-3.5 h-3.5" /> <span className="text-[10px] font-bold">불러오기</span>
             </button>
-            <button onClick={handleReset} title="초기화" className="py-2 rounded-[8px] bg-[#1C1C1C] border border-zinc-800 hover:bg-[#262626] hover:text-white text-zinc-400 flex items-center justify-center gap-2 transition-colors">
-              <RefreshCcw className="w-3.5 h-3.5" /> <span className="text-[10px] font-bold">초기화</span>
+            <button onClick={extractRecipe} title="현재 설정을 Recipe JSON으로 복사" className="py-2 rounded-[8px] bg-[#1C1C1C] border border-zinc-800 hover:bg-[#262626] hover:text-white text-zinc-400 flex items-center justify-center gap-2 transition-colors">
+              <Copy className="w-3.5 h-3.5" /> <span className="text-[10px] font-bold">내보내기</span>
+            </button>
+            <button
+              onClick={handleResetClick}
+              title="초기화 (한 번 더 누르면 실행)"
+              className={`py-2 rounded-[8px] border flex items-center justify-center gap-1.5 transition-colors ${confirmReset ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 hover:bg-rose-500/25' : 'bg-[#1C1C1C] border-zinc-800 hover:bg-[#262626] hover:text-white text-zinc-400'}`}
+            >
+              <RefreshCcw className="w-3.5 h-3.5 shrink-0" /> <span className="text-[10px] font-bold leading-tight">{confirmReset ? '정말 초기화할까요?' : '초기화'}</span>
             </button>
           </div>
         )}

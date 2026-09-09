@@ -75,6 +75,7 @@ function Dropzone({ T, accent, dataUrl, onFile, onClear, title, sub, accept = "i
 function ResultView({ T, accent, url, busy, onRetry, filePrefix, transparentOnSave = false, alreadyTransparent = false, colorKeyBlack = false, maxW }) {
   const { navigate } = useGlobal();
   const [txBusy, setTxBusy] = useState(false);
+  const [rawBusy, setRawBusy] = useState(false);
   const [maskSrc, setMaskSrc] = useState(null); // 자동 투명화 실패 시 Mask Forge 로 보낼 원본
   const anchor = (href, suffix) => { const a = document.createElement("a"); a.href = href; a.download = `${filePrefix}${suffix}_${Date.now()}.png`; a.click(); };
   // 오브젝트 결과는 저장 시 자동 투명화. 실패(복잡 배경) 시 원본 저장 + Mask Forge 안내.
@@ -96,8 +97,22 @@ function ResultView({ T, accent, url, busy, onRetry, filePrefix, transparentOnSa
     if (!transparent) setMaskSrc(url);
     setTxBusy(false);
   };
+  // 일반(불투명) PNG 저장 — 투명 처리 없이 결과를 검은 배경(렌더 원배경) 위에 평탄화해 그대로 저장.
+  const downloadRaw = async () => {
+    setRawBusy(true);
+    try {
+      const img = await new Promise((res, rej) => { const im = new Image(); im.crossOrigin = "anonymous"; im.onload = () => res(im); im.onerror = rej; im.src = url; });
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#000"; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0);
+      anchor(c.toDataURL("image/png"), "");
+    } catch (e) { console.error("[ResultView] 일반 PNG 저장 실패 — 원본 그대로 저장", e); anchor(url, ""); }
+    finally { setRawBusy(false); }
+  };
   const toMaskForge = () => navigate("mask-forge", { source: "nexus-preview", image: { url: maskSrc || url, metadata: {} } });
-  return <section style={{ minHeight: 430, border: `1px solid ${T.border}`, background: T.surface, borderRadius: 14, padding: 16, boxSizing: "border-box" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, marginBottom: 12 }}>렌더 결과{alreadyTransparent ? " · 투명 레이어 합성 완료" : transparentOnSave ? " · 저장 시 자동 투명화" : ""}</div>{url ? <><img src={url} alt="렌더 결과" style={{ width: "100%", maxWidth: maxW || "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 10, background: "#08090b", display: "block", margin: maxW ? "0 auto" : undefined }} /><div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button onClick={download} disabled={txBusy} style={{ ...secondaryBtn(T, accent), opacity: txBusy ? 0.6 : 1 }}>{txBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {alreadyTransparent || transparentOnSave ? "투명 PNG 저장" : "PNG 다운로드"}</button><button onClick={onRetry} disabled={busy} style={secondaryBtn(T, accent)}><Wand2 size={14} /> 다시 렌더링</button></div>{maskSrc && <div style={{ marginTop: 8, fontSize: 11, color: T.textDim }}>배경이 복잡해 원본으로 저장했어요. <button onClick={toMaskForge} style={{ color: accent, background: "none", border: 0, cursor: "pointer", fontWeight: 700, padding: 0 }}>Mask Forge에서 배경 제거 →</button></div>}</> : <div style={{ minHeight: 350, display: "grid", placeItems: "center", color: T.textDim, fontSize: 13, border: `1px dashed ${T.border}`, borderRadius: 10 }}>{busy ? <><Loader2 className="animate-spin" size={22} /> 렌더링 중...</> : "왼쪽에서 설정한 뒤 바로 렌더링하세요."}</div>}</section>;
+  return <section style={{ minHeight: 430, border: `1px solid ${T.border}`, background: T.surface, borderRadius: 14, padding: 16, boxSizing: "border-box" }}><div style={{ fontSize: 11, fontWeight: 800, color: T.textMuted, marginBottom: 12 }}>렌더 결과{alreadyTransparent ? " · 투명 레이어 합성 완료" : transparentOnSave ? " · 저장 시 자동 투명화" : ""}</div>{url ? <><img src={url} alt="렌더 결과" style={{ width: "100%", maxWidth: maxW || "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 10, background: "#08090b", display: "block", margin: maxW ? "0 auto" : undefined }} /><div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}><button onClick={download} disabled={txBusy} style={{ ...secondaryBtn(T, accent), opacity: txBusy ? 0.6 : 1 }}>{txBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} {alreadyTransparent || transparentOnSave ? "투명 PNG 저장" : "PNG 다운로드"}</button>{(alreadyTransparent || transparentOnSave) && <button onClick={downloadRaw} disabled={rawBusy} title="배경 포함 일반(불투명) PNG로 저장" style={{ ...secondaryBtn(T, accent), opacity: rawBusy ? 0.6 : 1 }}>{rawBusy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />} 일반 PNG</button>}<button onClick={onRetry} disabled={busy} style={secondaryBtn(T, accent)}><Wand2 size={14} /> 다시 렌더링</button></div>{maskSrc && <div style={{ marginTop: 8, fontSize: 11, color: T.textDim }}>배경이 복잡해 원본으로 저장했어요. <button onClick={toMaskForge} style={{ color: accent, background: "none", border: 0, cursor: "pointer", fontWeight: 700, padding: 0 }}>Mask Forge에서 배경 제거 →</button></div>}</> : <div style={{ minHeight: 350, display: "grid", placeItems: "center", color: T.textDim, fontSize: 13, border: `1px dashed ${T.border}`, borderRadius: 10 }}>{busy ? <><Loader2 className="animate-spin" size={22} /> 렌더링 중...</> : "왼쪽에서 설정한 뒤 바로 렌더링하세요."}</div>}</section>;
 }
 
 

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Web to Figma"
+  short_description: "웹페이지를 편집 가능한 Figma 화면으로 변환"
+  default_prompt: "Use $web-to-figma to convert this public webpage into editable desktop and mobile Figma frames."
+

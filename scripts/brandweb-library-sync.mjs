@@ -1,6 +1,7 @@
-// 2026 브랜드웹 공유 폴더 → Nexus Brand Web Library 자동 등록.
+// 2024년 이후 브랜드웹 공유 폴더 → Nexus Brand Web Library 자동 등록.
 // 실행: node scripts/brandweb-library-sync.mjs --dry
 //       node scripts/brandweb-library-sync.mjs
+//       node scripts/brandweb-library-sync.mjs --backfill  (2024년 이후 전체 복구)
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,9 +13,13 @@ import { spawnSync } from "node:child_process";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CONFIG = JSON.parse(fs.readFileSync(path.join(ROOT, "scripts", "banner-codex-sync.config.json"), "utf8"));
 const DRY = process.argv.includes("--dry");
+const BACKFILL = process.argv.includes("--backfill");
 const RESCAN_AION2 = process.argv.includes("--rescan-aion2-non-lookbook");
-const YEAR = "2026";
-const THROUGH = "20260820";
+const START_YEAR = Number(CONFIG.brandWebMinYear || 2024);
+const CURRENT_YEAR = Number(new Intl.DateTimeFormat("en", { timeZone: "Asia/Seoul", year: "numeric" }).format(new Date()));
+const YEARS = BACKFILL
+  ? Array.from({ length: Math.max(0, CURRENT_YEAR - START_YEAR + 1) }, (_, index) => String(START_YEAR + index))
+  : [String(CURRENT_YEAR)];
 const MAX_PAGES_PER_DEVICE = 10;
 const ALLOWED = /\.(jpe?g|png)$/i;
 const EXCLUDED_SEGMENT = /^(old|backup|bak|banner|crop|m_crop|thumb|thumbnail|개발|팝업|popup)$/i;
@@ -216,36 +221,37 @@ const report = [];
 for (const target of CONFIG.targets) {
   if (!target.share || !/브랜드웹/.test(target.share)) continue;
   if (RESCAN_AION2 && target.game !== "아이온2") continue;
-  const shareDir = target.share.replaceAll("{year}", YEAR);
-  const pathPrefix = target.pathPrefix.replaceAll("{year}", YEAR);
-  let campaigns = [];
-  try { campaigns = fs.readdirSync(shareDir, { withFileTypes: true }).filter(entry => entry.isDirectory()); }
-  catch (error) { log(`[${target.game}] 공유 폴더 접근 실패: ${error.message}`); continue; }
+  for (const year of YEARS) {
+    const shareDir = target.share.replaceAll("{year}", year);
+    const pathPrefix = target.pathPrefix.replaceAll("{year}", year);
+    let campaigns = [];
+    try { campaigns = fs.readdirSync(shareDir, { withFileTypes: true }).filter(entry => entry.isDirectory()); }
+    catch (error) { log(`[${target.game} ${year}] 공유 폴더 접근 실패: ${error.message}`); continue; }
 
-  for (const campaign of campaigns) {
-    if (/복사본|copy/i.test(campaign.name)) continue;
-    if (RESCAN_AION2 && /(?:DAEVA|DEVA|DAIVA)\s*LOOKBOOK|데바\s*룩북/i.test(campaign.name)) continue;
-    const date = campaignDate(campaign.name);
-    if (!date || date.slice(0, 4) !== YEAR || date > THROUGH) continue;
-    const title = cleanTitle(campaign.name);
-    const canonicalPath = `${pathPrefix}\\${campaign.name}\\03.디자인`;
-    const existingDoc = existingDocsByPath.get(normalizePath(canonicalPath));
-    found++;
-    // 같은 제목의 월간/차수 캠페인이 존재하므로 브랜드웹 중복은 전체 공유 경로로만 판정.
-    if (!RESCAN_AION2 && existingPaths.has(normalizePath(canonicalPath))) {
-      skipped++;
-      report.push({ game: target.game, campaign: campaign.name, status: "기존 등록" });
-      continue;
-    }
-    if (RESCAN_AION2 && !existingDoc) {
-      skipped++;
-      report.push({ game: target.game, campaign: campaign.name, status: "기존 카드 없음" });
-      continue;
-    }
+    for (const campaign of campaigns) {
+      if (/복사본|copy/i.test(campaign.name)) continue;
+      if (RESCAN_AION2 && /(?:DAEVA|DEVA|DAIVA)\s*LOOKBOOK|데바\s*룩북/i.test(campaign.name)) continue;
+      const date = campaignDate(campaign.name);
+      if (!date || date.slice(0, 4) !== year) continue;
+      const title = cleanTitle(campaign.name);
+      const canonicalPath = `${pathPrefix}\\${campaign.name}\\03.디자인`;
+      const existingDoc = existingDocsByPath.get(normalizePath(canonicalPath));
+      found++;
+      // 같은 제목의 월간/차수 캠페인이 존재하므로 브랜드웹 중복은 전체 공유 경로로만 판정.
+      if (!RESCAN_AION2 && existingPaths.has(normalizePath(canonicalPath))) {
+        skipped++;
+        report.push({ game: target.game, campaign: campaign.name, status: "기존 등록" });
+        continue;
+      }
+      if (RESCAN_AION2 && !existingDoc) {
+        skipped++;
+        report.push({ game: target.game, campaign: campaign.name, status: "기존 카드 없음" });
+        continue;
+      }
 
-    try {
-      let scanned;
-      if (RESCAN_AION2) {
+      try {
+        let scanned;
+        if (RESCAN_AION2) {
         const sourcePaths = [...new Set([existingDoc.data.path, ...(existingDoc.data.sourcePaths || [])].filter(Boolean))]
           .sort((a, b) => a.localeCompare(b, "ko", { numeric: true }));
         if (normalizePath(canonicalPath) !== normalizePath(sourcePaths[0])) {
@@ -267,64 +273,65 @@ for (const target of CONFIG.targets) {
         combinedMobile.sort((a, b) => score(b) - score(a));
         const limited = limitPages(combinedPc, combinedMobile);
         scanned = { pc: limited.pc, mobile: limited.mobile, pages: [...limited.pc.map(file => ({ ...file, device: "pc" })), ...limited.mobile.map(file => ({ ...file, device: "mobile" }))] };
-      } else {
-        scanned = scanCampaign(path.join(shareDir, campaign.name), target.game);
-      }
-      if (!scanned?.pages.length) {
-        skipped++;
-        report.push({ game: target.game, campaign: campaign.name, status: "페이지 없음" });
-        continue;
-      }
-      totalPages += scanned.pages.length;
-      if (DRY) {
-        registered++;
-        report.push({ game: target.game, campaign: campaign.name, pc: scanned.pc.length, mobile: scanned.mobile.length, status: RESCAN_AION2 ? "재스캔 예정" : "등록 예정" });
-        continue;
-      }
+        } else {
+          scanned = scanCampaign(path.join(shareDir, campaign.name), target.game);
+        }
+        if (!scanned?.pages.length) {
+          skipped++;
+          report.push({ game: target.game, campaign: campaign.name, status: "페이지 없음" });
+          continue;
+        }
+        totalPages += scanned.pages.length;
+        if (DRY) {
+          registered++;
+          report.push({ game: target.game, campaign: campaign.name, pc: scanned.pc.length, mobile: scanned.mobile.length, status: RESCAN_AION2 ? "재스캔 예정" : "등록 예정" });
+          continue;
+        }
 
-      const pages = [];
-      for (let index = 0; index < scanned.pages.length; index++) {
-        const page = scanned.pages[index];
-        log(`  [${target.game}/${campaign.name}] ${index + 1}/${scanned.pages.length} ${page.device} ${page.name}`);
-        const buffer = await processImage(page.absolute, page.device === "mobile");
-        const url = await uploadCloudinary(buffer);
-        const sourcePhase = target.game === "아이온2" ? Number(page.sourcePhase || aion2Phase(page)) : 1;
-        pages.push({ id: `page_${Date.now()}_${index}`, name: page.name, device: page.device, sourcePhase, url, order: index });
+        const pages = [];
+        for (let index = 0; index < scanned.pages.length; index++) {
+          const page = scanned.pages[index];
+          log(`  [${target.game}/${campaign.name}] ${index + 1}/${scanned.pages.length} ${page.device} ${page.name}`);
+          const buffer = await processImage(page.absolute, page.device === "mobile");
+          const url = await uploadCloudinary(buffer);
+          const sourcePhase = target.game === "아이온2" ? Number(page.sourcePhase || aion2Phase(page)) : 1;
+          pages.push({ id: `page_${Date.now()}_${index}`, name: page.name, device: page.device, sourcePhase, url, order: index });
+        }
+        const pcPages = pages.filter(page => page.device === "pc");
+        const mobilePages = preferMobileMain(pages.filter(page => page.device === "mobile"));
+        const first = pcPages[0] || mobilePages[0];
+        const phaseOnePc = pcPages.filter(page => Number(page.sourcePhase || 1) === 1);
+        const main = phaseOnePc.find(page => /(?:^|[_-])1메인(?=[_.-]|$)|main|메인/i.test(page.name || "")) || phaseOnePc[0] || pcPages[0] || first;
+        const sub = phaseOnePc.find(page => page.id !== main?.id) || pcPages.find(page => page.id !== main?.id);
+        const payload = {
+          title: RESCAN_AION2 ? existingDoc.data.title : title,
+          assetType: "브랜드웹",
+          game: target.game,
+          year,
+          path: RESCAN_AION2 ? (existingDoc.data.path || canonicalPath) : canonicalPath,
+          section: "brandweb",
+          preview: main?.url || first.url,
+          full_image: main?.url || first.url,
+          mobile_image: mobilePages[0]?.url || "",
+          pages,
+          pageCount: pages.length,
+          mainPageId: main?.id || null,
+          subPageId: sub?.id || null,
+          ownerUid: RESCAN_AION2 ? (existingDoc.data.ownerUid || ownerUid) : ownerUid,
+          source: "brandweb-library-sync",
+          ...(RESCAN_AION2 ? { aion2RescannedAt: new Date().toISOString() } : {
+            created_at: new Date().toISOString(), visibility: "public", liked: 0, tags: [], history: [],
+          }),
+        };
+        if (RESCAN_AION2) await existingDoc.ref.update(payload);
+        else await promoCol.add(payload);
+        existingPaths.add(normalizePath(canonicalPath));
+        registered++;
+        report.push({ game: target.game, campaign: campaign.name, pc: pcPages.length, mobile: mobilePages.length, status: RESCAN_AION2 ? "재스캔 완료" : "등록 완료" });
+      } catch (error) {
+        failed++;
+        report.push({ game: target.game, campaign: campaign.name, status: `실패: ${error.message}` });
       }
-      const pcPages = pages.filter(page => page.device === "pc");
-      const mobilePages = preferMobileMain(pages.filter(page => page.device === "mobile"));
-      const first = pcPages[0] || mobilePages[0];
-      const phaseOnePc = pcPages.filter(page => Number(page.sourcePhase || 1) === 1);
-      const main = phaseOnePc.find(page => /(?:^|[_-])1메인(?=[_.-]|$)|main|메인/i.test(page.name || "")) || phaseOnePc[0] || pcPages[0] || first;
-      const sub = phaseOnePc.find(page => page.id !== main?.id) || pcPages.find(page => page.id !== main?.id);
-      const payload = {
-        title: RESCAN_AION2 ? existingDoc.data.title : title,
-        assetType: "브랜드웹",
-        game: target.game,
-        year: YEAR,
-        path: RESCAN_AION2 ? (existingDoc.data.path || canonicalPath) : canonicalPath,
-        section: "brandweb",
-        preview: main?.url || first.url,
-        full_image: main?.url || first.url,
-        mobile_image: mobilePages[0]?.url || "",
-        pages,
-        pageCount: pages.length,
-        mainPageId: main?.id || null,
-        subPageId: sub?.id || null,
-        ownerUid: RESCAN_AION2 ? (existingDoc.data.ownerUid || ownerUid) : ownerUid,
-        source: "brandweb-library-sync",
-        ...(RESCAN_AION2 ? { aion2RescannedAt: new Date().toISOString() } : {
-          created_at: new Date().toISOString(), visibility: "public", liked: 0, tags: [], history: [],
-        }),
-      };
-      if (RESCAN_AION2) await existingDoc.ref.update(payload);
-      else await promoCol.add(payload);
-      existingPaths.add(normalizePath(canonicalPath));
-      registered++;
-      report.push({ game: target.game, campaign: campaign.name, pc: pcPages.length, mobile: mobilePages.length, status: RESCAN_AION2 ? "재스캔 완료" : "등록 완료" });
-    } catch (error) {
-      failed++;
-      report.push({ game: target.game, campaign: campaign.name, status: `실패: ${error.message}` });
     }
   }
 }
@@ -332,10 +339,18 @@ for (const target of CONFIG.targets) {
 console.table(report);
 log(`${DRY ? "DRY " : ""}완료 — 대상 ${found}, 등록 ${registered}, 기존/제외 ${skipped}, 실패 ${failed}, 신규 페이지 ${totalPages}`);
 if (!DRY && !failed && !RESCAN_AION2) {
-  const cleanup = spawnSync(process.execPath, [path.join(ROOT, "scripts", "brandweb-phase-cleanup.mjs")], { stdio: "inherit" });
-  if (cleanup.status !== 0) {
-    console.error("[brandweb-sync] 차수 병합 정리 실패");
-    process.exitCode = 1;
+  const cleanupSteps = [
+    { script: "brandweb-phase-cleanup.mjs", label: "차수 병합" },
+    { script: "brandweb-real-page-cleanup.mjs", label: "실제 페이지" },
+    { script: "brandweb-library-cleanup.mjs", label: "라이브러리 메타데이터" },
+  ];
+  for (const step of cleanupSteps) {
+    const cleanup = spawnSync(process.execPath, [path.join(ROOT, "scripts", step.script)], { stdio: "inherit" });
+    if (cleanup.status !== 0) {
+      console.error(`[brandweb-sync] ${step.label} 정리 실패`);
+      process.exitCode = 1;
+      break;
+    }
   }
 }
 if (failed) process.exitCode = 1;

@@ -34,6 +34,7 @@ const CodexCard = memo(({
   const safeTitle = safeRender(banner.title, '제목 없음');
   const displayScore = safeRender(banner.score, null);
   const displayTag = Array.isArray(banner.tags) && banner.tags.length > 0 ? safeRender(banner.tags[0], null) : null;
+  const codexBadges = Array.isArray(banner.codexBadges) ? banner.codexBadges.slice(0, 3) : [];
   const showSelect = isAdminMode || banner.isTemp;
 
   return (
@@ -58,6 +59,15 @@ const CodexCard = memo(({
             className={`w-full h-full object-contain transition-transform duration-500 ${selected && showSelect ? 'scale-105' : 'group-hover:scale-105'}`} />
         )}
         <div className={`absolute inset-0 transition-colors pointer-events-none ${selected && showSelect ? 'bg-[#0eb9b3]/10' : 'bg-black/0 group-hover:bg-black/40'}`} />
+        {codexBadges.length > 0 && (
+          <div className="absolute top-3 right-3 z-30 flex flex-col items-end gap-1 transition-opacity group-hover:opacity-0">
+            {codexBadges.map((badge) => (
+              <span key={badge} className={`px-2.5 py-1 rounded-md border text-[10px] font-bold shadow-lg backdrop-blur-sm ${badge === '예측 제작' ? 'bg-cyan-500/90 border-cyan-300/50 text-slate-950' : badge === '스타일 연구' ? 'bg-violet-600/90 border-violet-300/50 text-white' : 'bg-amber-400/90 border-amber-200/60 text-amber-950'}`}>
+                {badge}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none flex flex-col justify-between p-3 z-20">
           <div className="flex justify-end w-full gap-2">
             <button onClick={(e) => { e.stopPropagation(); onToggleCart(banner.id); }}

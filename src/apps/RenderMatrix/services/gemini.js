@@ -1,4 +1,4 @@
-import { GEMINI_API_KEY } from "../../../lib/gemini";
+import { GEMINI_API_KEY } from "../../../lib/gemini.js";
 
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 

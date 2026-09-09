@@ -626,6 +626,21 @@ export default function AssetDetailModal({
                 </div>
               </div>
             )}
+            {asset.source?.app === "asset-library-sync" && (
+              <div className="mb-4">
+                <div className="text-[10px] font-bold mb-2 uppercase tracking-wider text-zinc-500">제작 원본</div>
+                <div className="p-3 rounded-lg border border-indigo-400/15 bg-indigo-500/[0.04] space-y-1.5">
+                  <div className="flex flex-wrap gap-1.5 text-[9px] font-bold">
+                    <span className="px-1.5 py-0.5 rounded bg-white/5 text-zinc-300">{asset.sectionKo || asset.section}</span>
+                    <span className="px-1.5 py-0.5 rounded bg-white/5 text-zinc-300">{asset.game} · {asset.year}</span>
+                    {asset.hasEffects && <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-200">FX 포함</span>}
+                  </div>
+                  <div className="text-[11px] text-zinc-200 break-words">{asset.campaign}</div>
+                  {asset.source.layerPath?.length > 0 && <div className="text-[10px] text-indigo-200/70 break-words">레이어: {asset.source.layerPath.join(" / ")}</div>}
+                  <div className="text-[9px] text-zinc-600 break-all" title={asset.source.sourcePath}>{asset.source.fileName}</div>
+                </div>
+              </div>
+            )}
 
             {/* upload hint */}
             {temp && !pending && (

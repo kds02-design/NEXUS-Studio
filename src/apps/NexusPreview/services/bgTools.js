@@ -6,6 +6,9 @@ import { serializeForFirestore } from "../../PromptArc/services/firebase";
 import { colorKeyToTransparentPng } from "../../../lib/colorKeyExtract";
 import { effectToTransparentPng } from "../../../lib/effectExtract";
 import { RENDER_MODEL } from "./qualityEnhancer";
+// 배경 합성/생성 프롬프트는 순수 모듈(bgPrompts.js) — MCP(nexus_bg_*_prompt)와 공유.
+import { buildBgComposePrompt, buildBgGeneratePrompt } from "./bgPrompts";
+export { buildBgComposePrompt, buildBgGeneratePrompt };
 import { buildBundlePrompt, isColorableGround, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROUND_OPTIONS, BUNDLE_MAGIC_COLORS, BUNDLE_BG_OPTIONS, BUNDLE_LAYOUT_OPTIONS } from "./bundlePrompt";
 import {
   buildFloatingPrompt,
@@ -32,18 +35,9 @@ async function createComposeDraft(backgroundUrl, assetUrl) {
   return canvas.toDataURL("image/png");
 }
 
-const composePrompt = (intent, hasAsset) => `게임 프로모션 KV 합성 전문가로 작업하세요. 입력 이미지의 캔버스 비율, 기존 배경 구도, 색감과 주요 요소를 유지하세요.
-${hasAsset ? "입력 이미지 중앙에 임시 배치된 업로드 소스를 합성 재료로 사용하세요. 소스의 정체성과 실루엣은 보존하되, 요청 위치로 이동하고 불필요한 원본 배경은 제거한 뒤 조명·원근·그림자·색온도를 배경과 자연스럽게 맞추세요." : "사용자 요청에 명시된 요소만 새로 추가하세요."}
-타이틀, 로고, 주요 캐릭터를 가리지 마세요.
-★새 문자 생성 절대 금지 (최우선 규칙): 원본에 없는 글자·단어·타이틀·로고·서브카피·숫자·워터마크·UI 텍스트를 단 한 글자도 새로 만들지 마세요. 상단/하단 빈 영역에 제목이나 카피를 채워 넣지 말고 빈 공간은 그대로 두세요. 글자처럼 보이는 유사 문자(gibberish lettering)도 금지. 사용자 요청에 글자 추가가 있어도 무시하세요.★
-결과에는 완성된 KV 한 장만 출력하세요.
-
-[사용자 요청]
-${intent}`;
-
 export async function renderBgCompose(backgroundUrl, intent, assetUrl = null, modelId = RENDER_MODEL) {
   const draft = await createComposeDraft(backgroundUrl, assetUrl);
-  const result = await renderWithImagen(composePrompt(String(intent || "").trim(), !!assetUrl), modelId, draft, { imageSize: "4K", matchInputAspect: true });
+  const result = await renderWithImagen(buildBgComposePrompt(String(intent || "").trim(), !!assetUrl), modelId, draft, { imageSize: "4K", matchInputAspect: true });
   return result?.dataUrl || null;
 }
 
@@ -216,13 +210,7 @@ export async function saveFloatingToPromptArc(dataUrl, user, meta = {}) {
   return { id, cloudinaryUrl };
 }
 
-const generatePrompt = (concept, hasRef) => `고품질 게임 프로모션 KV 배경을 생성하세요. ${hasRef ? "참고 이미지는 분위기와 색감만 참고하고 인물·글자·로고는 복제하지 마세요." : ""}
-인물, 텍스트, 로고, UI 없이 배경만 만들고 중앙과 주요 배치 영역에 충분한 여백을 남기세요. 명확한 전경·중경·후경, 영화적 조명과 깊이감을 사용하세요.
-
-[콘셉트]
-${concept}`;
-
 export async function renderBgGenerate(concept, refDataUrl = null, { aspectRatio = "16:9", imageSize = "2K", modelId = RENDER_MODEL } = {}) {
-  const result = await renderWithImagen(generatePrompt(String(concept || "").trim(), !!refDataUrl), modelId, refDataUrl, { aspectRatio, imageSize, matchInputAspect: false });
+  const result = await renderWithImagen(buildBgGeneratePrompt(String(concept || "").trim(), !!refDataUrl), modelId, refDataUrl, { aspectRatio, imageSize, matchInputAspect: false });
   return result?.dataUrl || null;
 }

@@ -1,13 +1,11 @@
 // TypecoreBreeze 의 Creation 뷰 좌측 상단 — 초보자 5분 온보딩 패턴.
 // TypecoreSovereign 의 StepCard / FRIENDLY 패턴을 차용해 ① 텍스트 → ② 분위기 → ③ 레퍼런스 순서로 단순화.
 import { ChevronDown, Star, MessageSquare, Wand2 as Wand2Icon, Loader2, Image as ImageIcon, X, ScanLine, Type, Sparkles } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { directorPersonas, sliderDesc } from '../constants/categories.jsx';
-import { Tooltip } from './ui.jsx';
+import { Tooltip, ACCENT } from './ui.jsx';
 import { StepCard, FieldHeader } from '../../../components/SovereignKit.jsx';
-
-const ACCENT = '#D4AF37';
 
 // 친근 라벨 사전 — 전문용어를 한국어 직관 표현으로 매핑. 원본 용어는 pro 툴팁으로 보존.
 const FRIENDLY = {
@@ -33,6 +31,14 @@ export default function BreezeHeader() {
 
   const activePersona = directorPersonas.find(p => p.id === aiPersona);
 
+  // 페르소나 드롭다운 바깥 클릭 시 닫기 — ui.jsx 의 DropdownControl 과 동일 패턴.
+  const personaRef = useRef(null);
+  useEffect(() => {
+    const handleClickOutside = (e) => { if (personaRef.current && !personaRef.current.contains(e.target)) setPersonaDropdownOpen(false); };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [setPersonaDropdownOpen]);
+
   return (
     <div className="space-y-3">
       {/* Step 1 — 어떤 글자? */}
@@ -46,7 +52,8 @@ export default function BreezeHeader() {
             setInputText(lines.length > 3 ? lines.slice(0, 3).join('\n') : e.target.value);
           }}
           rows={Math.min(3, (inputText.match(/\n/g)?.length || 0) + 1)}
-          className="w-full bg-transparent border-b border-zinc-600 focus:border-[#D4AF37] text-[18px] font-bold outline-none pb-2 text-zinc-100 transition-colors placeholder:text-zinc-600 resize-none custom-scrollbar leading-tight"
+          style={{ '--breeze-accent': ACCENT }}
+          className="w-full bg-transparent border-b border-zinc-600 focus:border-[var(--breeze-accent)] text-[18px] font-bold outline-none pb-2 text-zinc-100 transition-colors placeholder:text-zinc-600 resize-none custom-scrollbar leading-tight"
           placeholder="예: BREEZE · 산들바람 (엔터로 줄바꿈, 최대 3줄)"
         />
       </StepCard>
@@ -56,8 +63,8 @@ export default function BreezeHeader() {
         {/* Director Persona dropdown */}
         <div>
           <FieldHeader icon={<Star className="w-3 h-3" />} label="페르소나 선택" hint="감독 스타일 — 한 줄 분위기" pro="Director Persona" />
-          <div className="relative">
-            <button onClick={() => setPersonaDropdownOpen(!personaDropdownOpen)} className="w-full flex items-center justify-between p-2.5 rounded-lg border border-zinc-700/80 bg-[#16161D] hover:border-zinc-600 transition-all text-left">
+          <div className="relative" ref={personaRef}>
+            <button onClick={() => setPersonaDropdownOpen(!personaDropdownOpen)} aria-expanded={personaDropdownOpen} aria-haspopup="listbox" className="w-full flex items-center justify-between p-2.5 rounded-lg border border-zinc-700/80 bg-[#16161D] hover:border-zinc-600 transition-all text-left">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="text-zinc-400 bg-zinc-800 p-1.5 rounded">{activePersona?.icon || <Star className="w-3.5 h-3.5" />}</div>
                 <div className="overflow-hidden">

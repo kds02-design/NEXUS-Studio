@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Page Capture"
+  short_description: "Capture desktop and mobile webpage snapshots"
+  default_prompt: "Use $web-page-capture to capture this public webpage as desktop and mobile full-page images with a manifest."

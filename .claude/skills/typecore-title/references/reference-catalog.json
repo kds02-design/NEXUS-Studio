@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "selectionRule": "User-provided references override built-in entries. Built-in references are material and hierarchy guides, not text sources.",
+  "entries": [
+    {
+      "id": "rpg-bronze-relic",
+      "label": "브론즈 유물형 RPG",
+      "asset": "../conqueror-relic-nexus-render-a-v2.jpg",
+      "mood": ["중후함", "고대", "전투", "원정대"],
+      "material": ["브론즈", "다크 메탈", "골드 엣지"],
+      "shapeFit": ["굵은 획", "각진 세리프", "1-2행", "긴 메인 타이틀"]
+    },
+    {
+      "id": "rpg-silver-angular",
+      "label": "실버 각형 시즌 타이틀",
+      "asset": "../season4-angular-render-matrix.png",
+      "mood": ["정통 RPG", "시즌", "성장", "강철"],
+      "material": ["실버 메탈", "다크 아웃라인", "하드 베벨"],
+      "shapeFit": ["굵은 획", "직선형", "2행", "숫자 포함"]
+    },
+    {
+      "id": "casual-lime-cream",
+      "label": "라임 크림 캐주얼",
+      "asset": "../spring-training-rendered.png",
+      "mood": ["캐주얼", "봄", "훈련", "밝음"],
+      "material": ["유광 플라스틱", "크림", "라임", "옐로 엣지"],
+      "shapeFit": ["둥근 획", "2행", "친근한 이벤트"]
+    }
+  ]
+}

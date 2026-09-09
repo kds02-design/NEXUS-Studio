@@ -14,7 +14,7 @@ export const staticOptions = {
     { id: "3Lines", name: "3줄 (적층)", en: "Three-tier vertical stacked composition." }
   ],
   proportions: [
-    { id: "P_Condensed", name: "5:10 (매우 좁음)", en: "Condensed 5:10 ratio" }, { id: "P_Slim", name: "6:10 (좁음)", en: "Slim 6:10 ratio" },
+    { id: "P_Condensed", name: "5:10 장체 (명시 선택)", en: "Condensed tall-narrow 5:10 ratio" }, { id: "P_Slim", name: "6:10 장체 (명시 선택)", en: "Slim tall-narrow 6:10 ratio" },
     { id: "P_Std", name: "7:10 (표준)", en: "Standard 7:10 ratio" }, { id: "P_Wide", name: "8.5:10 (넓음)", en: "Wide 8.5:10 ratio" },
     { id: "P_Extended", name: "12:10 (확장)", en: "Extended 12:10 ratio" }
   ],
@@ -40,7 +40,12 @@ export const staticOptions = {
     { id: "Casual_Racing", name: "레이싱/스피드 (Racing Action)", en: "Dynamic racing game title with high speed slant and sliced strokes", cat: "casual" },
     { id: "Casual_Idol", name: "아이돌/하이틴 (Idol Pop)", en: "Soft, clean, elegant and cute pastel idol group logo typography", cat: "casual" },
     { id: "Casual_Grunge", name: "거친 영화 타이틀 (Grunge Movie)", en: "Aggressive action thriller title with heavy grunge distressed textures", cat: "casual" },
-    { id: "Casual_StencilBlock", name: "스텐실 블록 (Stencil Block)", en: "Bold geometric stencil block lettering with hard right-angle corners, heavy condensed solid strokes, thick chunky mass, modern stamped block forms with sharp flat terminals", cat: "casual" }
+    { id: "Casual_StencilBlock", name: "스텐실 블록 (Stencil Block)", en: "Bold geometric stencil block lettering with hard right-angle corners, heavy condensed solid strokes, thick chunky mass, modern stamped block forms with sharp flat terminals", cat: "casual" },
+    { id: "Story_IntimateMonoline", name: "인티메이트 모노라인", en: "restrained Korean monoline drama title, intimate human-scale handwriting, quiet editorial spacing, clean single-color silhouette", cat: "story", narrative: true },
+    { id: "Story_PoeticBrush", name: "포에틱 브러시", en: "restrained poetic Korean brush title, measured pressure contrast, calm literary rhythm, clean edges without ink texture", cat: "story", narrative: true },
+    { id: "Story_WarmImperfect", name: "웜 임퍼펙트", en: "warm Korean human-drama title, subtly imperfect hand-shaped strokes, calm baseline, understated emotional character", cat: "story", narrative: true },
+    { id: "Story_YouthDiary", name: "유스 다이어리", en: "contemporary Korean coming-of-age diary title, neat light handwriting, restrained youthful irregularity, generous negative space", cat: "story", narrative: true },
+    { id: "Story_DryComedy", name: "드라이 코미디", en: "deadpan Korean comedy-drama title, neutral monoline skeleton, one quietly awkward structural detail, controlled spacing", cat: "story", narrative: true }
   ],
   InternalDecorations: [ { id: "Solid", name: "꽉 찬 단색", en: "Solid filled internal mass" }, { id: "Hatched", name: "스케치 빗금", en: "Hand-drawn hatched sketch lines inside" }, { id: "Hatched_Chalk", name: "거친 분필 빗금", en: "rough chalk hatched shading inside" }, { id: "PolkaDots", name: "코믹 하프톤 도트", en: "Comic book pop-art halftone dots inside" }, { id: "Highlight", name: "반짝임/글로시", en: "Cartoonish glossy highlights and reflections" }, { id: "Extruded3D", name: "3D 입체/그림자", en: "Thick 3D extruded block depth and heavy drop shadow" }, { id: "StickerBorder", name: "스티커 컷아웃 테두리", en: "Thick, bold white sticker cut-out border surrounding the text" } ],
   TextFlows: [ { id: "Straight", name: "단정하게 (수평)", en: "Straight horizontal baseline" }, { id: "Bouncy", name: "통통 튀는 리듬감", en: "Bouncy, playful baseline with alternating letter heights" }, { id: "Wave", name: "물결 치듯", en: "Flowing wave-like baseline" }, { id: "Arch", name: "아치형", en: "Playful arching baseline" } ],

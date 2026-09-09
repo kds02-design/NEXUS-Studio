@@ -198,3 +198,51 @@ export function promoStats(d) {
     rollovers: (d.rollovers || []).length,
   };
 }
+
+// ─── 빨강 대표 아이콘 — 전사 결과(redItems)를 결정적으로 주입하는 헬퍼 (PromoSpecial.jsx 에서 이동, 순수) ───
+// 앱과 MCP(nexus_brief_profile_prompt extract / nexus_brief_plugin_json)가 같은 함수를 쓴다.
+
+// redItems [{box,item}] → 상자별 그룹 [{box, items[]}]. 같은 상자의 빨강 항목 여러 개를 모은다.
+export function groupRedItems(redItems) {
+  const byBox = new Map();
+  for (const r of Array.isArray(redItems) ? redItems : []) {
+    if (!r || !r.item) continue;
+    const box = String(r.box || "?").trim();
+    const it = String(r.item).trim();
+    if (!it) continue;
+    if (!byBox.has(box)) byBox.set(box, []);
+    if (!byBox.get(box).includes(it)) byBox.get(box).push(it);
+  }
+  return [...byBox.entries()].map(([box, items]) => ({ box, items }));
+}
+
+// 전사 텍스트 + 빨강 목록 헤더 + 추가 입력 → extract 단계 프롬프트 뒤에 붙일 [반영 희망 내용 (전사)] 본문.
+export function buildTranscriptSourceText({ transcript = "", redByBox = [], baseText = "" } = {}) {
+  const redInfo = (redByBox || []).map(({ box, items }) => `${box} → ${(items || []).join(" + ")}`).join("\n");
+  return [
+    transcript,
+    redInfo ? "[붉은색 대표 아이콘 (상자→아이템)]\n" + redInfo : "",
+    baseText ? "[추가 입력 텍스트]\n" + baseText : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+// transcribe 가 잡은 상자별 빨강 아이템을 boxes 순서에 맞춰 slotIcons 에 결정적으로 주입한다.
+// (모델이 여러 빨강을 1개로 합치거나 grouped 힌트를 무시하는 문제를 코드에서 차단)
+// 상자명은 공백 무시 + 포함 관계로 매칭. 매칭되는 상자만 덮어쓰고, 없으면 모델 값 유지.
+export function applyRedIconsToBoxes(out, redByBox) {
+  if (!out || !Array.isArray(out.boxes) || !Array.isArray(redByBox) || !redByBox.length) return out;
+  const norm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
+  const slot = Array.isArray(out.slotIcons) ? out.slotIcons.slice() : [];
+  out.boxes.forEach((b, i) => {
+    const nm = norm(b && b.name);
+    const full = norm(b && (b.top ? b.top + b.name : b.name));
+    const hit = redByBox.find((rb) => {
+      const k = norm(rb.box);
+      if (!k) return false;
+      return (nm && (k.includes(nm) || nm.includes(k))) || (full && (k.includes(full) || full.includes(k)));
+    });
+    if (hit && hit.items && hit.items.length) slot[i] = hit.items.join(" + ");
+  });
+  out.slotIcons = slot;
+  return out;
+}

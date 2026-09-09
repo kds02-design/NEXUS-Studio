@@ -27,6 +27,11 @@ const PERSONA_FOR_STYLE = {
   Casual_RetroChalk: ["action_retro", "casual"],
   Casual_Idol:       ["idol_trendsetter", "casual"],
   Casual_StencilBlock: ["block_architect", "casual"],
+  Story_IntimateMonoline: ["narrative_editor", "story"],
+  Story_PoeticBrush: ["narrative_editor", "story"],
+  Story_WarmImperfect: ["narrative_editor", "story"],
+  Story_YouthDiary: ["narrative_editor", "story"],
+  Story_DryComedy: ["narrative_editor", "story"],
 };
 
 export const applyScriptPreset = (presetId, s) => {
@@ -34,6 +39,47 @@ export const applyScriptPreset = (presetId, s) => {
   // 효과에 맞는 페르소나/카테고리 자동 동기화 — 충돌 방지.
   const pc = PERSONA_FOR_STYLE[presetId];
   if (pc) { s.setAiPersona?.(pc[0]); s.setSelectedCategory?.(pc[1]); }
+  if (presetId.startsWith('Story_')) {
+    s.setNarrativeIntensity?.('subtle');
+    s.setNarrativeScope?.('one');
+    s.setNarrativeMutation?.('auto');
+    s.setStemWeight('Weight_Thin');
+    s.setTerminalStyle('End_Round');
+    s.setStrokeTexture('Tex_Smooth');
+    s.setStrokeSharpness('Sharp_Crisp');
+    s.setStrokeExtension('Ext_None');
+    s.setRhythmDynamic('Rhythm_Calm');
+    s.setPlayfulDistortion('Distort_None');
+    s.setAnalogImperfection('Imp_None');
+    s.setInternalDecoration('Solid');
+    s.setTextFlow('Straight');
+    s.setLetterConnection('Separated');
+    s.setCasualSurrounding('Clean');
+    s.setKerning?.('Kern_Wide');
+    s.setSlantAngle('Slant_0');
+    s.setAspectRatio?.('2.76:1');
+    s.setOccupancy?.('30%');
+    s.setLayoutType?.('1Line');
+    s.setEnhanceMode?.('perfection');
+    s.setMomentumActive?.(false);
+    s.setPersonaSliderValue?.(20);
+
+    if (presetId === 'Story_PoeticBrush') {
+      s.setStemWeight('Weight_Brush');
+      s.setTerminalStyle('End_Brush');
+    } else if (presetId === 'Story_WarmImperfect') {
+      s.setStemWeight('Weight_Marker');
+      s.setTerminalStyle('End_Round');
+    } else if (presetId === 'Story_YouthDiary') {
+      s.setKerning?.('Kern_Std');
+      s.setTerminalStyle('End_Round');
+    } else if (presetId === 'Story_DryComedy') {
+      s.setStemWeight('Weight_Thin');
+      s.setTerminalStyle('End_Blunt');
+      s.setKerning?.('Kern_Std');
+    }
+    return;
+  }
   if (presetId === "Calli_Brush") { s.setStemWeight("Weight_Brush"); s.setTerminalStyle("End_Brush"); s.setStrokeTexture("Tex_Watercolor"); s.setAnalogImperfection("Imp_Bleed"); s.setStrokeExtension("Ext_Elegant"); s.setLetterConnection("CursiveFlow"); }
   else if (presetId === "Casual_Bubble") { s.setStemWeight("Weight_Chunky"); s.setTerminalStyle("End_Round"); s.setStrokeSharpness("Sharp_Soft"); s.setRhythmDynamic("Rhythm_Bouncy"); s.setTextFlow("Bouncy"); s.setPlayfulDistortion("Distort_Squeeze"); }
   else if (presetId === "Casual_Comic") { s.setStemWeight("Weight_Chunky"); s.setTerminalStyle("End_Round"); s.setStrokeTexture("Tex_Smooth"); s.setInternalDecoration("PolkaDots"); s.setRhythmDynamic("Rhythm_Bouncy"); s.setPlayfulDistortion("Distort_Squeeze"); }
@@ -66,4 +112,5 @@ export const applyCategoryChange = (cat, s) => {
   s.setSelectedCategory(cat);
   if (cat === 'calli') { s.setAiPersona('ink_master'); applyScriptPreset('Calli_Brush', s); }
   else if (cat === 'casual') { s.setAiPersona('bubble_pop'); applyScriptPreset('Casual_Bubble', s); }
+  else if (cat === 'story') { s.setAiPersona('narrative_editor'); applyScriptPreset('Story_IntimateMonoline', s); }
 };

@@ -16,6 +16,13 @@ const pickEn = (c) => {
   return (typeof c.en === 'string' && c.en.trim()) || (typeof c.ko === 'string' && c.ko.trim()) || '';
 };
 
+// Overview 탭의 outputContent 는 설정 요약문(`[ V... OVERVIEW ]`)이라 렌더 프롬프트가 아님 — baseTechnical 로 폴백.
+const pickRenderPrompt = (prompts) => {
+  const out = pickEn(prompts.outputContent);
+  const isOverview = !out || out === pickEn(prompts.overview) || out.startsWith('[ V');
+  return isOverview ? pickEn(prompts.baseTechnical) : out;
+};
+
 export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditView, getPrompts, getEditPrompts }) => {
   const buildTypographyLock = () => ({
     exactText: isEditView() ? '' : String(b.inputText || ''),
@@ -75,10 +82,9 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
       return;
     }
     const prompts = useEdit ? getEditPrompts() : getPrompts();
-    const promptText = pickEn(prompts.outputContent) || pickEn(prompts.baseTechnical);
+    const promptText = pickRenderPrompt(prompts);
     if (!promptText) { b.setRenderError('먼저 프롬프트를 컴파일하세요.'); return; }
-    const canGen = await b.ensureCanGenerate?.('image');
-    if (canGen === false) { b.setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)'); return; }
+    if (!(await b.ensureCanGenerate('image'))) { b.setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)'); return; }
     b.setRendering(true); b.setRenderError(null); b.setRenderedImage(null);
     try {
       // Edit 뷰는 업로드된 이미지를 reference 로 사용 (I2I 마이크로 에디트).
@@ -157,5 +163,24 @@ export const createRenderHandlers = (b, { user, navigate, IMAGEN_MODELS, isEditV
     }
   };
 
-  return { handleRender, handleDownloadRendered, handleSaveToPromptArc, handleSendToRenderMatrix, handleSendToMaskForge };
+  // VectorForge 송신 — 흑백 타이포를 SVG 벡터로. 렌더 dataUrl 은 자가완결이라 업로드 없이 바로 전달.
+  const handleSendToVectorForge = () => {
+    if (!b.renderedImage?.dataUrl) return;
+    b.setSendingToVectorForge(true);
+    try {
+      navigate?.('vector-forge', {
+        source: 'typecore-breeze',
+        target: 'vector-forge',
+        timestamp: Date.now(),
+        image: { url: b.savedCloudinaryUrl || b.renderedImage.dataUrl, metadata: { from: 'TypecoreBreeze' } },
+        params: { preset: 'title' },
+      });
+    } catch (e) {
+      console.error('[TypecoreBreeze] send to VectorForge failed', e);
+    } finally {
+      b.setSendingToVectorForge(false);
+    }
+  };
+
+  return { handleRender, handleDownloadRendered, handleSaveToPromptArc, handleSendToRenderMatrix, handleSendToMaskForge, handleSendToVectorForge };
 };

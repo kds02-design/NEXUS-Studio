@@ -66,6 +66,24 @@ export const LIGHTFX_FORMS = [
 ];
 export const LIGHTFX_FORM_BY_ID = Object.fromEntries(LIGHTFX_FORMS.map(f => [f.id, f]));
 
+// 여백 자동 추가 프로필 — '형태 참고' 업로드 시 캔버스 여백을 얼마나 줄지를 배치 형태/종류로 결정.
+// 예전엔 무조건 16:9 + 긴 변 80% 였는데, 실루엣 밀착형(아우라·텍스트 글로우)은 피사체가 작아져 윤곽 정밀도가
+// 떨어지고, 반대로 바닥 이펙트는 옆으로 넓게 깔릴 가로 공간이 필요하다. 형태에 맞춰 나눈다.
+//   targetMargin: 콘텐츠 긴 변 대비 각 변 여백 목표 비율 · aspectRatio: 지정 시 그 비율로 강제(크롭 없음)
+export const LIGHTFX_PAD_PROFILES = {
+  hug:    { id: 'hug',    label: '밀착 25%',       targetMargin: 0.25, aspectRatio: null,   desc: '실루엣을 따라가는 형태 — 피사체를 크게 유지해 윤곽 정밀도 확보' },
+  front:  { id: 'front',  label: '전방 35%',       targetMargin: 0.35, aspectRatio: null,   desc: '전방 글린트·접촉광 — 하단·모서리 바깥으로 짧게 퍼질 공간' },
+  spread: { id: 'spread', label: '확산 60%',       targetMargin: 0.6,  aspectRatio: null,   desc: '뒤쪽 광원·후광·파티클 — 실루엣 바깥으로 넓게 퍼질 공간' },
+  ground: { id: 'ground', label: '바닥 60% · 16:9', targetMargin: 0.6,  aspectRatio: 16 / 9, desc: '바닥 이펙트 — 옆으로 넓게 깔리도록 가로 캔버스 확보' },
+};
+export const lightFxPadProfile = (categoryId, formId) => {
+  if (categoryId === 'ground' || formId === 'groundPool') return LIGHTFX_PAD_PROFILES.ground;
+  const form = LIGHTFX_FORM_BY_ID[formId];
+  if (form?.edgeHug) return LIGHTFX_PAD_PROFILES.hug;
+  if (form?.refMode === 'front') return LIGHTFX_PAD_PROFILES.front;
+  return LIGHTFX_PAD_PROFILES.spread;
+};
+
 // 스타일 — 빛의 결.
 export const LIGHTFX_STYLES = [
   { id: 'soft',      label: '소프트 글로우', desc: '부드러운 확산',

@@ -1,0 +1,1844 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-28T05:55:39.431Z",
+  "source": "installed-codex-skills",
+  "skills": [
+    {
+      "id": "game-banner-automation",
+      "koreanName": "배너 자동화 총괄",
+      "name": "game-banner-automation",
+      "description": "Create, refine, evaluate, and deliver multi-size promotional game-banner families through one evidence-gated pipeline with pluggable game profiles. Use for Aion, Blade & Soul, future game campaigns, character-led banners, title production, Figma assembly, multi-size adaptation, and banner QA.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/game-banner-automation",
+      "counts": {
+        "에이전트": 1,
+        "에셋": 4,
+        "레퍼런스": 8,
+        "스크립트": 3,
+        "지침": 1,
+        "테스트": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 313,
+          "modifiedAt": "2026-08-28T04:08:22.275Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/games/bns/bns-official-logo-classic.png",
+          "kind": "에셋",
+          "size": 22960,
+          "modifiedAt": "2026-08-25T03:35:03.021Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/games/bns/bns-official-logo-neo.png",
+          "kind": "에셋",
+          "size": 20127,
+          "modifiedAt": "2026-08-25T03:34:41.062Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/games/bns/channel-neo.png",
+          "kind": "에셋",
+          "size": 2186,
+          "modifiedAt": "2026-08-25T03:34:40.368Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/games/bns/channel-specialized.png",
+          "kind": "에셋",
+          "size": 2161,
+          "modifiedAt": "2026-08-25T03:34:40.680Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/contracts.md",
+          "kind": "레퍼런스",
+          "size": 3377,
+          "modifiedAt": "2026-08-28T05:04:41.288Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/game-profile-schema.md",
+          "kind": "레퍼런스",
+          "size": 1853,
+          "modifiedAt": "2026-08-28T04:25:03.331Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/game-profiles/aion.json",
+          "kind": "레퍼런스",
+          "size": 1204,
+          "modifiedAt": "2026-08-28T04:25:04.706Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/game-profiles/bns.json",
+          "kind": "레퍼런스",
+          "size": 3702,
+          "modifiedAt": "2026-08-28T04:25:06.282Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/games/aion.md",
+          "kind": "레퍼런스",
+          "size": 1510,
+          "modifiedAt": "2026-08-28T04:09:04.065Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/games/bns.md",
+          "kind": "레퍼런스",
+          "size": 1869,
+          "modifiedAt": "2026-08-28T04:26:19.635Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/pipeline.md",
+          "kind": "레퍼런스",
+          "size": 6611,
+          "modifiedAt": "2026-08-28T05:04:40.017Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/shared-layout-pool.json",
+          "kind": "레퍼런스",
+          "size": 777,
+          "modifiedAt": "2026-08-28T04:25:07.740Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/banner-workflow-gate.mjs",
+          "kind": "스크립트",
+          "size": 9316,
+          "modifiedAt": "2026-08-28T05:04:57.191Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/build-game-banner-job.mjs",
+          "kind": "스크립트",
+          "size": 2968,
+          "modifiedAt": "2026-08-28T05:04:55.891Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/resolve-game-profile.mjs",
+          "kind": "스크립트",
+          "size": 3263,
+          "modifiedAt": "2026-08-28T04:25:30.530Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 7366,
+          "modifiedAt": "2026-08-28T05:04:38.742Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "tests/regression.mjs",
+          "kind": "테스트",
+          "size": 4993,
+          "modifiedAt": "2026-08-28T05:05:46.375Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "photographer-layout",
+      "koreanName": "레이아웃·구도",
+      "name": "photographer-layout",
+      "description": "Direct game key visuals and promotional banners through character-aware crop, hierarchy, title-safe composition, cinematic atmosphere, coherent lighting and color, and non-generative subject integration. Use for game banners, campaign KVs, character-led promotional art, multi-size adaptations, and cinematic image-led layouts; also supports photographic layouts when visual direction is required. Do not use for ordinary retouching without a composition or campaign-design need.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/photographer-layout",
+      "counts": {
+        "에이전트": 1,
+        "에셋": 40,
+        "레퍼런스": 8,
+        "스크립트": 5,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 370,
+          "modifiedAt": "2026-08-25T01:13:44.720Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-a1.svg",
+          "kind": "에셋",
+          "size": 4350,
+          "modifiedAt": "2026-08-27T08:08:21.440Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-a2.svg",
+          "kind": "에셋",
+          "size": 4369,
+          "modifiedAt": "2026-08-27T08:08:21.443Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-a3.svg",
+          "kind": "에셋",
+          "size": 5632,
+          "modifiedAt": "2026-08-27T08:08:21.446Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-a4.svg",
+          "kind": "에셋",
+          "size": 5809,
+          "modifiedAt": "2026-08-27T08:08:21.449Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-a5.svg",
+          "kind": "에셋",
+          "size": 4991,
+          "modifiedAt": "2026-08-27T08:08:21.452Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-b1.svg",
+          "kind": "에셋",
+          "size": 4406,
+          "modifiedAt": "2026-08-27T08:08:21.456Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-b2.svg",
+          "kind": "에셋",
+          "size": 4762,
+          "modifiedAt": "2026-08-27T08:08:21.460Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-b3.svg",
+          "kind": "에셋",
+          "size": 5421,
+          "modifiedAt": "2026-08-27T08:08:21.463Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-b4.svg",
+          "kind": "에셋",
+          "size": 5946,
+          "modifiedAt": "2026-08-27T08:08:21.466Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-b5.svg",
+          "kind": "에셋",
+          "size": 5661,
+          "modifiedAt": "2026-08-27T08:08:21.470Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-c1.svg",
+          "kind": "에셋",
+          "size": 5684,
+          "modifiedAt": "2026-08-27T08:08:21.473Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-c2.svg",
+          "kind": "에셋",
+          "size": 5373,
+          "modifiedAt": "2026-08-27T08:08:21.477Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-c3.svg",
+          "kind": "에셋",
+          "size": 6234,
+          "modifiedAt": "2026-08-27T08:08:21.480Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-c4.svg",
+          "kind": "에셋",
+          "size": 5678,
+          "modifiedAt": "2026-08-27T08:08:21.483Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-c5.svg",
+          "kind": "에셋",
+          "size": 4677,
+          "modifiedAt": "2026-08-27T08:08:21.486Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-d1.svg",
+          "kind": "에셋",
+          "size": 4131,
+          "modifiedAt": "2026-08-27T08:08:21.489Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-d2.svg",
+          "kind": "에셋",
+          "size": 4496,
+          "modifiedAt": "2026-08-27T08:08:21.493Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-d3.svg",
+          "kind": "에셋",
+          "size": 4312,
+          "modifiedAt": "2026-08-27T08:08:21.496Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-d4.svg",
+          "kind": "에셋",
+          "size": 4753,
+          "modifiedAt": "2026-08-27T08:08:21.500Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/core-d5.svg",
+          "kind": "에셋",
+          "size": 6703,
+          "modifiedAt": "2026-08-27T08:08:21.503Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-a1.png",
+          "kind": "에셋",
+          "size": 2234659,
+          "modifiedAt": "2026-08-26T07:29:17.001Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-a2.png",
+          "kind": "에셋",
+          "size": 1983963,
+          "modifiedAt": "2026-08-26T07:30:21.022Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-a3.png",
+          "kind": "에셋",
+          "size": 2416793,
+          "modifiedAt": "2026-08-26T07:31:27.622Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-a4.png",
+          "kind": "에셋",
+          "size": 2524696,
+          "modifiedAt": "2026-08-26T07:32:33.838Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-a5.png",
+          "kind": "에셋",
+          "size": 2211722,
+          "modifiedAt": "2026-08-26T07:33:37.606Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-b1.png",
+          "kind": "에셋",
+          "size": 2387445,
+          "modifiedAt": "2026-08-26T07:34:58.205Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-b2.png",
+          "kind": "에셋",
+          "size": 2754467,
+          "modifiedAt": "2026-08-26T07:37:35.839Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-b3.png",
+          "kind": "에셋",
+          "size": 2463392,
+          "modifiedAt": "2026-08-26T07:40:10.128Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-b4.png",
+          "kind": "에셋",
+          "size": 2458999,
+          "modifiedAt": "2026-08-26T07:41:12.181Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-b5.png",
+          "kind": "에셋",
+          "size": 2476341,
+          "modifiedAt": "2026-08-26T07:42:20.627Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-c1.png",
+          "kind": "에셋",
+          "size": 2404001,
+          "modifiedAt": "2026-08-26T07:45:09.823Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-c2.png",
+          "kind": "에셋",
+          "size": 2042515,
+          "modifiedAt": "2026-08-26T07:46:14.825Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-c3.png",
+          "kind": "에셋",
+          "size": 2213339,
+          "modifiedAt": "2026-08-26T07:47:17.655Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-c4.png",
+          "kind": "에셋",
+          "size": 2064711,
+          "modifiedAt": "2026-08-26T07:49:49.192Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-c5.png",
+          "kind": "에셋",
+          "size": 2350659,
+          "modifiedAt": "2026-08-26T07:50:51.009Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-d1.png",
+          "kind": "에셋",
+          "size": 2744847,
+          "modifiedAt": "2026-08-26T07:52:24.792Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-d2.png",
+          "kind": "에셋",
+          "size": 3044657,
+          "modifiedAt": "2026-08-26T07:53:29.997Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-d3.png",
+          "kind": "에셋",
+          "size": 2708847,
+          "modifiedAt": "2026-08-26T07:54:36.640Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-d4.png",
+          "kind": "에셋",
+          "size": 2649890,
+          "modifiedAt": "2026-08-26T07:55:46.381Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "assets/layout-blueprints/manga-core20/core-d5.png",
+          "kind": "에셋",
+          "size": 2562215,
+          "modifiedAt": "2026-08-26T07:58:28.175Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/banner-kv-direction.md",
+          "kind": "레퍼런스",
+          "size": 6851,
+          "modifiedAt": "2026-08-25T01:13:08.057Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/character-composition.md",
+          "kind": "레퍼런스",
+          "size": 8965,
+          "modifiedAt": "2026-08-27T00:07:27.386Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/core20-manifest.json",
+          "kind": "레퍼런스",
+          "size": 7562,
+          "modifiedAt": "2026-08-27T08:08:21.507Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/kv-light-color-direction.md",
+          "kind": "레퍼런스",
+          "size": 2841,
+          "modifiedAt": "2026-08-24T14:26:34.567Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/layout-blueprint-system.md",
+          "kind": "레퍼런스",
+          "size": 9179,
+          "modifiedAt": "2026-08-27T08:06:52.556Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/layout-blueprints.json",
+          "kind": "레퍼런스",
+          "size": 53907,
+          "modifiedAt": "2026-08-26T08:23:49.480Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/media-layouts.md",
+          "kind": "레퍼런스",
+          "size": 2719,
+          "modifiedAt": "2026-08-20T23:58:12.898Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/review-rubric.md",
+          "kind": "레퍼런스",
+          "size": 1860,
+          "modifiedAt": "2026-08-25T01:13:09.189Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/create-blueprint-lock.mjs",
+          "kind": "스크립트",
+          "size": 2912,
+          "modifiedAt": "2026-08-27T07:53:15.140Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/render-layout-blueprints.mjs",
+          "kind": "스크립트",
+          "size": 7604,
+          "modifiedAt": "2026-08-27T08:05:59.451Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/select-core-layout.mjs",
+          "kind": "스크립트",
+          "size": 918,
+          "modifiedAt": "2026-08-26T08:23:09.227Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/validate-blueprint-conformance.mjs",
+          "kind": "스크립트",
+          "size": 1963,
+          "modifiedAt": "2026-08-26T14:40:46.600Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/validate-core20-catalog.mjs",
+          "kind": "스크립트",
+          "size": 4124,
+          "modifiedAt": "2026-08-27T08:06:37.372Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 15088,
+          "modifiedAt": "2026-08-28T04:25:56.906Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "typecore-title",
+      "koreanName": "타이틀 형태",
+      "name": "typecore-title",
+      "description": "Rapidly create Korean promotional titles by remapping approved reference materials onto prepared text shapes, update recurring title tokens, maintain a reusable approved-title library, or create genuinely new shapes through Nexus Typecore. Use for reference-led title production, rendered-title reuse, season updates, title PNG delivery, repeated-banner title matching, or Figma placement.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/typecore-title",
+      "counts": {
+        "에이전트": 1,
+        "기타": 53,
+        "레퍼런스": 9,
+        "스크립트": 5,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 519,
+          "modifiedAt": "2026-08-24T00:28:39.986Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-a-prompt.txt",
+          "kind": "기타",
+          "size": 859,
+          "modifiedAt": "2026-08-10T01:05:26.657Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-b-prompt.txt",
+          "kind": "기타",
+          "size": 859,
+          "modifiedAt": "2026-08-10T01:05:27.426Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-brief.json",
+          "kind": "기타",
+          "size": 1743,
+          "modifiedAt": "2026-08-10T01:05:32.102Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-creative-a.png",
+          "kind": "기타",
+          "size": 541850,
+          "modifiedAt": "2026-08-10T01:14:40.675Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-creative-b.png",
+          "kind": "기타",
+          "size": 494077,
+          "modifiedAt": "2026-08-10T01:14:58.373Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-flat-a-source.png",
+          "kind": "기타",
+          "size": 1056908,
+          "modifiedAt": "2026-08-10T01:06:45.405Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-flat-a.png",
+          "kind": "기타",
+          "size": 1027146,
+          "modifiedAt": "2026-08-10T01:06:15.857Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-flat-b-source.png",
+          "kind": "기타",
+          "size": 1373728,
+          "modifiedAt": "2026-08-10T01:06:45.518Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-flat-b.png",
+          "kind": "기타",
+          "size": 1126678,
+          "modifiedAt": "2026-08-10T01:06:15.416Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-nexus-render-a-transparent-trimmed-1500.png",
+          "kind": "기타",
+          "size": 536400,
+          "modifiedAt": "2026-08-10T01:58:23.950Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-nexus-render-a-transparent-trimmed.png",
+          "kind": "기타",
+          "size": 1919621,
+          "modifiedAt": "2026-08-10T01:55:25.911Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-nexus-render-a-transparent.png",
+          "kind": "기타",
+          "size": 3136542,
+          "modifiedAt": "2026-08-10T01:51:48.536Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-nexus-render-a-v2.jpg",
+          "kind": "기타",
+          "size": 2980961,
+          "modifiedAt": "2026-08-10T01:43:37.818Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-nexus-render-a-v3.jpg",
+          "kind": "기타",
+          "size": 1406503,
+          "modifiedAt": "2026-08-10T01:44:55.372Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-nexus-render-a.png",
+          "kind": "기타",
+          "size": 2713099,
+          "modifiedAt": "2026-08-10T01:42:21.423Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-reference-a.png",
+          "kind": "기타",
+          "size": 550806,
+          "modifiedAt": "2026-08-10T01:11:17.792Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-reference-b.png",
+          "kind": "기타",
+          "size": 556468,
+          "modifiedAt": "2026-08-10T01:11:34.336Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-render-matrix-a.png",
+          "kind": "기타",
+          "size": 798829,
+          "modifiedAt": "2026-08-10T01:33:54.205Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-serif-a-prompt.txt",
+          "kind": "기타",
+          "size": 865,
+          "modifiedAt": "2026-08-10T01:08:25.353Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-serif-a-source.png",
+          "kind": "기타",
+          "size": 997788,
+          "modifiedAt": "2026-08-10T01:09:25.244Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-serif-a.png",
+          "kind": "기타",
+          "size": 993632,
+          "modifiedAt": "2026-08-10T01:09:08.218Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-serif-b-prompt.txt",
+          "kind": "기타",
+          "size": 847,
+          "modifiedAt": "2026-08-10T01:08:26.053Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-serif-b-source.png",
+          "kind": "기타",
+          "size": 1061203,
+          "modifiedAt": "2026-08-10T01:09:25.336Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "conqueror-relic-serif-b.png",
+          "kind": "기타",
+          "size": 1022618,
+          "modifiedAt": "2026-08-10T01:09:06.177Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "figma-transparent-verification.png",
+          "kind": "기타",
+          "size": 217720,
+          "modifiedAt": "2026-08-10T01:53:03.487Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/engine-map.md",
+          "kind": "레퍼런스",
+          "size": 2269,
+          "modifiedAt": "2026-08-06T10:15:42.796Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/figma-shape-search.md",
+          "kind": "레퍼런스",
+          "size": 5971,
+          "modifiedAt": "2026-08-27T09:47:49.209Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/figma-title-authority.md",
+          "kind": "레퍼런스",
+          "size": 1859,
+          "modifiedAt": "2026-08-27T09:47:45.966Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/nexus-app-handoff.md",
+          "kind": "레퍼런스",
+          "size": 2868,
+          "modifiedAt": "2026-08-18T06:49:20.664Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/prompt-arc-retrieval.md",
+          "kind": "레퍼런스",
+          "size": 2816,
+          "modifiedAt": "2026-08-21T10:55:41.573Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/reference-catalog.json",
+          "kind": "레퍼런스",
+          "size": 1244,
+          "modifiedAt": "2026-08-24T00:28:19.147Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/reference-remap.md",
+          "kind": "레퍼런스",
+          "size": 2522,
+          "modifiedAt": "2026-08-24T00:28:17.920Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/title-library.md",
+          "kind": "레퍼런스",
+          "size": 5590,
+          "modifiedAt": "2026-08-27T09:20:29.971Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/title-transparency.md",
+          "kind": "레퍼런스",
+          "size": 3055,
+          "modifiedAt": "2026-08-27T00:53:09.188Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "render-matrix-handoff.json",
+          "kind": "기타",
+          "size": 931,
+          "modifiedAt": "2026-08-10T01:45:25.664Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "render-matrix-prompt.txt",
+          "kind": "기타",
+          "size": 1381,
+          "modifiedAt": "2026-08-10T01:42:52.205Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/build-flat-mask-robust.ps1",
+          "kind": "스크립트",
+          "size": 1090,
+          "modifiedAt": "2026-08-10T05:32:18.259Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/build-title-brief.mjs",
+          "kind": "스크립트",
+          "size": 3218,
+          "modifiedAt": "2026-08-18T06:49:40.543Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/resize-transparent-png.ps1",
+          "kind": "스크립트",
+          "size": 1630,
+          "modifiedAt": "2026-08-10T05:29:52.379Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/trim-transparent-robust.ps1",
+          "kind": "스크립트",
+          "size": 1869,
+          "modifiedAt": "2026-08-10T05:31:44.719Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/validate-figma-title-audit.mjs",
+          "kind": "스크립트",
+          "size": 1800,
+          "modifiedAt": "2026-08-27T00:42:46.233Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-a-prompt.txt",
+          "kind": "기타",
+          "size": 1390,
+          "modifiedAt": "2026-08-10T05:10:35.853Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-approved-alpha-mask.png",
+          "kind": "기타",
+          "size": 67487,
+          "modifiedAt": "2026-08-10T05:32:28.364Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-b-prompt.txt",
+          "kind": "기타",
+          "size": 1361,
+          "modifiedAt": "2026-08-10T05:10:36.564Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-brief.json",
+          "kind": "기타",
+          "size": 2371,
+          "modifiedAt": "2026-08-10T05:07:02.392Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-material-prompt.txt",
+          "kind": "기타",
+          "size": 1630,
+          "modifiedAt": "2026-08-10T05:26:58.623Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-render-matrix-handoff.json",
+          "kind": "기타",
+          "size": 980,
+          "modifiedAt": "2026-08-10T05:33:14.334Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-render-matrix.png",
+          "kind": "기타",
+          "size": 1753030,
+          "modifiedAt": "2026-08-10T05:27:42.266Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-render-transparent-trimmed.png",
+          "kind": "기타",
+          "size": 2594775,
+          "modifiedAt": "2026-08-10T05:32:43.644Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-render-transparent.png",
+          "kind": "기타",
+          "size": 4629518,
+          "modifiedAt": "2026-08-10T05:32:42.098Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-title-final-transparent-1500.png",
+          "kind": "기타",
+          "size": 896675,
+          "modifiedAt": "2026-08-10T05:32:44.331Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-title-flat-a.png",
+          "kind": "기타",
+          "size": 266881,
+          "modifiedAt": "2026-08-10T05:12:05.541Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-title-flat-approved.png",
+          "kind": "기타",
+          "size": 277311,
+          "modifiedAt": "2026-08-10T05:12:07.138Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "season4-angular-title-flat-b.png",
+          "kind": "기타",
+          "size": 277311,
+          "modifiedAt": "2026-08-10T05:12:07.138Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 25028,
+          "modifiedAt": "2026-08-27T09:48:20.110Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-blank.png",
+          "kind": "기타",
+          "size": 6855,
+          "modifiedAt": "2026-08-10T00:47:55.185Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-final-clean.png",
+          "kind": "기타",
+          "size": 4210974,
+          "modifiedAt": "2026-08-10T00:51:02.823Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-final.png",
+          "kind": "기타",
+          "size": 5061843,
+          "modifiedAt": "2026-08-10T00:50:39.113Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-flat-prompt.txt",
+          "kind": "기타",
+          "size": 823,
+          "modifiedAt": "2026-08-10T00:47:35.757Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-flat-source.png",
+          "kind": "기타",
+          "size": 1408236,
+          "modifiedAt": "2026-08-10T00:49:09.007Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-flat.png",
+          "kind": "기타",
+          "size": 1179989,
+          "modifiedAt": "2026-08-10T00:48:45.407Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-handoff.json",
+          "kind": "기타",
+          "size": 968,
+          "modifiedAt": "2026-08-10T00:52:49.403Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-material-prompt.txt",
+          "kind": "기타",
+          "size": 1179,
+          "modifiedAt": "2026-08-10T00:47:36.565Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-rendered.png",
+          "kind": "기타",
+          "size": 1757694,
+          "modifiedAt": "2026-08-10T00:49:34.949Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "spring-training-title.png",
+          "kind": "기타",
+          "size": 3656549,
+          "modifiedAt": "2026-08-10T00:51:20.677Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "title-brief.json",
+          "kind": "기타",
+          "size": 1727,
+          "modifiedAt": "2026-08-10T00:46:52.083Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "title-flat-approved-padded.jpg",
+          "kind": "기타",
+          "size": 239026,
+          "modifiedAt": "2026-08-10T01:44:15.790Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "title-flat-approved.png",
+          "kind": "기타",
+          "size": 541850,
+          "modifiedAt": "2026-08-10T01:14:40.675Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "gpt-banner-title",
+      "koreanName": "GPT 타이틀",
+      "name": "gpt-banner-title",
+      "description": "Create stable Korean promotional banner titles with GPT Image by balancing title intensity against busy backgrounds, characters, items, and FX. Use for GPT 타이틀, 게임 배너 타이틀, 한글 제목 렌더링, 타이틀 화려함 조절, T1/T2/T3 title direction, transparent title PNGs, or title stability and readability fixes.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/gpt-banner-title",
+      "counts": {
+        "에이전트": 1,
+        "레퍼런스": 1,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 300,
+          "modifiedAt": "2026-08-25T05:25:56.493Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/title-intensity-guide.md",
+          "kind": "레퍼런스",
+          "size": 3367,
+          "modifiedAt": "2026-08-25T06:27:02.631Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 12665,
+          "modifiedAt": "2026-08-27T09:22:13.331Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "nexus-imagen-render",
+      "koreanName": "Nexus Google 렌더",
+      "name": "nexus-imagen-render",
+      "description": "Render or edit game banner assets through the same Google Gemini image-generation path used by Nexus Studio, using Nano Banana Pro/Imagen-style image-to-image requests with reference preservation, 1K-4K output, and server-side or environment API keys. Use when Nexus-quality API rendering, Google image generation, background quality-up, character lighting, or title material rendering is requested.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/nexus-imagen-render",
+      "counts": {
+        "에이전트": 1,
+        "스크립트": 1,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 262,
+          "modifiedAt": "2026-08-06T10:57:12.889Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/nexus-imagen-render.mjs",
+          "kind": "스크립트",
+          "size": 3431,
+          "modifiedAt": "2026-08-12T01:52:45.011Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 3708,
+          "modifiedAt": "2026-08-18T06:49:23.886Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "nexus-mask-forge",
+      "koreanName": "고형 피사체 투명화",
+      "name": "nexus-mask-forge",
+      "description": "Convert Nexus-style titles and other solid subjects to validated transparent PNGs while preserving dark materials, Hangul counters, source resolution, and alignment. Use for Mask Forge Remove AI, title transparency, subject cutouts, or solid-asset alpha QA; use nexus-effect-extractor for glow, smoke, aura, and particle plates.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/nexus-mask-forge",
+      "counts": {
+        "에이전트": 1,
+        "스크립트": 2,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 275,
+          "modifiedAt": "2026-08-27T11:34:01.758Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/mask_forge.py",
+          "kind": "스크립트",
+          "size": 3112,
+          "modifiedAt": "2026-08-27T11:34:03.925Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/normalize_title_working_copy.py",
+          "kind": "스크립트",
+          "size": 1419,
+          "modifiedAt": "2026-08-27T00:53:07.838Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 3665,
+          "modifiedAt": "2026-08-27T11:33:57.852Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "nexus-kv-enhance",
+      "koreanName": "키비주얼 향상",
+      "name": "nexus-kv-enhance",
+      "description": "Enhance game key visuals using the user's local NexusPreview Background Quality Up and RubiconForge/NexusPreview character Light FX logic. Use when the user asks for 키비주얼 광원, 캐릭터 이펙트, 림라이트, 오라, Light FX, 배경 품질 향상, Background Quality Up, KV polish, or wants separated compositing effects applied in Figma.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/nexus-kv-enhance",
+      "counts": {
+        "에이전트": 1,
+        "레퍼런스": 2,
+        "스크립트": 3,
+        "지침": 1,
+        "기타": 7
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 303,
+          "modifiedAt": "2026-08-06T09:37:37.468Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/api-schema.md",
+          "kind": "레퍼런스",
+          "size": 938,
+          "modifiedAt": "2026-08-12T01:55:11.869Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/engine-map.md",
+          "kind": "레퍼런스",
+          "size": 3976,
+          "modifiedAt": "2026-08-11T04:46:21.568Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/build-kv-brief.mjs",
+          "kind": "스크립트",
+          "size": 1869,
+          "modifiedAt": "2026-08-06T09:37:37.468Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/call-nexus-background.mjs",
+          "kind": "스크립트",
+          "size": 2689,
+          "modifiedAt": "2026-08-12T01:56:50.047Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/maskforge_effect_transparency.ps1",
+          "kind": "스크립트",
+          "size": 2692,
+          "modifiedAt": "2026-08-11T04:46:23.022Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 7478,
+          "modifiedAt": "2026-08-24T14:35:22.136Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "test-output/jinmu5-background-brief.json",
+          "kind": "기타",
+          "size": 1355,
+          "modifiedAt": "2026-08-12T03:43:46.280Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "test-output/jinmu5-background-google-final.png",
+          "kind": "기타",
+          "size": 3658087,
+          "modifiedAt": "2026-08-12T03:44:42.972Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "test-output/skypark-lens-flare-alpha-1920.png",
+          "kind": "기타",
+          "size": 2233132,
+          "modifiedAt": "2026-08-12T04:19:03.688Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "test-output/spring-background-brief.json",
+          "kind": "기타",
+          "size": 1037,
+          "modifiedAt": "2026-08-12T03:37:08.003Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "test-output/spring-background-google-final.png",
+          "kind": "기타",
+          "size": 3006946,
+          "modifiedAt": "2026-08-12T03:37:53.781Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "test-output/spring-background1-google-final-v2.png",
+          "kind": "기타",
+          "size": 3133055,
+          "modifiedAt": "2026-08-12T03:41:23.712Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "test-output/spring-background1-working-1920.jpg",
+          "kind": "기타",
+          "size": 16373,
+          "modifiedAt": "2026-08-12T03:40:48.892Z",
+          "editable": false,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "nexus-effect-extractor",
+      "koreanName": "발광 이펙트 추출",
+      "name": "nexus-effect-extractor",
+      "description": "Extract glow, light, aura, smoke, fog, sparkle, and particle plates from sampled uniform mattes into canvas-aligned transparent PNGs with color recovery and alpha QA. Use for Mask Forge effect transparency, black-matte FX extraction, or effect-plate alpha conversion; do not use for titles, characters, items, logos, or other solid subjects.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/nexus-effect-extractor",
+      "counts": {
+        "에이전트": 1,
+        "스크립트": 1,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 276,
+          "modifiedAt": "2026-08-27T11:33:53.501Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/extract_effect.py",
+          "kind": "스크립트",
+          "size": 6123,
+          "modifiedAt": "2026-08-27T11:34:58.714Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 3003,
+          "modifiedAt": "2026-08-27T11:33:49.587Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "rubicon-item-effect-template",
+      "koreanName": "아이템 이펙트",
+      "name": "rubicon-item-effect-template",
+      "description": "Create layered item-presentation effects with Rubicon Forge Light FX and Mask Forge, using either exact source-pixel preservation or audited context-integrated rendering to produce coordinated FX_BACK, item, contact, FX_FRONT, preview, and Figma-ready assets. Use for 아이템 이펙트, 보물상자 효과, 공중부양 아이템, 원형 광원, 물·불·회오리·번개·얼음·마력 효과, 아이템을 감싸는 앞뒤 효과, Rubicon Forge 광원 효과, or reusable item-effect component requests.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/rubicon-item-effect-template",
+      "counts": {
+        "에이전트": 1,
+        "레퍼런스": 3,
+        "스크립트": 2,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 298,
+          "modifiedAt": "2026-08-10T07:34:15.297Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/bns-floating-reference-map.md",
+          "kind": "레퍼런스",
+          "size": 3717,
+          "modifiedAt": "2026-08-24T04:33:13.294Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/pipeline-contract.md",
+          "kind": "레퍼런스",
+          "size": 6220,
+          "modifiedAt": "2026-08-24T05:40:52.797Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/preset-map.md",
+          "kind": "레퍼런스",
+          "size": 1425,
+          "modifiedAt": "2026-08-10T07:34:12.067Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/build-item-effect-brief.mjs",
+          "kind": "스크립트",
+          "size": 1723,
+          "modifiedAt": "2026-08-10T07:34:13.302Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/split-lightfx-depth.ps1",
+          "kind": "스크립트",
+          "size": 4624,
+          "modifiedAt": "2026-08-10T07:35:34.640Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 12477,
+          "modifiedAt": "2026-08-28T05:05:08.980Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "nexus-design-evaluator",
+      "koreanName": "디자인 평가",
+      "name": "nexus-design-evaluator",
+      "description": "Evaluate game banners and key visuals directly with Nexus Studio's weighted 10-metric design rubric, produce actionable Korean critique, calculate a deterministic score, and generate layer-scoped correction priorities without requiring the Nexus UI or an external API key. Use for 디자인 평가, 배너 평가, Nexus 평가, Banner Codex scoring, completed-banner QA, or automatic design refinement.",
+      "missing": false,
+      "rootPath": "$CODEX_HOME/skills/nexus-design-evaluator",
+      "counts": {
+        "에이전트": 1,
+        "레퍼런스": 1,
+        "스크립트": 1,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "agents/openai.yaml",
+          "kind": "에이전트",
+          "size": 296,
+          "modifiedAt": "2026-08-06T10:49:46.282Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/rubric.md",
+          "kind": "레퍼런스",
+          "size": 2940,
+          "modifiedAt": "2026-08-06T10:49:46.283Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "scripts/score-evaluation.mjs",
+          "kind": "스크립트",
+          "size": 1526,
+          "modifiedAt": "2026-08-06T10:49:46.284Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 2196,
+          "modifiedAt": "2026-08-06T10:49:46.281Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "figma-use",
+      "koreanName": "Figma 조립 브리지",
+      "name": "figma-use",
+      "description": "\"**MANDATORY prerequisite** — you MUST invoke this skill BEFORE every `use_figma` tool call. NEVER call `use_figma` directly without loading this skill first. Skipping it causes common, hard-to-debug failures. Trigger whenever the user wants to perform a write action or a unique read action that requires JavaScript execution in the Figma file context — e.g. create/edit/delete nodes, set up variables or tokens, build components and variants, modify auto-layout or fills, bind variables to properties, or inspect file structure programmatically.\"",
+      "missing": false,
+      "rootPath": "$CODEX_PLUGIN_CACHE/.../figma-use",
+      "counts": {
+        "레퍼런스": 20,
+        "지침": 1
+      },
+      "files": [
+        {
+          "path": "references/api-reference.md",
+          "kind": "레퍼런스",
+          "size": 16235,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/common-patterns.md",
+          "kind": "레퍼런스",
+          "size": 14410,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/component-patterns.md",
+          "kind": "레퍼런스",
+          "size": 24086,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/effect-style-patterns.md",
+          "kind": "레퍼런스",
+          "size": 3182,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/gotchas.md",
+          "kind": "레퍼런스",
+          "size": 53365,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/plugin-api-patterns.md",
+          "kind": "레퍼런스",
+          "size": 16249,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/plugin-api-standalone.d.ts",
+          "kind": "레퍼런스",
+          "size": 452454,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/plugin-api-standalone.index.md",
+          "kind": "레퍼런스",
+          "size": 29953,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/text-style-patterns.md",
+          "kind": "레퍼런스",
+          "size": 6914,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/validation-and-recovery.md",
+          "kind": "레퍼런스",
+          "size": 4553,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/variable-patterns.md",
+          "kind": "레퍼런스",
+          "size": 13928,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-components--creating.md",
+          "kind": "레퍼런스",
+          "size": 2199,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-components--using.md",
+          "kind": "레퍼런스",
+          "size": 2420,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-components.md",
+          "kind": "레퍼런스",
+          "size": 4272,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-effect-styles.md",
+          "kind": "레퍼런스",
+          "size": 3268,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-text-styles.md",
+          "kind": "레퍼런스",
+          "size": 5144,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-variables--creating.md",
+          "kind": "레퍼런스",
+          "size": 1559,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-variables--using.md",
+          "kind": "레퍼런스",
+          "size": 1908,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds-variables.md",
+          "kind": "레퍼런스",
+          "size": 5186,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/working-with-design-systems/wwds.md",
+          "kind": "레퍼런스",
+          "size": 5220,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "SKILL.md",
+          "kind": "지침",
+          "size": 35188,
+          "modifiedAt": "1970-01-01T00:00:01.000Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    },
+    {
+      "id": "game-profile",
+      "koreanName": "게임별 브랜드 프로필",
+      "name": "game-profile",
+      "description": "배너 자동화 총괄 스킬에 내장된 게임별 프레임·로고·배지·가이드 정책입니다.",
+      "missing": false,
+      "virtual": true,
+      "rootPath": "$CODEX_HOME/skills/game-banner-automation",
+      "counts": {
+        "레퍼런스": 5
+      },
+      "files": [
+        {
+          "path": "references/game-profile-schema.md",
+          "kind": "레퍼런스",
+          "size": 1853,
+          "modifiedAt": "2026-08-28T04:25:03.331Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/game-profiles/aion.json",
+          "kind": "레퍼런스",
+          "size": 1204,
+          "modifiedAt": "2026-08-28T04:25:04.706Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/game-profiles/bns.json",
+          "kind": "레퍼런스",
+          "size": 3702,
+          "modifiedAt": "2026-08-28T04:25:06.282Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/games/aion.md",
+          "kind": "레퍼런스",
+          "size": 1510,
+          "modifiedAt": "2026-08-28T04:09:04.065Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        },
+        {
+          "path": "references/games/bns.md",
+          "kind": "레퍼런스",
+          "size": 1869,
+          "modifiedAt": "2026-08-28T04:26:19.635Z",
+          "editable": true,
+          "sourceContentIncluded": false
+        }
+      ]
+    }
+  ]
+}

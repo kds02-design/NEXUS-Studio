@@ -1,7 +1,7 @@
 // 광원·빛효과 옵션 패널 — KvEdit '광원·빛효과' 모드에서 사용.
 // 기존 ForgeSidebar 의 lightfx 브랜치를 이관. lightfx 상태/핸들러는 forge(useForgePrompt)에서 받는다.
 import { useState } from 'react';
-import { ChevronDown, UploadCloud, X, Wand2, Loader2, Sparkles, Sun, CircleHelp, UserRound, Type, PackageOpen, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, UploadCloud, X, Wand2, Loader2, Sparkles, Sun, CircleHelp, UserRound, Type, PackageOpen, SlidersHorizontal, Orbit, Download, Crop } from 'lucide-react';
 import { LIGHTFX_CATEGORIES, LIGHTFX_FORMS, LIGHTFX_STYLES, LIGHTFX_COLORS, LIGHTFX_MATERIALS, LIGHTFX_GRAINS, LIGHTFX_BOKEHS } from '../constants/lightfx';
 import { BG_COLORS } from '../constants/variations';
 import { IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from '../../../lib/imagenRender';
@@ -18,6 +18,10 @@ const QUICK_EFFECTS = [
   {
     id: 'item-front', label: '아이템 전방 이펙트', desc: '아이템 앞 접촉광과 상승 파티클로 입체감 강화', icon: PackageOpen,
     settings: { category: 'particle', form: 'itemFront', style: 'magical', color: 'gold', intensity: 'medium', material: 'none', grain: 'fine', bokeh: 'fine', text: '아이템 전방 하단의 국소 접촉광, 앞쪽을 짧게 감싸는 위습과 소수의 상승 파티클. 아이템 본체와 보상 아이콘은 재현하거나 가리지 않게' },
+  },
+  {
+    id: 'ground-magic-circle', label: '바닥 마법진 이펙트', desc: '캐릭터·아이템 아래 원근감 있는 마법진 링과 낮게 깔린 발광 풀', icon: Orbit,
+    settings: { category: 'ground', form: 'groundPool', style: 'magical', color: 'violet', intensity: 'medium', material: 'mist', grain: 'fine', bokeh: 'fine', text: '피사체 발밑 바닥 평면에 원근감 있게 눕혀진 타원형 마법진 링과 룬 문양, 그 중심에 고이는 낮은 발광 풀, 바깥으로 부드럽게 사라지는 바닥 반사광과 위로 흩날리는 소수의 미세 입자. 빛은 바닥에 낮게 깔리고 피사체 본체는 그리지 말 것' },
   },
 ];
 
@@ -83,7 +87,8 @@ export default function ForgeLightFxOptions({ forge }) {
     lightFxShape, setLightFxShape,
     lightFxText, setLightFxText,
     lightFxRef, isDraggingLightFxRef,
-    lightFxAutoPad, setLightFxAutoPad, lightFxRefPadded,
+    lightFxAutoPad, setLightFxAutoPad, lightFxRefPadded, lightFxPadProfileActive,
+    lightFxCropBack, setLightFxCropBack, handleDownloadPaddedLightFxRef,
     handleLightFxRefUpload, handleLightFxRefDragOver, handleLightFxRefDragLeave, handleLightFxRefDrop, handleClearLightFxRef,
     lightFxBase, lightFxPreserveAlpha, setLightFxPreserveAlpha, isDraggingLightFxBase,
     handleClearLightFxBase, handleLightFxBaseUpload, handleLightFxBaseDragOver, handleLightFxBaseDragLeave, handleLightFxBaseDrop,
@@ -414,7 +419,8 @@ export default function ForgeLightFxOptions({ forge }) {
               샘플 이미지(아이콘·박스·캐릭터 등)를 올리면 위 <span className="text-zinc-400">배치 형태</span>대로 그 실루엣에 맞춰 <span className="text-zinc-400">빛효과만 별도 렌더</span>됩니다. <span className="text-zinc-400">참고 오브젝트 자체는 결과에 나오지 않습니다</span> — 빛만 순흑 위에.
             </p>
 
-            {/* 여백 자동 추가 — 피사체가 프레임에 꽉 찬(여백 없는) 참고를 올리면 주변 여백을 만들어 빛이 퍼질 공간 확보 */}
+            {/* 여백 자동 추가 — 피사체가 프레임에 꽉 찬(여백 없는) 참고를 올리면 주변 여백을 만들어 빛이 퍼질 공간 확보.
+                여백 크기는 위 배치 형태/종류에 따라 자동(밀착 25% / 전방 35% / 확산 60% / 바닥 60%+16:9). 형태를 바꾸면 즉시 재계산. */}
             <button
               onClick={() => setLightFxAutoPad(!lightFxAutoPad)}
               className={`w-full h-9 flex items-center gap-2.5 px-3 mb-2 rounded-md border text-left transition-colors ${lightFxAutoPad ? 'bg-[#76cee0]/10 border-[#76cee0]/40' : 'bg-[#141417] border-zinc-800/80 hover:border-zinc-700'}`}
@@ -423,14 +429,33 @@ export default function ForgeLightFxOptions({ forge }) {
                 <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${lightFxAutoPad ? 'left-[14px]' : 'left-0.5'}`} />
               </span>
               <div className="min-w-0">
-                <div className={`text-[11px] font-semibold ${lightFxAutoPad ? 'text-[#76cee0]' : 'text-zinc-300'}`}>여백 자동 추가 · 16:9</div>
-                <p className="text-[9px] text-zinc-500 leading-tight">무조건 16:9 캔버스로 확장해 빛이 잘리지 않게 (원본은 크롭 없음)</p>
+                <div className={`text-[11px] font-semibold ${lightFxAutoPad ? 'text-[#76cee0]' : 'text-zinc-300'}`}>여백 자동 추가 · {lightFxPadProfileActive?.label}</div>
+                <p className="text-[9px] text-zinc-500 leading-tight truncate">{lightFxPadProfileActive?.desc} (배치 형태 따라 자동, 크롭 없음)</p>
               </div>
             </button>
             {lightFxRefPadded && (
-              <p className="text-[10px] text-[#76cee0] mb-2 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> 16:9 비율로 여백을 자동 추가했습니다
-              </p>
+              <div className="mb-2 rounded-md border border-[#76cee0]/25 bg-[#76cee0]/5 px-2.5 py-2 space-y-1.5">
+                <p className="text-[10px] text-[#76cee0] flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> 여백을 자동 추가했습니다 · {lightFxPadProfileActive?.label}
+                  <button type="button" onClick={handleDownloadPaddedLightFxRef} title="패딩된 참고 PNG 저장 — Figma 에서 결과와 같은 크기로 겹쳐 원본 위치를 맞춘 뒤 삭제" className="ml-auto inline-flex items-center gap-1 rounded border border-[#76cee0]/40 px-1.5 py-0.5 text-[9px] font-semibold text-[#9de4ef] hover:bg-[#76cee0]/15">
+                    <Download className="w-3 h-3" /> 정렬용 참고 저장
+                  </button>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setLightFxCropBack(!lightFxCropBack)}
+                  className={`w-full flex items-center gap-2 rounded px-1.5 py-1 text-left transition-colors ${lightFxCropBack ? 'bg-[#76cee0]/15' : 'hover:bg-zinc-800/60'}`}
+                >
+                  <span className={`w-6 h-3.5 rounded-full shrink-0 relative transition-colors ${lightFxCropBack ? 'bg-[#76cee0]' : 'bg-zinc-700'}`}>
+                    <span className={`absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white transition-all ${lightFxCropBack ? 'left-[12px]' : 'left-0.5'}`} />
+                  </span>
+                  <Crop className={`w-3 h-3 shrink-0 ${lightFxCropBack ? 'text-[#76cee0]' : 'text-zinc-500'}`} />
+                  <span className="min-w-0">
+                    <span className={`block text-[10px] font-semibold ${lightFxCropBack ? 'text-[#9de4ef]' : 'text-zinc-300'}`}>결과를 원본 프레임으로 잘라내기</span>
+                    <span className="block text-[9px] text-zinc-500 leading-tight">참고 PNG 와 같은 캔버스로 맞출 때 (바깥 번짐은 잘림)</span>
+                  </span>
+                </button>
+              </div>
             )}
 
             <div

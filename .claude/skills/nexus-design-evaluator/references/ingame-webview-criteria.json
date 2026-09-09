@@ -1,0 +1,87 @@
+{
+  "profile": "ingame-webview",
+  "criteriaType": "ingame-webview",
+  "criteriaVersionId": "ingame-webview-v1",
+  "criteriaVersionName": "인게임 웹뷰 루브릭 v1 (스킬 번들, NexusAdmin 미관리)",
+  "criteria": [
+    {
+      "id": "context_fit",
+      "name": "게임 맥락 적합성",
+      "description": "게임 안에 놓인 페이지로 보이고, 게임과 무관한 데스크톱 사이트처럼 보이지 않는지",
+      "weight": 8,
+      "maxScore": 100
+    },
+    {
+      "id": "viewport_fit",
+      "name": "뷰포트 안정성",
+      "description": "목표·최소 뷰포트에서 잘림, 말줄임, 비율, 안전 여백, 이미지 크롭, 정보 밀도",
+      "weight": 14,
+      "maxScore": 100
+    },
+    {
+      "id": "navigation",
+      "name": "내비게이션",
+      "description": "뒤로/앞으로/새로고침/제목/메뉴/닫기/목록/고객지원 등 복구 컨트롤의 명확성과 배치, 크롬-콘텐츠 분리",
+      "weight": 10,
+      "maxScore": 100
+    },
+    {
+      "id": "information_architecture",
+      "name": "정보 구조",
+      "description": "탭·목록·선택 항목·읽기 영역·시스템 상태·날짜·정책 링크·보조 액션의 관계가 이해되는지",
+      "weight": 12,
+      "maxScore": 100
+    },
+    {
+      "id": "typography",
+      "name": "타이포그래피",
+      "description": "가독성, 위계, 한국어 줄바꿈, 말줄임 품질, 서체 일관성, 행간, 자간, 제목/날짜/본문 구분",
+      "weight": 14,
+      "maxScore": 100
+    },
+    {
+      "id": "spacing",
+      "name": "간격·정렬",
+      "description": "정렬, 반복 간격, 패널 균형, 목록 패딩, 이미지/텍스트 리듬, 스크롤바 여유, 정수 좌표",
+      "weight": 12,
+      "maxScore": 100
+    },
+    {
+      "id": "interaction",
+      "name": "인터랙션 상태",
+      "description": "선택/비활성/눌림 의미, 컨트롤 크기, 예측 가능한 탭, 공유/메뉴 어포던스, 스크롤 단서",
+      "weight": 10,
+      "maxScore": 100
+    },
+    {
+      "id": "theme_consistency",
+      "name": "라이트/다크 일관성",
+      "description": "두 테마에서 의미와 위계가 동등한지 (단순 색 반전 아님), 대비와 컴포넌트 형태 일관성",
+      "weight": 8,
+      "maxScore": 100
+    },
+    {
+      "id": "overlay_safety",
+      "name": "오버레이 안전성",
+      "description": "게임 장면과의 분리: 딤, 외부 닫기 버튼, 가장자리 안전, 모달 라운드, 배경 간섭 회피",
+      "weight": 6,
+      "maxScore": 100
+    },
+    {
+      "id": "detail",
+      "name": "디테일",
+      "description": "아이콘 크기·정렬, 1px 렌더링, 라운드 일관성, 스크롤바, 이미지 품질, 구분선 마감, 글로우/소수 좌표 아티팩트 없음",
+      "weight": 6,
+      "maxScore": 100
+    }
+  ],
+  "rules": "",
+  "gate": {
+    "overall": 85,
+    "everyMetric": 75,
+    "hardFailures": 0
+  },
+  "source": "bundled-profile",
+  "stale": false,
+  "syncWarning": ""
+}

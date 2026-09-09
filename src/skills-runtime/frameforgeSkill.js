@@ -2,7 +2,7 @@
 // FrameForge '완성형' 생성의 옵션 축·무드 번들·프롬프트 빌더를 그대로 재사용한다.
 // 실루엣은 용도(assetType)에 따라 달라지므로 options 를 함수로 준다(종속 슬롯 → 러너가 지원).
 import { renderWithImagen, IMAGEN_MODELS } from "../lib/imagenRender";
-import { COMPLETE_AXES, SIMPLE_MOODS, SIMPLE_RENDER_STYLES, buildCompletePrompt } from "../apps/FrameForge/index.jsx";
+import { COMPLETE_AXES, SIMPLE_MOODS, SIMPLE_RENDER_STYLES, buildCompletePrompt, seedAspectRatio } from "../apps/FrameForge/frameforgeAxes.js";
 
 const DEFAULT_MODEL = IMAGEN_MODELS[0]?.id || "gemini-3.1-flash-image-preview";
 
@@ -42,7 +42,7 @@ export const frameforgeSkill = {
     const seed = { assetType, silhouette, preset, material, ornament, frameWeight, interior, renderStyle };
     const prompt = buildCompletePrompt(seed, v.userText || "");
     try {
-      const r = await renderWithImagen(prompt, DEFAULT_MODEL);
+      const r = await renderWithImagen(prompt, DEFAULT_MODEL, null, { aspectRatio: seedAspectRatio(seed) });
       if (!r?.dataUrl) return { ok: false, error: "결과가 비어 있습니다.", prompt };
       return { ok: true, dataUrl: r.dataUrl, prompt };
     } catch (e) {

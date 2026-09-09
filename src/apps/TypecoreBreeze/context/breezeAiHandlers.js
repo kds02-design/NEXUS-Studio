@@ -11,7 +11,10 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
     inputText: b.inputText, customDesignInjections: b.customDesignInjections, personaSliderValue: b.personaSliderValue,
     enhanceMode: b.enhanceMode, momentumActive: b.momentumActive, baseStyle: b.baseStyle, aspectRatio: b.aspectRatio,
     occupancy: b.occupancy, layoutType: b.layoutType, stemWeight: b.stemWeight, charWidth: b.charWidth,
-    charProportion: b.charProportion, kerning: b.kerning, scriptType: b.scriptType, terminalStyle: b.terminalStyle,
+    charProportion: b.charProportion, kerning: b.kerning, scriptType: b.scriptType,
+    narrativeIntensity: b.narrativeIntensity, narrativeScope: b.narrativeScope,
+    narrativeMutation: b.narrativeMutation, narrativeTarget: b.narrativeTarget,
+    terminalStyle: b.terminalStyle,
     strokeTexture: b.strokeTexture, strokeSharpness: b.strokeSharpness, strokeExtension: b.strokeExtension,
     slantAngle: b.slantAngle, rhythmDynamic: b.rhythmDynamic, playfulDistortion: b.playfulDistortion,
     analogImperfection: b.analogImperfection, internalDecoration: b.internalDecoration, textFlow: b.textFlow,
@@ -31,6 +34,8 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
 
   const verifyPromptLogic = async () => {
     if (b.isVerifyingLogic) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
     b.setIsVerifyingLogic(true);
     const persona = directorPersonas.find(p => p.id === b.aiPersona) || directorPersonas[0];
     const stateStr = `Persona: ${persona.shortTitle}\nAura: "${b.customDesignInjections}"\nOptions: Weight(${b.stemWeight}), Terminal(${b.terminalStyle}), Texture(${b.strokeTexture}), Sharpness(${b.strokeSharpness}), Rhythm(${b.rhythmDynamic}), Distortion(${b.playfulDistortion}), Internal(${b.internalDecoration})`;
@@ -51,11 +56,13 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
         if (valid(f.playfulDistortion, staticOptions.playfulDistortions, 'playfulDistortions')) b.setPlayfulDistortion(f.playfulDistortion);
         if (valid(f.internalDecoration, staticOptions.InternalDecorations, 'InternalDecorations')) b.setInternalDecoration(f.internalDecoration);
       }
-    } catch (e) { console.error("Audit failed", e); } finally { b.setIsVerifyingLogic(false); }
+    } catch (e) { console.error("Audit failed", e); b.setAiError?.(e?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { b.setIsVerifyingLogic(false); }
   };
 
   const handleAiRecommendation = async () => {
     if (b.isRecommending) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
     b.setIsRecommending(true);
     const persona = directorPersonas.find(p => p.id === b.aiPersona) || directorPersonas[0];
     try {
@@ -69,11 +76,13 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
       if (res.setSharpness) b.setStrokeSharpness(upsertDynamic('strokeSharpness', res.setSharpness));
       if (res.setKerning) b.setKerning(upsertDynamic('kerningOptions', res.setKerning));
       b.setIsAdvancedOptionsEnabled(true);
-    } catch (e) { console.error(e); } finally { b.setIsRecommending(false); }
+    } catch (e) { console.error(e); b.setAiError?.(e?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { b.setIsRecommending(false); }
   };
 
   const analyzeStyleImage = async () => {
     if (!b.styleImage || b.isAnalyzingStyle) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
     b.setIsAnalyzingStyle(true);
     try {
       const res = await gemini.analyzeStyleImage(b.styleImage);
@@ -85,11 +94,12 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
       if (res.setRhythm) b.setRhythmDynamic(upsertDynamic('rhythmDynamics', res.setRhythm));
       b.setAiRecSummary({ title: "이미지 스타일 학습 완료", reason: "업로드한 레퍼런스의 조형적 특징을 분석하여 텍스트 프롬프트와 엔진 옵션에 자동 적용했습니다.", source: 'image' });
       b.setLastRecSource('image'); b.setIsAdvancedOptionsEnabled(true);
-    } catch (e) { console.error("Style Analysis Failed:", e); } finally { b.setIsAnalyzingStyle(false); }
+    } catch (e) { console.error("Style Analysis Failed:", e); b.setAiError?.(e?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { b.setIsAnalyzingStyle(false); }
   };
 
   const handleSendTuningMessage = async () => {
     if (!b.tuningInputValue.trim() || b.isTuningLoading) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
     const userMsg = b.tuningInputValue.trim();
     b.setTuningInputValue(""); b.setTuningChatHistory(prev => [...prev, { role: 'user', content: userMsg }]); b.setIsTuningLoading(true);
     const persona = directorPersonas.find(p => p.id === b.aiPersona) || directorPersonas[0];
@@ -101,6 +111,7 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
 
   const handleSendEditTuningMessage = async () => {
     if (!b.editTuningInputValue.trim() || b.isEditTuningLoading) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
     const userMsg = b.editTuningInputValue.trim();
     b.setEditTuningInputValue(""); b.setEditTuningChatHistory(prev => [...prev, { role: 'user', content: userMsg }]); b.setIsEditTuningLoading(true);
     try {
@@ -111,61 +122,77 @@ export const createAiHandlers = (b, { upsertDynamic }) => {
 
   const handleExpandIntent = async () => {
     if (!b.customDesignInjections.trim() || b.isExpandingIntent) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
     b.setIsExpandingIntent(true);
     try { const t = await gemini.expandIntent(b.customDesignInjections); if (t) b.setCustomDesignInjections(t.trim()); }
-    catch (e) {} finally { b.setIsExpandingIntent(false); }
+    catch (e) { b.setAiError?.(e?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { b.setIsExpandingIntent(false); }
   };
 
   const handleEditExpandIntent = async () => {
     if (!b.editInstruction.trim() || b.isEditExpandingIntent) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
     b.setIsEditExpandingIntent(true);
     try { const t = await gemini.expandEditIntent(b.editInstruction); if (t) b.setEditInstruction(t.trim()); }
-    catch (e) {} finally { b.setIsEditExpandingIntent(false); }
+    catch (e) { b.setAiError?.(e?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { b.setIsEditExpandingIntent(false); }
   };
 
   const requestDramaticEnhancement = async () => {
     if (b.isEnhancing) return;
-    if (!(await b.ensureCanGenerate())) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
     b.setIsEnhancing(true);
     const { baseTechnical } = getPrompts();
     try { const r = await gemini.generateDramaticPrompt(baseTechnical.en); b.setDramaticPrompt(r); b.setNanoViewMode('enhanced'); b.setIsOutdated(false); }
-    catch (err) {} finally { b.setIsEnhancing(false); }
+    catch (err) { b.setAiError?.(err?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { b.setIsEnhancing(false); }
   };
 
   const requestEditDramaticEnhancement = async () => {
     if (b.isEditEnhancing) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
     b.setIsEditEnhancing(true);
     const { baseTechnical } = getEditPrompts();
     try { const r = await gemini.generateEditDramaticPrompt(baseTechnical.en); b.setEditDramaticPrompt(r); b.setEditNanoMode('enhanced'); b.setIsEditOutdated(false); }
-    catch (err) {} finally { b.setIsEditEnhancing(false); }
+    catch (err) { b.setAiError?.(err?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { b.setIsEditEnhancing(false); }
   };
 
   const requestPromptOptimization = async (isEdit = false) => {
-    if (isEdit) { if (b.isEditOptimizing) return; b.setIsEditOptimizing(true); } else { if (b.isOptimizing) return; b.setIsOptimizing(true); }
+    if (isEdit ? b.isEditOptimizing : b.isOptimizing) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
+    if (isEdit) b.setIsEditOptimizing(true); else b.setIsOptimizing(true);
     const { baseTechnical } = isEdit ? getEditPrompts() : getPrompts();
     try {
       const r = await gemini.generateOptimizedTags(baseTechnical.en);
       if (isEdit) { b.setEditOptimizedPrompt(r); b.setEditNanoMode("optimized"); b.setIsEditOutdated(false); }
       else { b.setOptimizedPrompt(r); b.setNanoViewMode("optimized"); b.setIsOutdated(false); }
-    } catch (err) {} finally { if (isEdit) b.setIsEditOptimizing(false); else b.setIsOptimizing(false); }
+    } catch (err) { b.setAiError?.(err?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { if (isEdit) b.setIsEditOptimizing(false); else b.setIsOptimizing(false); }
   };
 
   const requestMidjourneyOptimization = async (isEdit = false) => {
-    if (isEdit) { if (b.isEditMjOptimizing) return; b.setIsEditMjOptimizing(true); } else { if (b.isMjOptimizing) return; b.setIsMjOptimizing(true); }
+    if (isEdit ? b.isEditMjOptimizing : b.isMjOptimizing) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
+    if (isEdit) b.setIsEditMjOptimizing(true); else b.setIsMjOptimizing(true);
     const { baseTechnical } = isEdit ? getEditPrompts() : getPrompts();
     try {
       const r = await gemini.generateMidjourneyPrompt(baseTechnical.en);
       if (isEdit) { b.setEditMjPrompt(r); b.setIsEditOutdated(false); } else { b.setMjOptimizedPrompt(r); b.setIsOutdated(false); }
-    } catch (err) {} finally { if (isEdit) b.setIsEditMjOptimizing(false); else b.setIsMjOptimizing(false); }
+    } catch (err) { b.setAiError?.(err?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { if (isEdit) b.setIsEditMjOptimizing(false); else b.setIsMjOptimizing(false); }
   };
 
   const requestChatGPTEnhancement = async (isEdit = false) => {
-    if (isEdit) { if (b.isEditCgEnhancing) return; b.setIsEditCgEnhancing(true); } else { if (b.isCgEnhancing) return; b.setIsCgEnhancing(true); }
+    if (isEdit ? b.isEditCgEnhancing : b.isCgEnhancing) return;
+    if (!(await b.ensureCanGenerate('analysis'))) return;
+    b.setAiError?.(null);
+    if (isEdit) b.setIsEditCgEnhancing(true); else b.setIsCgEnhancing(true);
     const { baseTechnical } = isEdit ? getEditPrompts() : getPrompts();
     try {
       const r = await gemini.generateChatGPTPrompt(baseTechnical.en);
       if (isEdit) { b.setEditCgPrompt(r); b.setIsEditOutdated(false); } else { b.setCgEnhancedPrompt(r); b.setIsOutdated(false); }
-    } catch (err) {} finally { if (isEdit) b.setIsEditCgEnhancing(false); else b.setIsCgEnhancing(false); }
+    } catch (err) { b.setAiError?.(err?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { if (isEdit) b.setIsEditCgEnhancing(false); else b.setIsCgEnhancing(false); }
   };
 
   return {

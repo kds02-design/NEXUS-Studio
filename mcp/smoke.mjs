@@ -41,7 +41,7 @@ await client.connect(transport);
 const { tools } = await client.listTools();
 const names = tools.map((t) => t.name).sort();
 console.log("tools:", names.join(", "));
-for (const n of ["nexus_guide", "nexus_list_options", "nexus_render_image", "nexus_frameforge_prompt", "nexus_lightfx_prompt", "nexus_variation_prompt", "nexus_design_alternative_prompt", "nexus_item_bundle_prompt", "nexus_quality_up_prompt", "nexus_character_fx_prompt", "nexus_typecore_sovereign_prompt", "nexus_typecore_breeze_prompt", "nexus_remove_ai", "nexus_remove_background", "nexus_split_character_effect", "nexus_design_rubric", "nexus_banner_codex_list", "nexus_banner_codex_get", "nexus_brand_web_library_list", "nexus_brand_web_library_get", "nexus_promotion_library_list", "nexus_promotion_library_get", "nexus_prompt_arc_list", "nexus_prompt_arc_get"]) {
+for (const n of ["nexus_guide", "nexus_list_options", "nexus_render_image", "nexus_frameforge_prompt", "nexus_lightfx_prompt", "nexus_variation_prompt", "nexus_design_alternative_prompt", "nexus_item_bundle_prompt", "nexus_quality_up_prompt", "nexus_character_fx_prompt", "nexus_typecore_sovereign_prompt", "nexus_typecore_breeze_prompt", "nexus_remove_ai", "nexus_remove_background", "nexus_alpha_plan", "nexus_alpha_batch", "nexus_split_character_effect", "nexus_design_rubric", "nexus_banner_codex_list", "nexus_banner_codex_get", "nexus_brand_web_library_list", "nexus_brand_web_library_get", "nexus_promotion_library_list", "nexus_promotion_library_get", "nexus_prompt_arc_list", "nexus_prompt_arc_get", "nexus_asset_library_list", "nexus_asset_library_get"]) {
   ok(`tool:${n}`, names.includes(n));
 }
 
@@ -69,6 +69,68 @@ const callText = async (name, args) => {
   ok("frameforge:prompt", !f.isError && /frame|border|gold/i.test(f.text) && /날짜 텍스트/.test(f.text), f.text.slice(0, 160));
   const invalid = await callText("nexus_frameforge_prompt", { assetType: "badge", silhouette: "frame_wide", mood: "dark_rpg" });
   ok("frameforge:asset-silhouette-guard", invalid.isError && /사용할 수 없습니다/.test(invalid.text), invalid.text.slice(0, 160));
+}
+
+// 1b) FrameForge 확장(2026-09) — 장식/슬롯 용도 + 실루엣 비율 + 브랜드웹 키트
+{
+  const o = await callText("nexus_frameforge_prompt", { assetType: "ornament", silhouette: "orn_title_sides", mood: "brandweb_gold", renderStyle: "illustrated" });
+  ok("frameforge:ornament", !o.isError && /NO frame, NO box/i.test(o.text) && /21:9/.test(o.text), o.text.slice(0, 160));
+  const sl = await callText("nexus_frameforge_prompt", { assetType: "slot", silhouette: "slot_ground_ring", mood: "celestial" });
+  ok("frameforge:slot", !sl.isError && /remain unfilled|completely empty/i.test(sl.text) && /16:9/.test(sl.text), sl.text.slice(0, 160));
+  const k = await callText("nexus_frameforge_kit_prompts", { kit: "brandweb_core", mood: "brandweb_gold", userText: "리니지M 사전예약 사이트" });
+  ok("frameforge:kit", !k.isError && /10종/.test(k.text) && /리니지M 사전예약/.test(k.text) && (k.text.match(/Create /g) || []).length === 10, k.text.slice(0, 160));
+}
+
+// 1c) Render Matrix — 앱 컴파일러 동일 (2026-09)
+{
+  const r = await callText("nexus_render_matrix_prompt", { material: "MatteGold", exactText: "시즌 4\n연못의 서약", lines: ["시즌 4", "연못의 서약"] });
+  ok("rendermatrix:prompt", !r.isError && /masterpiece, best quality/.test(r.text) && /TYPOGRAPHY CONTENT LOCK/.test(r.text) && /"projectionDepth":"None"/.test(r.text), r.text.slice(0, 120));
+  const p = await callText("nexus_render_matrix_prompt", { preset: "gold_relic", strictLock: false });
+  ok("rendermatrix:preset", !p.isError && /"material":"AntiqueGold"/.test(p.text) && /"directorPersona":"DarkSmith"/.test(p.text), p.text.slice(-200));
+  const pop = await callText("nexus_render_matrix_prompt", { variant: "pop" });
+  ok("rendermatrix:pop", !pop.isError && /"directorPersona":"Chameleon"/.test(pop.text), pop.text.slice(-160));
+  const bad = await callText("nexus_render_matrix_prompt", { material: "NoSuchMaterial" });
+  ok("rendermatrix:guard", bad.isError && /옵션 id 오류/.test(bad.text), bad.text.slice(0, 100));
+  const o = await callText("nexus_list_options", {});
+  ok("options:renderMatrix", /renderMatrix/.test(o.text) && /gold_relic/.test(o.text), "catalog");
+}
+
+// 1d) 2순위 도구 — NexusPreview 4모드 / Prompt Audit / Promo Skin / Motion (2026-09)
+{
+  const t = await callText("nexus_title_effect_prompt", { effects: [], color: "gold", intent: "겨울 시즌" });
+  ok("titlefx:prompt", !t.isError && t.text.length > 200 && /겨울 시즌/.test(t.text), t.text.slice(0, 100));
+  const g = await callText("nexus_bg_generate_prompt", { concept: "서리 덮인 고대 왕성", hasReference: true });
+  ok("bggen:prompt", !g.isError && /서리 덮인 고대 왕성/.test(g.text) && /복제하지 마세요/.test(g.text), g.text.slice(0, 100));
+  const c = await callText("nexus_bg_compose_prompt", { intent: "우측에 용 실루엣 추가", hasAsset: false });
+  ok("bgcompose:prompt", !c.isError && /새 문자 생성 절대 금지/.test(c.text) && /용 실루엣/.test(c.text), c.text.slice(0, 100));
+  const f = await callText("nexus_floating_items_prompt", { itemCount: 3, effect: "lightning", outputMode: "layered-transparent" });
+  ok("floating:prompt", !f.isError && /groupPlan/.test(f.text) && /Create a production-grade floating-item/.test(f.text), f.text.slice(0, 100));
+  const au = await callText("nexus_prompt_audit_prompt", { prompt: "static camera, slow panning shot, photorealistic cartoon", sourceApp: "motion-metrics" });
+  ok("audit:prompt", !au.isError && /Prompt Auditor/.test(au.text) && /motion-metrics/.test(au.text) && /static camera/.test(au.text), au.text.slice(0, 100));
+  const th = await callText("nexus_theme_preset_prompt", { concept: "황금 축제" });
+  ok("theme:prompt", !th.isError && /테마 디자이너/.test(th.text) && /황금 축제/.test(th.text), th.text.slice(0, 100));
+  const mo = await callText("nexus_motion_prompt", { animationMode: "intro" });
+  ok("motion:prompt", !mo.isError && mo.text.length > 100 && /negative/.test(mo.text), mo.text.slice(0, 100));
+  const o = await callText("nexus_list_options", {});
+  ok("options:p2", /titleFx/.test(o.text) && /floating/.test(o.text) && /motion/.test(o.text) && /promptAudit/.test(o.text), "catalog");
+}
+
+// 1e) Brief Studio Prism — 범용 규칙 + 오상스 프로필 (2026-09)
+{
+  const g = await callText("nexus_brief_extraction_prompt", { extraNote: "상품명 원문 유지" });
+  ok("brief:generic", !g.isError && /수정요청서 해석 규칙/.test(g.text) && /craft-formula/.test(g.text) && /상품명 원문 유지/.test(g.text), g.text.slice(0, 100));
+  const t = await callText("nexus_brief_profile_prompt", { profile: "osangseu", stage: "transcribe" });
+  ok("brief:osangseu-transcribe", !t.isError && /빨간색 대표 아이콘/.test(t.text) && /redItems/.test(t.text), t.text.slice(0, 100));
+  const e = await callText("nexus_brief_profile_prompt", { profile: "osangseu", stage: "extract", sourceText: "디자인 수정: 오늘의 선물상자 진무" });
+  ok("brief:osangseu-extract", !e.isError && /slotIcons/.test(e.text) && /\[반영 희망 내용 \(전사\)\]/.test(e.text) && /오늘의 선물상자 진무/.test(e.text), e.text.slice(0, 100));
+  const m = await callText("nexus_brief_profile_prompt", { profile: "osangseu", stage: "merge" });
+  ok("brief:merge-guard", m.isError && /prevJson/.test(m.text), m.text.slice(0, 80));
+  const pj = await callText("nexus_brief_plugin_json", { profile: "osangseu", data: { meta: { title: "6월 오늘의 상품 스페셜" }, boxes: [{ top: "오늘의 선물상자", name: "진무" }], slotIcons: [""], rollovers: [], milestones: [], popupDays: [], popupTexts: [], replacements: [], uncertain: ["테스트"] }, redItems: [{ box: "오늘의 선물상자 진무", item: "진무강 200개" }, { box: "오늘의 선물상자 진무", item: "수호수 결정 400개" }] });
+  ok("brief:plugin-json", !pj.isError && /stats/.test(pj.text) && /uncertain\] 1건/.test(pj.text) && /진무강 \/ 200개 \+ 수호수 결정 \/ 400개/.test(pj.text), pj.text.slice(0, 160));
+  const ex2 = await callText("nexus_brief_profile_prompt", { profile: "osangseu", stage: "extract", sourceText: "전사본", redItems: [{ box: "A", item: "x" }, { box: "A", item: "y" }] });
+  ok("brief:extract-redlist", !ex2.isError && /\[붉은색 대표 아이콘 \(상자→아이템\)\]/.test(ex2.text) && /A → x \+ y/.test(ex2.text), ex2.text.slice(-200));
+  const o = await callText("nexus_list_options", {});
+  ok("options:brief", /osangseu/.test(o.text), "catalog");
 }
 
 // 2a) Typecore 전용 프롬프트 — 앱 옵션/빌더 기반, 순흑 배경과 정확한 텍스트 락
@@ -128,6 +190,27 @@ const callText = async (name, args) => {
     ok("removebg:cornerTransparent", px(2, 2)[3] === 0, `a=${px(2, 2)[3]}`);
     ok("removebg:centerOpaque", px(100, 100)[3] === 255, `a=${px(100, 100)[3]}`);
   }
+  // 8b) 이펙트 커브 — 검정 위 방사형 글로우 합성 이미지
+  {
+    const { createCanvas: cc2 } = await import("@napi-rs/canvas");
+    const cv = cc2(200, 200); const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 200, 200);
+    const g = ctx.createRadialGradient(100, 100, 0, 100, 100, 90);
+    g.addColorStop(0, "rgb(255,220,160)"); g.addColorStop(1, "rgb(0,0,0)");
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 200, 200);
+    const src = path.join(SCRATCH, "glow-src.png"); fs.writeFileSync(src, cv.toBuffer("image/png"));
+    const outFx = path.join(SCRATCH, "glow-fx.png");
+    const e = await callText("nexus_extract_effect", { imagePath: src, outputPath: outFx });
+    ok("effect:run", !e.isError && fs.existsSync(outFx) && /cutoff 6 · gamma 0.85/.test(e.text), e.text.slice(0, 100));
+    if (fs.existsSync(outFx)) {
+      const { loadImage: li2 } = await import("@napi-rs/canvas");
+      const im2 = await li2(outFx); const c2 = cc2(im2.width, im2.height); const x2 = c2.getContext("2d"); x2.drawImage(im2, 0, 0);
+      const p2 = (x, y) => x2.getImageData(x, y, 1, 1).data;
+      ok("effect:cornerTransparent", p2(2, 2)[3] === 0, `a=${p2(2, 2)[3]}`);
+      ok("effect:centerOpaque", p2(100, 100)[3] >= 250, `a=${p2(100, 100)[3]}`);
+      ok("effect:midPartial", p2(100, 150)[3] > 20 && p2(100, 150)[3] < 235, `a=${p2(100, 150)[3]}`);
+    }
+  }
 }
 
 // 9) 캐릭터/이펙트 분리 픽셀 툴
@@ -151,7 +234,23 @@ const callText = async (name, args) => {
 // 10) 루브릭
 {
   const r = await callText("nexus_design_rubric", {});
-  ok("rubric:read", !r.isError && r.text.length > 200, `len=${r.text.length}`);
+  ok("rubric:read", !r.isError && r.text.length > 200 && /버전:|criteriaVersionId/.test(r.text), `len=${r.text.length}`);
+}
+
+// 10b) 평가 프롬프트 + 채점 — 앱(DesignEvaluator)과 동일 경로
+{
+  const p = await callText("nexus_design_evaluation_prompt", { type: "banner" });
+  const keys = (p.text.match(/\[scoreKeys\] ([^\n]+)/) || [])[1]?.split(",").filter(Boolean) || [];
+  ok("eval:prompt", !p.isError && /\[임무 2/.test(p.text) && /\[필수 사전 검사\]/.test(p.text) && keys.length >= 5, `keys=${keys.length}`);
+  const version = (p.text.match(/\[criteriaVersion\] banner\/([^\s]+)/) || [])[1];
+  const scores = Object.fromEntries(keys.map((k) => [k, { score: 90, reason: "테스트" }]));
+  const sc = await callText("nexus_design_evaluation_score", { type: "banner", scores, criteriaVersionId: version });
+  ok("eval:score-pass", !sc.isError && /총점 90/.test(sc.text) && /PASS/.test(sc.text), sc.text.slice(0, 120));
+  const low = { ...scores, [keys[0]]: { score: 40, reason: "낮음" } };
+  const sf = await callText("nexus_design_evaluation_score", { type: "banner", scores: low, hardFailures: ["날짜 오타"] });
+  ok("eval:score-fail", !sf.isError && /FAIL/.test(sf.text) && /hardFailures/.test(sf.text), sf.text.slice(0, 120));
+  const mm = await callText("nexus_design_evaluation_score", { type: "banner", scores, criteriaVersionId: "no-such-version" });
+  ok("eval:version-guard", mm.isError && /버전 불일치/.test(mm.text), mm.text.slice(0, 100));
 }
 
 // 11) 렌더 툴 — 키 검출 경로만 (실호출은 비용 문제로 생략)

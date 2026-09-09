@@ -44,51 +44,87 @@ function toRgb(bg) {
 }
 
 // 이펙트 추출 → 트림된 캔버스. (effectToBlob/effectToTransparentPng 공용 코어)
-function effectToCanvas(srcData, { cutoff, gamma, opacity, recoverColor, trim, bg }) {
+// DOM 없이도 회귀 테스트 가능한 픽셀 코어. 색 복원에는 반드시 최종 매트 알파를 사용한다.
+// 이전 구현은 RGB에는 원시 색거리 d, 출력 알파에는 cutoff/gamma가 적용된 값을 사용해
+// 두 값이 불일치했고, 그 결과 검정 위 재합성만으로도 밝기·채도 변화가 생길 수 있었다.
+export function extractEffectPixels(srcData, { cutoff, gamma, opacity, recoverColor, bg }) {
   const W = srcData.width, H = srcData.height, s = srcData.data;
-  const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
-  const ctx = canvas.getContext('2d');
-  const out = ctx.createImageData(W, H), o = out.data;
+  const o = new Uint8ClampedArray(s.length);
   const threshold = Math.min(0.95, Math.max(0, cutoff / 255));
   const curve = Math.max(0.2, gamma);
   const gain = Math.max(0, opacity / 100);
   const rgb = toRgb(bg);
   const br = (rgb[0] || 0) / 255, bgr = (rgb[1] || 0) / 255, bb = (rgb[2] || 0) / 255;
+  let transparentPixels = 0, opaquePixels = 0, partialPixels = 0;
+  let reconstructionError = 0, reconstructionSamples = 0;
   for (let i = 0; i < s.length; i += 4) {
     const sr = s[i] / 255, sg = s[i + 1] / 255, sb = s[i + 2] / 255;
     // 배경과의 색거리 = 참 알파 근사 — 검정 배경이면 max(RGB) 밝기와 동일
     const d = Math.max(Math.abs(sr - br), Math.abs(sg - bgr), Math.abs(sb - bb));
-    let a = d <= threshold ? 0 : (d - threshold) / Math.max(0.001, 1 - threshold);
-    a = Math.min(1, Math.pow(a, curve) * gain) * (s[i + 3] / 255);
-    if (a <= 0.0001) { o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0; continue; }
-    if (recoverColor && d > 0.0001) {
-      // 배경 성분 역산 제거 — 검정 배경에선 C/peak(기존 발광색 복원)와 동일
-      o[i] = clamp255(((sr - (1 - d) * br) / d) * 255);
-      o[i + 1] = clamp255(((sg - (1 - d) * bgr) / d) * 255);
-      o[i + 2] = clamp255(((sb - (1 - d) * bb) / d) * 255);
+    let matteAlpha = d <= threshold ? 0 : (d - threshold) / Math.max(0.001, 1 - threshold);
+    matteAlpha = Math.min(1, Math.pow(matteAlpha, curve) * gain);
+    const sourceAlpha = s[i + 3] / 255;
+    const outputAlpha = matteAlpha * sourceAlpha;
+    if (outputAlpha <= 0.0001) {
+      o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0;
+      transparentPixels++;
+      continue;
+    }
+    if (recoverColor && matteAlpha >= 8 / 255) {
+      // Photoshop Remove Black Matte와 같은 목적의 straight-alpha unmix.
+      // RGB와 출력 알파가 같은 matteAlpha를 사용하므로 원래 매트 위 외관이 보존된다.
+      o[i] = clamp255(((sr - (1 - matteAlpha) * br) / matteAlpha) * 255);
+      o[i + 1] = clamp255(((sg - (1 - matteAlpha) * bgr) / matteAlpha) * 255);
+      o[i + 2] = clamp255(((sb - (1 - matteAlpha) * bb) / matteAlpha) * 255);
     } else {
       o[i] = s[i]; o[i + 1] = s[i + 1]; o[i + 2] = s[i + 2];
     }
-    o[i + 3] = clamp255(a * 255);
+    o[i + 3] = clamp255(outputAlpha * 255);
+    if (o[i + 3] >= 254) opaquePixels++; else partialPixels++;
+
+    if (recoverColor) {
+      const rr = (o[i] / 255) * matteAlpha + (1 - matteAlpha) * br;
+      const rg = (o[i + 1] / 255) * matteAlpha + (1 - matteAlpha) * bgr;
+      const rb = (o[i + 2] / 255) * matteAlpha + (1 - matteAlpha) * bb;
+      reconstructionError += Math.abs(rr - sr) + Math.abs(rg - sg) + Math.abs(rb - sb);
+      reconstructionSamples += 3;
+    }
   }
+  return {
+    data: o, width: W, height: H,
+    qa: {
+      transparentPixels, opaquePixels, partialPixels, totalPixels: W * H,
+      reconstructionMae: reconstructionSamples ? reconstructionError / reconstructionSamples : 0,
+    },
+  };
+}
+
+function effectToCanvas(srcData, { cutoff, gamma, opacity, recoverColor, trim, bg }) {
+  const { data, width: W, height: H, qa } = extractEffectPixels(srcData, {
+    cutoff, gamma, opacity, recoverColor, bg,
+  });
+  const canvas = document.createElement('canvas'); canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const out = ctx.createImageData(W, H), o = out.data;
+  o.set(data);
   ctx.putImageData(out, 0, 0);
   if (trim) {
     const box = alphaTrimBox(o, W, H);
     if (box) {
       const ec = document.createElement('canvas'); ec.width = box.w; ec.height = box.h;
       ec.getContext('2d').drawImage(canvas, box.x, box.y, box.w, box.h, 0, 0, box.w, box.h);
-      return ec;
+      return { canvas: ec, qa };
     }
   }
-  return canvas;
+  return { canvas, qa };
 }
 
 // MaskForge 호환 시그니처 — { blob, width, height } 반환.
 export function effectToBlob(srcData, opts) {
-  const canvas = effectToCanvas(srcData, opts);
+  const { canvas, qa } = effectToCanvas(srcData, opts);
   const ow = canvas.width, oh = canvas.height;
   return new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve({ blob: b, width: ow, height: oh }) : reject(new Error('PNG 변환 실패'))), 'image/png'));
+    canvas.toBlob((b) => (b ? resolve({ blob: b, width: ow, height: oh, qa }) : reject(new Error('PNG 변환 실패'))), 'image/png'));
 }
 
 // 다운로드용 편의 래퍼 — dataURL(또는 URL) → 이펙트 추출 투명 PNG dataURL.
@@ -106,7 +142,7 @@ export function effectToTransparentPng(src, opts = {}) {
         const ctx = c.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(img, 0, 0);
         const srcData = ctx.getImageData(0, 0, c.width, c.height);
-        const canvas = effectToCanvas(srcData, { ...EFFECT_DEFAULTS, ...params, bg });
+        const { canvas } = effectToCanvas(srcData, { ...EFFECT_DEFAULTS, ...params, bg });
         resolve(canvas.toDataURL('image/png'));
       } catch (e) { reject(e); }
     };

@@ -1,12 +1,12 @@
 // Pop 전용 Gemini API 호출.
 // 모델은 RenderMatrix 와 달리 `gemini-2.5-flash` 를 사용.
 // 키는 공용 VITE_GEMINI_API_KEY — 이전에 빈 문자열 하드코딩이라 레퍼런스 분석/프롬프트 역설계가 401 로 실패했음.
-import { GEMINI_API_KEY } from "../../../lib/gemini";
+import { GEMINI_API_KEY } from "../../../lib/gemini.js";
 
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 // fetchWithRetry + parseJSON 은 RenderMatrix 와 100% 동일 — import 후 re-export.
-import { fetchWithRetry, parseJSON } from "../../RenderMatrix/services/gemini";
+import { fetchWithRetry, parseJSON } from "../../RenderMatrix/services/gemini.js";
 export { fetchWithRetry, parseJSON };
 
 const optionsContext = (appOptions) => JSON.stringify({

@@ -1,5 +1,7 @@
 # Render Matrix typography map
 
+Runtime: the `nexus_render_matrix_prompt` MCP tool compiles the prompt from these sources directly (state defaults = the app hook's initial values). Read them only to understand option meaning.
+
 Local sources:
 
 - `src/apps/RenderMatrix/services/promptCompiler.js`

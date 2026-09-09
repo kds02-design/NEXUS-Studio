@@ -72,6 +72,12 @@ export default function AssetCard({ asset, onLikeToggle, onDelete, onClick }) {
             임시
           </span>
         )}
+        {!temp && asset.source?.kind === "psd-layer" && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-500/20 text-indigo-200 border border-indigo-400/30" title={(asset.source.layerPath || []).join(" / ")}>PSD</span>
+        )}
+        {!temp && asset.hasEffects && (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-500/20 text-amber-200 border border-amber-400/30" title="그림자·빛·글로우 등의 효과 레이어 포함">FX</span>
+        )}
       </div>
 
       {/* hover 액션 */}

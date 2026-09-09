@@ -1681,8 +1681,16 @@ function App() {
                                 }
 
                                 const patch = {
+                                    webCriteria: result.webCriteria,
                                     webScores: result.webScores,
                                     webAiScore: result.webAiScore,
+                                    webHardFailures: result.webHardFailures,
+                                    webRecommendedCorrections: result.webRecommendedCorrections,
+                                    webEvaluationReport: result.webEvaluationReport,
+                                    webEvaluationPass: result.webEvaluationPass,
+                                    webCriteriaType: result.criteriaType,
+                                    webCriteriaVersionId: result.criteriaVersionId,
+                                    webCriteriaVersionName: result.criteriaVersionName,
                                     isWebAnalyzed: true,
                                     webAnalyzedAt: new Date().toISOString(),
                                     webManualScoreAdj: 0,

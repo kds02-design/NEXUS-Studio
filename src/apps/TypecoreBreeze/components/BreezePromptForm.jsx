@@ -20,13 +20,13 @@ export default function BreezePromptForm() {
   } = useBreeze();
 
   return (
-    <aside className="w-[360px] shrink-0 border-r bg-[#111111] flex flex-col border-zinc-800/80 overflow-y-auto p-5 space-y-6 custom-scrollbar">
+    <aside className="w-[clamp(320px,27vw,380px)] shrink-0 border-r bg-[#111111] flex flex-col border-zinc-800/80 overflow-y-auto p-5 space-y-6 custom-scrollbar">
       <div className="space-y-3">
         <div className="text-[10px] font-bold uppercase text-zinc-500 flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5" /> 1. Reference Image</div>
         <div onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleEditDrop} className={`relative rounded-xl border-2 border-dashed p-5 text-center transition-all flex flex-col items-center justify-center min-h-[100px] ${isDragging ? 'border-zinc-500 bg-zinc-800' : 'border-zinc-800 bg-[#16161D] hover:border-zinc-700'}`}>
           {editUploadedImage ? (
             <div className="w-full relative group">
-              <img src={editUploadedImage} className="max-h-24 mx-auto object-contain rounded" />
+              <img src={editUploadedImage} alt="부분 수정 대상 이미지" className="max-h-24 mx-auto object-contain rounded" />
               <button onClick={() => setEditUploadedImage(null)} className="absolute top-1 right-1 p-1 bg-black/70 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"><X className="w-3.5 h-3.5 text-zinc-300" /></button>
             </div>
           ) : (

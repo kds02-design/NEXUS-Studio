@@ -96,13 +96,14 @@ APP_REGISTRY 필드 의미:
 - **lazy + Suspense** — 큰 PromptEngine 은 `React.lazy()` 로 코드 스플리팅.
 - **글로벌 nav popover z-index 50000+** — AppNavPopover / ProfilePopover / CommandPalette. 일반 모달은 9999 이하.
 - **결과 프롬프트 인라인 압축** — `lib/promptCompressor.js` 의 `compressPrompt()` 가 PromptAudit 분석 로직을 재사용. 결과가 긴 앱(Render/Motion Matrix 등)에서 동일 함수 호출.
+- **벡터화 로직은 `lib/vectorCore.js` 단일 원본** — VectorForge 앱(potrace wasm)과 Claude 스킬 `nexus-vector-forge`(Node potrace / Illustrator COM)가 이진화·프리셋·SVG 조립을 공유. 프리셋·임계값 규칙은 이 파일만 수정. 앱 엔진은 `services/vectorize.js`, 옛 Marching Squares 는 `vectorizeLegacy.js`(비교용).
 
 ## 8. 함정 / 의도적 미구현 (모르면 잘못 고치기 쉬움)
 
 - `design-eval` 의 `disabled: true` 플래그 — **플래그는 남아 있지만 실제 동작**(다른 앱에서 송신 정상). 플래그만 보고 비활성 처리 금지.
 - RubiconForge 채팅 튜닝 룸 — state/handler 만 있고 UI 미렌더. **의도적 dead code.**
 - TypecoreSovereign `components/hooks/constants/*.jsx` — 대부분 stub (Phase 2 대기). 각 PromptEngine 은 1500~2400 줄 인라인.
-- `disabled: true` 플레이스홀더 — `brief-studio`, `typecore-breeze`, `rubicon-forge`, `logo-forge`, `visual-flux`.
+- `disabled: true` 플레이스홀더 — `rubicon-forge`, `logo-forge`, `visual-flux`. (`typecore-breeze` · `brief-studio` 는 과거 플레이스홀더였으나 현재 라이브 — disabled 로 되돌리지 말 것.)
 - BrandWebReview `status='approved'` — 별도 큐로 이동·아카이브는 미구현.
 - BannerCodex 드래그앤드롭 등록 모달 — 사용자 요청으로 deferred.
 - `NexusLogo.jsx` / `NexusTitle.jsx` — 현재 미사용.

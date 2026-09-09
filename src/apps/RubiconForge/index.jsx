@@ -57,7 +57,7 @@ export default function App() {
     (async () => {
       if (params.atlasSpec) forge.setAtlasSpec(String(params.atlasSpec));
       if (params.atlasTitle) forge.setAtlasSpecTitle(String(params.atlasTitle));
-      forge.setCurrentView('atlas');
+      forge.setCurrentView('atlas'); forge.setHandoffView('atlas');
       const url = payload.image?.url;
       if (url) {
         const dataUrl = await loadImageAsDataUrl(url);
@@ -111,8 +111,8 @@ export default function App() {
         </div>
       )}
 
-      {/* 앱 상단 탭 — 키비주얼 편집(메인) / 리스킨 / 리디자인 */}
-      <ForgeHeader currentView={forge.currentView} setCurrentView={forge.setCurrentView} />
+      {/* 앱 상단 탭 — 키비주얼 편집(메인) + 핸드오프로 진입한 뷰(리스킨/리디자인/프레임 세트)만 문맥 탭으로 */}
+      <ForgeHeader currentView={forge.currentView} setCurrentView={forge.setCurrentView} handoffView={forge.handoffView} />
 
       {forge.currentView === 'kvedit' ? (
         <main className="flex-1 min-h-0 overflow-auto custom-scrollbar">

@@ -74,7 +74,7 @@
   },
 
   "gate": {
-    "quality": { "weightedOverall": 85, "everyMetric": 75, "hardFailures": 0, "rubric": "nexus-banner (== banner-codex promo)" },
+    "quality": { "weightedOverall": 85, "everyMetric": 75, "hardFailures": 0, "rubric": "nexus-banner (active Nexus criteria snapshot)" },
     "consistency": { "checkAnchors": true, "checkLayerOrder": true, "checkFonts": true, "checkPresets": true, "checkSeed": true }
   }
 }

@@ -3,7 +3,7 @@
 // 격리 분리한 thin 진입점. versions/current/ 외부의 TypecoreSovereign 공유 모듈은 사용하지 않음 (격리 원칙).
 // Imagen 렌더링은 lib/imagenRender + PromptArc 저장 흐름을 RenderMatrix 와 동일하게 재사용.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Edit3, Settings } from 'lucide-react';
+import { AlertCircle, CheckCircle, Edit3, Settings } from 'lucide-react';
 import { doc, setDoc } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../services/gemini';
 import { renderWithImagen, IMAGEN_MODELS, DEFAULT_IMAGE_MODEL } from '../../../../lib/imagenRender';
@@ -142,6 +142,24 @@ const App = ({ version, setVersion, versions } = {}) => {
     }
   }, [renderedImage, savedCloudinaryUrl, navigate, rp, buildTypographyLock]);
 
+  // Vector Forge 로 송신 — 승인된 흑백 글자 형태를 SVG 벡터로 변환. dataUrl 자가완결이라 업로드 불필요.
+  const handleSendToVectorForge = useCallback(() => {
+    if (!renderedImage?.dataUrl) return;
+    try {
+      navigate('vector-forge', {
+        source: 'typecore-sovereign',
+        target: 'vector-forge',
+        timestamp: Date.now(),
+        image: { url: savedCloudinaryUrl || renderedImage.dataUrl, metadata: { from: 'TypecoreSovereign' } },
+        params: { preset: 'title' },
+      });
+      rp.showToast?.('◇ Vector Forge 로 보냈어요');
+    } catch (e) {
+      console.error('[TypecoreSovereign] send to VectorForge failed', e);
+      rp.showToast?.(`Vector Forge 전송 실패: ${e.message || e.code}`);
+    }
+  }, [renderedImage, savedCloudinaryUrl, navigate, rp]);
+
   // 완전 자동 파이프라인 — 렌더된 이미지를 RenderMatrix 로 보내 자동으로 image-to-image 렌더까지 실행.
   // mode:'pipeline' 이면 RenderMatrix 가 base image 임포트 + 추천 옵션 자동 적용 + 자동 렌더한다.
   // cloudUrl(자동 저장 결과)이 있으면 재사용, 없으면 즉시 업로드.
@@ -174,8 +192,8 @@ const App = ({ version, setVersion, versions } = {}) => {
       setRenderError('리터칭 모드에서는 대상 이미지를 먼저 올려주세요.');
       return;
     }
-    const canGen = await rp.ensureCanGenerate?.('image');
-    if (canGen === false) { setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)'); return; }
+    const canGen = await rp.ensureCanGenerate('image');
+    if (!canGen) { setRenderError('이번 주 크레딧이 부족합니다. (이미지 생성 10c 필요)'); return; }
     setRendering(true); setRenderStage('optimizing'); setRenderError(null); setRenderedImage(null);
     try {
       const locks = {
@@ -228,7 +246,15 @@ const App = ({ version, setVersion, versions } = {}) => {
       }
     } catch (e) {
       console.error('[TypecoreSovereign] imagen failed', e);
-      setRenderError(e.message || String(e));
+      // 원문 영어 API 에러 대신 한국어 안내로 변환 (원본은 console.error 로 보존).
+      const raw = e.message || String(e);
+      if (raw.includes('429') || raw.toLowerCase().includes('quota')) {
+        setRenderError('요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.');
+      } else if (raw.includes('SAFETY') || raw.toLowerCase().includes('blocked')) {
+        setRenderError('프롬프트가 정책에 의해 거부되었습니다. 표현을 조정해보세요.');
+      } else {
+        setRenderError(`렌더링에 실패했습니다: ${raw}`);
+      }
     } finally { setRendering(false); setRenderStage(null); }
   }, [apiKey, canRender, selectedImagenModel, user, saveRenderToPromptArc, autoSendToRenderMatrix, autoPipelineMode, rp]);
 
@@ -257,6 +283,7 @@ const App = ({ version, setVersion, versions } = {}) => {
     savedToArcId,                       // null 이면 미저장, doc id 면 저장 완료.
     onSendToRenderMatrix: handleSendToRenderMatrix,
     sendingToRenderMatrix,
+    onSendToVectorForge: handleSendToVectorForge,
     isLoggedIn: !!user?.uid,
     canRender, grade,
   };
@@ -273,6 +300,14 @@ const App = ({ version, setVersion, versions } = {}) => {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.2); border-radius: 4px; transition: background 0.2s; }
         .custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.5); }
       `}</style>
+
+      {/* 토스트 — RenderMatrix 와 동일 마크업 (z-index 만 일반 모달 위로). */}
+      {rp.toastMsg && (
+        <div className={`fixed top-8 left-1/2 -translate-x-1/2 text-white px-6 py-3 rounded-full font-bold text-[12px] shadow-2xl z-[9500] flex items-center gap-2 animate-in slide-in-from-top-4 fade-in whitespace-nowrap border backdrop-blur-md transition-colors ${rp.toastMsg.includes('해제') || rp.toastMsg.includes('실패') ? 'bg-zinc-800/90 border-zinc-600 shadow-[0_10px_30px_rgba(0,0,0,0.5)] text-rose-400' : 'bg-emerald-500/90 border-emerald-400/50 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
+          {rp.toastMsg.includes('해제') || rp.toastMsg.includes('실패') ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle className="w-4 h-4 shrink-0" />}
+          {rp.toastMsg}
+        </div>
+      )}
 
       <main className="flex-1 flex overflow-hidden gap-5 min-h-0">
         <Sidebar rp={rp} version={version} setVersion={setVersion} versions={versions} />

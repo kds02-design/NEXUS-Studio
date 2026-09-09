@@ -41,14 +41,43 @@ import { buildBundlePrompt, isColorableGround, BUNDLE_LIGHT_OPTIONS, BUNDLE_GROU
 import { CHAR_LIGHT_OPTIONS, CHAR_PARTICLE_OPTIONS, CHAR_INTENSITY_OPTIONS, CHAR_BG_OPTIONS, CHAR_SKILLS, resolveCharBg } from "../src/apps/NexusPreview/services/characterPresets";
 import { buildQualityUpSkillIds } from "../src/apps/NexusPreview/services/qualityUpSkills";
 import { computeCharMask, CHAR_SPLIT_DEFAULTS } from "../src/lib/charEffectSplit";
-import { buildPrompts as buildBreezePrompts } from "../src/apps/TypecoreBreeze/hooks/useBreezePrompt";
-import { directorPersonas as breezePersonas } from "../src/apps/TypecoreBreeze/constants/categories";
+// Mask Forge 픽셀 코어 — 앱(MaskForge)과 같은 함수. 예전엔 MCP 가 자체 키잉(threshold/feather 선형)을 써서 앱과 결과가 달랐다.
+import { KEY_DEFAULTS, extractColorKeyPixels, detectBg as appDetectBg, alphaTrimBox, cropPixels, toRgb as appToRgb } from "../src/lib/colorKeyExtract.js";
+import { EFFECT_DEFAULTS, extractEffectPixels } from "../src/lib/effectExtract.js";
+// Typecore Breeze — 순수 모듈로 이동 (예전엔 훅 파일·jsx 를 import 했다)
+import { buildPrompts as buildBreezePrompts } from "../src/apps/TypecoreBreeze/services/breezePrompt.js";
+import { directorPersonas as breezePersonas } from "../src/apps/TypecoreBreeze/constants/categoriesData.js";
 import { coreArchetypes as sovereignArchetypes } from "../src/apps/TypecoreSovereign/versions/current/constants/personas";
 import { staticOptions as sovereignOptions } from "../src/apps/TypecoreSovereign/versions/current/constants/options";
 import { getOptionEn as sovereignOptionEn } from "../src/apps/TypecoreSovereign/versions/current/constants/utils";
 import { resolveSovereignOptions, SCRIPT_PRESETS as sovereignPresets } from "../src/apps/TypecoreSovereign/versions/current/services/sovereignOptions";
 import { compileSovereignImagenPrompt } from "../src/apps/TypecoreSovereign/versions/current/services/compileSovereignImagenPrompt";
-import { FRAMEFORGE_ASSET_TYPES, FRAMEFORGE_SILHOUETTES, FRAMEFORGE_MOODS, FRAMEFORGE_RENDER_STYLES, buildFrameForgeMcpPrompt } from "../src/apps/FrameForge/frameforgeMcp.js";
+import { FRAMEFORGE_ASSET_TYPES, FRAMEFORGE_SILHOUETTES, FRAMEFORGE_MOODS, FRAMEFORGE_RENDER_STYLES, FRAMEFORGE_KITS, buildFrameForgeMcpPrompt, frameForgeSharedAxes, buildKitSeeds, seedAspectRatio } from "../src/apps/FrameForge/frameforgeMcp.js";
+import { formatNexusCriteriaMarkdown, loadActiveNexusCriteria } from "../scripts/lib/nexus-evaluation-criteria.mjs";
+// 2순위 (2026-09): NexusPreview 타이틀FX/배경 생성·합성/공중부양 · Prompt Audit · Promo Skin · Motion Matrix — 앱과 같은 순수 빌더
+import { TITLE_FX_EFFECTS, TITLE_FX_COLORS, TITLE_FX_DIRECTIONS, TITLE_FX_INTENSITY, TITLE_FX_BG_OPTIONS, buildTitlePrompt } from "../src/apps/NexusPreview/services/titlePrompt.js";
+import { buildBgComposePrompt, buildBgGeneratePrompt } from "../src/apps/NexusPreview/services/bgPrompts.js";
+import { FLOATING_OUTPUT_OPTIONS, FLOATING_EFFECT_OPTIONS, FLOATING_FORM_OPTIONS, FLOATING_LAYOUT_OPTIONS, FLOATING_GROUP_OPTIONS, FLOATING_COLORS, FLOATING_INTENSITY_OPTIONS, FLOATING_MOTION_OPTIONS, FLOATING_DENSITY_OPTIONS, resolveFloatingGroupPlan, buildFloatingPrompt, buildFloatingRepairPrompt, buildFloatingSeparationPrompt } from "../src/apps/NexusPreview/services/floatingPrompt.js";
+import { PROMPT_MAX_LENGTH as AUDIT_MAX_LENGTH, CONFLICT_TYPES as AUDIT_CONFLICT_TYPES, SOURCE_CONTEXT as AUDIT_SOURCE_CONTEXT, buildAuditPromptText } from "../src/apps/PromptAudit/services/auditPrompt.js";
+import { SYSTEM_PROMPT as THEME_SYSTEM_PROMPT, RESPONSE_SCHEMA as THEME_RESPONSE_SCHEMA } from "../src/apps/PromoSkin/services/themePrompt.js";
+import { DEFAULT_LAYERS as MOTION_DEFAULT_LAYERS, MOTION_FX_LISTS, compileRawPrompt as compileMotionRaw, compileNegativePrompt as compileMotionNegative, inspectAndOptimizePrompt as optimizeMotionPrompt } from "../src/apps/MotionMatrix/services/motionCompiler.js";
+import { EXPORT_MODES as MOTION_EXPORT_MODES, INTRO_STYLES as MOTION_INTRO_STYLES, FLOW_STYLES as MOTION_FLOW_STYLES, MOTION_DYNAMICS, INTENSITY_LEVELS as MOTION_INTENSITY, TRANSITION_TARGETS as MOTION_TRANSITION_TARGETS } from "../src/apps/MotionMatrix/constants/presets.js";
+import { VEO_MODELS } from "../src/lib/veoRender.js";
+// Brief Studio Prism — 수정요청서 해석 (범용 규칙 + 페이지 프로필)
+import { extractionPrompt as briefExtractionPrompt, opsPrompt as briefOpsPrompt, PATTERN_VOCAB as BRIEF_PATTERN_VOCAB } from "../src/apps/BriefStudio/prism/prompts.js";
+import { EXTRACTION_SCHEMA as BRIEF_EXTRACTION_SCHEMA, OPS_SCHEMA as BRIEF_OPS_SCHEMA } from "../src/apps/BriefStudio/prism/schema.js";
+import { GENERIC_REVISION_RULES } from "../src/apps/BriefStudio/prism/rules.js";
+import { listPrismProfiles, getPrismProfile } from "../src/apps/BriefStudio/prism/profiles/index.js";
+// Render Matrix(재질 렌더) — 앱 컴파일러를 그대로. 예전엔 MCP 도구가 없어 스킬이 소스를 읽고 흉내 냈다 (2026-09).
+import * as RM_MAIN from "../src/apps/RenderMatrix/services/promptCompiler.js";
+import { INITIAL_OPTIONS as RM_MAIN_OPTIONS } from "../src/apps/RenderMatrix/constants/materials.js";
+import { DIRECTOR_PERSONAS as RM_MAIN_PERSONAS, RENDER_ENGINES as RM_MAIN_ENGINES, PRESET_GROUPS as RM_MAIN_PRESETS } from "../src/apps/RenderMatrix/constants/presets.js";
+import * as RM_POP from "../src/apps/RenderMatrixPop/services/promptCompiler.js";
+import { INITIAL_OPTIONS as RM_POP_OPTIONS } from "../src/apps/RenderMatrixPop/constants/categories.js";
+import { DIRECTOR_PERSONAS as RM_POP_PERSONAS, RENDER_ENGINES as RM_POP_ENGINES, PRESET_GROUPS as RM_POP_PRESETS } from "../src/apps/RenderMatrixPop/constants/presets.js";
+import { buildDesignEvaluationPrompt, buildEvaluationResponseSchema, criteriaSourceFromSnapshot } from "../src/lib/designEvaluationPrompt.js";
+import { calculateEvaluationReport, criteriaSnapshot as evalCriteriaSnapshot, validateCriteria as validateEvalCriteria } from "../src/lib/designEvaluationCore.js";
+import { CRITERIA_TYPES as EVAL_CRITERIA_TYPES } from "../src/lib/evaluationCriteriaSeeds.js";
 
 // ─── 경로/키 ─────────────────────────────────────────────────────────────────
 // 번들은 <repo>/mcp/ 에 있으므로 루트는 한 단계 위.
@@ -273,6 +302,7 @@ async function dataWithRemoteImages(structuredContent, t, urls) {
 // 클라이언트가 read-only/파괴성/멱등성/외부호출 여부를 판단하는 데 쓴다.
 const PURE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };        // 순수 함수 — 프롬프트/카탈로그/루브릭
 const READ_REMOTE = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true };  // 외부 저장소 읽기
+const WRITE_REMOTE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }; // 외부 저장소 멱등 upsert
 const WRITE_LOCAL = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }; // 새 파일 생성 — 로컬 픽셀 툴
 const RENDER = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };       // 외부 API 호출 + 파일 생성
 
@@ -336,6 +366,23 @@ function decodeFirestoreDocument(doc) {
   return { id, ...decodeFirestoreFields(doc?.fields || {}) };
 }
 
+function encodeFirestoreValue(value) {
+  if (value == null) return { nullValue: null };
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(encodeFirestoreValue) } };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") return Number.isInteger(value)
+    ? { integerValue: String(value) }
+    : { doubleValue: value };
+  if (typeof value === "object") return { mapValue: { fields: encodeFirestoreFields(value) } };
+  return { stringValue: String(value) };
+}
+
+function encodeFirestoreFields(value) {
+  return Object.fromEntries(Object.entries(value || {})
+    .filter(([, item]) => item !== undefined)
+    .map(([key, item]) => [key, encodeFirestoreValue(item)]));
+}
+
 function bannerTimestamp(value) {
   if (typeof value === "number") return value;
   const parsed = Date.parse(String(value || ""));
@@ -352,6 +399,11 @@ function bannerSummary(banner) {
     character: banner.character || null,
     score: Number.isFinite(Number(banner.score)) ? Number(banner.score) : null,
     tags: Array.isArray(banner.tags) ? banner.tags : [],
+    codexBadges: Array.isArray(banner.codexBadges) ? banner.codexBadges : [],
+    reviewStatus: banner.reviewStatus || null,
+    provenance: banner.provenance || null,
+    automationManaged: !!banner.automationManaged,
+    automationKey: banner.automationKey || null,
     imageUrl: banner.imageUrl || null,
     thumbnailUrl: banner.thumbnailUrl || null,
     path: banner.path || null,
@@ -478,6 +530,28 @@ function promptArcSummary(entry) {
   };
 }
 
+function assetLibrarySummary(entry) {
+  return {
+    id: entry.id,
+    title: entry.title || "제목 없음",
+    imageUrl: promptArcSafeUrl(entry.imageUrl),
+    width: Number(entry.width || 0),
+    height: Number(entry.height || 0),
+    category: entry.category || "etc",
+    subtype: entry.subtype || null,
+    tags: promptArcArray(entry.tags).map(String),
+    game: entry.game || null,
+    year: Number(entry.year || 0) || null,
+    section: entry.section || null,
+    campaign: entry.campaign || null,
+    hasEffects: !!entry.hasEffects,
+    alpha: entry.alpha !== false,
+    sourceKind: entry.source?.kind || null,
+    sourceFile: entry.source?.fileName || null,
+    layerPath: promptArcArray(entry.source?.layerPath).map(String),
+  };
+}
+
 async function firestoreRequest(documentPath, params = {}) {
   const { projectId, apiKey } = firebaseConfig();
   if (!projectId || !apiKey) throw new Error(".env에 VITE_FIREBASE_PROJECT_ID / VITE_FIREBASE_API_KEY가 필요합니다.");
@@ -496,6 +570,58 @@ async function firestoreRequest(documentPath, params = {}) {
     throw new Error(`Firestore ${response.status}: ${message}`);
   }
   return response.json();
+}
+
+async function firestoreWriteDocument(documentPath, value) {
+  const { projectId, apiKey } = firebaseConfig();
+  if (!projectId || !apiKey) throw new Error(".env에 VITE_FIREBASE_PROJECT_ID / VITE_FIREBASE_API_KEY가 필요합니다.");
+  const auth = await currentNexusAuth();
+  const claims = decodeFirebaseClaims(auth?.idToken);
+  if (!auth?.idToken || !claims?.nexusCodex) throw new Error("Nexus Studio에서 Codex 계정을 다시 연결해 주세요.");
+  const base = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/databases/(default)/documents`;
+  const url = new URL(`${base}/${documentPath}`);
+  url.searchParams.set("key", apiKey);
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers: { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${auth.idToken}` },
+    body: JSON.stringify({ fields: encodeFirestoreFields(value) }),
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    let message = body;
+    try { message = JSON.parse(body)?.error?.message || body; } catch { /* text 응답 */ }
+    throw new Error(`Firestore ${response.status}: ${message}`);
+  }
+  return response.json();
+}
+
+function bannerCodexUploadRoots() {
+  const configured = envValue("NEXUS_BANNER_CODEX_UPLOAD_ROOTS");
+  return (configured ? configured.split(";") : [ROOT]).map((value) => path.resolve(value.trim())).filter(Boolean);
+}
+
+async function uploadBannerCodexImage(imagePath) {
+  if (!imagePath) return null;
+  const absolute = path.resolve(imagePath);
+  if (!isInsideAllowedRoot(absolute, bannerCodexUploadRoots())) throw new Error("이미지 경로가 Banner Codex 허용 루트 밖에 있습니다.");
+  const stat = fs.statSync(absolute);
+  if (!stat.isFile() || stat.size > 25 * 1024 * 1024) throw new Error("이미지는 25MB 이하 파일이어야 합니다.");
+  const ext = path.extname(absolute).toLowerCase();
+  const mime = ({ ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" })[ext];
+  if (!mime) throw new Error("PNG, JPG, WEBP 이미지만 등록할 수 있습니다.");
+  const cloudName = envValue("VITE_CLOUDINARY_CLOUD_NAME");
+  const preset = envValue("VITE_CLOUDINARY_UPLOAD_PRESET");
+  if (!cloudName || !preset) throw new Error("Cloudinary 업로드 설정이 없습니다.");
+  const form = new FormData();
+  form.append("file", new Blob([fs.readFileSync(absolute)], { type: mime }), path.basename(absolute));
+  form.append("upload_preset", preset);
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/image/upload`, {
+    method: "POST", body: form, signal: AbortSignal.timeout(60000),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload?.error?.message || `Cloudinary ${response.status}`);
+  return payload.secure_url || payload.url;
 }
 
 async function firestoreCollectionAll(documentPath, { maxDocuments = 10000 } = {}) {
@@ -639,6 +765,17 @@ async function loadImageData(imagePath) {
   ctx.drawImage(img, 0, 0);
   return { imageData: ctx.getImageData(0, 0, img.width, img.height), width: img.width, height: img.height };
 }
+// {data,width,height} 픽셀 결과 → PNG (앱 lib 결과를 그대로 저장)
+async function savePixels(px, outPath) {
+  const { createCanvas } = await canvasMod();
+  const cv = createCanvas(px.width, px.height);
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(px.width, px.height);
+  img.data.set(px.data);
+  ctx.putImageData(img, 0, 0);
+  fs.writeFileSync(outPath, cv.toBuffer("image/png"));
+  return outPath;
+}
 async function saveImageData(imageData, outPath) {
   const { createCanvas } = await canvasMod();
   const cv = createCanvas(imageData.width, imageData.height);
@@ -665,10 +802,34 @@ const brief = (arr, extra = []) => arr.map((o) => {
 const OPTION_CATALOG = () => ({
   frameforge: {
     assetType: brief(FRAMEFORGE_ASSET_TYPES),
-    silhouette: FRAMEFORGE_SILHOUETTES.map((o) => ({ id: o.key, label: o.ko, for: o.for })),
+    silhouette: FRAMEFORGE_SILHOUETTES.map((o) => ({ id: o.key, label: o.ko, for: o.for, ratio: o.ratio })),
     mood: brief(FRAMEFORGE_MOODS),
     renderStyle: brief(FRAMEFORGE_RENDER_STYLES),
+    kit: FRAMEFORGE_KITS.map((k) => ({ id: k.key, label: k.ko, desc: k.desc, items: k.items.map(([t, s]) => `${t}/${s}`) })),
   },
+  renderMatrix: {
+    variant: [{ id: "render-matrix", label: "렌더 메트릭스 (RPG·프리미엄)" }, { id: "pop", label: "Render Matrix: Pop (캐주얼·팝)" }],
+    ...Object.fromEntries(Object.entries(RM_VARIANTS).map(([id, v]) => [id, {
+      directorPersona: brief(v.personas), renderEngine: brief(v.engines),
+      ...Object.fromEntries(RM_OPTION_KEYS.map(([stateKey, listKey]) => [stateKey, brief(v.options[listKey] || [])])),
+      preset: v.presets.flatMap((g) => g.presets.map((p) => ({ id: p.id, label: `${g.name} · ${p.label}`, settings: p.settings }))),
+    }])),
+  },
+  titleFx: {
+    effect: brief(TITLE_FX_EFFECTS, ["desc"]), color: brief(TITLE_FX_COLORS), direction: brief(TITLE_FX_DIRECTIONS), intensity: brief(TITLE_FX_INTENSITY), bg: brief(TITLE_FX_BG_OPTIONS),
+  },
+  floating: {
+    outputMode: brief(FLOATING_OUTPUT_OPTIONS), effect: brief(FLOATING_EFFECT_OPTIONS), form: brief(FLOATING_FORM_OPTIONS), layout: brief(FLOATING_LAYOUT_OPTIONS),
+    groupMode: brief(FLOATING_GROUP_OPTIONS), color: brief(FLOATING_COLORS), intensity: brief(FLOATING_INTENSITY_OPTIONS), motion: brief(FLOATING_MOTION_OPTIONS), density: brief(FLOATING_DENSITY_OPTIONS),
+  },
+  motion: {
+    animationMode: [{ id: "loop", label: "루프" }, { id: "intro", label: "인트로" }, { id: "transition", label: "트랜지션" }],
+    exportMode: brief(MOTION_EXPORT_MODES), introStyle: brief(MOTION_INTRO_STYLES), flowStyle: brief(MOTION_FLOW_STYLES), dynamics: brief(MOTION_DYNAMICS), intensity: brief(MOTION_INTENSITY), transitionTarget: brief(MOTION_TRANSITION_TARGETS),
+    ...Object.fromEntries(Object.entries(MOTION_FX_LISTS).map(([mode, lists]) => [`${mode}Fx`, { surface: brief(lists.surface), edge: brief(lists.edge), ambient: brief(lists.ambient) }])),
+    veoModel: VEO_MODELS.map((m) => ({ id: m.id, label: m.label || m.id })),
+  },
+  promptAudit: { sourceApp: Object.keys(AUDIT_SOURCE_CONTEXT).map((id) => ({ id, label: id })), conflictType: Object.entries(AUDIT_CONFLICT_TYPES).map(([id, v]) => ({ id, label: v.label })) },
+  brief: { profile: listPrismProfiles().map((p) => ({ id: p.id, label: p.label, stages: p.stages })), stage: [{ id: "transcribe", label: "전사" }, { id: "extract", label: "구조화 추출" }, { id: "merge", label: "2차 병합" }] },
   lightfx: {
     category: brief(LIGHTFX_CATEGORIES, ["desc"]),
     form: brief(LIGHTFX_FORMS, ["desc"]),
@@ -733,22 +894,31 @@ server.registerTool("nexus_guide", {
 ■ 기본 흐름
 1) nexus_list_options 로 옵션 카탈로그(id 목록) 확인
 2) 프롬프트 툴로 검증된 프로덕션 프롬프트 생성:
-   · nexus_frameforge_prompt     — FrameForge 프레임·버튼·박스·배지·디바이더·아이콘 생성
+   · nexus_frameforge_prompt     — FrameForge 프레임·버튼·박스·배지·디바이더·아이콘·장식·아이템 슬롯 생성
+   · nexus_frameforge_kit_prompts — 브랜드웹 키트(같은 스타일의 부품 세트) 프롬프트 일괄 생성
    · nexus_lightfx_prompt        — 광원/빛효과 에셋 (순흑/단색 배경, 합성용)
    · nexus_variation_prompt      — UI 에셋 리스킨(컬러·재질 오버레이 패스, 구조 보존)
    · nexus_design_alternative_prompt — 디자인 대안(모티프·재질 재해석, 골격 유지)
    · nexus_item_bundle_prompt    — 아이템 여러 개 → 꾸러미 합성 (원본 절대 보존)
    · nexus_quality_up_prompt     — KV 배경 품질 향상 (캐릭터·타이틀 형태 보존)
    · nexus_character_fx_prompt   — 캐릭터에 빛·파티클 연출 (형태 99%·얼굴 99.9% 보존)
+   · nexus_render_matrix_prompt   — 플랫 타이포 → 재질 렌더 프롬프트 (Render Matrix 앱 컴파일러 동일, render-matrix|pop)
+   · nexus_title_effect_prompt / nexus_bg_generate_prompt / nexus_bg_compose_prompt / nexus_floating_items_prompt — NexusPreview 키비주얼 편집 4모드 (앱 빌더 동일)
+   · nexus_prompt_audit_prompt   — Prompt Audit 감사관 지시문 (모든 스킬의 프롬프트 QA 게이트)
+   · nexus_theme_preset_prompt   — Promo Skin 컨셉 → 테마 토큰 프리셋
+   · nexus_motion_prompt         — Motion Matrix Veo 모션 프롬프트
+   · nexus_brief_extraction_prompt / nexus_brief_profile_prompt / nexus_brief_plugin_json — 수정요청서 분석 (범용 규칙 + 오상스 프로필, Prism 동일)
    · nexus_typecore_sovereign_prompt — Typecore Sovereign RPG/게임 타이틀 프롬프트
    · nexus_typecore_breeze_prompt    — Typecore Breeze 캐주얼/캘리 타이틀 프롬프트
 3) nexus_render_image 로 Gemini 이미지 모델 호출 (참조 이미지 파일 첨부 가능)
 4) 후처리 픽셀 툴:
+   · nexus_extract_effect      — Mask Forge 이펙트 커브(cutoff 6·gamma 0.85) 투명화, 앱과 동일 코드
    · nexus_remove_background     — 단색 배경(블랙/크로마) 키잉 → 투명 PNG
+   · nexus_alpha_plan / nexus_alpha_batch — 폴더 단위 대량 투명화: 자동 분류(flat/vignette/glow/nonflat) plan.json → 로컬 CLI 병렬 처리(같은 코드). 3장 이상이면 단건 툴 반복 대신 이쪽.
    · nexus_split_character_effect — 캐릭터/발광 이펙트 분리 (스크린 블렌드 레이어)
    · nexus_remove_ai             — 위 로컬 방식의 QA가 실패한 경우에만 사용하는 Remove.bg AI 최종 fallback
    투명화 우선순위: 색상 키잉/이펙트 알파/캐릭터 분리 같은 로컬·결정적 방식 → 알파·가장자리·닫힌 공간 QA → 실패 시에만 nexus_remove_ai.
-5) nexus_design_rubric — 결과물 평가용 디자인 루브릭
+5) nexus_design_rubric — 결과물 평가용 디자인 루브릭 · nexus_design_evaluation_prompt — 앱과 동일한 평가 프롬프트+응답 스키마 · nexus_design_evaluation_score — 앱과 동일한 가중 채점
 6) Banner Codex 라이브러리:
    · nexus_banner_codex_list — 저장 배너 목록·검색·필터
    · nexus_banner_codex_get  — 배너 1건 상세 메타데이터
@@ -760,6 +930,7 @@ server.registerTool("nexus_guide", {
    · nexus_promotion_library_get  — 프로모션 1건과 PC/모바일·평가 상세
 9) Prompt Arc 라이브러리:
    · nexus_prompt_arc_list — 공개 프롬프트·타이포·이미지 검색
+   · nexus_asset_library_list — 버튼·화살표·프레임·FX 에셋 검색
    · nexus_prompt_arc_get  — 프롬프트 단계·이미지·연관 항목 상세
 
 ■ 규약
@@ -773,6 +944,12 @@ server.registerTool("nexus_list_options", {
   inputSchema: {},
   outputSchema: {
     frameforge: z.record(z.string(), z.any()).describe("nexus_frameforge_prompt 선택지"),
+    renderMatrix: z.record(z.string(), z.any()).describe("nexus_render_matrix_prompt 선택지 (variant 별 옵션 id·프리셋)"),
+    titleFx: z.record(z.string(), z.any()).describe("nexus_title_effect_prompt 선택지"),
+    floating: z.record(z.string(), z.any()).describe("nexus_floating_items_prompt 선택지"),
+    motion: z.record(z.string(), z.any()).describe("nexus_motion_prompt 선택지"),
+    promptAudit: z.record(z.string(), z.any()).describe("nexus_prompt_audit_prompt 선택지"),
+    brief: z.record(z.string(), z.any()).describe("nexus_brief_* 선택지 (페이지 프로필·단계)"),
     lightfx: z.record(z.string(), z.any()).describe("nexus_lightfx_prompt 선택지"),
     variation: z.record(z.string(), z.any()).describe("nexus_variation_prompt 선택지"),
     designAlternative: z.record(z.string(), z.any()).describe("nexus_design_alternative_prompt 선택지"),
@@ -789,9 +966,9 @@ server.registerTool("nexus_list_options", {
 
 server.registerTool("nexus_frameforge_prompt", {
   title: "FrameForge UI 에셋 프롬프트",
-  description: "Nexus FrameForge 앱의 실제 옵션과 buildCompletePrompt 엔진으로 프레임·버튼·박스·배지·디바이더·아이콘 생성 프롬프트를 만듭니다. 결과를 nexus_render_image에 전달하세요.",
+  description: "Nexus FrameForge 앱의 실제 옵션과 buildCompletePrompt 엔진으로 프레임·버튼·박스·배지·디바이더·아이콘·장식(타이틀·섹션·내비)·아이템 슬롯 생성 프롬프트를 만듭니다. 결과의 prompt 와 aspectRatio 를 nexus_render_image에 전달하세요.",
   inputSchema: {
-    assetType: z.enum(FRAMEFORGE_ASSET_TYPES.map((o) => o.key)).describe("용도: button, box, frame, badge, divider, icon"),
+    assetType: z.enum(FRAMEFORGE_ASSET_TYPES.map((o) => o.key)).describe("용도: button, box, frame, badge, divider, icon, ornament(타이틀·섹션·내비 장식), slot(아이템 슬롯·홀더)"),
     silhouette: z.enum(FRAMEFORGE_SILHOUETTES.map((o) => o.key)).describe("nexus_list_options의 frameforge.silhouette id. 선택한 assetType과 for가 일치해야 함"),
     mood: z.enum(FRAMEFORGE_MOODS.map((o) => o.key)).default("dark_rpg").describe("분위기 프리셋"),
     renderStyle: z.enum(FRAMEFORGE_RENDER_STYLES.map((o) => o.key)).default("illustrated").describe("렌더 표현 방식"),
@@ -799,6 +976,7 @@ server.registerTool("nexus_frameforge_prompt", {
   },
   outputSchema: {
     prompt: z.string(),
+    aspectRatio: z.string(),
     renderHint: z.string(),
     resolvedOptions: z.record(z.string(), z.any()),
     nextTool: z.literal("nexus_render_image"),
@@ -823,8 +1001,365 @@ server.registerTool("nexus_frameforge_prompt", {
     interior: "empty",
     renderStyle: renderStyle.key,
   };
-  const renderHint = "참조 이미지 없음 · 프롬프트의 단색 고대비 배경 유지 · Pro 1K 또는 Flash 1K 초안 · 렌더 후 nexus_remove_background로 투명화";
-  return data({ prompt, renderHint, resolvedOptions, nextTool: "nexus_render_image" }, `${prompt}\n\n[렌더 힌트] ${renderHint}`);
+  const aspectRatio = seedAspectRatio({ assetType, silhouette });
+  const renderHint = `aspectRatio ${aspectRatio} 로 렌더 · 참조 이미지 없음 · 프롬프트의 단색 고대비 배경 유지 · Pro 1K 또는 Flash 1K 초안 · 렌더 후 nexus_remove_background로 투명화`;
+  return data({ prompt, aspectRatio, renderHint, resolvedOptions, nextTool: "nexus_render_image" }, `${prompt}\n\n[렌더 힌트] ${renderHint}`);
+});
+
+// 브랜드웹 키트 — 같은 무드·렌더 표현을 공유하는 부품 세트 프롬프트를 한 번에. 사이트 한 벌 자동화용.
+server.registerTool("nexus_frameforge_kit_prompts", {
+  title: "FrameForge 브랜드웹 키트 프롬프트",
+  description: "브랜드웹 한 벌에 들어가는 UI 부품 세트(CTA·보조 버튼·패널·타이틀 장식·디바이더·배지·슬롯·아이콘 등)를 같은 분위기·재질로 일괄 프롬프트화합니다. 각 항목의 prompt 와 aspectRatio 를 nexus_render_image 에 순서대로 전달하세요.",
+  inputSchema: {
+    kit: z.enum(FRAMEFORGE_KITS.map((k) => k.key)).default("brandweb_core").describe("키트: brandweb_core(기본 10종) / brandweb_reward(보상·쿠폰 8종) / brandweb_nav(내비·유틸 8종). nexus_list_options 의 frameforge.kit 참조"),
+    mood: z.enum(FRAMEFORGE_MOODS.map((o) => o.key)).default("brandweb_gold").describe("분위기 프리셋 — 브랜드웹은 brandweb_gold / celestial / crimson_royal / frost_silver / modern_neon 권장"),
+    renderStyle: z.enum(FRAMEFORGE_RENDER_STYLES.map((o) => o.key)).default("illustrated").describe("렌더 표현 방식"),
+    userText: z.string().max(1000).optional().describe("모든 항목에 공통 적용할 추가 의도 (게임명·컬러 힌트 등). 글자 생성 지시로 쓰지 않음"),
+  },
+  outputSchema: {
+    kit: z.string(),
+    items: z.array(z.object({ assetType: z.string(), silhouette: z.string(), label: z.string(), aspectRatio: z.string(), prompt: z.string() })),
+    sharedStyle: z.record(z.string(), z.any()),
+    nextTool: z.literal("nexus_render_image"),
+  },
+  annotations: PURE,
+}, async (a) => {
+  const kit = FRAMEFORGE_KITS.find((k) => k.key === a.kit) || FRAMEFORGE_KITS[0];
+  const mood = FRAMEFORGE_MOODS.find((o) => o.key === a.mood) || FRAMEFORGE_MOODS[0];
+  const renderStyle = FRAMEFORGE_RENDER_STYLES.find((o) => o.key === a.renderStyle) || FRAMEFORGE_RENDER_STYLES[0];
+  const shared = frameForgeSharedAxes(mood, renderStyle);
+  const seeds = buildKitSeeds(kit, shared, { userIntent: a.userText || "" });
+  const items = seeds.map((q) => ({
+    assetType: q.seed.assetType.key, silhouette: q.seed.silhouette.key,
+    label: `${q.seed.assetType.ko} · ${q.seed.silhouette.ko}`,
+    aspectRatio: seedAspectRatio(q.seed), prompt: q.prompt,
+  }));
+  const sharedStyle = { mood: mood.key, preset: mood.preset, material: mood.material, ornament: mood.ornament, renderStyle: renderStyle.key, interior: "empty" };
+  const text = items.map((it, i) => `${i + 1}. [${it.label} · ${it.aspectRatio}]\n${it.prompt}`).join("\n\n");
+  return data({ kit: kit.key, items, sharedStyle, nextTool: "nexus_render_image" }, `${kit.ko} — ${items.length}종 (공통: ${mood.ko} / ${renderStyle.ko})\n\n${text}`);
+});
+
+// ─── Render Matrix — 플랫 타이포 → 재질 렌더 프롬프트 (앱 컴파일러 동일) ──────────
+const RM_VARIANTS = {
+  "render-matrix": { compiler: RM_MAIN, options: RM_MAIN_OPTIONS, personas: RM_MAIN_PERSONAS, engines: RM_MAIN_ENGINES, presets: RM_MAIN_PRESETS, defaultPersona: "Cinematic", frontRelief: "MicroChiseled" },
+  pop: { compiler: RM_POP, options: RM_POP_OPTIONS, personas: RM_POP_PERSONAS, engines: RM_POP_ENGINES, presets: RM_POP_PRESETS, defaultPersona: "Chameleon", frontRelief: "MicroChiseled" },
+};
+// state 키 ↔ INITIAL_OPTIONS 리스트 키
+const RM_OPTION_KEYS = [
+  ["typographyScale", "typographyScales"], ["cameraLens", "cameraLenses"], ["background", "backgrounds"],
+  ["frontRelief", "frontReliefs"], ["projectionDepth", "projectionDepths"], ["surfaceTreatment", "surfaceTreatments"],
+  ["material", "materials"], ["dramaticTex", "dramaticTextures"], ["surfaceDetail", "surfaceDetails"], ["wearLevel", "wearLevels"],
+  ["rimThickness", "rimThicknesses"], ["rimColor", "rimColors"], ["rimIntensity", "rimIntensities"],
+  ["energyCore", "energyCores"], ["fxOrigin", "fxOrigins"], ["fxIntensity", "fxIntensities"],
+];
+// 앱 훅(useRenderPrompt / usePopPrompt)의 초기값과 동일한 기본 state
+function rmDefaultState(variant) {
+  const v = RM_VARIANTS[variant];
+  return {
+    currentView: "editor", directorPersona: v.defaultPersona, complexity: 3,
+    typographyScale: "Macro", cameraLens: "Telephoto", background: "RealBlack", frontRelief: v.frontRelief,
+    projectionDepth: "None", surfaceTreatment: "Standard", enableVfx: false, enableShadow: false,
+    energyCore: "None", fxOrigin: "Edges", fxIntensity: "Subtle", vfxPassMode: false, vfxPassOverlay: false,
+    material: "HyperChrome", materialInt: "Mid", dramaticTex: "Auto", surfaceDetail: "Standard",
+    rimMaterial: "None", rimThickness: "None", wearLevel: "None", rimColor: "White", rimIntensity: "Moderate",
+    enableGlint: false, renderEngine: "Unreal", userIntent: "", imageRatio: "16:9",
+  };
+}
+function rmValidate(variant, state) {
+  const v = RM_VARIANTS[variant];
+  const bad = [];
+  for (const [stateKey, listKey] of RM_OPTION_KEYS) {
+    const list = v.options[listKey] || [];
+    if (state[stateKey] != null && !list.some((o) => o.id === state[stateKey])) bad.push(`${stateKey}=${state[stateKey]} (가능: ${list.map((o) => o.id).join("|")})`);
+  }
+  if (!v.personas.some((p) => p.id === state.directorPersona)) bad.push(`directorPersona=${state.directorPersona} (가능: ${v.personas.map((p) => p.id).join("|")})`);
+  if (!v.engines.some((e) => e.id === state.renderEngine)) bad.push(`renderEngine=${state.renderEngine} (가능: ${v.engines.map((e) => e.id).join("|")})`);
+  return bad;
+}
+const RM_STATE_INPUT = {
+  variant: z.enum(Object.keys(RM_VARIANTS)).default("render-matrix").describe("render-matrix(RPG·프리미엄) | pop(캐주얼·팝). nexus_list_options 의 renderMatrix 참조"),
+  preset: z.string().optional().describe("PRESET_GROUPS 프리셋 id (예 gold_relic). 적용 후 아래 개별 옵션이 덮어씀"),
+  directorPersona: z.string().optional(), typographyScale: z.string().optional(), cameraLens: z.string().optional(), background: z.string().optional(),
+  frontRelief: z.string().optional(), projectionDepth: z.string().optional(), surfaceTreatment: z.string().optional(),
+  material: z.string().optional(), dramaticTex: z.string().optional(), surfaceDetail: z.string().optional(), wearLevel: z.string().optional(),
+  rimThickness: z.string().optional(), rimColor: z.string().optional(), rimIntensity: z.string().optional(), enableGlint: z.boolean().optional(),
+  enableVfx: z.boolean().optional().describe("true 면 energyCore 가 None 이어도 GoldenDust 로 켜짐(앱 동작)"), energyCore: z.string().optional(), fxOrigin: z.string().optional(), fxIntensity: z.string().optional(),
+  enableShadow: z.boolean().optional(), vfxPassMode: z.boolean().optional().describe("true 면 이펙트 전용 패스(검정 실루엣 + 발광만) 프롬프트"), vfxPassOverlay: z.boolean().optional(),
+  renderEngine: z.string().optional(), userIntent: z.string().max(1000).optional().describe("추가 연출 의도"),
+  exactText: z.string().max(400).optional().describe("타이포 내용 락 — 정확한 문구. 주면 앱과 같은 [TYPOGRAPHY CONTENT LOCK] 접미가 붙음"),
+  lines: z.array(z.string()).optional().describe("타이포 행 배열 (exactText 와 함께)"),
+  strictLock: z.boolean().default(true).describe("render-matrix-typography 스킬 기본: projectionDepth None · cameraLens Telephoto 강제 (플랫 형태 보존)"),
+};
+
+server.registerTool("nexus_render_matrix_prompt", {
+  title: "Render Matrix 재질 렌더 프롬프트 (앱 동일)",
+  description: "플랫 단색 타이포(Typecore 결과)를 재질·조명·FX 가 입혀진 타이틀로 렌더하는 프롬프트를 Render Matrix 앱의 컴파일러(generateIR + compileNanoBanana)로 만듭니다. 결과 prompt 를 플랫 타이포 이미지를 참조로 nexus_render_image 에 image-to-image 로 전달하세요. 옵션 id 는 nexus_list_options 의 renderMatrix 참조.",
+  inputSchema: RM_STATE_INPUT,
+  outputSchema: {
+    prompt: z.string().describe("NanoBanana(Gemini 이미지) 용 — nexus_render_image 에 그대로"),
+    prompts: z.record(z.string(), z.string()).describe("NanoBanana / ChatGPT / Midjourney"),
+    feelSummary: z.any(), auditIssues: z.array(z.any()), qualityScores: z.record(z.string(), z.any()),
+    state: z.record(z.string(), z.any()), renderHint: z.string(), nextTool: z.literal("nexus_render_image"),
+  },
+  annotations: PURE,
+}, async (a) => {
+  const variant = a.variant || "render-matrix";
+  const v = RM_VARIANTS[variant];
+  const state = rmDefaultState(variant);
+  if (a.preset) {
+    const preset = v.presets.flatMap((g) => g.presets).find((p) => p.id === a.preset);
+    if (!preset) return errText(`프리셋을 찾을 수 없습니다: ${a.preset} (가능: ${v.presets.flatMap((g) => g.presets.map((p) => p.id)).join(", ")})`);
+    Object.assign(state, preset.settings || {});
+  }
+  for (const key of Object.keys(RM_STATE_INPUT)) {
+    if (["variant", "preset", "exactText", "lines", "strictLock"].includes(key)) continue;
+    if (a[key] !== undefined) state[key] = a[key];
+  }
+  if (a.strictLock !== false) { state.projectionDepth = "None"; state.cameraLens = "Telephoto"; }
+  const bad = rmValidate(variant, state);
+  if (bad.length) return errText(`옵션 id 오류:\n${bad.join("\n")}`);
+  const C = v.compiler;
+  const ir = C.generateIR(state, v.options);
+  const lockSuffix = a.exactText
+    ? `\n\n[TYPOGRAPHY CONTENT LOCK — ABSOLUTE]\nExact text: ${JSON.stringify(a.exactText)}\nExact rows: ${JSON.stringify(a.lines || String(a.exactText).split("\n"))}\nPreserve spelling, row count, line breaks, glyph silhouettes, spacing, and approved composition exactly. Change material, depth, lighting, and FX only.`
+    : "";
+  const prompts = {
+    NanoBanana: C.compileNanoBanana(ir, state) + lockSuffix,
+    ChatGPT: (C.compileChatGPT ? C.compileChatGPT(ir, state) : "") + lockSuffix,
+    Midjourney: (C.compileMidjourney ? C.compileMidjourney(ir, state) : "") + lockSuffix,
+  };
+  const feelSummary = C.buildFeelSummary ? C.buildFeelSummary(state, v.options) : null;
+  const auditIssues = C.performLogicAudit ? C.performLogicAudit(state) : [];
+  const qualityScores = C.calculateQualityScore ? C.calculateQualityScore(state) : {};
+  const renderHint = `플랫 타이포 PNG 를 참조 이미지로 nexus_render_image 에 image-to-image · 비율은 참조 자동 감지 · Pro 2K 권장 · 형태 락: projectionDepth ${state.projectionDepth} / cameraLens ${state.cameraLens}${state.vfxPassMode ? " · 이펙트 패스 결과는 nexus_extract_effect 로 투명화" : ""}`;
+  const text = `${prompts.NanoBanana}\n\n[state] ${JSON.stringify(state)}\n[audit] ${auditIssues.length ? JSON.stringify(auditIssues) : "없음"}\n[quality] ${JSON.stringify(qualityScores)}\n[렌더 힌트] ${renderHint}`;
+  return data({ prompt: prompts.NanoBanana, prompts, feelSummary, auditIssues, qualityScores, state, renderHint, nextTool: "nexus_render_image" }, text);
+});
+
+// ─── NexusPreview 키비주얼 편집 — 타이틀 이펙트 / 배경 생성·합성 / 공중부양 아이템 (앱 빌더 동일, 2026-09) ──────────
+const idsOf = (list) => list.map((o) => o.key || o.id);
+server.registerTool("nexus_title_effect_prompt", {
+  title: "타이틀 이펙트 프롬프트 (KV 편집 동일)",
+  description: "타이틀/대형 텍스트 이미지에 속도감·서리·아우라·안개·금빛·글리치·모션블러 등 연출을 더하는 프롬프트를 NexusPreview 타이틀 이펙트 모드와 같은 빌더로 만듭니다. 글자 철자·레터폼·서체는 100% 보존. 결과 prompt 와 타이틀 PNG 를 nexus_render_image 에 image-to-image 로 전달하세요.",
+  inputSchema: {
+    effects: z.array(z.enum(idsOf(TITLE_FX_EFFECTS))).default([]).describe("다중 선택. 비우면 자동(모델이 분석해 조합)"),
+    color: z.enum(idsOf(TITLE_FX_COLORS)).default("auto"),
+    direction: z.enum(idsOf(TITLE_FX_DIRECTIONS)).default("auto"),
+    intensity: z.enum(idsOf(TITLE_FX_INTENSITY)).default("normal"),
+    bg: z.enum(idsOf(TITLE_FX_BG_OPTIONS)).default("keep"),
+    intent: z.string().max(800).optional().describe("추가 연출 의도"),
+  },
+  outputSchema: { prompt: z.string(), renderHint: z.string(), nextTool: z.literal("nexus_render_image") },
+  annotations: PURE,
+}, async (a) => {
+  const prompt = buildTitlePrompt(a.effects || [], { color: a.color, direction: a.direction, intensity: a.intensity, bg: a.bg, intent: a.intent || "" });
+  const renderHint = "타이틀 PNG 를 참조로 image-to-image · 비율 자동 · 결과가 검정 매트면 nexus_extract_effect 로 이펙트만 분리 가능";
+  return data({ prompt, renderHint, nextTool: "nexus_render_image" }, `${prompt}\n\n[렌더 힌트] ${renderHint}`);
+});
+
+server.registerTool("nexus_bg_generate_prompt", {
+  title: "KV 배경 생성 프롬프트 (KV 편집 동일)",
+  description: "컨셉 텍스트(+선택 참고 이미지)로 인물·텍스트·로고 없는 게임 프로모션 KV 배경을 만드는 프롬프트. NexusPreview 배경 생성 모드와 동일 문구.",
+  inputSchema: {
+    concept: z.string().min(1).max(1500).describe("배경 컨셉 (한국어 자연어)"),
+    hasReference: z.boolean().default(false).describe("참고 이미지를 함께 보낼 경우 true — 분위기·색감만 참고하고 인물·글자·로고 복제 금지 문구 포함"),
+    aspectRatio: z.enum(["16:9", "21:9", "4:3", "1:1", "9:16"]).default("16:9"),
+  },
+  outputSchema: { prompt: z.string(), aspectRatio: z.string(), renderHint: z.string(), nextTool: z.literal("nexus_render_image") },
+  annotations: PURE,
+}, async (a) => {
+  const prompt = buildBgGeneratePrompt(a.concept, !!a.hasReference);
+  const renderHint = `aspectRatio ${a.aspectRatio} · Pro 2K/4K 권장 · 참고 이미지가 있으면 refs 로 전달`;
+  return data({ prompt, aspectRatio: a.aspectRatio, renderHint, nextTool: "nexus_render_image" }, `${prompt}\n\n[렌더 힌트] ${renderHint}`);
+});
+
+server.registerTool("nexus_bg_compose_prompt", {
+  title: "KV 배경 합성 프롬프트 (KV 편집 동일)",
+  description: "기존 KV 배경 위에 요청 요소를 더하거나(텍스트 지시만) 중앙에 임시 배치한 소스 이미지를 자연스럽게 합성하는 프롬프트. 새 문자 생성 절대 금지 규칙 포함. NexusPreview 배경 합성 모드와 동일 문구.",
+  inputSchema: {
+    intent: z.string().min(1).max(1500).describe("사용자 요청 (무엇을 어디에 어떻게)"),
+    hasAsset: z.boolean().default(false).describe("소스 이미지를 배경 중앙에 임시 배치한 드래프트를 참조로 보낼 경우 true"),
+  },
+  outputSchema: { prompt: z.string(), renderHint: z.string(), nextTool: z.literal("nexus_render_image") },
+  annotations: PURE,
+}, async (a) => {
+  const prompt = buildBgComposePrompt(a.intent, !!a.hasAsset);
+  const renderHint = "배경(또는 소스가 중앙에 얹힌 드래프트)을 참조로 image-to-image · matchInputAspect · 4K 권장";
+  return data({ prompt, renderHint, nextTool: "nexus_render_image" }, `${prompt}\n\n[렌더 힌트] ${renderHint}`);
+});
+
+server.registerTool("nexus_floating_items_prompt", {
+  title: "공중부양 아이템 프롬프트 (KV 편집 동일)",
+  description: "아이템 이미지들을 물방울·번개·금빛·회오리 등 원형 이펙트로 감싸 공중에 띄우는 프롬프트 세트. NexusPreview 공중부양 모드와 동일 빌더 — 마스터 프롬프트와, layered-transparent 모드일 때 필요한 보정·분리(이펙트/아이템) 프롬프트를 함께 반환합니다.",
+  inputSchema: {
+    itemCount: z.number().int().min(1).max(12).describe("아이템 참조 이미지 개수"),
+    effect: z.enum(idsOf(FLOATING_EFFECT_OPTIONS)).default("bubble"),
+    form: z.enum(idsOf(FLOATING_FORM_OPTIONS)).default("broken-orbit"),
+    layout: z.enum(idsOf(FLOATING_LAYOUT_OPTIONS)).default("each"),
+    color: z.enum(idsOf(FLOATING_COLORS)).default("auto"),
+    intensity: z.enum(idsOf(FLOATING_INTENSITY_OPTIONS)).default("medium"),
+    motion: z.enum(idsOf(FLOATING_MOTION_OPTIONS)).default("clockwise"),
+    density: z.enum(idsOf(FLOATING_DENSITY_OPTIONS)).default("medium"),
+    outputMode: z.enum(idsOf(FLOATING_OUTPUT_OPTIONS)).default("layered-transparent"),
+    groupMode: z.enum(idsOf(FLOATING_GROUP_OPTIONS)).default("auto"),
+    groupAssignments: z.array(z.number().int()).optional().describe("custom 그룹 모드일 때 아이템별 그룹 번호"),
+    primaryIndex: z.number().int().min(0).default(0),
+    opening: z.number().min(0).max(100).optional().describe("링 개방 비율 %"),
+    frontCross: z.number().min(0).max(100).optional().describe("전방 교차 허용 %"),
+    bg: z.enum(idsOf(BUNDLE_BG_OPTIONS)).default("black"),
+    extra: z.string().max(800).optional(),
+  },
+  outputSchema: {
+    prompt: z.string(), groupPlan: z.record(z.string(), z.any()), repairPrompt: z.string(),
+    separationPrompts: z.record(z.string(), z.string()), aspectRatio: z.string(), renderHint: z.string(), nextTool: z.literal("nexus_render_image"),
+  },
+  annotations: PURE,
+}, async (a) => {
+  const bg = BUNDLE_BG_OPTIONS.find((o) => o.key === a.bg) || BUNDLE_BG_OPTIONS[0];
+  const groupPlan = resolveFloatingGroupPlan(a.itemCount, a.groupMode, a.groupAssignments || [], a.primaryIndex);
+  const opts = { effect: a.effect, form: a.form, layout: a.layout, color: a.color, intensity: a.intensity, motion: a.motion, density: a.density,
+    outputMode: a.outputMode, opening: a.opening, frontCross: a.frontCross, groupMode: a.groupMode, groupAssignments: a.groupAssignments || [], primaryIndex: a.primaryIndex,
+    itemCount: a.itemCount, bg, extra: a.extra || "" };
+  const prompt = buildFloatingPrompt(opts);
+  const repairPrompt = buildFloatingRepairPrompt({ itemCount: a.itemCount, groupMode: a.groupMode, groupAssignments: a.groupAssignments || [], primaryIndex: a.primaryIndex });
+  const separationPrompts = a.outputMode === "layered-transparent"
+    ? { effect: buildFloatingSeparationPrompt("effect", { itemCount: a.itemCount }), items: buildFloatingSeparationPrompt("items", { itemCount: a.itemCount }) }
+    : {};
+  const aspectRatio = a.itemCount === 1 ? "1:1" : "16:9";
+  const renderHint = `아이템 PNG ${a.itemCount}장을 순서대로 refs 로 · aspectRatio ${aspectRatio} · layered-transparent 면 마스터 → (보정) → 분리 2회 렌더 후 이펙트는 nexus_extract_effect, 아이템은 nexus_remove_background(chroma) 로 투명화`;
+  return data({ prompt, groupPlan, repairPrompt, separationPrompts, aspectRatio, renderHint, nextTool: "nexus_render_image" },
+    `${prompt}\n\n[groupPlan] ${JSON.stringify(groupPlan)}\n[렌더 힌트] ${renderHint}`);
+});
+
+// ─── Prompt Audit — 앱 감사관 지시문 그대로 (외부 모델이 직접 수행) ──────────
+server.registerTool("nexus_prompt_audit_prompt", {
+  title: "프롬프트 감사 지시문 (Prompt Audit 동일)",
+  description: "PromptAudit 앱이 Gemini 에 보내는 감사관 지시문(충돌 유형 6종·심각도·JSON 출력 형식·도메인 컨텍스트)을 입력 프롬프트와 합쳐 돌려줍니다. 이 텍스트를 그대로 모델에 주면 앱과 같은 형식의 감사 결과(summary/score/conflicts/improvedPrompt JSON)를 얻습니다. 어떤 스킬이든 결과 프롬프트의 QA 게이트로 사용하세요.",
+  inputSchema: {
+    prompt: z.string().min(1).max(AUDIT_MAX_LENGTH).describe(`감사할 프롬프트 (최대 ${AUDIT_MAX_LENGTH}자)`),
+    sourceApp: z.enum(Object.keys(AUDIT_SOURCE_CONTEXT)).optional().describe("도메인 컨텍스트"),
+    title: z.string().max(200).optional().describe("원본 제목(있으면)"),
+  },
+  outputSchema: { auditPrompt: z.string(), expectedShape: z.string(), conflictTypes: z.array(z.string()) },
+  annotations: PURE,
+}, async (a) => {
+  const auditPrompt = buildAuditPromptText(a.prompt, a.sourceApp || null, a.title ? { title: a.title } : null);
+  const expectedShape = '{ "summary": string, "score": 0-100, "conflicts": [{ id, type, severity: high|med|low, title, evidence, explanation, suggestions: [{ label, rewrite }] }], "globalSuggestions": string[], "improvedPrompt": string }';
+  return data({ auditPrompt, expectedShape, conflictTypes: Object.keys(AUDIT_CONFLICT_TYPES) }, auditPrompt);
+});
+
+// ─── Promo Skin — 컨셉 → 테마 토큰 프리셋 (앱 시스템 프롬프트 그대로) ──────────
+server.registerTool("nexus_theme_preset_prompt", {
+  title: "테마 프리셋 프롬프트 (Promo Skin 동일)",
+  description: "프로모션 페이지 컨셉(한국어)에서 컬러 토큰(primary/accent/title/bg 그라데이션 등)과 변형(frame/button/motif) 프리셋 JSON 을 뽑는 시스템 프롬프트와 응답 스키마를 돌려줍니다. Promo Skin 앱과 동일. 브랜드웹 자동화의 컬러 시스템 단계에 사용.",
+  inputSchema: { concept: z.string().min(1).max(600).describe("페이지 컨셉 (예: 겨울 서리 왕국, 황금 축제)") },
+  outputSchema: { systemPrompt: z.string(), userPrompt: z.string(), responseSchema: z.record(z.string(), z.any()) },
+  annotations: PURE,
+}, async (a) => {
+  const userPrompt = `컨셉: ${a.concept}`;
+  return data({ systemPrompt: THEME_SYSTEM_PROMPT, userPrompt, responseSchema: THEME_RESPONSE_SCHEMA }, `${THEME_SYSTEM_PROMPT}\n\n${userPrompt}`);
+});
+
+// ─── Motion Matrix — Veo 모션 프롬프트 (앱 컴파일러 동일) ──────────
+server.registerTool("nexus_motion_prompt", {
+  title: "모션 프롬프트 (Motion Matrix 동일)",
+  description: "렌더된 타이틀/오브젝트 이미지에 루프·인트로·트랜지션 모션을 주는 Veo 프롬프트(+네거티브)를 Motion Matrix 앱 컴파일러로 만듭니다. 옵션 id 는 nexus_list_options 의 motion 참조. 결과 prompt 를 이미지와 함께 Veo(30c) 렌더에 사용하세요.",
+  inputSchema: {
+    animationMode: z.enum(["loop", "intro", "transition"]).default("loop"),
+    exportMode: z.enum(idsOf(MOTION_EXPORT_MODES)).default("production"),
+    targetModel: z.string().default("universal").describe("universal | veo 등 — 최적화 대상 모델 힌트"),
+    targetMaterial: z.string().default("ice"),
+    vfxTarget: z.string().default("all"),
+    layers: z.record(z.string(), z.any()).optional().describe("레이어 설정 덮어쓰기 — 기본은 앱 DEFAULT_LAYERS. 키: surface/edge/ambient(모드별 FX id), intensity, duration, flow, intro, dynamics"),
+    optimize: z.boolean().default(true).describe("앱의 inspectAndOptimizePrompt 적용 (기본 on)"),
+  },
+  outputSchema: { prompt: z.string(), rawPrompt: z.string(), negativePrompt: z.string(), layers: z.record(z.string(), z.any()), optimizationLogs: z.array(z.any()), renderHint: z.string() },
+  annotations: PURE,
+}, async (a) => {
+  const lists = MOTION_FX_LISTS[a.animationMode] || MOTION_FX_LISTS.loop;
+  const layers = { ...MOTION_DEFAULT_LAYERS, ...(a.layers || {}) };
+  for (const key of ["surface", "edge", "ambient"]) {
+    if (!lists[key].some((o) => o.id === layers[key])) layers[key] = lists[key][0].id;
+  }
+  const rawPrompt = compileMotionRaw(layers, a.exportMode, a.animationMode, a.targetMaterial, a.vfxTarget, a.targetModel, lists.surface, lists.edge, lists.ambient);
+  const negativePrompt = compileMotionNegative(layers, a.exportMode, a.animationMode, a.targetModel, lists.surface, lists.edge, lists.ambient);
+  const opt = a.optimize ? optimizeMotionPrompt(rawPrompt, a.targetModel) : { optimizedText: rawPrompt, logs: [] };
+  const prompt = opt.optimizedText || rawPrompt;
+  const renderHint = `Veo 모델: ${VEO_MODELS.map((m) => m.id).join(" | ")} · 소스 이미지를 첫 프레임 참조로 · 영상 30c`;
+  return data({ prompt, rawPrompt, negativePrompt, layers, optimizationLogs: opt.logs || [], renderHint }, `${prompt}\n\n[negative] ${negativePrompt}\n[렌더 힌트] ${renderHint}`);
+});
+
+// ─── Brief Studio Prism — 수정요청서 분석 (범용 규칙 층 + 페이지 프로필 층, 2026-09) ──────────
+server.registerTool("nexus_brief_extraction_prompt", {
+  title: "수정요청서 범용 추출 프롬프트 (Prism 동일)",
+  description: "어떤 게임·페이지의 제작/수정요청서든 페이지 구조(섹션 패턴 어휘)와 세부 데이터를 뽑는 범용 추출 프롬프트 + 응답 스키마. 옛 캡처 무시·붉은색 강조·A→B 치환·문서 양식 무시 같은 해석 규칙이 포함돼 있습니다. 특정 페이지 템플릿(오상스 등)은 nexus_brief_profile_prompt 를 쓰세요.",
+  inputSchema: { extraNote: z.string().max(1500).optional().describe("사용자 교정 지시 (최우선 반영)"), includeOpsPrompt: z.boolean().default(false).describe("Figma 템플릿 ops 골격에 값을 채우는 2단계 프롬프트 사용법도 포함") },
+  outputSchema: { prompt: z.string(), responseSchema: z.record(z.string(), z.any()), patternVocab: z.string(), revisionRules: z.string(), opsPromptUsage: z.string().optional(), opsSchema: z.record(z.string(), z.any()).optional() },
+  annotations: PURE,
+}, async (a) => {
+  const prompt = briefExtractionPrompt(a.extraNote || "");
+  const out = { prompt, responseSchema: BRIEF_EXTRACTION_SCHEMA, patternVocab: BRIEF_PATTERN_VOCAB, revisionRules: GENERIC_REVISION_RULES };
+  if (a.includeOpsPrompt) {
+    out.opsPromptUsage = "추출 JSON 과 Figma 템플릿 ops 스키마 JSON 을 인자로 opsPrompt(extractedJson, schemaJson) 형태로 결합 — value/match 만 교체, id/slot/type/순서 불변. 예: " + briefOpsPrompt("<extractedJson>", "<schemaJson>").slice(0, 400);
+    out.opsSchema = BRIEF_OPS_SCHEMA;
+  }
+  return data(out, `${prompt}\n\n[responseSchema] ${JSON.stringify(BRIEF_EXTRACTION_SCHEMA).slice(0, 600)}…`);
+});
+
+server.registerTool("nexus_brief_profile_prompt", {
+  title: "수정요청서 페이지 프로필 프롬프트 (Prism 오상스 동일)",
+  description: "페이지 템플릿 프로필(오상스 = 오늘의 상품 스페셜)의 단계별 프롬프트와 응답 스키마를 앱(BriefStudio Prism)과 동일하게 돌려줍니다. 흐름: transcribe(이미지/PDF → 반영 희망 내용 전사 + 빨강 대표 아이콘 redItems) → extract(전사 텍스트만으로 슬롯 구조화, 이미지 미전달) → 필요 시 merge(2차 요청서 병합). 결과 데이터는 nexus_brief_plugin_json 으로 플러그인 JSON 화.",
+  inputSchema: {
+    profile: z.string().default("osangseu").describe("페이지 프로필 id — nexus_list_options 의 brief.profile"),
+    stage: z.enum(["transcribe", "extract", "merge"]).default("transcribe"),
+    note: z.string().max(1500).optional().describe("추가 지시 (extract/merge)"),
+    sourceText: z.string().max(20000).optional().describe("extract/merge 단계: transcribe 결과 transcript 텍스트 — 프롬프트 뒤에 [반영 희망 내용 (전사)] 로 붙임"),
+    redItems: z.array(z.object({ box: z.string(), item: z.string() })).optional().describe("transcribe 결과 redItems — 주면 앱과 같이 [붉은색 대표 아이콘 (상자→아이템)] 목록을 전사 본문에 붙임"),
+    baseText: z.string().max(20000).optional().describe("요청서와 함께 온 추가 입력 텍스트"),
+    prevJson: z.string().max(60000).optional().describe("merge 단계: 직전 차수 확정 데이터 JSON 문자열"),
+  },
+  outputSchema: { profile: z.string(), stage: z.string(), prompt: z.string(), responseSchema: z.record(z.string(), z.any()), input: z.string(), note: z.string(), nextStage: z.string() },
+  annotations: PURE,
+}, async (a) => {
+  const profile = getPrismProfile(a.profile);
+  if (!profile) return errText(`프로필을 찾을 수 없습니다: ${a.profile} (가능: ${listPrismProfiles().map((p) => p.id).join(", ")})`);
+  const st = profile.stages[a.stage];
+  if (!st) return errText(`프로필 ${profile.key} 에 ${a.stage} 단계가 없습니다.`);
+  let prompt;
+  if (a.stage === "transcribe") prompt = st.prompt();
+  else if (a.stage === "extract") {
+    const redByBox = profile.groupRedItems ? profile.groupRedItems(a.redItems || []) : [];
+    const body = profile.buildTranscriptSourceText ? profile.buildTranscriptSourceText({ transcript: a.sourceText || "", redByBox, baseText: a.baseText || "" }) : (a.sourceText || "");
+    prompt = st.prompt(a.note || "") + (body ? `\n\n[반영 희망 내용 (전사)]\n${body}` : "");
+  }
+  else {
+    if (!a.prevJson) return errText("merge 단계에는 prevJson(직전 차수 데이터)이 필요합니다.");
+    prompt = st.prompt(a.prevJson, a.note || "") + (a.sourceText ? `\n\n[이번 차수 변경 (전사)]\n${a.sourceText}` : "");
+  }
+  const nextStage = a.stage === "transcribe" ? "extract (transcript 를 sourceText 로, redItems 는 boxes 순서대로 slotIcons 에 ` + ` 로 결합)" : "nexus_brief_plugin_json";
+  return data({ profile: profile.key, stage: a.stage, prompt, responseSchema: st.schema, input: st.input, note: st.note, nextStage },
+    `${prompt}\n\n[input] ${st.input}\n[responseSchema] ${JSON.stringify(st.schema).slice(0, 500)}…\n[next] ${nextStage}`);
+});
+
+server.registerTool("nexus_brief_plugin_json", {
+  title: "프로필 데이터 → 플러그인 JSON (Prism 동일)",
+  description: "extract/merge 결과 데이터를 페이지 프로필의 toPluginJson(앱과 동일)으로 Figma 플러그인 입력 JSON 으로 바꾸고 통계를 돌려줍니다.",
+  inputSchema: {
+    profile: z.string().default("osangseu"),
+    data: z.record(z.string(), z.any()).describe("extract/merge 단계 응답 JSON"),
+    redItems: z.array(z.object({ box: z.string(), item: z.string() })).optional().describe("transcribe 의 redItems — 주면 앱과 같이 boxes 순서에 맞춰 slotIcons 에 결정적으로 주입(` + ` 결합)"),
+  },
+  outputSchema: { profile: z.string(), data: z.record(z.string(), z.any()), pluginJson: z.record(z.string(), z.any()), stats: z.record(z.string(), z.any()), uncertain: z.array(z.any()) },
+  annotations: PURE,
+}, async (a) => {
+  const profile = getPrismProfile(a.profile);
+  if (!profile) return errText(`프로필을 찾을 수 없습니다: ${a.profile}`);
+  let payload = JSON.parse(JSON.stringify(a.data || {}));
+  if (a.redItems?.length && profile.applyRedIconsToBoxes) payload = profile.applyRedIconsToBoxes(payload, profile.groupRedItems(a.redItems));
+  const pluginJson = profile.toPluginJson(payload);
+  const stats = profile.stats(payload);
+  const uncertain = Array.isArray(payload?.uncertain) ? payload.uncertain : [];
+  return data({ profile: profile.key, data: payload, pluginJson, stats, uncertain }, `${JSON.stringify(pluginJson, null, 1).slice(0, 1500)}\n\n[stats] ${JSON.stringify(stats)}${uncertain.length ? `\n[uncertain] ${uncertain.length}건` : ""}`);
 });
 
 server.registerTool("nexus_typecore_sovereign_prompt", {
@@ -1221,20 +1756,28 @@ server.registerTool("nexus_remove_ai", {
 });
 
 server.registerTool("nexus_remove_background", {
-  title: "배경 제거 (키잉)",
-  description: "단색 배경(블랙/크로마 그린/화이트/임의 색) 이미지를 색거리 키잉 + 배경색 역산(unmix)으로 투명 PNG 로 변환. 발광 이펙트 추출에도 사용 (bg=black).",
+  title: "배경 제거 (Mask Forge 색상 키)",
+  description: "NEXUS Mask Forge 앱의 '색상 키' 와 같은 코드(extractColorKeyPixels)로 단색 배경을 투명화합니다 — 유클리드 색거리 tolerance/feather 램프 + 배경색 역산(decontam) + 선택적 구멍 보호. 타이틀·캐릭터·아이템 같은 '불투명 피사체' 용. 글로우·연기·파티클 같은 발광 플레이트는 nexus_extract_effect 를 쓰세요.",
   inputSchema: {
     imagePath: z.string().describe("입력 이미지 경로"),
-    bg: z.string().default("auto").describe("배경색 — auto(코너 자동감지) | black | white | chroma | #rrggbb"),
-    threshold: z.number().min(0).max(255).default(10).describe("이 색거리 이하 = 완전 투명"),
-    feather: z.number().min(1).max(255).default(60).describe("threshold 부터 이 범위까지 알파 램프"),
+    bg: z.string().default("auto").describe("배경색 — auto(테두리 링 자동감지, 앱과 동일) | black | white | chroma | #rrggbb"),
+    tolerance: z.number().min(0).max(255).default(KEY_DEFAULTS.tolerance).describe("이 색거리 이하 = 완전 투명 (앱 기본 " + KEY_DEFAULTS.tolerance + ")"),
+    feather: z.number().min(1).max(255).default(KEY_DEFAULTS.feather).describe("tolerance 부터 이 범위까지 알파 램프 (앱 기본 " + KEY_DEFAULTS.feather + ")"),
+    holeProtect: z.boolean().default(KEY_DEFAULTS.holeProtect).describe("피사체 내부의 작은 구멍을 다시 채움(형태 보호)"),
+    holeSize: z.number().min(0).max(50).default(KEY_DEFAULTS.holeSize).describe("구멍 보호 임계(전체 대비 %)"),
+    decontam: z.boolean().default(KEY_DEFAULTS.decontam).describe("반투명 가장자리에서 배경색 역산(디프린지)"),
+    trim: z.boolean().default(false).describe("투명 여백 잘라내기"),
+    threshold: z.number().min(0).max(255).optional().describe("(구버전 호환) tolerance 의 별칭"),
     outputPath: z.string().optional().describe("저장 경로(.png). 생략 시 .tmp/mcp-out/ 아래 자동"),
   },
   outputSchema: {
     outputPath: z.string().describe("저장된 투명 PNG 절대경로"),
     bgColor: z.object({ r: z.number(), g: z.number(), b: z.number() }).describe("제거에 사용된 배경색"),
-    threshold: z.number(),
+    tolerance: z.number(),
     feather: z.number(),
+    width: z.number(),
+    height: z.number(),
+    qa: z.record(z.string(), z.any()).describe("앱과 동일한 QA 카운트 (transparent/partial/opaque/restored/total)"),
   },
   annotations: WRITE_LOCAL,
 }, async (a) => {
@@ -1243,40 +1786,179 @@ server.registerTool("nexus_remove_background", {
   catch (e) { return errText(`이미지를 열 수 없습니다: ${a.imagePath} — 경로/형식(png·jpg·webp)을 확인하세요. (${e.message})`); }
   const { width: W, height: H, data: d } = imageData;
   let bgRgb;
-  if (a.bg === "auto") bgRgb = detectBgColor(d, W, H);
+  if (a.bg === "auto") bgRgb = appDetectBg(d, W, H);
   else if (a.bg === "black") bgRgb = [0, 0, 0];
   else if (a.bg === "white") bgRgb = [255, 255, 255];
   else if (a.bg === "chroma") bgRgb = [0, 255, 0];
-  else bgRgb = hexToRgb(a.bg);
+  else bgRgb = appToRgb(a.bg);
   if (!bgRgb) return errText(`배경색을 해석할 수 없습니다: ${a.bg}`);
-  const [br, bgC, bb] = bgRgb;
-  const t0 = a.threshold, range = a.feather;
-  for (let p = 0; p < W * H; p++) {
-    const i = p * 4;
-    const dist = Math.max(Math.abs(d[i] - br), Math.abs(d[i + 1] - bgC), Math.abs(d[i + 2] - bb));
-    let alpha = dist <= t0 ? 0 : Math.min(1, (dist - t0) / range);
-    if (alpha <= 0) { d[i + 3] = 0; continue; }
-    if (alpha < 1) {
-      // premultiplied unmix — F = (C − (1−A)·B) / A : 경계의 배경색 프린지 제거
-      const inv = 1 - alpha;
-      d[i] = clamp255((d[i] - inv * br) / alpha);
-      d[i + 1] = clamp255((d[i + 1] - inv * bgC) / alpha);
-      d[i + 2] = clamp255((d[i + 2] - inv * bb) / alpha);
-    }
-    d[i + 3] = clamp255(alpha * (d[i + 3] / 255) * 255);
-  }
+  const tolerance = a.threshold != null ? a.threshold : a.tolerance;
+  const keyed = extractColorKeyPixels({ data: d, width: W, height: H }, {
+    bg: bgRgb, tolerance, feather: a.feather, holeProtect: a.holeProtect, holeSize: a.holeSize, decontam: a.decontam,
+  });
+  const result = a.trim ? cropPixels(keyed, alphaTrimBox(keyed.data, W, H)) : keyed;
   const out = a.outputPath
     ? (path.isAbsolute(a.outputPath) ? a.outputPath : path.join(ROOT, a.outputPath))
     : path.join(ensureOutDir(OUT_DIR), `keyed-${Date.now()}.png`);
   try {
     ensureOutDir(path.dirname(out));
-    await saveImageData(imageData, out);
+    await savePixels(result, out);
   } catch (e) {
     return errText(`결과 저장 실패: ${out} — 출력 경로(outputPath)를 확인하세요. (${e.message})`);
   }
+  const [br, bgC, bb] = bgRgb;
   return data(
-    { outputPath: out, bgColor: { r: br, g: bgC, b: bb }, threshold: t0, feather: range },
-    `저장 완료: ${out}\n배경색: rgb(${br},${bgC},${bb}) · threshold ${t0} · feather ${range}`
+    { outputPath: out, bgColor: { r: br, g: bgC, b: bb }, tolerance, feather: a.feather, width: result.width, height: result.height, qa: keyed.qa },
+    `저장 완료: ${out}\n배경색 rgb(${br},${bgC},${bb}) · tolerance ${tolerance} · feather ${a.feather} · ${result.width}×${result.height}\nQA: 투명 ${keyed.qa.transparentPixels} · 반투명 ${keyed.qa.partialPixels} · 불투명 ${keyed.qa.opaquePixels}${keyed.qa.restoredPixels ? ` · 구멍 복원 ${keyed.qa.restoredPixels}` : ""}`
+  );
+});
+
+server.registerTool("nexus_extract_effect", {
+  title: "이펙트 투명화 (Mask Forge 이펙트 커브)",
+  description: "NEXUS Mask Forge 앱의 '이펙트 추출' 과 같은 코드(extractEffectPixels)로 단색 매트 위 발광 플레이트(글로우·오라·연기·안개·파티클·빛줄기)를 straight-alpha PNG 로 바꿉니다. 기본값이 곧 '마스크 포지 이펙트 커브'(cutoff 6 · gamma 0.85 · opacity 100 · recoverColor). 불투명 피사체(타이틀·캐릭터·아이템)는 nexus_remove_background 를 쓰세요.",
+  inputSchema: {
+    imagePath: z.string().describe("입력 이미지 경로 — 순흑(또는 단색) 매트 위 이펙트"),
+    bg: z.string().default("black").describe("매트 색 — black | auto | #rrggbb (크로마 그린은 발광 감쇠를 망가뜨리므로 비권장)"),
+    cutoff: z.number().min(0).max(254).default(EFFECT_DEFAULTS.cutoff).describe("이 색거리 이하 = 완전 투명 (기본 6)"),
+    gamma: z.number().min(0.2).max(4).default(EFFECT_DEFAULTS.gamma).describe("알파 곡선 (기본 0.85, 낮을수록 부드러운 감쇠 보존)"),
+    opacity: z.number().min(0).max(100).default(EFFECT_DEFAULTS.opacity).describe("전체 강도 % (기본 100)"),
+    recoverColor: z.boolean().default(EFFECT_DEFAULTS.recoverColor).describe("매트 색 역산으로 원색 복원 (기본 true)"),
+    trim: z.boolean().default(false).describe("투명 여백 잘라내기 — 정렬 플레이트에는 끄기"),
+    outputPath: z.string().optional().describe("저장 경로(.png). 생략 시 .tmp/mcp-out/ 아래 자동"),
+  },
+  outputSchema: {
+    outputPath: z.string(),
+    bgColor: z.object({ r: z.number(), g: z.number(), b: z.number() }),
+    width: z.number(),
+    height: z.number(),
+    qa: z.record(z.string(), z.any()).describe("transparent/partial/opaque/total 픽셀 수 · reconstructionMae · coverage 비율"),
+    warnings: z.array(z.string()),
+  },
+  annotations: WRITE_LOCAL,
+}, async (a) => {
+  let imageData;
+  try { ({ imageData } = await loadImageData(a.imagePath)); }
+  catch (e) { return errText(`이미지를 열 수 없습니다: ${a.imagePath} — 경로/형식(png·jpg·webp)을 확인하세요. (${e.message})`); }
+  const { width: W, height: H, data: d } = imageData;
+  const bgRgb = a.bg === "auto" ? appDetectBg(d, W, H) : (a.bg === "black" ? [0, 0, 0] : appToRgb(a.bg));
+  if (!bgRgb) return errText(`매트 색을 해석할 수 없습니다: ${a.bg}`);
+  const fx = extractEffectPixels({ data: d, width: W, height: H }, {
+    cutoff: a.cutoff, gamma: a.gamma, opacity: a.opacity, recoverColor: a.recoverColor, bg: bgRgb,
+  });
+  const result = a.trim ? cropPixels(fx, alphaTrimBox(fx.data, W, H)) : fx;
+  const out = a.outputPath
+    ? (path.isAbsolute(a.outputPath) ? a.outputPath : path.join(ROOT, a.outputPath))
+    : path.join(ensureOutDir(OUT_DIR), `effect-${Date.now()}.png`);
+  try {
+    ensureOutDir(path.dirname(out));
+    await savePixels(result, out);
+  } catch (e) {
+    return errText(`결과 저장 실패: ${out} — 출력 경로(outputPath)를 확인하세요. (${e.message})`);
+  }
+  const q = fx.qa;
+  const visible = q.partialPixels + q.opaquePixels;
+  const coverage = q.totalPixels ? visible / q.totalPixels : 0;
+  const warnings = [];
+  if (q.transparentPixels === 0) warnings.push("완전 투명 픽셀이 없음 — 매트 색(bg)이 실제 배경과 다르거나 cutoff 가 너무 낮습니다.");
+  if (visible === 0) warnings.push("남은 이펙트가 없음 — cutoff 를 낮추거나 매트 색을 확인하세요.");
+  else if (coverage < 0.002) warnings.push("이펙트 커버리지가 0.2% 미만 — 대부분 사라졌습니다. gamma 를 낮추거나 cutoff 를 낮춰 재시도하세요.");
+  if (q.reconstructionMae > 0.02) warnings.push(`역산 오차(MAE ${q.reconstructionMae.toFixed(4)})가 큼 — 매트가 균일하지 않을 수 있습니다.`);
+  const [br, bgC, bb] = bgRgb;
+  return data(
+    { outputPath: out, bgColor: { r: br, g: bgC, b: bb }, width: result.width, height: result.height, qa: { ...q, coverage }, warnings },
+    `저장 완료: ${out}\n매트 rgb(${br},${bgC},${bb}) · cutoff ${a.cutoff} · gamma ${a.gamma} · opacity ${a.opacity} · recoverColor ${a.recoverColor}\nQA: 투명 ${q.transparentPixels} · 반투명 ${q.partialPixels} · 불투명 ${q.opaquePixels} · 커버리지 ${(coverage * 100).toFixed(2)}%${warnings.length ? `\n경고: ${warnings.join(" / ")}` : ""}`
+  );
+});
+
+// ─── 배치 투명화 (로컬 CLI 위임) ─────────────────────────────────────────────
+// 수십~수백 장은 단건 툴 반복 대신 mcp/nexus-cli.bundle.mjs 를 자식 프로세스로 돌린다.
+// CLI 는 이 서버와 같은 src/lib 번들이라 결과가 같고, 워커 병렬로 2048² 66장 ≈ 7초.
+const CLI_BUNDLE = path.join(ROOT, "mcp", "nexus-cli.bundle.mjs");
+async function runCli(args, cwd) {
+  const { execFile } = await import("node:child_process");
+  if (!fs.existsSync(CLI_BUNDLE)) throw new Error("mcp/nexus-cli.bundle.mjs 가 없습니다 — npm run mcp:build 를 먼저 실행하세요.");
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, [CLI_BUNDLE, ...args], { cwd, maxBuffer: 64 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      if (err && !stdout) reject(new Error(`${err.message}\n${stderr}`)); else resolve({ stdout, stderr, code: err ? err.code : 0 });
+    });
+  });
+}
+const absOrRoot = (p) => (path.isAbsolute(p) ? p : path.join(ROOT, p));
+
+server.registerTool("nexus_alpha_plan", {
+  title: "배치 투명화 계획 (자동 분류)",
+  description: "폴더의 이미지를 훑어 항목별 투명화 경로를 자동 분류(flat 색상 키 / vignette 허용치 상향 / glow 이펙트 추출 / nonflat AI 대상)한 편집 가능한 plan.json 을 만듭니다. 결과를 검토·수정한 뒤 nexus_alpha_batch 에 넘기세요. 픽셀 로직은 앱·MCP 단건 툴과 같은 src/lib.",
+  inputSchema: {
+    inputDir: z.string().describe("이미지 폴더(png·jpg·webp) 또는 파일 경로"),
+    planPath: z.string().describe("저장할 plan.json 경로 — 항목 src/out 은 이 파일 기준 상대경로"),
+    outDir: z.string().default("out").describe("plan 기준 출력 폴더(상대/절대)"),
+    triage: z.boolean().default(true).describe("자동 분류 켜기 (false 면 테두리 색 통계만 기록)"),
+  },
+  outputSchema: {
+    planPath: z.string(), count: z.number(),
+    triageCounts: z.record(z.string(), z.number()).optional(),
+    items: z.array(z.object({ src: z.string(), mode: z.string().optional(), class: z.string().optional(), reason: z.string().optional() })),
+  },
+  annotations: WRITE_LOCAL,
+}, async (a) => {
+  const planAbs = absOrRoot(a.planPath);
+  const args = ["plan", "--in", absOrRoot(a.inputDir), "--out", planAbs, "--out-dir", a.outDir];
+  if (!a.triage) args.push("--no-triage");
+  let r;
+  try { r = await runCli(args, ROOT); } catch (e) { return errText(`plan 실패: ${e.message}`); }
+  if (!fs.existsSync(planAbs)) return errText(`plan 이 생성되지 않았습니다.\n${r.stderr}`);
+  const plan = JSON.parse(fs.readFileSync(planAbs, "utf8"));
+  const items = plan.items.map((it) => ({ src: it.src, mode: it.mode, class: it.triage?.class, reason: it.triage?.reason }));
+  const lines = items.map((it) => `· ${it.src} → ${it.mode || plan.defaults.mode}${it.class ? ` [${it.class}] ${it.reason}` : ""}`).join("\n");
+  return data(
+    { planPath: planAbs, count: items.length, triageCounts: plan.triageCounts, items },
+    `plan 저장: ${planAbs} (${items.length}개${plan.triageCounts ? " · " + Object.entries(plan.triageCounts).map(([k, v]) => `${k} ${v}`).join(", ") : ""})\n${lines}\n\n검토 후 항목별 mode/tolerance/feather/killFaint 를 고치고 nexus_alpha_batch(planPath) 로 실행하세요. mode "ai" 항목은 건너뛰며 nexus_remove_ai(승인 필요) 대상입니다.`
+  );
+});
+
+server.registerTool("nexus_alpha_batch", {
+  title: "배치 투명화 실행 (로컬 CLI)",
+  description: "plan.json(또는 폴더+모드)을 로컬 배치 CLI 로 병렬 처리해 투명 PNG 들과 report.json, 선택적 체커보드 컨택트 시트를 만듭니다. nexus_remove_background/nexus_extract_effect 와 같은 코드이므로 단건 결과와 같습니다. 외부 호출 없음.",
+  inputSchema: {
+    planPath: z.string().optional().describe("nexus_alpha_plan 이 만든(또는 수정한) plan.json"),
+    inputDir: z.string().optional().describe("plan 없이 폴더 전체를 한 모드로 처리할 때"),
+    outDir: z.string().optional().describe("inputDir 모드의 출력 폴더"),
+    mode: z.enum(["key", "effect"]).default("key").describe("inputDir 모드에서 쓸 방식"),
+    jobs: z.number().int().min(1).max(16).optional().describe("워커 수 (기본: CPU-1, 최대 8)"),
+    sheetPath: z.string().optional().describe("체커보드 컨택트 시트 PNG 저장 경로"),
+    tolerance: z.number().optional(), feather: z.number().optional(), killFaint: z.number().optional(),
+    cutoff: z.number().optional(), gamma: z.number().optional(),
+  },
+  outputSchema: {
+    reportPath: z.string(), total: z.number(), done: z.number(), failed: z.number(), skipped: z.number(), elapsedMs: z.number(),
+    sheetPath: z.string().optional(),
+    warnings: z.array(z.object({ src: z.string(), warnings: z.array(z.string()) })),
+    outputs: z.array(z.string()),
+  },
+  annotations: WRITE_LOCAL,
+}, async (a) => {
+  if (!a.planPath && !a.inputDir) return errText("planPath 또는 inputDir 가 필요합니다.");
+  const args = ["alpha"];
+  let reportPath;
+  if (a.planPath) { const p = absOrRoot(a.planPath); args.push("--plan", p); reportPath = path.join(path.dirname(p), "report.json"); }
+  else { const o = absOrRoot(a.outDir || path.join(path.dirname(absOrRoot(a.inputDir)), "out")); args.push("--in", absOrRoot(a.inputDir), "--out-dir", o, "--mode", a.mode); reportPath = path.join(o, "report.json"); }
+  if (a.jobs) args.push("--jobs", String(a.jobs));
+  const sheet = a.sheetPath ? absOrRoot(a.sheetPath) : null;
+  if (sheet) args.push("--sheet", sheet);
+  for (const k of ["tolerance", "feather", "killFaint", "cutoff", "gamma"]) if (a[k] != null) args.push(`--${k}`, String(a[k]));
+  let r;
+  try { r = await runCli(args, ROOT); } catch (e) { return errText(`배치 실패: ${e.message}`); }
+  if (!fs.existsSync(reportPath)) return errText(`report 가 없습니다.\n${r.stdout}\n${r.stderr}`);
+  const rep = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+  const warnings = rep.items.filter((it) => it.warnings && it.warnings.length).map((it) => ({ src: it.src, warnings: it.warnings }));
+  const outputs = rep.items.filter((it) => it.out).map((it) => it.out);
+  const fails = rep.items.filter((it) => it.error).map((it) => `FAIL ${it.src}: ${it.error}`);
+  return data(
+    { reportPath, total: rep.total, done: rep.done, failed: rep.failed, skipped: rep.skipped, elapsedMs: rep.elapsedMs, sheetPath: sheet || undefined, warnings, outputs },
+    `완료 ${rep.done}/${rep.total}${rep.skipped ? ` · 건너뜀(ai) ${rep.skipped}` : ""}${rep.failed ? ` · 실패 ${rep.failed}` : ""} · ${(rep.elapsedMs / 1000).toFixed(1)}s\nreport: ${reportPath}${sheet ? `
+sheet: ${sheet}` : ""}${warnings.length ? `
+경고 ${warnings.length}건:
+` + warnings.map((w) => `· ${path.basename(w.src)} — ${w.warnings.join(" / ")}`).join("\n") : ""}${fails.length ? "\n" + fails.join("\n") : ""}`
   );
 });
 
@@ -1361,15 +2043,140 @@ server.registerTool("nexus_split_character_effect", {
 
 server.registerTool("nexus_design_rubric", {
   title: "디자인 평가 루브릭",
-  description: "NEXUS 디자인 평가 루브릭(마크다운) 반환 — 생성 결과물을 평가·비교할 때 기준으로 사용.",
-  inputSchema: {},
-  outputSchema: { markdown: z.string().describe("디자인 평가 루브릭 (마크다운)") },
+  description: "Nexus Admin의 현재 활성 디자인 평가 기준·가중치·규칙·버전을 실시간 조회해 반환합니다.",
+  inputSchema: { type: z.string().min(1).default("banner").describe("평가 기준 유형. 기본값 banner") },
+  outputSchema: {
+    criteriaType: z.string(),
+    criteriaVersionId: z.string(),
+    criteriaVersionName: z.string(),
+    criteria: z.array(z.record(z.string(), z.any())),
+    rules: z.string(),
+    source: z.string(),
+    stale: z.boolean(),
+    syncWarning: z.string(),
+    markdown: z.string().describe("현재 활성 기준과 공통 평가 계약 (마크다운)"),
+  },
   annotations: PURE,
-}, async () => {
-  let md;
-  try { md = fs.readFileSync(RUBRIC_PATH, "utf8"); }
+}, async ({ type }) => {
+  let contract;
+  try { contract = fs.readFileSync(RUBRIC_PATH, "utf8"); }
   catch { return errText(`루브릭 파일을 찾을 수 없습니다: ${RUBRIC_PATH}`); }
-  return data({ markdown: md }, md);
+  try {
+    const snapshot = await loadActiveNexusCriteria({ type, projectRoot: ROOT });
+    const markdown = `${formatNexusCriteriaMarkdown(snapshot)}\n\n${contract}`;
+    return data({
+      criteriaType: snapshot.criteriaType,
+      criteriaVersionId: snapshot.criteriaVersionId,
+      criteriaVersionName: snapshot.criteriaVersionName,
+      criteria: snapshot.criteria,
+      rules: snapshot.rules,
+      source: snapshot.source,
+      stale: !!snapshot.stale,
+      syncWarning: snapshot.syncWarning || "",
+      markdown,
+    }, markdown);
+  } catch (error) {
+    return errText(`Nexus 평가 기준 조회 실패: ${error.message}`);
+  }
+});
+
+// ─── 디자인 평가 — 앱(DesignEvaluator)과 동일한 프롬프트·스키마·채점 (2026-09) ──────────
+// 예전엔 앱 인라인 프롬프트 / 스킬 자체 채점 / MCP 루브릭이 따로 놀아 "앱 점수 ≠ 스킬 점수"가 났다.
+// 두 도구 모두 src/lib/designEvaluationPrompt.js · designEvaluationCore.js 를 그대로 호출한다.
+const EVAL_TYPE_LABELS = {
+  banner: "배너", promotion: "프로모션 페이지", promotionMobile: "프로모션 모바일", promotionKv: "프로모션 키비주얼",
+  brandweb: "브랜드웹_메인", brandwebSub: "브랜드웹_서브", brandwebMobile: "브랜드웹_모바일",
+  typo2d: "2D 타이포", typoRender: "렌더링 타이포", typoMotion: "모션 타이포",
+};
+const EVAL_TYPE_KEYS = Object.values(EVAL_CRITERIA_TYPES).filter((t) => t !== "prompt");
+
+server.registerTool("nexus_design_evaluation_prompt", {
+  title: "디자인 평가 프롬프트 (앱 동일)",
+  description: "DesignEvaluator 앱이 Gemini 에 보내는 것과 동일한 평가 프롬프트와 응답 스키마를 만듭니다. 활성 기준(NexusAdmin)을 실시간 조회해 [임무 2] 평가 항목·채점 규칙을 주입합니다. 외부 모델(Claude 등)로 평가할 때 이 프롬프트를 그대로 쓰고, 결과 scores_data 를 nexus_design_evaluation_score 에 넘기세요.",
+  inputSchema: {
+    type: z.enum(EVAL_TYPE_KEYS).default("banner").describe("평가 기준 유형 — banner / promotion / promotionMobile / promotionKv / brandweb / brandwebSub / brandwebMobile / typo2d / typoRender / typoMotion"),
+    autoClassify: z.boolean().default(false).describe("true 면 앱의 auto 모드처럼 카테고리 분류 지시를 포함(응답 category 필수). false 면 type 에 맞는 카테고리로 고정"),
+    anchorsText: z.string().max(8000).optional().describe("기준점 앵커(few-shot) 텍스트가 있으면 그대로 삽입"),
+  },
+  outputSchema: {
+    prompt: z.string(),
+    category: z.string(),
+    criteriaType: z.string(),
+    criteriaVersionId: z.string(),
+    criteriaVersionName: z.string(),
+    scoreKeys: z.array(z.string()),
+    responseSchema: z.record(z.string(), z.any()).describe("Gemini responseSchema. 다른 모델은 같은 형태의 JSON 을 요구하면 됨"),
+    gate: z.record(z.string(), z.any()),
+    source: z.string(),
+    stale: z.boolean(),
+    syncWarning: z.string(),
+  },
+  annotations: PURE,
+}, async (a) => {
+  try {
+    const snapshot = await loadActiveNexusCriteria({ type: a.type, projectRoot: ROOT });
+    const criteriaSource = criteriaSourceFromSnapshot(snapshot);
+    const category = a.autoClassify ? "auto" : (EVAL_TYPE_LABELS[snapshot.criteriaType] || snapshot.criteriaType);
+    const prompt = buildDesignEvaluationPrompt({ category, criteriaSource, anchorsText: a.anchorsText || "" });
+    const scoreKeys = snapshot.criteria.map((c) => c.id).filter(Boolean);
+    const responseSchema = buildEvaluationResponseSchema(scoreKeys, { includeCategory: true, includePurpose: true });
+    const text = `${prompt}\n\n[scoreKeys] ${scoreKeys.join(",")}\n[criteriaVersion] ${snapshot.criteriaType}/${snapshot.criteriaVersionId} (${snapshot.source})${snapshot.syncWarning ? `\n[syncWarning] ${snapshot.syncWarning}` : ""}`;
+    return data({
+      prompt, category, criteriaType: snapshot.criteriaType, criteriaVersionId: snapshot.criteriaVersionId,
+      criteriaVersionName: snapshot.criteriaVersionName, scoreKeys, responseSchema, gate: snapshot.gate,
+      source: snapshot.source, stale: !!snapshot.stale, syncWarning: snapshot.syncWarning || "",
+    }, text);
+  } catch (error) {
+    return errText(`평가 프롬프트 생성 실패: ${error.message}`);
+  }
+});
+
+server.registerTool("nexus_design_evaluation_score", {
+  title: "디자인 평가 채점 (앱 동일)",
+  description: "모델이 낸 scores_data(항목별 score/reason)를 앱과 동일한 가중 평균·품질 게이트(총점 85·항목 75·hardFailures 0)로 채점합니다. 활성 기준을 조회해 항목 누락과 버전 불일치를 검사합니다.",
+  inputSchema: {
+    type: z.enum(EVAL_TYPE_KEYS).default("banner").describe("평가 기준 유형"),
+    scores: z.record(z.string(), z.any()).describe("{ [criterionId]: { score:0-100, reason } } 또는 { [id]: number }"),
+    hardFailures: z.array(z.string()).default([]),
+    recommendedCorrections: z.array(z.string()).default([]),
+    criteriaVersionId: z.string().optional().describe("프롬프트 도구가 준 버전 id. 다르면 채점을 거부"),
+    offset: z.number().min(-20).max(20).default(0).describe("캘리브레이션 오프셋(앱의 fetchCalibration 값). 기본 0"),
+  },
+  outputSchema: {
+    overall: z.number(), rawOverall: z.number(), pass: z.boolean(),
+    metrics: z.array(z.record(z.string(), z.any())),
+    lowMetrics: z.array(z.record(z.string(), z.any())),
+    priorities: z.array(z.record(z.string(), z.any())),
+    missing: z.array(z.string()),
+    hardFailures: z.array(z.string()),
+    recommendedCorrections: z.array(z.string()),
+    gate: z.record(z.string(), z.any()),
+    criteriaType: z.string(), criteriaVersionId: z.string(), source: z.string(), stale: z.boolean(),
+  },
+  annotations: PURE,
+}, async (a) => {
+  try {
+    const snapshot = await loadActiveNexusCriteria({ type: a.type, projectRoot: ROOT });
+    if (a.criteriaVersionId && a.criteriaVersionId !== snapshot.criteriaVersionId) {
+      return errText(`기준 버전 불일치: 요청=${a.criteriaVersionId}, 활성=${snapshot.criteriaVersionId}. nexus_design_evaluation_prompt 를 다시 호출해 최신 기준으로 평가하세요.`);
+    }
+    const validation = validateEvalCriteria(snapshot.criteria || []);
+    if (!validation.valid) return errText("활성 기준이 유효하지 않습니다.");
+    const criteria = evalCriteriaSnapshot(validation.normalized);
+    const report = calculateEvaluationReport({
+      criteria, scores: a.scores, hardFailures: a.hardFailures, recommendedCorrections: a.recommendedCorrections,
+      offset: a.offset || 0, gate: snapshot.gate,
+    });
+    const lines = report.metrics.map((m) => `- ${m.key} (${m.weight}) : ${m.score ?? "누락"}${m.reason ? ` — ${m.reason}` : ""}`).join("\n");
+    const text = `총점 ${report.overall} (${report.pass ? "PASS" : "FAIL"}) · 기준 ${snapshot.criteriaType}/${snapshot.criteriaVersionId}${report.missing.length ? `\n누락 항목: ${report.missing.join(", ")}` : ""}${report.hardFailures.length ? `\nhardFailures: ${report.hardFailures.join(" / ")}` : ""}\n${lines}\n우선 수정: ${report.priorities.map((m) => m.key).join(", ") || "-"}`;
+    return data({
+      ...report,
+      criteriaType: snapshot.criteriaType, criteriaVersionId: snapshot.criteriaVersionId,
+      source: snapshot.source, stale: !!snapshot.stale,
+    }, text);
+  } catch (error) {
+    return errText(`채점 실패: ${error.message}`);
+  }
 });
 
 server.registerTool("nexus_banner_codex_list", {
@@ -1409,7 +2216,7 @@ server.registerTool("nexus_banner_codex_list", {
       if (a.year != null && String(banner.year || "") !== String(a.year)) return false;
       if (a.minScore != null && Number(banner.score || 0) < a.minScore) return false;
       if (needle) {
-        const haystack = [banner.title, banner.originalTitle, banner.character, banner.path, ...(Array.isArray(banner.tags) ? banner.tags : [])]
+        const haystack = [banner.title, banner.originalTitle, banner.character, banner.path, banner.provenance, banner.reviewStatus, ...(Array.isArray(banner.tags) ? banner.tags : []), ...(Array.isArray(banner.codexBadges) ? banner.codexBadges : [])]
           .filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
         if (!haystack.includes(needle)) return false;
       }
@@ -1456,6 +2263,144 @@ server.registerTool("nexus_banner_codex_get", {
   } catch (e) {
     return errText(`Banner Codex 상세 조회 실패 (${a.id}): ${e.message}`);
   }
+});
+
+server.registerTool("nexus_banner_codex_upsert_automation_draft", {
+  title: "Banner Codex 자동 제작 배너 등록",
+  description: "예측 제작·스타일 연구 결과를 Banner Codex의 월요일 검토 대기 초안으로 멱등 등록합니다. 자동화 소유 문서만 같은 automationKey로 갱신하며 삭제나 승인 처리는 하지 않습니다.",
+  inputSchema: {
+    automationKey: z.string().regex(/^[A-Za-z0-9_-]{8,120}$/).describe("주차·게임·후보가 포함된 안정적인 중복 방지 키"),
+    provenance: z.enum(["proactive-forecast", "style-research", "hybrid"]),
+    title: z.string().min(1).max(160),
+    game: z.string().min(1).max(80),
+    year: z.union([z.string(), z.number()]).optional(),
+    date: z.string().optional(),
+    character: z.string().optional(),
+    score: z.number().min(0).max(10).optional(),
+    tags: z.array(z.string().min(1).max(40)).max(12).default([]),
+    imageUrl: z.string().url().optional(),
+    imagePath: z.string().optional().describe("NEXUS_BANNER_CODEX_UPLOAD_ROOTS 아래의 로컬 이미지. imageUrl이 없을 때 Cloudinary로 업로드"),
+    path: z.string().optional(),
+    notes: z.string().max(2000).optional(),
+    sourceUrls: z.array(z.string().url()).max(12).default([]),
+    styleRecipeId: z.string().max(120).optional(),
+  },
+  outputSchema: { banner: z.record(z.string(), z.any()), created: z.boolean() },
+  annotations: WRITE_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const docPath = `artifacts/${encodeURIComponent(projectId)}/public/data/banners/${encodeURIComponent(a.automationKey)}`;
+    let existing = null;
+    try { existing = decodeFirestoreDocument(await firestoreRequest(docPath)); }
+    catch (error) { if (!String(error?.message || error).includes("Firestore 404")) throw error; }
+    if (existing && !existing.automationManaged) throw new Error("같은 ID의 수동 등록 배너는 자동화가 덮어쓸 수 없습니다.");
+    const imageUrl = a.imageUrl || await uploadBannerCodexImage(a.imagePath);
+    if (!imageUrl) throw new Error("imageUrl 또는 허용된 imagePath가 필요합니다.");
+    const provenanceBadges = {
+      "proactive-forecast": ["예측 제작"],
+      "style-research": ["스타일 연구"],
+      hybrid: ["예측 제작", "스타일 연구"],
+    }[a.provenance];
+    const codexBadges = [...provenanceBadges, "월요일 검토"];
+    const now = new Date().toISOString();
+    const banner = {
+      title: a.title,
+      originalTitle: a.title,
+      game: a.game,
+      year: a.year ?? new Date().getFullYear(),
+      date: a.date || now.slice(0, 10).replaceAll("-", "."),
+      month: String(a.date || now).slice(5, 7),
+      character: a.character || "Unknown",
+      score: a.score ?? null,
+      tags: Array.from(new Set(a.tags.filter((tag) => !codexBadges.includes(tag)))),
+      codexBadges,
+      provenance: a.provenance,
+      reviewStatus: "pending-monday-review",
+      automationManaged: true,
+      automationKey: a.automationKey,
+      sourceUrls: a.sourceUrls,
+      styleRecipeId: a.styleRecipeId || null,
+      automationNotes: a.notes || null,
+      imageUrl,
+      thumbnailUrl: imageUrl,
+      path: a.path || a.imagePath || "Nexus automation",
+      uploadedBy: (await currentNexusAuth())?.uid || null,
+      featured: false,
+      liked: false,
+      ocrProcessed: false,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    const saved = decodeFirestoreDocument(await firestoreWriteDocument(docPath, banner));
+    return data({ banner: saved, created: !existing }, JSON.stringify({ banner: saved, created: !existing }, null, 2));
+  } catch (e) {
+    return errText(`Banner Codex 자동 제작 배너 등록 실패: ${e.message}`);
+  }
+});
+
+server.registerTool("nexus_asset_library_list", {
+  title: "Nexus 재사용 에셋 검색",
+  description: "2025년 이후 프로모션·브랜드웹에서 분리한 버튼·화살표·스크롤다운·프레임·구분선과 FX 포함 투명 PNG를 사람과 AI가 읽을 수 있는 메타데이터로 검색합니다.",
+  inputSchema: {
+    pageSize: z.number().int().min(1).max(100).default(30),
+    pageToken: z.string().optional(),
+    query: z.string().optional().describe("용도·형태·게임·캠페인·효과를 자연어로 검색"),
+    category: z.enum(["button", "icon", "frame", "ornament", "bullet", "box", "lightfx", "etc"]).optional(),
+    subtype: z.enum(["cta", "tab", "arrow", "scroll-down", "navigation", "badge", "frame", "divider", "bullet"]).optional(),
+    game: z.string().optional(),
+    year: z.number().int().min(2025).optional(),
+    section: z.enum(["promotion", "brandweb"]).optional(),
+    effects: z.enum(["any", "with_fx", "without_fx"]).default("any"),
+  },
+  outputSchema: {
+    assets: z.array(z.record(z.string(), z.any())), returned: z.number(), scanned: z.number(), nextPageToken: z.string().nullable(),
+  },
+  annotations: READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId } = firebaseConfig();
+    const needle = String(a.query || "").trim().toLocaleLowerCase("ko-KR");
+    const matches=[]; let scanned=0; let token=a.pageToken; let rounds=0;
+    do {
+      const payload=await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/assets`, { pageSize:100, pageToken:token, showMissing:false });
+      const decoded=(payload.documents || []).map(decodeFirestoreDocument); scanned+=decoded.length;
+      for (const entry of decoded) {
+        if (entry.trashed || entry.visibility === "private" || entry.isTemp === true) continue;
+        if (a.category && entry.category !== a.category) continue;
+        if (a.subtype && entry.subtype !== a.subtype) continue;
+        if (a.game && String(entry.game || "").toLocaleLowerCase("ko-KR") !== a.game.toLocaleLowerCase("ko-KR")) continue;
+        if (a.year && Number(entry.year) !== a.year) continue;
+        if (a.section && entry.section !== a.section) continue;
+        if (a.effects === "with_fx" && !entry.hasEffects) continue;
+        if (a.effects === "without_fx" && entry.hasEffects) continue;
+        if (needle) {
+          const haystack=[entry.title,entry.aiSearchText,entry.subtype,entry.game,entry.campaign,entry.sectionKo,entry.source?.fileName,...promptArcArray(entry.tags),...promptArcArray(entry.source?.layerPath)].filter(Boolean).join(" ").toLocaleLowerCase("ko-KR");
+          if (!haystack.includes(needle)) continue;
+        }
+        matches.push(entry);
+      }
+      token=payload.nextPageToken || null; rounds++;
+    } while (token && rounds < 30 && matches.length < a.pageSize);
+    const assets=matches.slice(0,a.pageSize).map(assetLibrarySummary);
+    const result={assets,returned:assets.length,scanned,nextPageToken:token};
+    return data(result,JSON.stringify(result,null,2));
+  } catch (e) { return errText(`에셋 라이브러리 검색 실패: ${e.message}`); }
+});
+
+server.registerTool("nexus_asset_library_get", {
+  title: "Nexus 재사용 에셋 상세",
+  description: "에셋의 투명 PNG, 원본 PSD 경로, 레이어 경로·좌표, 포함 효과와 출처 캠페인을 조회합니다.",
+  inputSchema: { id:z.string().min(1) },
+  outputSchema: { asset:z.record(z.string(),z.any()) }, annotations:READ_REMOTE,
+}, async (a) => {
+  try {
+    const { projectId }=firebaseConfig();
+    const raw=decodeFirestoreDocument(await firestoreRequest(`artifacts/${encodeURIComponent(projectId)}/public/data/assets/${encodeURIComponent(a.id)}`));
+    if (raw.trashed || raw.visibility === "private" || raw.isTemp === true) throw new Error("공개 검색 가능한 에셋이 아닙니다.");
+    const asset={...assetLibrarySummary(raw),effectLayers:promptArcArray(raw.effectLayers),psdEffects:promptArcArray(raw.psdEffects),bundleRole:raw.bundleRole||null,source:raw.source||null,aiSearchText:raw.aiSearchText||null};
+    return data({asset},JSON.stringify(asset,null,2));
+  } catch(e) { return errText(`에셋 상세 조회 실패 (${a.id}): ${e.message}`); }
 });
 
 server.registerTool("nexus_prompt_arc_list", {

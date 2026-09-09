@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivitySquare, Sliders, AlertCircle,
   ChevronRight, Check, Stars, Sparkles, Image as ImageIcon, Download, Save, Loader2,
-  Upload, X, Maximize2, Scissors,
+  Upload, X, Maximize2, Scissors, History, Bot,
 } from "lucide-react";
 import { ScoreBar } from "./MatrixControls";
 import MatrixHeader from "./MatrixHeader";
@@ -30,6 +30,10 @@ export default function MatrixResultPanel({
   aiModel, setAiModel, currentIR,
   compiledOutputs, optimizedPrompts, optimizedPromptsKo,
   isOptimizing, onOptimize, isCompressing, onCompress, onCopy, isCopied, onSendToMotion,
+  // 드래프트 복원 배너
+  showRestoreDraft, onRestoreDraft, onDismissDraft,
+  // 완전 자동 파이프라인 — 확인 배너 + 상태 칩
+  autoPipeline, onPipelineRender, onPipelineDismiss,
   // Imagen 렌더링
   onRender, rendering, renderedImage, renderError,
   onDownloadRendered, onSaveToPromptArc, onSendToMaskForge, savingToArc, isLoggedIn,
@@ -43,6 +47,8 @@ export default function MatrixResultPanel({
   imagenModels = [], selectedModel, setSelectedModel,
   // 출력 해상도 — Pro 모델만 선택 가능 (Flash 는 1K 고정)
   renderSizes = [], selectedRenderSize, setSelectedRenderSize, sizeSelectable = false,
+  // 토스트 — 비이미지 파일 거부 안내용.
+  showToast,
 }) {
   const isVfxBox = currentView === "editor" ? vfxPassMode : editVfxPassMode;
   const promptText = optimizedPrompts[aiModel] || compiledOutputs[aiModel];
@@ -56,26 +62,110 @@ export default function MatrixResultPanel({
     ? '사이드바 마이크로 에디트에 Target 이미지를 업로드하세요'
     : '좌측 상단 "기본 이미지"에 참조 이미지를 등록하세요';
   const quickList = currentView === 'editor' ? QUICK_ADJUSTMENTS : EDIT_BUDGETS;
+  // action 없는 항목(EDIT_BUDGETS 등)은 버튼으로 렌더 불가 — 비면 빈 상태 안내를 보여준다.
+  const actionableQuickList = quickList.filter((opt) => opt.action);
 
   // 기본 이미지 업로드 — 드래그앤드롭 + 클릭. dataUrl 로 변환해서 setBaseImage.
   const refFileInputRef = useRef(null);
   const [isDraggingRefBox, setIsDraggingRefBox] = useState(false);
   const handleRefFiles = (files) => {
     const f = (files && files[0]) || null;
-    if (!f || !f.type?.startsWith('image/')) return;
+    if (!f) return;
+    if (!f.type?.startsWith('image/')) { showToast?.('이미지 파일만 업로드할 수 있어요'); return; }
     const reader = new FileReader();
     reader.onload = (e) => { setBaseImage?.(String(e.target.result)); };
     reader.readAsDataURL(f);
   };
 
+  // Logic Audit 팝오버 — 배지 클릭으로 열고, 바깥 클릭/×로 닫기.
+  const [auditOpen, setAuditOpen] = useState(false);
+  const auditRef = useRef(null);
+  useEffect(() => {
+    if (!auditOpen) return;
+    const onDown = (e) => {
+      if (auditRef.current && !auditRef.current.contains(e.target)) setAuditOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [auditOpen]);
+  // 충돌이 모두 해소되면 팝오버 자동 닫기.
+  useEffect(() => {
+    if (auditIssues.length === 0) setAuditOpen(false);
+  }, [auditIssues.length]);
+
+  // 렌더 경과 시간 — "생성 중… 00:12". imagenRender 는 취소(AbortSignal)를 지원하지 않으므로 표시만.
+  const [renderElapsed, setRenderElapsed] = useState(0);
+  useEffect(() => {
+    if (!rendering) { setRenderElapsed(0); return; }
+    const startedAt = Date.now();
+    const timer = setInterval(() => setRenderElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [rendering]);
+  const elapsedLabel = `${String(Math.floor(renderElapsed / 60)).padStart(2, '0')}:${String(renderElapsed % 60).padStart(2, '0')}`;
+
   return (
     <div className="flex-1 flex flex-col gap-5 overflow-hidden min-h-0">
+      {/* ─── 드래프트 복원 배너 ─── */}
+      {showRestoreDraft && (
+        <div className="shrink-0 flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-zinc-700 bg-[#18181B] animate-in fade-in slide-in-from-top-2">
+          <History className="w-4 h-4 text-[var(--rm-accent)] shrink-0" />
+          <span className="text-[11px] text-zinc-300 font-semibold flex-1 min-w-0">이전 작업 드래프트가 있어요</span>
+          <button
+            onClick={onRestoreDraft}
+            className="px-3 py-1.5 rounded-lg bg-[var(--rm-accent)]/15 border border-[var(--rm-accent)]/50 text-[var(--rm-accent)] text-[10px] font-bold hover:bg-[var(--rm-accent)]/25 transition-colors"
+          >
+            복원
+          </button>
+          <button
+            onClick={onDismissDraft}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 text-[10px] font-bold hover:text-zinc-200 hover:border-zinc-500 transition-colors"
+          >
+            무시
+          </button>
+        </div>
+      )}
+
+      {/* ─── 완전 자동 파이프라인 — 상태 칩 + 렌더 확인 배너 ─── */}
+      {autoPipeline?.status === 'ready' ? (
+        <div className="shrink-0 flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-[var(--rm-accent)]/40 bg-[var(--rm-accent)]/5 animate-in fade-in slide-in-from-top-2">
+          <Bot className="w-4 h-4 text-[var(--rm-accent)] shrink-0" />
+          <span className="text-[11px] text-zinc-200 font-semibold flex-1 min-w-0">자동 렌더 준비 완료 — 추천 옵션이 적용됐어요</span>
+          <button
+            onClick={onPipelineRender}
+            className="px-3 py-1.5 rounded-lg bg-[var(--rm-accent)] text-black text-[10px] font-bold hover:bg-[var(--rm-accent)]/90 transition-colors whitespace-nowrap"
+          >
+            바로 렌더 (10c)
+          </button>
+          <button
+            onClick={onPipelineDismiss}
+            className="px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 text-[10px] font-bold hover:text-zinc-200 hover:border-zinc-500 transition-colors whitespace-nowrap"
+          >
+            옵션 먼저 확인
+          </button>
+        </div>
+      ) : (autoPipeline && autoPipeline.status !== 'done') ? (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-800 bg-[#18181B] self-start animate-in fade-in">
+          {autoPipeline.status === 'failed'
+            ? <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            : <Loader2 className="w-3.5 h-3.5 text-[var(--rm-accent)] animate-spin shrink-0" />}
+          <span className="text-[10px] font-bold text-zinc-300">
+            {autoPipeline.status === 'preparing' && '자동 파이프라인 · 이미지 분석 + 옵션 적용 중…'}
+            {autoPipeline.status === 'rendering' && '자동 파이프라인 · 렌더링 중…'}
+            {autoPipeline.status === 'failed' && '자동 파이프라인 실패 — 옵션을 확인하고 수동으로 렌더해주세요'}
+          </span>
+          {autoPipeline.status === 'failed' && (
+            <button onClick={onPipelineDismiss} className="text-zinc-500 hover:text-zinc-300 transition-colors" title="닫기">
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+      ) : null}
       <div className="grid grid-cols-3 gap-5 h-[280px] shrink-0">
         {/* 기본 이미지 (Reference) — 드래그앤드롭 업로드. 사이드바의 reference 와 동일 state 공유. */}
         <div
-          className={`relative rounded-2xl flex flex-col overflow-hidden transition-colors ${
+          className={`relative rounded-2xl flex flex-col transition-colors ${auditOpen ? 'overflow-visible' : 'overflow-hidden'} ${
             isDraggingRefBox
-              ? 'bg-[#00CEC9]/10 border-2 border-dashed border-[#00CEC9]'
+              ? 'bg-[var(--rm-accent)]/10 border-2 border-dashed border-[var(--rm-accent)]'
               : 'bg-[#18181B] border border-zinc-800'
           }`}
           onDragOver={(e) => { e.preventDefault(); setIsDraggingRefBox(true); }}
@@ -83,15 +173,52 @@ export default function MatrixResultPanel({
           onDrop={(e) => { e.preventDefault(); setIsDraggingRefBox(false); handleRefFiles(e.dataTransfer.files); }}
         >
           <div className="flex items-center justify-between p-5 pb-3 shrink-0">
-            <div className="flex items-center gap-2 text-[#00CEC9]">
+            <div className="flex items-center gap-2 text-[var(--rm-accent)]">
               <ImageIcon className="w-4 h-4" />
               <h2 className="text-[11px] font-black uppercase tracking-widest">기본 이미지</h2>
             </div>
-            {/* Logic Audit 알림 — 충돌 있을 때만 작게 표시 */}
+            {/* Logic Audit — 배지 클릭 시 충돌 상세 + 해결 옵션 팝오버 */}
             {auditIssues.length > 0 && (
-              <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[9px] font-bold" title={auditIssues.map(i => i.title).join(', ')}>
-                <AlertCircle className="w-3 h-3" /> 충돌 {auditIssues.length}
-              </span>
+              <div className="relative" ref={auditRef}>
+                <button
+                  onClick={() => setAuditOpen((v) => !v)}
+                  title="클릭해서 충돌 내용과 해결 옵션 보기"
+                  className={`flex items-center gap-1 px-1.5 py-0.5 rounded border text-[9px] font-bold transition-colors ${auditOpen ? 'bg-amber-500/30 border-amber-400 text-amber-200' : 'bg-amber-500/15 border-amber-500/40 text-amber-300 hover:bg-amber-500/25'}`}
+                >
+                  <AlertCircle className="w-3 h-3" /> 충돌 {auditIssues.length}
+                </button>
+                {auditOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 w-80 bg-[#18181B] border border-zinc-700 rounded-xl shadow-2xl p-3 space-y-3 z-[9000] animate-in fade-in slide-in-from-top-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-amber-300 flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5" /> Logic Audit
+                      </span>
+                      <button onClick={() => setAuditOpen(false)} className="text-zinc-500 hover:text-zinc-300 transition-colors" title="닫기">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {auditIssues.map((issue, i) => (
+                      <div key={issue.code || i} className="p-2.5 rounded-lg bg-black/30 border border-zinc-800 space-y-1.5">
+                        <div className="text-[10px] font-bold text-zinc-200 leading-snug">{issue.title}</div>
+                        <div className="text-[9px] text-zinc-500 leading-snug">{issue.desc}</div>
+                        {issue.options?.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-0.5">
+                            {issue.options.map((opt, j) => (
+                              <button
+                                key={j}
+                                onClick={() => onApplyTroubleshoot?.(opt)}
+                                className="px-2 py-1 rounded-md bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/30 text-amber-200 text-[9px] font-bold transition-colors"
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
           <div className="flex-1 px-5 pb-5 min-h-0">
@@ -117,7 +244,7 @@ export default function MatrixResultPanel({
               <button
                 type="button"
                 onClick={() => refFileInputRef.current?.click()}
-                className="w-full h-full flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-300 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800 hover:border-[#00CEC9]/50 transition-colors text-[11px] leading-relaxed"
+                className="w-full h-full flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-300 bg-zinc-900/50 rounded-xl border border-dashed border-zinc-800 hover:border-[var(--rm-accent)]/50 transition-colors text-[11px] leading-relaxed"
               >
                 <Upload className="w-6 h-6 mb-2 text-zinc-600" />
                 <span className="font-semibold">클릭 또는 이미지를 끌어다 놓으세요</span>
@@ -176,8 +303,12 @@ export default function MatrixResultPanel({
             <h2 className="text-[11px] font-black uppercase tracking-widest">Quick Adjustments</h2>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 relative z-10 pr-1">
-            {quickList.map((opt, i) => {
-              if (!opt.action) return null;
+            {actionableQuickList.length === 0 && (
+              <div className="flex-1 flex items-center justify-center text-[10px] text-zinc-600 text-center px-2">
+                이 뷰에는 빠른 보정 프리셋이 없어요
+              </div>
+            )}
+            {actionableQuickList.map((opt, i) => {
               const isActive = activeTroubleshoots.includes(opt.id);
               return (
                 <button key={i} onClick={() => onApplyTroubleshoot(opt, true)}
@@ -204,7 +335,6 @@ export default function MatrixResultPanel({
         {/* ─── 좌측 — 프롬프트 패널 ─── */}
         <div className="flex-1 min-w-0 bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col overflow-hidden">
           <MatrixHeader
-            currentView={currentView}
             aiModel={aiModel} setAiModel={setAiModel}
             hasOutput={hasOutput} isCopied={isCopied}
             isOptimizing={isOptimizing} currentIR={currentIR}
@@ -270,7 +400,7 @@ export default function MatrixResultPanel({
                           onClick={() => setSelectedRenderSize(s.id)}
                           disabled={!canRender || rendering}
                           title={s.desc}
-                          className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-colors ${active ? 'bg-[#00CEC9]/15 border-[#00CEC9]/50 text-[#00CEC9]' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                          className={`px-2 py-1.5 rounded-lg border text-[10px] font-bold whitespace-nowrap transition-colors ${active ? 'bg-[var(--rm-accent)]/15 border-[var(--rm-accent)]/50 text-[var(--rm-accent)]' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'} disabled:opacity-40 disabled:cursor-not-allowed`}
                         >
                           {s.label}
                         </button>
@@ -293,10 +423,10 @@ export default function MatrixResultPanel({
                 : !renderRefImage ? renderRefHint
                 : undefined
               }
-              className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-all active:scale-95 whitespace-nowrap bg-[#00CEC9] hover:bg-[#00CEC9]/90 text-black disabled:opacity-40 disabled:cursor-not-allowed"
+              className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-all active:scale-95 whitespace-nowrap bg-[var(--rm-accent)] hover:bg-[var(--rm-accent)]/90 text-black disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {rendering ? (
-                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 생성 중…</>
+                <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 생성 중… {elapsedLabel}</>
               ) : !canRender ? (
                 <><ImageIcon className="w-3.5 h-3.5" /> Pro 전용</>
               ) : !renderRefImage ? (
@@ -338,6 +468,13 @@ export default function MatrixResultPanel({
                   <span className="absolute top-2 right-2 p-1.5 rounded-md bg-black/60 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                     <Maximize2 className="w-3.5 h-3.5" />
                   </span>
+                  {/* 재렌더 중 — 이전 결과를 유지한 채 진행 오버레이만 표시 (실패해도 이전 이미지 보존). */}
+                  {rendering && (
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-2 pointer-events-none">
+                      <Loader2 className="w-6 h-6 animate-spin text-[var(--rm-accent)]" />
+                      <span className="text-[11px] font-semibold text-zinc-300">새 이미지 생성 중… {elapsedLabel}</span>
+                    </div>
+                  )}
                 </div>
                 {/* 액션 바 — 모두 뉴트럴(보더+텍스트). */}
                 <div className="shrink-0 flex items-center gap-2 flex-wrap">
@@ -381,7 +518,7 @@ export default function MatrixResultPanel({
                     : !renderRefImage
                       ? renderRefHint
                       : rendering
-                        ? '이미지 생성 중입니다'
+                        ? `이미지 생성 중입니다… ${elapsedLabel}`
                         : '우측 상단 [렌더링] 버튼을 눌러 시작'}
                 </p>
               </div>

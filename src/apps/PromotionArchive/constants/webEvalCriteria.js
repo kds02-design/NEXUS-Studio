@@ -30,12 +30,12 @@ export const resolveWebCriteriaType = (banner) => {
   return CRITERIA_TYPES.promotion;
 };
 
-// 최종 점수 (0~99) — 저장된 webAiScore(0~9.9) × 10 + 수동 보정.
+// 최종 점수 (0~99) — 평가 무결성을 위해 AI 가중 점수를 그대로 사용.
+// 구버전 webManualScoreAdj 필드는 읽기 호환만 유지하며 더 이상 합산하지 않는다.
 export const getWebFinalScore100 = (banner) => {
-  const aiBase100 = banner?.webAiScore != null
+  return banner?.webAiScore != null
     ? Math.round(parseFloat(banner.webAiScore) * 10)
-    : Math.round(parseFloat(banner?.designScore || 0) * 10) - parseInt(banner?.webManualScoreAdj || 0);
-  return Math.min(99, Math.max(0, aiBase100 + parseInt(banner?.webManualScoreAdj || 0)));
+    : Math.round(parseFloat(banner?.designScore || 0) * 10);
 };
 
 // 평가 존재 여부 — 키 셋과 무관하게 webScores 안에 score 가 한 개라도 있으면 true.

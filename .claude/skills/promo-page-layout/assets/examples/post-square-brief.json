@@ -1,0 +1,13 @@
+{
+  "format": "post-square",
+  "title": "신서버 사전예약 오픈",
+  "game": "리니지2M",
+  "period": "2026. 3. 25. GRAND OPEN",
+  "sections": [
+    { "type": "title", "text": "신서버 사전예약 오픈" },
+    { "type": "visual", "note": "중앙 캐릭터, 상단 35% 타이틀 안전 영역" },
+    { "type": "reward-strip", "count": 4 },
+    { "type": "period" },
+    { "type": "cta", "text": "지금 사전예약" }
+  ]
+}

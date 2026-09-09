@@ -31,7 +31,13 @@ Read only the relevant source when the user requests exact parity with a named p
 3. Explicit aspect ratio and occupancy.
 4. Readability before decorative transformation.
 5. No unrelated scene, character, logo, or extra lettering.
-6. Transparent asset handoff with body and light separated.
+6. Flat monochrome asset handoff. Typecore must not perform material rendering.
+
+## Pipeline boundary
+
+- Sovereign/Breeze: letterform, layout, spacing, silhouette, counters, and one-color flat output only.
+- Render Matrix: bevel, material, surface, lighting, depth, and controlled finishing.
+- Title transparency is an upstream completed asset concern. Typecore handoff and assembly never invoke Mask Forge or alter handed-off title alpha.
 
 ## Banner defaults
 

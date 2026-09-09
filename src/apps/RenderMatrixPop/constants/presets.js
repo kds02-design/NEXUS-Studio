@@ -6,7 +6,7 @@
 //
 // getOptionEn/Name/combineOptions 등 순수 helper 는 RenderMatrix 에서 직접 import (공통).
 
-export { getOptionEn, getOptionName, combineOptions } from "../../RenderMatrix/constants/presets";
+export { getOptionEn, getOptionName, combineOptions } from "../../RenderMatrix/constants/presets.js";
 
 export const DIRECTOR_PERSONAS = [
   { id: "Chameleon", name: "🦎 카멜레온 (레퍼런스 완벽 복사)", desc: "장르 불문! AI의 편향을 없애고 레퍼런스의 재질/빛 1:1 카피", discipline: "MINDSET: 'I am a blank canvas mirroring the reference.' PRIORITY: 1. Exact Style Transfer 2. Identical Material Recreation 3. Match Lighting 1:1.", mj_tags: "exact aesthetic match, perfectly mimicking reference style, identical lighting setup, highly accurate material recreation, 1:1 style copy", auditRules: { maxFx: "Mid", prefMaterial: "Clean", avoid: "None" } },

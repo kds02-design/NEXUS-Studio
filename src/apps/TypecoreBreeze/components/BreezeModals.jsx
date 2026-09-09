@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { MessageSquare, X, Edit3, Settings, Loader2, Play, CheckCircle2, ShieldAlert, Info } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 
@@ -15,11 +16,27 @@ export default function BreezeModals() {
     isAuditModalOpen, setIsAuditModalOpen, verificationLog,
   } = useBreeze();
 
+  // Escape 로 최상단 모달 닫기 — Audit(z-3000) > Edit Tuning > Tuning 순.
+  useEffect(() => {
+    if (!isTuningModalOpen && !isEditTuningModalOpen && !isAuditModalOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return;
+      if (isAuditModalOpen) setIsAuditModalOpen(false);
+      else if (isEditTuningModalOpen) setIsEditTuningModalOpen(false);
+      else if (isTuningModalOpen) setIsTuningModalOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isTuningModalOpen, isEditTuningModalOpen, isAuditModalOpen, setIsTuningModalOpen, setIsEditTuningModalOpen, setIsAuditModalOpen]);
+
+  // 백드롭(어두운 영역) 클릭으로 닫기 — 패널 내부 클릭은 무시.
+  const onBackdrop = (close) => (e) => { if (e.target === e.currentTarget) close(); };
+
   return (
     <>
       {isTuningModalOpen && (
-        <div className="fixed inset-0 z-[2000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-[420px] h-[700px] max-h-[90vh] bg-[#111111] border border-zinc-800 rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
+        <div onClick={onBackdrop(() => setIsTuningModalOpen(false))} className="fixed inset-0 z-[2000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div role="dialog" aria-modal="true" aria-label="AI Tuning Room" className="w-full max-w-[420px] h-[700px] max-h-[90vh] bg-[#111111] border border-zinc-800 rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0 bg-[#16161D]">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-violet-400" />
@@ -68,8 +85,8 @@ export default function BreezeModals() {
       )}
 
       {isEditTuningModalOpen && (
-        <div className="fixed inset-0 z-[2000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-[420px] h-[700px] max-h-[90vh] bg-[#111111] border border-zinc-800 rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
+        <div onClick={onBackdrop(() => setIsEditTuningModalOpen(false))} className="fixed inset-0 z-[2000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div role="dialog" aria-modal="true" aria-label="Micro-Edit Tuning Room" className="w-full max-w-[420px] h-[700px] max-h-[90vh] bg-[#111111] border border-zinc-800 rounded-2xl shadow-2xl flex flex-col relative overflow-hidden">
             <div className="flex items-center justify-between p-4 border-b border-zinc-800 shrink-0 bg-[#16161D]">
               <div className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4 text-violet-400" />
@@ -118,8 +135,8 @@ export default function BreezeModals() {
       )}
 
       {isAuditModalOpen && (
-        <div className="fixed inset-0 z-[3000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-[400px] bg-[#111111] border border-violet-500/30 rounded-2xl shadow-[0_0_40px_rgba(139,92,246,0.2)] flex flex-col overflow-hidden relative">
+        <div onClick={onBackdrop(() => setIsAuditModalOpen(false))} className="fixed inset-0 z-[3000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div role="dialog" aria-modal="true" aria-label="프롬프트 논리 교정 완료" className="w-full max-w-[400px] bg-[#111111] border border-violet-500/30 rounded-2xl shadow-[0_0_40px_rgba(139,92,246,0.2)] flex flex-col overflow-hidden relative">
             <div className="flex items-center justify-between p-4 border-b border-zinc-800 bg-[#16161D]">
               <div className="flex items-center gap-2">
                 <ShieldAlert className="w-4 h-4 text-violet-400" />

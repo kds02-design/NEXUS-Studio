@@ -11,7 +11,6 @@ import {
 import { useState } from 'react';
 import { VARIATION_MOODS, VARIATION_STYLES, REFINEMENT_LEVELS, ATMOSPHERE_TEMPERATURE, ATMOSPHERE_AGE, DESIGN_VARIATIONS, VARIATION_STRENGTH, BG_COLORS } from '../constants/variations';
 import { IMAGEN_MODELS, RENDER_SIZES, isProImageModel } from '../../../lib/imagenRender';
-import ForgeHeader from './ForgeHeader';
 
 // 생성 배경색 선택 — 결과가 깔릴 단색. 리스킨/리디자인/광원 공용.
 // 블랙(기본·발광 합성) 외 화이트·그레이·크로마(그린/마젠타/블루) 선택 시 마스크포지·단색 키로 깔끔히 누끼.
@@ -187,7 +186,7 @@ function AtmosphereDials({ temperature, age, onTemperature, onAge }) {
 
 export default function ForgeSidebar({ forge }) {
   const {
-    currentView, setCurrentView,
+    currentView,
     // 버튼 리스킨(creation) 모드
     creationSource, isDraggingCreationSource,
     handleCreationSourceUpload, handleCreationSourceDragOver, handleCreationSourceDragLeave, handleCreationSourceDrop, handleClearCreationSource,
@@ -241,8 +240,6 @@ export default function ForgeSidebar({ forge }) {
 
   return (
     <aside className="w-[min(420px,45vw)] min-w-[300px] border-r border-zinc-800/60 bg-[#0F0F12] flex flex-col shadow-2xl z-20 shrink-0">
-
-      <ForgeHeader currentView={currentView} setCurrentView={setCurrentView} />
 
       {currentView === 'creation' ? (
         <div className="flex-1 overflow-y-auto custom-scrollbar px-5 py-5 space-y-6 pb-16">

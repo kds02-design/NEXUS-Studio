@@ -1,3 +1,0 @@
-display_name: "블소 배너 자동화"
-short_description: "1180 마스터 평가 후 8종 Figma 배너까지 일괄 제작"
-default_prompt: "Use $bns-banner-automation to create a Season 5-style Blade & Soul banner set, evaluate and refine the 1180 master with $nexus-design-evaluator, propagate approved fixes, and place all eight sizes on a new Figma page."

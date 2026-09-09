@@ -1,5 +1,7 @@
 // BriefStudio · Prism — prism/prompts.js
 // 프롬프트는 provider와 무관하게 동일하게 유지한다. 모델 차이는 어댑터(responseSchema·temperature)로 흡수.
+// 범용 추출기는 rules.js 의 수정요청서 해석 규칙(옛 캡처 무시·붉은색 강조·A→B 치환·양식 무시)을 포함한다 (2026-09).
+import { GENERIC_REVISION_RULES } from './rules.js';
 
 export const PATTERN_VOCAB =
   'craft-formula(제작식 A+B→C) | result-grid(결과 그리드, 확률·OR 분기) | ' +
@@ -20,6 +22,8 @@ export function extractionPrompt(extraNote = '') {
     '- 해당 없는 필드는 빈 문자열/빈 배열로 둔다. structure는 페이지 등장 순서.',
     '- 패턴 어휘에 맞지 않으면 pattern을 "unknown"으로 두고 note에 형태를 설명한다.',
     '- 확신이 없는 부분은 비워두지 말고 최선 추정 후 uncertain 배열에 사유를 적는다.',
+    '',
+    GENERIC_REVISION_RULES,
     extraNote ? '\n사용자 교정 지시 (최우선 반영): ' + extraNote : '',
   ].join('\n');
 }

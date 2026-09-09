@@ -1,0 +1,13 @@
+{
+  "name": "ink-oriental",
+  "extends": "base",
+  "description": "예시 변형(미검증) — 동양풍·수묵 컨셉. 먹색 거친 라인, 먹점 매듭, 라벨은 종이색. 실제 캠페인에 쓰기 전에 최종본 실측으로 값을 확정할 것.",
+  "style": {
+    "dim": { "color": "#0B0A08", "stops": [[0, 0.8], [0.4, 0.5], [0.8, 0.15], [1, 0]] },
+    "line": { "mode": "block", "padTop": 60, "padBottom": 40, "width": 3, "color": "#16140F", "stops": [[0, 0], [0.1, 0.9], [0.9, 0.9], [1, 0]] },
+    "knot": { "type": "dot", "size": 8, "color": "#16140F" },
+    "emblem": { "type": "image", "w": 33, "h": 27, "asset": "assets/dowon/active_emblem_33x27.png" },
+    "text": { "color": "#E7DFCF", "colorActive": "#F3ECDD", "opacityOff": 0.55, "styleActive": "Medium" },
+    "badge": { "color": "#E7DFCF", "opacity": 0.5 }
+  }
+}

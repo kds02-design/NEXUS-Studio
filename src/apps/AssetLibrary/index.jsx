@@ -50,6 +50,9 @@ export default function AssetLibraryApp() {
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState("all"); // all/favorites/temp/uploaded/<catId>
   const [searchQuery, setSearchQuery] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [effectFilter, setEffectFilter] = useState("all");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [catOverride, setCatOverride] = useState({}); // 카테고리 id -> 사용자가 명시 토글한 펼침 상태
   const [toast, setToast] = useState(null);
@@ -105,7 +108,7 @@ export default function AssetLibraryApp() {
   // 가상폴더(스코프) + 검색 필터.
   // 임시 이미지는 '임시' 폴더에서만 노출 — 전체/즐겨찾기/업로드/개별 카테고리 뷰에서는 모두 제외.
   const filtered = useMemo(() => {
-    let list = assets;
+    let list = assets.filter((a) => !a.trashed);
     if (category === "temp") {
       list = list.filter((a) => isTempAsset(a));
     } else {
@@ -118,11 +121,24 @@ export default function AssetLibraryApp() {
       list = list.filter((a) =>
         (a.title || "").toLowerCase().includes(q) ||
         (a.source?.bannerTitle || "").toLowerCase().includes(q) ||
-        (a.tags || []).some((t) => (t || "").toLowerCase().includes(q))
+        (a.tags || []).some((t) => (t || "").toLowerCase().includes(q)) ||
+        (a.aiSearchText || "").toLowerCase().includes(q) ||
+        (a.subtype || "").toLowerCase().includes(q) ||
+        (a.game || "").toLowerCase().includes(q) ||
+        String(a.year || "").includes(q) ||
+        (a.campaign || "").toLowerCase().includes(q) ||
+        (a.sectionKo || "").toLowerCase().includes(q) ||
+        (a.source?.fileName || "").toLowerCase().includes(q) ||
+        (a.source?.sourcePath || "").toLowerCase().includes(q) ||
+        (a.source?.layerPath || []).some((t) => (t || "").toLowerCase().includes(q))
       );
     }
+    if (sourceFilter !== "all") list = list.filter((a) => a.section === sourceFilter);
+    if (yearFilter !== "all") list = list.filter((a) => String(a.year || "") === yearFilter);
+    if (effectFilter === "with_fx") list = list.filter((a) => a.hasEffects);
+    if (effectFilter === "without_fx") list = list.filter((a) => !a.hasEffects);
     return list;
-  }, [assets, category, searchQuery]);
+  }, [assets, category, searchQuery, sourceFilter, yearFilter, effectFilter]);
 
   // 표시할 카테고리 — 특정 카테고리 선택 시 그것만, 아니면 전체.
   const catsToShow = useMemo(
@@ -145,11 +161,12 @@ export default function AssetLibraryApp() {
 
   // 사이드바 nav 카운트 — 임시 격리 규칙 반영(임시는 '임시' 폴더에만 집계).
   const navCounts = useMemo(() => {
-    const nonTemp = assets.filter((a) => !isTempAsset(a));
+    const visibleAssets = assets.filter((a) => !a.trashed);
+    const nonTemp = visibleAssets.filter((a) => !isTempAsset(a));
     const m = {
       all: nonTemp.length,
       favorites: nonTemp.filter((a) => a.liked).length,
-      temp: assets.filter((a) => isTempAsset(a)).length,
+      temp: visibleAssets.filter((a) => isTempAsset(a)).length,
       uploaded: nonTemp.length,
     };
     for (const c of ASSET_CATEGORY_LIST) m[c.id] = nonTemp.filter((a) => a.category === c.id).length;
@@ -262,13 +279,22 @@ export default function AssetLibraryApp() {
           </h2>
 
           <div className="ml-auto flex items-center gap-2 shrink-0">
+            <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="hidden lg:block bg-[#16161F] border border-[#1E1E2E] rounded-lg px-2 py-1.5 text-[10px] text-zinc-300 outline-none" title="제작 출처">
+              <option value="all">전체 출처</option><option value="promotion">프로모션</option><option value="brandweb">브랜드웹</option>
+            </select>
+            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="hidden lg:block bg-[#16161F] border border-[#1E1E2E] rounded-lg px-2 py-1.5 text-[10px] text-zinc-300 outline-none" title="제작 연도">
+              <option value="all">전체 연도</option><option value="2025">2025</option><option value="2026">2026</option>
+            </select>
+            <select value={effectFilter} onChange={(e) => setEffectFilter(e.target.value)} className="hidden xl:block bg-[#16161F] border border-[#1E1E2E] rounded-lg px-2 py-1.5 text-[10px] text-zinc-300 outline-none" title="효과 포함 여부">
+              <option value="all">전체 효과</option><option value="with_fx">FX 포함</option><option value="without_fx">FX 없음</option>
+            </select>
             <div className="relative w-[180px] md:w-[240px] shrink-0">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#7A7A9A]" strokeWidth={2} />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="제목/태그/출처 검색…"
+                placeholder="에셋·게임·캠페인·효과 검색…"
                 className="w-full pl-9 pr-8 py-1.5 bg-[#16161F] border border-[#1E1E2E] rounded-lg text-[#E8E6FF] text-xs outline-none placeholder:text-[#7A7A9A] focus:border-[#55EFC4]/40"
               />
               {searchQuery && (

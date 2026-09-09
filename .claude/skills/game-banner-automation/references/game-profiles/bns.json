@@ -1,0 +1,53 @@
+{
+  "schema": "game-banner-profile/v1",
+  "id": "bns",
+  "displayName": "Blade & Soul",
+  "version": 1,
+  "aliases": ["bns", "bladeandsoul", "blade & soul", "블소", "블레이드앤소울"],
+  "guide": "references/games/bns.md",
+  "figmaGuide": {"fileKey": "yfrEN3GMD2RPqs7I2MbryK", "pageName": "BS_banner_GUIDE__", "pageIdHint": "552:2"},
+  "framePolicy": {
+    "sourceOfTruth": "profile",
+    "frames": [
+      {"name": "1180x750_Notice", "width": 1180, "height": 750, "role": "full-text-master", "visibleRoles": ["background", "atmosphere", "character", "item-if-required", "title", "copy", "date", "channel-badge-if-required"]},
+      {"name": "1200x628_Facebook", "width": 1200, "height": 628, "role": "full-text-logo", "visibleRoles": ["background", "atmosphere", "character", "item-if-required", "title", "copy", "date", "logo", "channel-badge-if-required"]},
+      {"name": "1352x860_PURPLE", "width": 1352, "height": 860, "role": "image-led-hero", "visibleRoles": ["background", "atmosphere", "character", "item-if-required", "channel-badge-if-required"]},
+      {"name": "620x640_PC_MO", "width": 620, "height": 640, "role": "image-led-hero", "visibleRoles": ["background", "atmosphere", "character", "item-if-required", "channel-badge-if-required"]},
+      {"name": "600x340_EventON", "width": 600, "height": 340, "role": "image-led-hero", "visibleRoles": ["background", "atmosphere", "character", "item-if-required", "channel-badge-if-required"]},
+      {"name": "357x230_Toast", "width": 357, "height": 230, "role": "transparent-top-image", "transparentRegion": {"x": 0, "y": 0, "width": 357, "height": 70}, "visibleRoles": ["background-lower-band", "character"]},
+      {"name": "266x280_Ingame", "width": 266, "height": 280, "role": "transparent-character", "visibleRoles": ["character"]},
+      {"name": "72x40_List", "width": 72, "height": 40, "role": "identity-crop", "visibleRoles": ["character"]}
+    ]
+  },
+  "brand": {
+    "assetAuthority": ["user-approved-live-frame", "campaign-supplied-official-asset", "approved-repeat-master", "bundled-approved-asset"],
+    "assets": {
+      "classicLogo": "assets/games/bns/bns-official-logo-classic.png",
+      "currentNeoLogo": "assets/games/bns/bns-official-logo-neo.png",
+      "neoBadge": "assets/games/bns/channel-neo.png",
+      "specializedBadge": "assets/games/bns/channel-specialized.png"
+    },
+    "channels": {
+      "live": {"logo": "classicLogo", "badge": null, "placementVariant": "live"},
+      "general": {"logo": "approved-master", "badge": null, "placementVariant": "approved-master"},
+      "neo": {"logo": "currentNeoLogo", "badge": "neoBadge", "placementVariant": "neo-current"},
+      "specialized": {"logo": "currentNeoLogo", "badge": "specializedBadge", "placementVariant": "specialized"}
+    },
+    "placements": {
+      "1200x628_Facebook": {
+        "live": {"logo": {"x": 963, "y": 32, "width": 194, "height": 90}},
+        "neo-legacy": {"logo": {"x": 897, "y": 56, "width": 254, "height": 66}},
+        "neo-current": {"logo": {"x": 941, "y": 38, "width": 219, "height": 84}, "badge": {"x": 1051, "y": -2, "width": 150, "height": 150}},
+        "specialized": {"logo": {"x": 904, "y": 38, "width": 219, "height": 84}, "badge": {"x": 1051, "y": -2, "width": 150, "height": 150}}
+      }
+    },
+    "badgeInstanceSizes": {
+      "1180x750_Notice": {"width": 166, "height": 166},
+      "1200x628_Facebook": {"width": 150, "height": 150},
+      "1352x860_PURPLE": {"width": 184, "height": 184},
+      "620x640_PC_MO": {"width": 133, "height": 133},
+      "600x340_EventON": {"width": 107, "height": 107}
+    },
+    "protectedZones": {"1200x628_Facebook": {"x": 840, "y": 0, "width": 360, "height": 170}}
+  }
+}

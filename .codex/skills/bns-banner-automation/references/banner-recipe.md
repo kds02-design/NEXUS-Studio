@@ -24,8 +24,8 @@ The title is still rendered by `$render-matrix-typography`, but every stylistic 
 
 Run both after building the 1180 master. A banner ships only if it passes both.
 
-1. **Quality floor** — `node scripts/evaluation-gate.mjs --input evaluation.json`
-   Weighted overall ≥85, every metric ≥75, no hard failure. Rubric = Banner Codex `promo` (one standard).
+1. **Quality floor** — `node scripts/evaluation-gate.mjs --input evaluation.json --criteria criteria.json`
+   Weighted overall ≥85, every metric ≥75, no hard failure. Rubric = synchronized Nexus active banner criteria snapshot.
 2. **Consistency / sameness** — `node scripts/consistency-gate.mjs --recipe recipes/bns-live-event.v1.json --manifest produced.json`
    The built banner's layer order, anchors (±`anchorTolerancePx`), fonts, preset IDs, Mask Forge curve, and seeds must match the recipe. Any `fail` blocks completion; `07_로고` absence on non-1200 frames is a `warn` only.
 

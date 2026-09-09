@@ -1,0 +1,81 @@
+{
+  "name": "dowon-red-knot",
+  "extends": "base",
+  "description": "2026-03 ETERNAL BOND 도원결의 최종본. 도원결의_v1.9.psd +네비/navi 그룹 실측: 붉은 4px 라인(x54~58, y294~751) + 항목마다 붉은 매듭 10×10 + 활성 사자 엠블럼 33×27. 1depth 간격 38. 2026-09-09: 라인 4px→2px, 상하 페이드 .6→0 (양끝 완전 투명, 18% 구간 램프).",
+  "source": "\\\\ppc-file\\12.리니지2M\\2026\\브랜드웹\\20260311_ETERNAL BOND 도원결의_1차\\03.디자인\\pc\\도원결의_v1.9.psd",
+  "structure": {
+    "rows": {
+      "pitch1": 38,
+      "subEnter": 33,
+      "subPitch": 28,
+      "subExit": 31,
+      "subIndent": 10,
+      "subPrefix": ""
+    }
+  },
+  "style": {
+    "dim": {
+      "stops": [
+        [
+          0,
+          0.62
+        ],
+        [
+          0.4,
+          0.45
+        ],
+        [
+          0.8,
+          0.12
+        ],
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    "line": {
+      "mode": "block",
+      "padTop": 68,
+      "padBottom": 30,
+      "width": 2,
+      "color": "#3A0C06",
+      "stops": [
+        [
+          0,
+          0
+        ],
+        [
+          0.18,
+          1
+        ],
+        [
+          0.82,
+          1
+        ],
+        [
+          1,
+          0
+        ]
+      ]
+    },
+    "knot": {
+      "type": "image",
+      "size": 10,
+      "asset": "assets/dowon/knot_10x10.png"
+    },
+    "emblem": {
+      "type": "image",
+      "w": 33,
+      "h": 27,
+      "asset": "assets/dowon/active_emblem_33x27.png"
+    },
+    "text": {
+      "color": "#C8AC91",
+      "colorActive": "#C8AC91",
+      "opacityOff": 0.5,
+      "sizeActive": 15,
+      "styleActive": "Regular"
+    }
+  }
+}

@@ -1,7 +1,7 @@
 // Breeze 전용 Imagen 렌더 영역 — Sovereign current 의 ImagenRenderArea 를 Breeze 톤(violet)으로 변형.
 // Creation/Edit 두 뷰가 공통으로 사용.
 import { useState } from 'react';
-import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, ImagePlus, Scissors, Maximize2 } from 'lucide-react';
+import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, ImagePlus, Scissors, Maximize2, PenTool } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import ImageZoomModal from '../../../components/ImageZoomModal';
 
@@ -12,6 +12,7 @@ export default function BreezeRenderArea() {
     handleDownloadRendered, handleSaveToPromptArc, savingToArc, savedToArcId,
     handleSendToRenderMatrix, sendingToRenderMatrix,
     handleSendToMaskForge, sendingToMaskForge,
+    handleSendToVectorForge, sendingToVectorForge,
     sendRenderedToEditReference, currentView, editUploadedImage,
     isLoggedIn, canRender, grade,
   } = useBreeze();
@@ -97,16 +98,16 @@ export default function BreezeRenderArea() {
                 </button>
               )}
               {isRenderedTheRef ? (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 text-violet-300 text-[11px] font-semibold" title="이 이미지가 현재 Micro-Edit 레퍼런스(base)입니다">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 text-violet-300 text-[11px] font-semibold" title="이 이미지가 현재 부분 수정 레퍼런스(base)입니다">
                   <Check className="w-3.5 h-3.5" /> 레퍼런스로 사용 중
                 </div>
               ) : (
                 <button
                   onClick={sendRenderedToEditReference}
-                  title="이 이미지를 Micro-Edit 레퍼런스(base)로 보내 추가 효과를 적용"
+                  title="이 이미지를 부분 수정 레퍼런스(base)로 보내 추가 효과를 적용"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15 hover:border-violet-500/50 text-[11px] font-semibold transition-colors"
                 >
-                  <ImagePlus className="w-3.5 h-3.5" /> {currentView === 'edit' ? '레퍼런스로 보내기' : 'Micro-Edit 레퍼런스로'}
+                  <ImagePlus className="w-3.5 h-3.5" /> {currentView === 'edit' ? '레퍼런스로 보내기' : '부분 수정 레퍼런스로'}
                 </button>
               )}
               <button
@@ -126,6 +127,15 @@ export default function BreezeRenderArea() {
               >
                 {sendingToMaskForge ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 전송 중…</>
                   : <><Scissors className="w-3.5 h-3.5" /> Mask Forge 로 보내기</>}
+              </button>
+              <button
+                onClick={handleSendToVectorForge}
+                disabled={sendingToVectorForge}
+                title="렌더된 흑백 타이포를 Vector Forge 로 보내 SVG 벡터로 변환"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/50 text-[11px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {sendingToVectorForge ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> 전송 중…</>
+                  : <><PenTool className="w-3.5 h-3.5" /> Vector Forge 로 보내기</>}
               </button>
               {renderedImage.modelId && (
                 <span className="ml-auto text-[10px] text-zinc-500">

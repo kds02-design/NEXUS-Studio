@@ -1,0 +1,35 @@
+{
+  "format": "promo-pc",
+  "grammar": "refine",
+  "title": "제련석 제작 이벤트",
+  "game": "리니지",
+  "period": "2026. 3. 11.(수) 정기점검 후 ~ 2026. 3. 25.(수) 정기점검 전",
+  "kv": { "characters": "dual" },
+  "sections": [
+    {
+      "type": "craft-formula",
+      "badge": "전서버",
+      "title": "제련석 제작 이벤트",
+      "subtitle": "제작 기간 : 2026. 3. 11.(수) 정기점검 후 ~ 2026. 3. 25.(수) 정기점검 전",
+      "rows": 2,
+      "cta": "제작 이벤트 자세히 보기"
+    },
+    {
+      "type": "package-card",
+      "badge": "전서버",
+      "title": "제련석 패키지",
+      "count": 1
+    },
+    {
+      "type": "craft-rows",
+      "badge": "본서버 · 상시",
+      "title": "용맹의 메달로 제련석 교환",
+      "subtitle": "주간 5개 한정! 용맹의 메달을 제련석 상자로 교환하세요.",
+      "rows": 1
+    },
+    {
+      "type": "notice",
+      "lines": ["제작 이벤트 보상은 계정당 1회 획득 가능합니다.", "확률형 아이템 정보는 공식 홈페이지에서 확인할 수 있습니다."]
+    }
+  ]
+}

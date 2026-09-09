@@ -1,0 +1,80 @@
+const yesNo = [
+  { value: true, label: "사용" },
+  { value: false, label: "사용 안 함" },
+];
+
+export const STAGE_SETTING_SCHEMAS = {
+  "01-request-analysis": [
+    { key: "sourcePolicy", label: "원본 보호 정책", type: "select", options: [{ value: "immutable", label: "원본 불변 보존" }] },
+    { key: "requestedGameSource", label: "게임 판별 기준", type: "select", options: [{ value: "request", label: "사용자 요청에서 판별" }] },
+    { key: "workingCopyMaxWidth", label: "작업 사본 최대 폭", type: "number", suffix: "px" },
+    { key: "workflowGate", label: "워크플로 게이트", type: "select", options: [{ value: "active-stage-only", label: "현재 활성 단계만 실행" }] },
+    { key: "profileBeforeStage6", label: "6단계 전 게임 프로필 적용", type: "select", options: yesNo },
+  ],
+  "02-layout-selection": [
+    { key: "catalogMode", label: "레이아웃 카탈로그", type: "select", options: [{ value: "shared-pool", label: "AION+BNS 공유 40종" }, { value: "local-core20", label: "로컬 Core-20" }] },
+    { key: "rankCount", label: "평가 후보 수", type: "number", suffix: "개" },
+    { key: "sourceGameWeight", label: "출처 게임 가중치", type: "select", options: [{ value: "disabled", label: "사용하지 않음" }] },
+    { key: "masterFrame", label: "마스터 규격", type: "select", options: [{ value: "1180x750", label: "1180 × 750" }] },
+    { key: "blueprintRequired", label: "측정 블루프린트 필수", type: "select", options: yesNo },
+    { key: "characterCropContract", label: "캐릭터 크롭 계약 필수", type: "select", options: yesNo },
+    { key: "fitMode", label: "캐릭터 맞춤 방식", type: "select", options: [{ value: "cover-from-landmarks", label: "랜드마크 기준 Cover" }] },
+  ],
+  "03-title-shape": [
+    { key: "titleModePriority", label: "타이틀 제작 경로 우선순위", type: "select", options: [{ value: "repeat-update>reference-remap>creative-new", label: "반복 수정 → 레퍼런스 이식 → 신규 제작" }] },
+    { key: "enginePolicy", label: "신규 형태 엔진", type: "select", options: [{ value: "auto", label: "자동: RPG는 Sovereign / 캐주얼은 Breeze" }, { value: "sovereign", label: "Typecore Sovereign" }, { value: "breeze", label: "Typecore Breeze" }] },
+    { key: "candidateCount", label: "신규 형태 후보", type: "number", suffix: "개" },
+    { key: "approvalRequired", label: "후보 선택 승인", type: "select", options: yesNo },
+    { key: "generationMatte", label: "생성 배경", type: "select", options: [{ value: "pure-black", label: "완전한 검정 매트" }] },
+    { key: "allowTransparencyPrompt", label: "생성 단계 투명 배경 요청", type: "select", options: yesNo },
+    { key: "singleLineRatioTolerance", label: "한 줄 타이틀 비율 허용 오차", type: "text" },
+    { key: "canvasArtworkRatioSeparated", label: "캔버스·가시 타이틀 비율 분리", type: "select", options: yesNo },
+    { key: "glyphAspectRatioRange", label: "글자 평균 폭÷높이 허용 범위", type: "text" },
+    { key: "horizontalGlyphCondensation", label: "장문 글자 가로폭 축소", type: "select", options: [{ value: "forbidden-by-default", label: "기본 금지" }] },
+    { key: "longSingleLineCanvasRatio", label: "장문 1줄 렌더 캔버스", type: "text" },
+    { key: "longSingleLineWidthOccupancy", label: "장문 1줄 가로 점유율", type: "text" },
+    { key: "topBottomWhitespace", label: "위·아래 여백 산정", type: "select", options: [{ value: "auto-from-visible-title-ratio", label: "가시 타이틀 비율에서 자동 산정" }] },
+    { key: "proxyRecompositionMinLength", label: "2줄 생성→1줄 재조합 시작 길이", type: "number", suffix: "자" },
+  ],
+  "05-image-enhancement": [
+    { key: "productionEngine", label: "프로덕션 엔진", type: "select", options: [{ value: "google", label: "Nexus Google API" }] },
+    { key: "quality", label: "렌더 품질", type: "select", options: [{ value: "final", label: "최종 품질" }] },
+    { key: "productionRoute", label: "보호 API 경로", type: "text" },
+    { key: "maxWorkingWidth", label: "작업 이미지 최대 폭", type: "number", suffix: "px" },
+    { key: "operationOrder", label: "적용 순서", type: "text" },
+    { key: "characterEnhancementPolicy", label: "캐릭터 향상 기본 정책", type: "select", options: [{ value: "non-generative-default", label: "기본은 비생성 · 승인 시 생성 향상" }] },
+    { key: "identityRestoreWhen", label: "중요 부위 원본 복원 조건", type: "select", options: [{ value: "approved-generative-candidate", label: "승인된 생성 향상본이 있을 때" }] },
+    { key: "identityRestoreAlphaAuthority", label: "복원 알파 권위", type: "select", options: [{ value: "source", label: "원본 알파 전체 보존" }, { value: "blend", label: "보호 마스크 영역만 혼합" }] },
+    { key: "identityRestoreMaxRounds", label: "복원 경계 최대 교정", type: "number", suffix: "회" },
+    { key: "identityPreserved", label: "캐릭터·아이템 정체성 보존", type: "select", options: yesNo },
+    { key: "effectCutoff", label: "이펙트 알파 컷오프", type: "number" },
+    { key: "effectGamma", label: "이펙트 알파 감마", type: "number", step: 0.05 },
+    { key: "effectOpacity", label: "이펙트 불투명도", type: "number", suffix: "%" },
+    { key: "recoverColor", label: "발광색 복원", type: "select", options: yesNo },
+    { key: "smokeOpacityRange", label: "전경 연기 시작 불투명도", type: "text" },
+    { key: "itemCandidateCount", label: "아이템 효과 후보", type: "number", suffix: "개" },
+    { key: "itemOpeningRange", label: "아이템 링 오프닝", type: "text" },
+    { key: "itemFrontCrossRange", label: "아이템 전면 교차", type: "text" },
+  ],
+  "06-master-assembly": [
+    { key: "profileActivationStage", label: "게임 프로필 활성 단계", type: "select", options: [{ value: "06-master-assembly", label: "06 · 1180 마스터 조립" }] },
+    { key: "figmaGeometryReadback", label: "Figma 실제 좌표 재확인", type: "select", options: yesNo },
+    { key: "evaluationMetricCount", label: "디자인 평가 지표", type: "number", suffix: "개" },
+    { key: "approvalRequired", label: "마스터 최종 승인", type: "select", options: yesNo },
+    { key: "maxRounds", label: "최대 개선 라운드", type: "number", suffix: "회" },
+    { key: "stallRounds", label: "개선 정체 종료 기준", type: "number", suffix: "회" },
+    { key: "minimumGain", label: "최소 점수 개선폭", type: "number", suffix: "점" },
+    { key: "hardFailures", label: "점수 무관 강제 실패", type: "text" },
+  ],
+  "07-variant-assembly": [
+    { key: "propagationMode", label: "배너 변형 방식", type: "select", options: [{ value: "independent-recompose", label: "규격별 독립 재구성" }] },
+    { key: "preserveIntent", label: "보존 기준", type: "select", options: [{ value: "impact-thesis-reading-order", label: "임팩트 명제와 읽기 순서" }] },
+    { key: "fitMode", label: "캐릭터 재배치", type: "select", options: [{ value: "cover-from-landmarks", label: "정체성 랜드마크 기준" }] },
+    { key: "deliveryChecks", label: "납품 검사", type: "text" },
+    { key: "assertDelivery", label: "최종 납품 게이트 실행", type: "select", options: yesNo },
+  ],
+};
+
+export function optionLabel(field, value) {
+  return field.options?.find((option) => String(option.value) === String(value))?.label || String(value ?? "");
+}

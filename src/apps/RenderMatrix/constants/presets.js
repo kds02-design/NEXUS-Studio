@@ -25,13 +25,6 @@ export const AI_MODELS = [
   { id: 'Midjourney', name: 'Midjourney' },
 ];
 
-export const VIDEO_AI_MODELS = [
-  { id: 'Veo', name: 'Veo (Google)' },
-  { id: 'Runway', name: 'Runway Gen-3' },
-  { id: 'Luma', name: 'Luma / Kling' },
-  { id: 'Sequence', name: 'AE / Web Sequence' },
-];
-
 export const RENDER_ENGINES = [
   { id: "Unreal", name: "언리얼 엔진 5 (에픽/게임)", en: "unreal engine 5 style, AAA-quality physically believable surface rendering" },
   { id: "Octane", name: "옥테인 렌더 (실사/크리스탈)", en: "octane render, photorealistic, front-lit studio realism" },

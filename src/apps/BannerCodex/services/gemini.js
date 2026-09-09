@@ -1,4 +1,5 @@
 import { GEMINI_API_KEY } from "../../../lib/gemini";
+import { NEXUS_SCORE_KEYS, appendOrReplacePromptSection } from "../../../lib/designEvaluationCore";
 
 const SCORE_OBJ = {
   type: "OBJECT",
@@ -8,7 +9,7 @@ const SCORE_OBJ = {
   required: ["score", "reason"]
 };
 
-const RESPONSE_SCHEMA = {
+const buildResponseSchema = (scoreKeys = NEXUS_SCORE_KEYS) => ({
   type: "OBJECT",
   properties: {
     title: { type: "STRING" },
@@ -22,16 +23,14 @@ const RESPONSE_SCHEMA = {
     purpose: { type: "STRING" },
     scores_data: {
       type: "OBJECT",
-      properties: {
-        impression: SCORE_OBJ, concept: SCORE_OBJ, layout: SCORE_OBJ,
-        typography: SCORE_OBJ, color: SCORE_OBJ, readability: SCORE_OBJ,
-        brand: SCORE_OBJ, flow: SCORE_OBJ, detail: SCORE_OBJ, conversion: SCORE_OBJ
-      },
-      required: ["impression","concept","layout","typography","color","readability","brand","flow","detail","conversion"]
-    }
+      properties: Object.fromEntries(scoreKeys.map((key) => [key, SCORE_OBJ])),
+      required: [...scoreKeys]
+    },
+    hardFailures: { type: "ARRAY", items: { type: "STRING" } },
+    recommendedCorrections: { type: "ARRAY", items: { type: "STRING" } },
   },
-  required: ["title", "tags", "purpose", "scores_data"]
-};
+  required: ["title", "tags", "purpose", "scores_data", "hardFailures", "recommendedCorrections"]
+});
 
 const REQUEST_TIMEOUT_MS = 60000;
 // 일괄 분석 시 호출량 폭증을 막기 위해 보수적으로 — 첫 시도 + 한 번의 재시도만.
@@ -40,7 +39,7 @@ const MAX_ATTEMPTS = 2;
 const RETRY_DELAYS = [3000];
 
 export const callGeminiAPI = async (prompt, imageBase64 = null, isJson = false, opts = {}) => {
-  const { apiKey: providedKey, isBatchCall = false, stopRef, onController, anchorImages = [] } = opts;
+  const { apiKey: providedKey, isBatchCall = false, stopRef, onController, anchorImages = [], scoreKeys = NEXUS_SCORE_KEYS } = opts;
   const apiKey = providedKey || GEMINI_API_KEY;
   try {
     // gemini-2.5-pro(고급 모델) — 10지표 평가 품질 우선. pro 의 강점인 추론(thinking)을
@@ -48,7 +47,7 @@ export const callGeminiAPI = async (prompt, imageBase64 = null, isJson = false, 
     const generationConfig = { temperature: 0.1 };
     if (isJson) {
       generationConfig.responseMimeType = "application/json";
-      generationConfig.responseSchema = RESPONSE_SCHEMA;
+      generationConfig.responseSchema = buildResponseSchema(scoreKeys);
     }
     // 앵커 few-shot 이미지가 있으면 [프롬프트 → 참고 이미지들 → 평가 대상] 순으로 배치.
     const anchorParts = Array.isArray(anchorImages) ? anchorImages.filter(Boolean) : [];
@@ -152,32 +151,40 @@ export const callOpenAIAPI = async (prompt, imageBase64, openAiApiKey) => {
 };
 
 export const buildEvalPrompt = (basePrompt, learningContext, criteriaListText, scoringRules = '') => {
-  let p = basePrompt;
-  if (p.includes('{{EVALUATION_CRITERIA_LIST}}')) {
-    p = p.replace('{{EVALUATION_CRITERIA_LIST}}', criteriaListText || '');
-  }
-  // SCORING_RULES 는 placeholder 가 있을 때만 치환. 자동 append 안 함 — 기존 커스텀 프롬프트에
-  // 이미 채점 규칙이 박혀 있을 수 있어 중복 주입 방지.
-  if (p.includes('{{SCORING_RULES}}')) {
-    p = p.replace('{{SCORING_RULES}}', scoringRules || '');
-  }
+  let p = appendOrReplacePromptSection(
+    basePrompt,
+    '{{EVALUATION_CRITERIA_LIST}}',
+    criteriaListText,
+    '현재 활성 평가 항목 — 아래 ID와 기준을 최우선 적용',
+  );
+  p = appendOrReplacePromptSection(
+    p,
+    '{{SCORING_RULES}}',
+    scoringRules,
+    '현재 활성 채점 규칙 — 기존 프롬프트와 충돌하면 이 규칙 우선',
+  );
   if (p.includes('{{LEARNING_CONTEXT}}')) {
     p = p.replace('{{LEARNING_CONTEXT}}', learningContext || '');
   } else if (learningContext) {
     p = `${p}\n\n${learningContext}`;
   }
-  return p;
+  return appendOrReplacePromptSection(
+    p,
+    '{{NEXUS_INTEGRITY_RULES}}',
+    `잘못된 카피·날짜·로고, 콘텐츠 잘림, 깨진 투명도, 캐릭터/FX 오정렬은 hardFailures에 기록하세요.\nrecommendedCorrections에는 영향도가 높은 수정만 최대 3개 작성하세요.`,
+    'NEXUS 무결성 검사',
+  );
 };
 
 export const buildLearningContext = (currentBanner, otherBanners) => {
   const otherFeedbacks = otherBanners
-    .filter(b => b.id !== currentBanner.id && (b.userComment || (b.manualScoreAdj && b.manualScoreAdj !== 0)))
+    .filter(b => b.id !== currentBanner.id && b.userComment)
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .slice(0, 4)
-    .map(b => `- [특징: ${b.tags?.join(', ')}] 수동 점수 보정: ${b.manualScoreAdj > 0 ? '+' : ''}${b.manualScoreAdj}점 / 과거 코멘트: "${b.userComment || '없음'}"`);
+    .map(b => `- [특징: ${b.tags?.join(', ')}] 과거 평가자 코멘트: "${b.userComment}"`);
   const currentFeedback = [];
-  if (currentBanner.userComment || (currentBanner.manualScoreAdj && currentBanner.manualScoreAdj !== 0)) {
-    currentFeedback.push(`- [★★★현재 평가 중인 이미지에 대한 사용자의 직접 지시 (0순위 반영)★★★] 수동 점수 보정: ${currentBanner.manualScoreAdj > 0 ? '+' : ''}${currentBanner.manualScoreAdj || 0}점 / 코멘트 내용: "${currentBanner.userComment || '없음'}"`);
+  if (currentBanner.userComment) {
+    currentFeedback.push(`- [현재 평가 대상에 대한 평가자 관찰 메모] "${currentBanner.userComment}"`);
   }
   const all = [...currentFeedback, ...otherFeedbacks].join('\n');
   return all.length > 0 ? `\n[사용자 피드백 학습 데이터]\n${all}\n` : '';

@@ -1,14 +1,15 @@
 import { Stars, Copy, Check, Loader2, Video, Minimize2 } from "lucide-react";
-import { AI_MODELS, VIDEO_AI_MODELS } from "../constants/presets";
+import { AI_MODELS } from "../constants/presets";
 
 // 결과 패널 상단: AI 모델 선택 + 최적화/압축/복사/Motion 전달 액션.
+// (motion 뷰 제거됨 — 영상 모델 선택은 Motion Matrix 앱이 담당.)
 export default function MatrixHeader({
-  currentView, aiModel, setAiModel,
+  aiModel, setAiModel,
   hasOutput, isCopied, isOptimizing, currentIR,
   isCompressing, onCompress,
   onOptimize, onCopy, onSendToMotion,
 }) {
-  const modelList = currentView === 'motion' ? VIDEO_AI_MODELS : AI_MODELS;
+  const modelList = AI_MODELS;
   return (
     <div className="flex justify-between items-center px-6 py-4 border-b border-zinc-800 bg-[#121214]">
       <div className="flex gap-2">

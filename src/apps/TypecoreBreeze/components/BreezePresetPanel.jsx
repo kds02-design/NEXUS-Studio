@@ -1,13 +1,14 @@
 import { Sparkles, Cpu, Loader2, RefreshCcw, Star, Type, Layers, Wand2, Activity } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { staticOptions } from '../constants/presets.js';
-import { ChipGroup, Collapsible, Tooltip } from './ui.jsx';
+import { NARRATIVE_INTENSITIES, NARRATIVE_MUTATIONS, NARRATIVE_SCOPES } from '../../../lib/narrativeTypography.js';
+import { ChipGroup, Collapsible, Tooltip, ACCENT } from './ui.jsx';
 
 // 단계별 흐름: ① 추천 / ② 스타일 / ③ 핵심 설정 / ④ 더 세밀하게(collapsible)
 // 모든 옵션은 chip 그리드로 통일 — 한 눈에 스캔 가능, dropdown 열기 단계 제거.
 export default function BreezePresetPanel() {
   const b = useBreeze();
-  const accent = '#A78BFA';
+  const accent = ACCENT;
 
   return (
     <div className="space-y-4">
@@ -40,6 +41,28 @@ export default function BreezePresetPanel() {
         )}
       </div>
 
+      {staticOptions.CasualStyles.find((style) => style.id === b.scriptType)?.narrative && (
+        <section className="rounded-xl border border-violet-500/25 bg-violet-950/15 p-3 space-y-3">
+          <div>
+            <p className="text-[11px] font-bold text-violet-200">스토리 글리프</p>
+            <p className="text-[9px] text-zinc-500 mt-0.5">글자의 85–95%는 중립적으로 두고 서사 단서 하나만 적용합니다.</p>
+          </div>
+          <ChipGroup label="서사 강도" data={NARRATIVE_INTENSITIES} value={b.narrativeIntensity} onChange={b.setNarrativeIntensity} columns={4} accent={accent} />
+          <ChipGroup label="변형 범위" data={NARRATIVE_SCOPES} value={b.narrativeScope} onChange={b.setNarrativeScope} columns={3} accent={accent} />
+          <ChipGroup label="변형 방식" data={NARRATIVE_MUTATIONS} value={b.narrativeMutation} onChange={b.setNarrativeMutation} columns={3} accent={accent} />
+          <label className="block">
+            <span className="block text-[10px] font-bold text-zinc-400 mb-1.5">대상 글자 (선택)</span>
+            <input
+              value={b.narrativeTarget}
+              onChange={(event) => b.setNarrativeTarget(event.target.value)}
+              maxLength={4}
+              placeholder="비우면 작품 콘셉트에 맞춰 자동 선택"
+              className="w-full rounded-md border border-zinc-800 bg-[#0B0B0B] px-3 py-2 text-[10px] text-zinc-200 outline-none focus:border-violet-500/60"
+            />
+          </label>
+        </section>
+      )}
+
       {/* 핵심 설정 — 한 화면에서 빠르게 결정 가능한 4개. (글자 스타일/효과 선택은 상단 효과 갤러리에서.) */}
       <section className="space-y-3">
         <div className="flex items-center gap-2 px-0.5">
@@ -71,28 +94,28 @@ export default function BreezePresetPanel() {
 
         {b.isAdvancedOptionsEnabled && (
           <div className="mt-3 space-y-2">
-            <Collapsible title="글자 형태" icon={<Type className="w-3.5 h-3.5 text-zinc-500" />} accent={accent} defaultOpen>
+            <Collapsible title="글자 형태" icon={<Type className="w-3.5 h-3.5 text-zinc-500" />} accent={accent} storageKey="nx:typecore-breeze:adv:form" defaultOpen>
               <ChipGroup label="자간" data={[...staticOptions.kerningOptions, ...(b.dynamicOptions.kerningOptions || [])]} value={b.kerning} onChange={b.setKerning} columns={3} accent={accent} />
               <ChipGroup label="비례" data={staticOptions.proportions} value={b.charProportion} onChange={b.setCharProportion} columns={5} accent={accent} />
               <ChipGroup label="너비" data={staticOptions.widths} value={b.charWidth} onChange={b.setCharWidth} columns={3} accent={accent} />
               <ChipGroup label="여백 점유율" data={staticOptions.occupancies} value={b.occupancy} onChange={b.setOccupancy} columns={5} accent={accent} />
             </Collapsible>
 
-            <Collapsible title="획 디자인" icon={<Activity className="w-3.5 h-3.5 text-zinc-500" />} accent={accent}>
+            <Collapsible title="획 디자인" icon={<Activity className="w-3.5 h-3.5 text-zinc-500" />} accent={accent} storageKey="nx:typecore-breeze:adv:stroke">
               <ChipGroup label="마감" data={[...staticOptions.strokeEnds, ...(b.dynamicOptions.strokeEnds || [])]} value={b.terminalStyle} onChange={b.setTerminalStyle} columns={3} accent={accent} />
               <ChipGroup label="질감" data={[...staticOptions.strokeTextures, ...(b.dynamicOptions.strokeTextures || [])]} value={b.strokeTexture} onChange={b.setStrokeTexture} columns={3} accent={accent} />
               <ChipGroup label="선명도" data={[...staticOptions.strokeSharpness, ...(b.dynamicOptions.strokeSharpness || [])]} value={b.strokeSharpness} onChange={b.setStrokeSharpness} columns={2} accent={accent} />
               <ChipGroup label="연장" data={[...staticOptions.strokeExtensions, ...(b.dynamicOptions.strokeExtensions || [])]} value={b.strokeExtension} onChange={b.setStrokeExtension} columns={3} accent={accent} />
             </Collapsible>
 
-            <Collapsible title="장식 · 배경 효과" icon={<Layers className="w-3.5 h-3.5 text-zinc-500" />} accent={accent}>
+            <Collapsible title="장식 · 배경 효과" icon={<Layers className="w-3.5 h-3.5 text-zinc-500" />} accent={accent} storageKey="nx:typecore-breeze:adv:deco">
               <ChipGroup label="내부 채움" data={staticOptions.InternalDecorations} value={b.internalDecoration} onChange={b.setInternalDecoration} columns={3} accent={accent} />
               <ChipGroup label="베이스라인 흐름" data={staticOptions.TextFlows} value={b.textFlow} onChange={b.setTextFlow} columns={4} accent={accent} />
               <ChipGroup label="글자 연결" data={staticOptions.LetterConnections} value={b.letterConnection} onChange={b.setLetterConnection} columns={3} accent={accent} />
               <ChipGroup label="주변 장식" data={staticOptions.CasualSurroundings} value={b.casualSurrounding} onChange={b.setCasualSurrounding} columns={3} accent={accent} />
             </Collapsible>
 
-            <Collapsible title="리듬 · 변형" icon={<Wand2 className="w-3.5 h-3.5 text-zinc-500" />} accent={accent}>
+            <Collapsible title="리듬 · 변형" icon={<Wand2 className="w-3.5 h-3.5 text-zinc-500" />} accent={accent} storageKey="nx:typecore-breeze:adv:rhythm">
               <ChipGroup label="리듬" data={[...staticOptions.rhythmDynamics, ...(b.dynamicOptions.rhythmDynamics || [])]} value={b.rhythmDynamic} onChange={b.setRhythmDynamic} columns={3} accent={accent} />
               <ChipGroup label="기울기" data={staticOptions.slantAngles} value={b.slantAngle} onChange={b.setSlantAngle} columns={3} accent={accent} />
               <ChipGroup label="왜곡" data={[...staticOptions.playfulDistortions, ...(b.dynamicOptions.playfulDistortions || [])]} value={b.playfulDistortion} onChange={b.setPlayfulDistortion} columns={2} accent={accent} />

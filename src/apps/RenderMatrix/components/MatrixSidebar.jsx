@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   PenTool, Eraser, ScanLine, Loader2, Sparkles, TextCursorInput,
   Users, Box, Sun, Image as ImageIcon, Layers, Palette, Flame, Target, ImagePlus, X,
+  ChevronDown, ChevronsRight, Wand2,
 } from "lucide-react";
 import { DropdownControl, ToggleControl } from "./MatrixControls";
 import MatrixImageViewer from "./MatrixImageViewer";
@@ -10,6 +11,29 @@ import { CustomDirectiveBox } from "./MatrixPromptForm";
 import { DIRECTOR_PERSONAS, RENDER_ENGINES, EDIT_BUDGETS } from "../constants/presets";
 import { fileToDataUrl } from "../services/cloudinary";
 import SectionGroup, { SectionGroupAccent } from "../../../components/SectionGroup";
+import { ACCENT } from "../constants/accent";
+
+// 사이드바 섹션 열림 상태 영속화 키. view 별로 { [sectionKey]: boolean } 맵을 저장.
+const SECTIONS_LS_KEY = "nx:render-metrics:sections";
+const DEFAULT_OPEN_SECTIONS = { editor: { source: true }, edit: { target: true } };
+
+function loadOpenSections() {
+  try {
+    const raw = localStorage.getItem(SECTIONS_LS_KEY);
+    if (!raw) return DEFAULT_OPEN_SECTIONS;
+    const parsed = JSON.parse(raw);
+    const sanitize = (view) => {
+      const v = parsed?.[view];
+      // 레거시 단일-오픈 shape ('source' 같은 문자열) → boolean 맵으로 이행.
+      if (typeof v === "string") return { [v]: true };
+      if (v && typeof v === "object") return v;
+      return DEFAULT_OPEN_SECTIONS[view];
+    };
+    return { editor: sanitize("editor"), edit: sanitize("edit") };
+  } catch {
+    return DEFAULT_OPEN_SECTIONS;
+  }
+}
 
 // 사이드바: 세 가지 view (editor / edit / motion) 의 좌측 컨트롤 패널.
 // state/setters 는 useRenderPrompt 에서 그대로 prop drilling.
@@ -26,10 +50,13 @@ export default function MatrixSidebar({
   onAnyChange,
   // view switching reset
   onSwitchView,
+  // arc 추천 옵션 일괄 적용 (useRenderPrompt.applyRecommendations)
+  onApplyRecommendations,
   // drag flags (sidebar-local)
   isDraggingRef, setIsDraggingRef,
   isDraggingEdit, setIsDraggingEdit,
-  isDraggingMotion, setIsDraggingMotion,
+  // 토스트 — 비이미지 파일 거부 안내용.
+  showToast,
 }) {
   // 값이 바뀌면 setters 호출 + 변경 부수효과(onAnyChange) 트리거.
   const handleChange = useCallback((setter) => (val) => {
@@ -37,26 +64,61 @@ export default function MatrixSidebar({
     onAnyChange?.();
   }, [onAnyChange]);
 
-  // 아코디언: view 별로 첫 섹션 하나만 펼침. 다른 섹션 열면 이전 섹션 자동 닫힘.
-  const [openByView, setOpenByView] = useState({ editor: 'source', edit: 'target', motion: 'source' });
-  const currentOpen = openByView[state.currentView];
+  // 섹션 열림 상태 — view 별 boolean 맵. 다중 섹션 동시 오픈 허용 + localStorage 영속화.
+  const [openByView, setOpenByView] = useState(loadOpenSections);
+  useEffect(() => {
+    try { localStorage.setItem(SECTIONS_LS_KEY, JSON.stringify(openByView)); } catch { /* noop */ }
+  }, [openByView]);
+  const isSectionOpen = (key) => !!openByView[state.currentView]?.[key];
   const toggleSection = (key) => (next) => {
     setOpenByView((cur) => ({
       ...cur,
-      [state.currentView]: next ? key : (cur[state.currentView] === key ? null : cur[state.currentView]),
+      [state.currentView]: { ...cur[state.currentView], [key]: next },
     }));
   };
 
+  // 프로젝트 컨벤션 — 사이드바 빈 공간 클릭으로 접기/펼치기 (햄버거 버튼 없음).
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const handleSidebarClick = useCallback((e) => {
+    // .cursor-pointer — EditScopeLayer 헤더/VFX 카드 같은 클릭형 div 가 토글과 동시에 접히는 것 방지.
+    const isInteractive = e.target.closest("button, input, label, select, a, span, textarea, img, svg, p, h3, .cursor-pointer");
+    if (!isInteractive) setIsCollapsed((prev) => !prev);
+  }, []);
+
+  // 수신 배지 — "받은 프롬프트 보기" 접기/펴기.
+  const [showArcText, setShowArcText] = useState(false);
+  // 추천이 실제로 하나라도 있는지 (summary 만 있는 케이스 제외).
+  const hasRecommendations = !!arcRecommended && ["material", "frontRelief", "surfaceTreatment", "background", "energyCore", "surfaceDetail"].some((k) => arcRecommended[k]);
+
   // 파일 선택/드롭 → data URL 변환.
   const readImage = async (file, target) => {
-    if (!file || !file.type?.startsWith('image/')) return;
+    if (!file) return;
+    if (!file.type?.startsWith('image/')) { showToast?.('이미지 파일만 업로드할 수 있어요'); return; }
     try { target(await fileToDataUrl(file)); } catch (e) { console.warn(e); }
   };
 
+  // 접힌 상태 — 최소 레일. 아무 곳이나 클릭하면 다시 펼쳐짐.
+  if (isCollapsed) {
+    return (
+      <aside
+        onClick={() => setIsCollapsed(false)}
+        title="클릭해서 컨트롤 패널 펼치기"
+        className="w-14 bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col items-center py-5 gap-4 shrink-0 shadow-2xl min-h-0 relative z-10 cursor-pointer hover:border-zinc-600 transition-colors"
+      >
+        <ChevronsRight className="w-4 h-4 text-zinc-500" />
+        {state.currentView === 'editor' ? <PenTool className="w-4 h-4 text-zinc-600" /> : <Eraser className="w-4 h-4 text-zinc-600" />}
+        <span className="text-[9px] font-bold tracking-widest text-zinc-600 uppercase" style={{ writingMode: 'vertical-rl' }}>
+          Controls
+        </span>
+      </aside>
+    );
+  }
+
   return (
     // 2-layer scroll — aside 가 height 컨테이너, 내부 div 가 실제 스크롤 영역.
-    <aside className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl min-h-0 relative z-10">
-      <SectionGroupAccent value="#00CEC9">
+    // 빈 공간 클릭 → 접기 (프로젝트 컨벤션: 햄버거 버튼 없이 토글).
+    <aside onClick={handleSidebarClick} className="w-[340px] bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col shrink-0 shadow-2xl min-h-0 relative z-10">
+      <SectionGroupAccent value={ACCENT}>
       <div className="flex-1 overflow-y-auto pl-6 pr-3 py-6 flex flex-col gap-5 custom-scrollbar">
         {/* view tabs */}
         <div className="flex bg-[#121214] p-1.5 rounded-xl border border-zinc-800/80 shadow-inner">
@@ -71,7 +133,7 @@ export default function MatrixSidebar({
 
         {state.currentView === "editor" && (
           <div className="flex flex-col gap-5">
-            <SectionGroup index={1} label="① 역분석 (시안 이미지 · 프롬프트 → 옵션 자동 세팅)" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
+            <SectionGroup index={1} label="① 역분석 (시안 이미지 · 프롬프트 → 옵션 자동 세팅)" dotColor="#10b981" open={isSectionOpen('source')} onToggle={toggleSection('source')}>
             <div className="space-y-3">
               {/* 섹션 역할 안내 — 여기 업로드한 이미지는 "분석용". 렌더링 입력(기본 이미지)은 우측 패널. */}
               <p className="text-[10px] text-zinc-500 leading-snug px-1">
@@ -99,6 +161,33 @@ export default function MatrixSidebar({
                         {incomingFromArc.tags.slice(0, 6).map((t, i) => (
                           <span key={i} className="px-1.5 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] font-bold text-zinc-300">#{t}</span>
                         ))}
+                      </div>
+                    )}
+                    {(hasRecommendations && incomingFromArc.mode !== 'pipeline') || incomingFromArc.text ? (
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                        {/* 추천 일괄 적용 — 파이프라인은 자동 적용되므로 수동 모드에서만 노출. */}
+                        {hasRecommendations && incomingFromArc.mode !== 'pipeline' && (
+                          <button
+                            onClick={() => { onApplyRecommendations?.(arcRecommended); onAnyChange?.(); showToast?.('★ 추천 옵션을 일괄 적용했어요', 3500); }}
+                            className="flex items-center gap-1 px-2 py-1 rounded-md bg-[#6C5CE7]/30 hover:bg-[#6C5CE7]/50 border border-[#6C5CE7]/50 text-[#A29BFE] text-[9px] font-bold tracking-wider transition-colors"
+                          >
+                            <Wand2 className="w-3 h-3" /> 추천 일괄 적용
+                          </button>
+                        )}
+                        {incomingFromArc.text && (
+                          <button
+                            onClick={() => setShowArcText((v) => !v)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-zinc-200 text-[9px] font-bold tracking-wider transition-colors"
+                          >
+                            <ChevronDown className={`w-3 h-3 transition-transform ${showArcText ? 'rotate-180' : ''}`} />
+                            받은 프롬프트 {showArcText ? '접기' : '보기'}
+                          </button>
+                        )}
+                      </div>
+                    ) : null}
+                    {showArcText && incomingFromArc.text && (
+                      <div className="mt-1.5 p-2 rounded-md bg-black/40 border border-white/10 text-[9px] text-zinc-400 font-mono whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto custom-scrollbar">
+                        {incomingFromArc.text}
                       </div>
                     )}
                   </div>
@@ -156,7 +245,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={2} label="② 디렉터 (스타일 분위기)" dotColor="#A29BFE" open={currentOpen === 'director'} onToggle={toggleSection('director')}>
+            <SectionGroup index={2} label="② 디렉터 (스타일 분위기)" dotColor="#A29BFE" open={isSectionOpen('director')} onToggle={toggleSection('director')}>
             <div className="space-y-1.5">
               <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider flex items-center gap-1.5">
                 <Users className="w-3 h-3" /> Director Persona
@@ -181,7 +270,7 @@ export default function MatrixSidebar({
             />
             </SectionGroup>
 
-            <SectionGroup index={3} label="③ 형태 (구조 · 구도)" dotColor="#818cf8" open={currentOpen === 'form'} onToggle={toggleSection('form')}>
+            <SectionGroup index={3} label="③ 형태 (구조 · 구도)" dotColor="#818cf8" open={isSectionOpen('form')} onToggle={toggleSection('form')}>
             <div className={`space-y-3 transition-opacity ${state.vfxPassMode ? 'opacity-30 pointer-events-none' : ''}`}>
               <p className="text-[9px] text-zinc-500 font-bold px-1 uppercase tracking-wider flex items-center gap-1.5">
                 <Box className="w-3 h-3" /> Morphology · 조형 제어
@@ -193,7 +282,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={4} label="④ 재질 (베이스 · 질감 · 외곽)" dotColor="#FDCB6E" open={currentOpen === 'material'} onToggle={toggleSection('material')}>
+            <SectionGroup index={4} label="④ 재질 (베이스 · 질감 · 외곽)" dotColor="#FDCB6E" open={isSectionOpen('material')} onToggle={toggleSection('material')}>
             <div className={`space-y-3 transition-opacity ${state.vfxPassMode ? 'opacity-30 pointer-events-none' : ''}`}>
               <DropdownControl label="Base Material (베이스 재질)" data={appOptions.materials} value={state.material} onChange={handleChange(setters.setMaterial)} dynamicNames={appOptions.materials} recommendedId={arcRecommended?.material} />
               <DropdownControl label="Surface Detail (미세 질감 밀도)" icon={<ScanLine className="w-4 h-4" />} data={appOptions.surfaceDetails} value={state.surfaceDetail} onChange={handleChange(setters.setSurfaceDetail)} dynamicNames={appOptions.surfaceDetails} recommendedId={arcRecommended?.surfaceDetail} />
@@ -214,7 +303,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={5} label="⑤ 이펙트 & 렌더 (고급)" dotColor="#FD79A8" open={currentOpen === 'vfx'} onToggle={toggleSection('vfx')} className="mb-6">
+            <SectionGroup index={5} label="⑤ 이펙트 & 렌더 (고급)" dotColor="#FD79A8" open={isSectionOpen('vfx')} onToggle={toggleSection('vfx')} className="mb-6">
             {/* VFX / Background / Engine */}
             <div className="space-y-3">
               <ToggleControl label="시안 연출 모드 (이펙트 & 배경)" desc="순수 리얼블랙 배경 위에 특수 효과를 발동시킵니다 — 이펙트 소스 추출 가능." enabled={state.enableVfx} onChange={() => {
@@ -224,13 +313,16 @@ export default function MatrixSidebar({
               }} />
               {state.enableVfx && (
                 <div className="pl-4 border-l-2 border-zinc-800/80 space-y-3 animate-in fade-in slide-in-from-top-2 pt-1">
-                  <DropdownControl label="VFX Core (효과 종류)" data={appOptions.energyCores} value={state.editEnergyCore} onChange={handleChange(setters.setEditEnergyCore)} />
-                  <DropdownControl label="Origin (발생 위치)" data={appOptions.fxOrigins} value={state.editFxOrigin} onChange={handleChange(setters.setEditFxOrigin)} />
-                  <DropdownControl label="Intensity (강도)" data={appOptions.fxIntensities} value={state.editFxIntensity} onChange={handleChange(setters.setEditFxIntensity)} />
+                  {/* creation 컴파일은 energyCore/fxOrigin/fxIntensity 를 읽음 — edit* state 바인딩은 no-op 버그였음. */}
+                  <DropdownControl label="VFX Core (효과 종류)" data={appOptions.energyCores} value={state.energyCore} onChange={handleChange(setters.setEnergyCore)} recommendedId={arcRecommended?.energyCore} />
+                  <DropdownControl label="Origin (발생 위치)" data={appOptions.fxOrigins} value={state.fxOrigin} onChange={handleChange(setters.setFxOrigin)} />
+                  <DropdownControl label="Intensity (강도)" data={appOptions.fxIntensities} value={state.fxIntensity} onChange={handleChange(setters.setFxIntensity)} />
                 </div>
               )}
               <ToggleControl label="바닥 그림자 (Drop Shadow)" desc="배경에 글자의 그림자를 드리워 묵직한 입체감을 더합니다." enabled={state.enableShadow} onChange={() => handleChange(setters.setEnableShadow)(!state.enableShadow)} />
               <ToggleControl label="VFX 소스 분리 렌더링 모드" desc="타이포를 블랙아웃시키고 주변 이펙트만 남겨 매트 패스를 추출합니다." enabled={state.vfxPassMode} onChange={() => handleChange(setters.setVfxPassMode)(!state.vfxPassMode)} />
+              {/* creation 컴파일(IR surface_morphology.treatment)이 읽는 값 — 기존엔 UI 없이 프리셋/추천으로만 바뀌던 숨은 옵션. */}
+              <DropdownControl label="Surface Treatment (표면 마감)" data={appOptions.surfaceTreatments} value={state.surfaceTreatment} onChange={handleChange(setters.setSurfaceTreatment)} dynamicNames={appOptions.surfaceTreatments} recommendedId={arcRecommended?.surfaceTreatment} disabled={state.vfxPassMode} />
               <DropdownControl label="Background (기본 배경)" data={appOptions.backgrounds} value={state.background} onChange={handleChange(setters.setBackground)} disabled={state.enableVfx} recommendedId={arcRecommended?.background} />
               <DropdownControl label="Render Engine" data={RENDER_ENGINES} value={state.renderEngine} onChange={handleChange(setters.setRenderEngine)} />
             </div>
@@ -240,7 +332,7 @@ export default function MatrixSidebar({
 
         {state.currentView === "edit" && (
           <div className="flex flex-col gap-5">
-            <SectionGroup index={1} label="① 대상 (편집할 이미지 · 모드)" dotColor="#10b981" open={currentOpen === 'target'} onToggle={toggleSection('target')}>
+            <SectionGroup index={1} label="① 대상 (편집할 이미지 · 모드)" dotColor="#10b981" open={isSectionOpen('target')} onToggle={toggleSection('target')}>
             <div className="space-y-3">
               <div onClick={() => handleChange(setters.setEditVfxPassMode)(!state.editVfxPassMode)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer transition-all shadow-md group ${state.editVfxPassMode ? 'bg-blue-600/20 border-blue-500/50' : 'bg-black/30 border-zinc-700/50 hover:bg-black/50 hover:border-zinc-500'}`}>
@@ -271,7 +363,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={2} label="② 디렉터 (스타일 분위기)" dotColor="#A29BFE" open={currentOpen === 'director'} onToggle={toggleSection('director')}>
+            <SectionGroup index={2} label="② 디렉터 (스타일 분위기)" dotColor="#A29BFE" open={isSectionOpen('director')} onToggle={toggleSection('director')}>
             <CustomDirectiveBox
               value={state.editIntent} onChange={(v) => handleChange(setters.setEditIntent)(v)}
               placeholder="원하는 분위기를 자유롭게 입력..."
@@ -283,7 +375,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={3} label="③ 편집 범위 (재질 · 빛 · 이펙트)" dotColor="#818cf8" open={currentOpen === 'scope'} onToggle={toggleSection('scope')}>
+            <SectionGroup index={3} label="③ 편집 범위 (재질 · 빛 · 이펙트)" dotColor="#818cf8" open={isSectionOpen('scope')} onToggle={toggleSection('scope')}>
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-zinc-400 mb-2">
                 <Layers className="w-4 h-4 shrink-0" />
@@ -325,7 +417,7 @@ export default function MatrixSidebar({
             </div>
             </SectionGroup>
 
-            <SectionGroup index={4} label="④ 제약 (배경 · 깊이 · 고급)" dotColor="#FD79A8" open={currentOpen === 'constraints'} onToggle={toggleSection('constraints')} className="mb-6">
+            <SectionGroup index={4} label="④ 제약 (배경 · 깊이 · 고급)" dotColor="#FD79A8" open={isSectionOpen('constraints')} onToggle={toggleSection('constraints')} className="mb-6">
             <div className="space-y-3">
               <DropdownControl label="Background Constraint" data={appOptions.backgrounds} value={state.editBg} onChange={handleChange(setters.setEditBg)} />
               <DropdownControl label="Depth Constraint" data={appOptions.projectionDepths} value={state.editRearExtrusion} onChange={handleChange(setters.setEditRearExtrusion)} disabled={state.editVfxPassMode} />
@@ -334,45 +426,7 @@ export default function MatrixSidebar({
           </div>
         )}
 
-        {state.currentView === "motion" && (
-          <div className="flex flex-col gap-5">
-            <SectionGroup index={1} label="① 시안 (입력 이미지)" dotColor="#10b981" open={currentOpen === 'source'} onToggle={toggleSection('source')}>
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-zinc-400 mb-2">
-                <Target className="w-4 h-4 shrink-0" />
-                <h3 className="text-[10px] font-bold uppercase tracking-widest whitespace-nowrap">Source Image</h3>
-              </div>
-              <MatrixImageViewer
-                image={state.motionImage}
-                onClear={(e) => { e.stopPropagation(); e.preventDefault(); setters.setMotionImage(null); }}
-                onUpload={(e) => readImage(e.target.files[0], setters.setMotionImage)}
-                onDragOver={(e) => { e.preventDefault(); setIsDraggingMotion(true); }}
-                onDragLeave={(e) => { e.preventDefault(); setIsDraggingMotion(false); }}
-                onDrop={(e) => { e.preventDefault(); setIsDraggingMotion(false); readImage(e.dataTransfer.files[0], setters.setMotionImage); }}
-                isDragging={isDraggingMotion}
-                title="STATIC IMAGE UPLOAD" sub="애니메이션을 부여할 원본 이미지"
-                icon={ImagePlus} heightClass="h-40"
-              />
-            </div>
-            </SectionGroup>
-
-            <SectionGroup index={2} label="② 모션 (카메라 · 다이내믹 · 의도)" dotColor="#00CEC9" open={currentOpen === 'motion'} onToggle={toggleSection('motion')} className="mb-6">
-            <div className="space-y-3">
-              <DropdownControl label="Camera Motion (카메라 무빙)" data={appOptions.cameraMotions} value={state.cameraMotion} onChange={handleChange(setters.setCameraMotion)} />
-              <DropdownControl label="VFX Dynamics (이펙트 움직임)" data={appOptions.motionDynamics} value={state.vfxDynamics} onChange={handleChange(setters.setVfxDynamics)} />
-              <DropdownControl label="Target Energy (이펙트 소스)" data={appOptions.energyCores} value={state.energyCore} onChange={handleChange(setters.setEnergyCore)} recommendedId={arcRecommended?.energyCore} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-1">Motion Directive (애니메이션 묘사)</label>
-              <div className="w-full flex flex-col bg-zinc-900 border border-zinc-800 rounded-xl focus-within:border-emerald-500 focus-within:ring-1 focus-within:ring-emerald-500/20 transition-all overflow-hidden shadow-inner">
-                <textarea value={state.motionIntent} onChange={e => handleChange(setters.setMotionIntent)(e.target.value)}
-                  placeholder="예: 불꽃이 천천히 타오르며 위로 흩날림"
-                  className="w-full h-16 bg-transparent p-3 text-[11px] outline-none resize-none text-zinc-300 custom-scrollbar placeholder:text-zinc-600" />
-              </div>
-            </div>
-            </SectionGroup>
-          </div>
-        )}
+        {/* motion 뷰 제거됨 — 영상 프롬프트는 Motion Matrix 앱(motion-metrics)이 담당. */}
         {/* 명시적 spacer — 마지막 박스 bottom border 가 잘려보이는 것 방지 */}
         <div className="h-16 shrink-0" aria-hidden="true" />
       </div>

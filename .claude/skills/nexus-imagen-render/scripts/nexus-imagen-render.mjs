@@ -4,15 +4,21 @@ import path from 'node:path';
 
 const argv=process.argv.slice(2),opt={};
 for(let i=0;i<argv.length;i+=2) opt[argv[i].replace(/^--/,'')]=argv[i+1];
-const envFile=opt.env||'.env';
+const knownNexusEnv='C:/work/00_claude/.env';
+const envFile=opt.env||(
+  fs.existsSync('.env') ? '.env' :
+  fs.existsSync(knownNexusEnv) ? knownNexusEnv :
+  '.env'
+);
 let fileEnv={};
 if(fs.existsSync(envFile)) fileEnv=Object.fromEntries(fs.readFileSync(envFile,'utf8').split(/\r?\n/).filter(x=>x&&!x.trim().startsWith('#')&&x.includes('=')).map(x=>{const i=x.indexOf('=');return [x.slice(0,i).trim(),x.slice(i+1).trim().replace(/^['"]|['"]$/g,'')]}));
-const proxyUrl=process.env.NEXUS_IMAGE_PROXY_URL||fileEnv.NEXUS_IMAGE_PROXY_URL;
+const apiBase=(process.env.NEXUS_API_BASE_URL||fileEnv.NEXUS_API_BASE_URL||'').replace(/\/$/,'');
+const proxyUrl=process.env.NEXUS_IMAGE_PROXY_URL||fileEnv.NEXUS_IMAGE_PROXY_URL||(apiBase?`${apiBase}/api/codex-imagen`:null);
 const proxyToken=process.env.NEXUS_CODEX_RENDER_TOKEN||fileEnv.NEXUS_CODEX_RENDER_TOKEN;
 const key=process.env.GEMINI_API_KEY||fileEnv.GEMINI_API_KEY||fileEnv.GEMINI_API_KEY_BRANDWEB;
 const hasProxy=Boolean(proxyUrl&&proxyToken&&!/example|change|placeholder/i.test(proxyUrl+proxyToken));
 const hasDirectKey=Boolean(key&&key.startsWith('AIza')&&!/proxy|change|placeholder/i.test(key));
-if(!hasProxy&&!hasDirectKey) throw new Error('Configure NEXUS_IMAGE_PROXY_URL + NEXUS_CODEX_RENDER_TOKEN, or a valid GEMINI_API_KEY');
+if(!hasProxy&&!hasDirectKey) throw new Error('Configure NEXUS_API_BASE_URL + NEXUS_CODEX_RENDER_TOKEN (or NEXUS_IMAGE_PROXY_URL + token). Direct GEMINI_API_KEY is development-only.');
 if(opt.check==='true') { console.log(hasProxy?'Nexus protected proxy configured':'Direct GEMINI_API_KEY configured'); process.exit(0); }
 for(const k of ['input','prompt','output']) if(!opt[k]) throw new Error(`Missing --${k}`);
 const input=path.resolve(opt.input), promptPath=path.resolve(opt.prompt), output=path.resolve(opt.output);

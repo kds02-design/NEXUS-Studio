@@ -1,15 +1,18 @@
-import { X, Settings, ChevronUp, ChevronDown, Edit3 } from 'lucide-react';
+import { X, Edit3 } from 'lucide-react';
 import { EVALUATION_KEYS, getScoreLabel } from '../constants/categories';
 
 export const getFinalScore100 = (banner) => {
-  const aiBase100 = banner?.aiScore != null
+  return banner?.aiScore != null
     ? Math.round(parseFloat(banner.aiScore) * 10)
-    : Math.round(parseFloat(banner?.score || 0) * 10) - parseInt(banner?.manualScoreAdj || 0);
-  return Math.min(99, Math.max(0, aiBase100 + parseInt(banner?.manualScoreAdj || 0)));
+    : Math.round(parseFloat(banner?.score || 0) * 10);
 };
 
-const CodexEvalPanel = ({ editedBanner, isScoreAdjExpanded, setIsScoreAdjExpanded, onClose, handleEditChange }) => {
-  const validScores = EVALUATION_KEYS.map(k => editedBanner?.scores?.[k]?.score).filter(s => s != null).map(s => Math.round(s));
+const CodexEvalPanel = ({ editedBanner, onClose, handleEditChange }) => {
+  const scoreKeys = Array.isArray(editedBanner?.criteria) && editedBanner.criteria.length
+    ? editedBanner.criteria.map((item) => item.id)
+    : EVALUATION_KEYS;
+  const labelMap = Object.fromEntries((editedBanner?.criteria || []).map((item) => [item.id, item.name || item.id]));
+  const validScores = scoreKeys.map(k => editedBanner?.scores?.[k]?.score).filter(s => s != null).map(s => Math.round(s));
   const maxScore = validScores.length > 0 ? Math.max(...validScores) : -1;
   const minScore = validScores.length > 0 ? Math.min(...validScores) : 101;
 
@@ -32,8 +35,23 @@ const CodexEvalPanel = ({ editedBanner, isScoreAdjExpanded, setIsScoreAdjExpande
             </div>
           </div>
         </div>
+        {editedBanner?.evaluationReport && (
+          <div className={`rounded-lg border px-4 py-3 ${editedBanner.evaluationPass ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+            <div className="flex items-center justify-between gap-3">
+              <span className={`text-xs font-black ${editedBanner.evaluationPass ? 'text-emerald-400' : 'text-red-400'}`}>
+                {editedBanner.evaluationPass ? 'NEXUS 품질 게이트 통과' : 'NEXUS 품질 게이트 미통과'}
+              </span>
+              <span className="text-[10px] text-zinc-400">전체 85+ · 전 항목 75+ · 하드 실패 0</span>
+            </div>
+            {editedBanner.hardFailures?.length > 0 && (
+              <ul className="mt-2 list-disc pl-4 text-[11px] text-red-300">
+                {editedBanner.hardFailures.map((failure, index) => <li key={`${failure}-${index}`}>{failure}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-2 shrink-0">
-          {EVALUATION_KEYS.map((key) => {
+          {scoreKeys.map((key) => {
             const data = editedBanner?.scores?.[key];
             if (!data) return null;
             const isMissing = data.score == null;
@@ -48,7 +66,7 @@ const CodexEvalPanel = ({ editedBanner, isScoreAdjExpanded, setIsScoreAdjExpande
             return (
               <div key={key} className={`${boxBgClass} border rounded-lg px-4 py-2.5 transition-colors flex items-center gap-4 shadow-sm`}>
                 <div className="w-[110px] shrink-0 flex items-center justify-between">
-                  <span className="text-[11px] text-zinc-300 font-medium">{getScoreLabel(key)}</span>
+                  <span className="text-[11px] text-zinc-300 font-medium">{labelMap[key] || getScoreLabel(key)}</span>
                   <span className={`text-lg font-mono font-bold leading-none ${isMissing ? 'text-zinc-600' : 'text-[#0eb9b3]'}`}>{isMissing ? '—' : scoreVal}</span>
                 </div>
                 <div className="w-px h-5 bg-white/10 shrink-0"></div>
@@ -57,32 +75,8 @@ const CodexEvalPanel = ({ editedBanner, isScoreAdjExpanded, setIsScoreAdjExpande
             );
           })}
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 shrink-0">
-          <div className="bg-black/40 border border-white/[0.05] rounded-xl p-4 col-span-1 shadow-lg flex flex-col justify-start transition-all duration-300 self-start w-full">
-            <button onClick={(e) => { e.stopPropagation(); setIsScoreAdjExpanded(!isScoreAdjExpanded); }} className="flex justify-between items-center w-full group cursor-pointer">
-              <label className="text-[13px] font-bold text-white flex items-center gap-2 group-hover:text-[#0eb9b3] transition-colors cursor-pointer pointer-events-none">
-                <Settings className="w-4 h-4 text-[#0eb9b3]" />점수 보정
-                {isScoreAdjExpanded ? <ChevronUp className="w-3.5 h-3.5 text-zinc-500" /> : <ChevronDown className="w-3.5 h-3.5 text-zinc-500" />}
-              </label>
-              <span className={`text-[11px] font-mono font-bold px-2.5 py-1 rounded-md border pointer-events-none ${parseInt(editedBanner?.manualScoreAdj || 0) > 0 ? 'bg-[#0eb9b3]/20 text-[#0eb9b3] border-[#0eb9b3]/30' : parseInt(editedBanner?.manualScoreAdj || 0) < 0 ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-white/10 text-zinc-300 border-white/10'}`}>
-                {parseInt(editedBanner?.manualScoreAdj || 0) > 0 ? '+' : ''}{parseInt(editedBanner?.manualScoreAdj || 0)}점
-              </span>
-            </button>
-            {isScoreAdjExpanded && (
-              <div className="flex items-center gap-2 px-1 mt-5 animate-in fade-in slide-in-from-top-2">
-                <button onClick={(e) => { e.stopPropagation(); handleEditChange('manualScoreAdj', Math.max(-3, parseInt(editedBanner?.manualScoreAdj || 0) - 1)); }}
-                  className="text-[16px] font-bold w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/20 text-zinc-400 hover:text-white transition-colors cursor-pointer">-</button>
-                <input type="range" min="-3" max="3" step="1" value={parseInt(editedBanner?.manualScoreAdj || 0)}
-                  onChange={(e) => handleEditChange('manualScoreAdj', parseInt(e.target.value))}
-                  className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer focus:outline-none shadow-inner mx-2"
-                  style={{ background: `linear-gradient(to right, #ef4444 0%, #52525b 50%, #14b8a6 100%)` }}
-                  onMouseDown={e => e.stopPropagation()} onTouchStart={e => e.stopPropagation()} />
-                <button onClick={(e) => { e.stopPropagation(); handleEditChange('manualScoreAdj', Math.min(3, parseInt(editedBanner?.manualScoreAdj || 0) + 1)); }}
-                  className="text-[16px] font-bold w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/20 text-zinc-400 hover:text-white transition-colors cursor-pointer">+</button>
-              </div>
-            )}
-          </div>
-          <div className="bg-black/40 border border-white/[0.05] rounded-xl p-4 col-span-1 lg:col-span-2 flex flex-col shadow-lg">
+        <div className="shrink-0">
+          <div className="bg-black/40 border border-white/[0.05] rounded-xl p-4 flex flex-col shadow-lg">
             <label className="text-[13px] font-bold flex items-center gap-2 text-white mb-2"><Edit3 className="w-4 h-4 text-violet-400" /> AI 학습용 피드백 코멘트</label>
             <textarea value={editedBanner?.userComment || ''} onChange={(e) => handleEditChange('userComment', e.target.value)}
               placeholder="이 배너 디자인에 대한 평가 기준이나 피드백을 적어주세요. (입력 시 다음 AI 분석에 반영됩니다)"

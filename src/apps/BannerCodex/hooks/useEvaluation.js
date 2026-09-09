@@ -2,18 +2,19 @@ import { useState, useRef, useCallback } from 'react';
 import { callGeminiAPI, callOpenAIAPI, buildEvalPrompt, buildLearningContext } from '../services/gemini';
 import { prepareImageForAI } from '../services/cloudinary';
 import { fetchBannerImage } from '../services/firebase';
-import { DEFAULT_AI_PROMPT, EVALUATION_KEYS } from '../constants/categories';
-import { buildAnchorFewShot, formatAnchorsForPrompt, applyOffset } from '../../../lib/evaluationCriteria';
+import { DEFAULT_AI_PROMPT } from '../constants/categories';
+import { buildAnchorFewShot, formatAnchorsForPrompt } from '../../../lib/evaluationCriteria';
 import { prepareAnchorImages } from '../../../lib/anchorImages';
+import {
+  calculateEvaluationReport,
+  criteriaSnapshot,
+  mergeEvaluationScores,
+} from '../../../lib/designEvaluationCore';
 
-const safeRender = (v, fb = '') => {
-  if (v == null) return fb;
-  if (typeof v === 'object') return fb;
-  return String(v);
-};
+const asStringArray = (value) => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
 
 export const useEvaluation = ({
-  banners, updateBanner, customAiPrompt, criteriaListText, criteriaWeights,
+  banners, updateBanner, customAiPrompt, criteriaListText, criteriaItems,
   criteriaRules, anchors, calibOffset,
   geminiApiKey, openAiApiKey, showNotification, onSelectionAffect,
 }) => {
@@ -74,6 +75,7 @@ export const useEvaluation = ({
         const promises = [callGeminiAPI(dynamicPrompt, base64Image, true, {
           apiKey: geminiApiKey, isBatchCall: isBatch, stopRef: stopBatchRef,
           anchorImages: anchorImageParts,
+          scoreKeys: (criteriaItems || []).map((item) => item.id).filter(Boolean),
           onController: (c) => { myController = c; activeFetchControllerRef.current.add(c); }
         })];
         if (openAiApiKey) promises.push(callOpenAIAPI(dynamicPrompt, base64Image, openAiApiKey));
@@ -105,38 +107,33 @@ export const useEvaluation = ({
         }
         if (Array.isArray(primaryData.tags)) updateData.tags = primaryData.tags.map(String);
         if (primaryData.scores_data) {
-          const mergeScore = (g, o) => {
-            if (g != null && o != null) return (g + o) / 2;
-            if (g != null) return g;
-            if (o != null) return o;
-            return null;
-          };
-          const mergeReason = (g, o) => g || o || '';
-          const merged = {};
-          // 가중 평균 — 항목별 weight 로 가중. 누락 항목은 분모(totalWeight)에서도 빠져 점수 왜곡 방지.
-          // weight 가 없거나 0 이면 1 로 폴백(= 단순 평균과 동일).
-          let weightedSum = 0, totalWeight = 0, validCount = 0;
-          const missing = [];
-          EVALUATION_KEYS.forEach(key => {
-            const gS = geminiData?.scores_data?.[key]?.score;
-            const oS = openaiData?.scores_data?.[key]?.score;
-            const score = mergeScore(gS, oS);
-            const reason = mergeReason(geminiData?.scores_data?.[key]?.reason, openaiData?.scores_data?.[key]?.reason);
-            if (score == null) {
-              missing.push(key);
-              merged[key] = { score: null, reason: reason || '(분석 누락 — AI 응답에 없음)' };
-            } else {
-              merged[key] = { score: Math.round(score), reason };
-              const w = Number(criteriaWeights?.[key]) > 0 ? Number(criteriaWeights[key]) : 1;
-              weightedSum += score * w; totalWeight += w; validCount++;
-            }
+          const merged = mergeEvaluationScores(criteriaItems, [
+            geminiData?.scores_data,
+            openaiData?.scores_data,
+          ].filter(Boolean));
+          const hardFailures = [...new Set([
+            ...asStringArray(geminiData?.hardFailures), ...asStringArray(openaiData?.hardFailures),
+          ])];
+          const recommendedCorrections = [...new Set([
+            ...asStringArray(geminiData?.recommendedCorrections), ...asStringArray(openaiData?.recommendedCorrections),
+          ])];
+          const report = calculateEvaluationReport({
+            criteria: criteriaItems,
+            scores: merged.scores,
+            hardFailures,
+            recommendedCorrections,
+            offset: calibOffset,
           });
+          const validCount = (criteriaItems || []).length - merged.missing.length;
+          const missing = merged.missing;
           if (missing.length > 0) console.warn(`[BannerCodex] AI 응답에서 누락된 항목 ${missing.length}/10: ${missing.join(', ')}`);
-          const avg100 = totalWeight > 0 ? weightedSum / totalWeight : 0;
-          // 전역 보정(offset) 적용 — 평가자 점수 감각으로 점수대 시프트(0~99 clamp).
-          const adjusted100 = applyOffset(avg100, calibOffset);
-          let aiScore = Math.round((adjusted100 / 10) * 10) / 10;
-          updateData.scores = merged;
+          const aiScore = Math.round((report.overall / 10) * 10) / 10;
+          updateData.criteria = criteriaSnapshot(criteriaItems);
+          updateData.scores = merged.scores;
+          updateData.hardFailures = report.hardFailures;
+          updateData.recommendedCorrections = report.recommendedCorrections;
+          updateData.evaluationReport = report;
+          updateData.evaluationPass = report.pass;
           updateData.aiScore = aiScore;
           updateData.scoredCount = validCount;
           updateData.manualScoreAdj = 0;
@@ -151,7 +148,7 @@ export const useEvaluation = ({
       } else if (!isBatch) showNotification("정보를 찾을 수 없습니다.");
     } catch (e) { if (!isBatch) showNotification("오류가 발생했습니다."); }
     finally { setProcessingBannerId(null); }
-  }, [banners, customAiPrompt, criteriaListText, criteriaWeights, criteriaRules, anchors, calibOffset, geminiApiKey, openAiApiKey, updateBanner, showNotification, onSelectionAffect]);
+  }, [banners, customAiPrompt, criteriaListText, criteriaItems, criteriaRules, anchors, calibOffset, geminiApiKey, openAiApiKey, updateBanner, showNotification, onSelectionAffect]);
 
   // 일괄 분석 — 제한된 동시성(concurrency) + 청크 사이 throttle.
   // flash + thinkingBudget:0 로 per-call 이 빨라졌고, 각 call 의 retry 는 순차라 동시성을 늘리지 않으므로

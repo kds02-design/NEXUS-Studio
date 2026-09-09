@@ -1,9 +1,9 @@
 /* eslint-disable */
-// current 메인 워크스페이스: 헤더 액션바, 모델 탭, 컴파일 버튼, 출력 박스.
+// current 메인 워크스페이스: 헤더 액션바, 모델 탭, 실시간 반영 배지, 출력 박스.
 // "현재 설정 요약" 카드 그리드는 사용성 문제로 제거 — 모든 옵션 편집은 좌측 사이드바
 // (Quick Start + 고급 옵션)로 일원화됐다.
 import React from 'react';
-import { Menu, Edit3, PenTool, FileUp, Loader2, RefreshCcw, CheckCircle } from 'lucide-react';
+import { Edit3, PenTool, FileUp, Zap } from 'lucide-react';
 import OverviewTab from './OverviewTab.jsx';
 import AiOutputBox from './AiOutputBox.jsx';
 import ImagenRenderArea from './ImagenRenderArea.jsx';
@@ -20,14 +20,9 @@ const Workspace = ({ rp, imagen }) => {
           {/* Header Action Bar */}
           <div className="flex items-center justify-between w-full pb-4 border-b border-zinc-800/60 mb-6">
             <div className="flex items-center gap-3">
-              {!rp.isSidebarOpen && (
-                <button onClick={() => rp.setIsSidebarOpen(true)} className="p-2 bg-[#1C1C1C] hover:bg-zinc-800 rounded-[8px] border border-zinc-700 transition-colors shadow-sm shrink-0">
-                  <Menu className="w-5 h-5 text-zinc-400 hover:text-white transition-colors" />
-                </button>
-              )}
               <div>
                 <h2 className="text-[17px] font-bold text-white flex items-center gap-2">
-                  {rp.isEditMode ? <><Edit3 className="w-4 h-4 text-zinc-400" /> 마이크로 리터칭</> : <><PenTool className="w-4 h-4 text-zinc-400" /> 프롬프트 생성</>}
+                  {rp.isEditMode ? <><Edit3 className="w-4 h-4 text-zinc-400" /> 부분 수정</> : <><PenTool className="w-4 h-4 text-zinc-400" /> 프롬프트 생성</>}
                 </h2>
                 <p className="text-[10px] tracking-tight text-zinc-500 mt-1">{rp.isEditMode ? '기준 이미지의 형태를 95% 보존하면서 표면·디테일만 리터칭합니다.' : '왼쪽에서 고른 옵션이 모델별 프롬프트로 자동 조립됩니다.'}</p>
               </div>
@@ -56,26 +51,11 @@ const Workspace = ({ rp, imagen }) => {
             />
           ) : (
             <>
-              {/* Action Button for the selected Model */}
+              {/* 출력은 옵션 변경 즉시 갱신됨 (별도 컴파일 단계 없음) — 수동 컴파일 버튼 대신 상태 배지만 표시. */}
               <div className="flex justify-end">
-                {rp.currentModel === 'NanoBanana' && (
-                  <button onClick={rp.handleCompileNanoBanana} disabled={rp.isGeneratingNano} className={`px-5 py-3 rounded-[8px] font-bold font-sans text-[12px] transition-all flex items-center justify-center gap-2 shadow-md w-full sm:w-auto ${rp.isPromptOutdated ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-zinc-800 text-zinc-400 cursor-default'}`}>
-                    {rp.isGeneratingNano ? <Loader2 className="w-4 h-4 animate-spin" /> : (rp.isPromptOutdated ? <RefreshCcw className="w-4 h-4" /> : <CheckCircle className="w-4 h-4 text-emerald-400" />)}
-                    {rp.isPromptOutdated ? 'Compile Directives' : 'Compiled (Up to date)'}
-                  </button>
-                )}
-                {rp.currentModel === 'Midjourney' && (
-                  <button onClick={rp.handleCompileMj} disabled={rp.isGeneratingMj} className={`px-5 py-3 rounded-[8px] font-bold font-sans text-[12px] transition-all flex items-center justify-center gap-2 shadow-md w-full sm:w-auto ${rp.isPromptOutdated ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-zinc-800 text-zinc-400 cursor-default'}`}>
-                    {rp.isGeneratingMj ? <Loader2 className="w-4 h-4 animate-spin" /> : (rp.isPromptOutdated ? <RefreshCcw className="w-4 h-4" /> : <CheckCircle className="w-4 h-4 text-emerald-400" />)}
-                    {rp.isPromptOutdated ? 'Compile Directives' : 'Compiled (Up to date)'}
-                  </button>
-                )}
-                {rp.currentModel === 'ChatGPT' && (
-                  <button onClick={rp.handleCompileCg} disabled={rp.isGeneratingCg} className={`px-5 py-3 rounded-[8px] font-bold font-sans text-[12px] transition-all flex items-center justify-center gap-2 shadow-md w-full sm:w-auto ${rp.isPromptOutdated ? 'bg-indigo-600 hover:bg-indigo-500 text-white' : 'bg-zinc-800 text-zinc-400 cursor-default'}`}>
-                    {rp.isGeneratingCg ? <Loader2 className="w-4 h-4 animate-spin" /> : (rp.isPromptOutdated ? <RefreshCcw className="w-4 h-4" /> : <CheckCircle className="w-4 h-4 text-emerald-400" />)}
-                    {rp.isPromptOutdated ? 'Compile Directives' : 'Compiled (Up to date)'}
-                  </button>
-                )}
+                <span className="px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/60 text-zinc-500 text-[10px] font-bold flex items-center gap-1.5" title="옵션을 바꾸면 프롬프트가 즉시 갱신됩니다">
+                  <Zap className="w-3 h-3 text-emerald-500/70" /> 실시간 반영 중
+                </span>
               </div>
 
               {/* 프롬프트(좌) · 렌더링(우) — 페이지 폭에 따라 늘어나는 2-컬럼 grid.

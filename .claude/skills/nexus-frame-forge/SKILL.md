@@ -31,8 +31,9 @@ description: >-
 
 | 스펙 | FrameForge 축 | 비고 |
 | --- | --- | --- |
-| 용도 | `assetType` | button / box / frame / badge / divider / icon |
-| 형태 | `silhouette` | `assetType` 에 종속(`for` 필드로 후보 결정) |
+| 용도 | `assetType` | button / box / frame / badge / divider / icon / ornament(타이틀·섹션·내비 장식) / slot(아이템 슬롯·홀더) |
+| 형태 | `silhouette` | `assetType` 에 종속(`for` 필드로 후보 결정). 항목마다 `ratio`(렌더 캔버스 비율)가 있으며 `nexus_frameforge_prompt` 결과의 `aspectRatio` 로 전달됨 |
+| 키트 | `nexus_frameforge_kit_prompts` | 브랜드웹 한 벌(기본 10종 / 보상·쿠폰 8종 / 내비·유틸 8종)을 같은 무드로 일괄 프롬프트화. 무드는 brandweb_gold / celestial / crimson_royal / frost_silver / modern_neon 권장 |
 | 분위기 | `SIMPLE_MOODS` | preset+material+ornament 번들 |
 | 표현 방식 | `renderStyle` | realistic_3d / illustrated / semi_realistic / flat_graphic |
 | 라벨 | 자유 텍스트 | 버튼 문구가 있으면 정확 문구를 프롬프트에 명시 |

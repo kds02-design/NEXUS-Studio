@@ -1,9 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { ChevronDown, Copy, CheckCircle2, Star, Terminal, ChevronRight } from 'lucide-react';
+import { APP_MAP } from '../../../config/apps';
+
+// 앱 포인트 컬러 단일 소스 — APP_REGISTRY 의 typecore-breeze color 를 그대로 사용.
+// (하드코딩 금지 컨벤션 — 카드/Topbar/내부 액센트가 전부 한 값이어야 함.)
+export const ACCENT = APP_MAP['typecore-breeze']?.color ?? '#74B9FF';
 
 // 칩 그룹 — dropdown 보다 시각적 스캔이 빠름. 옵션 5개 이하일 때 권장.
 // data: [{id, name, en?}]. accent: 활성 chip 의 보더/링 컬러.
-export const ChipGroup = ({ label, hint, data = [], value, onChange, columns = 3, accent = '#7C3AED' }) => {
+export const ChipGroup = ({ label, hint, data = [], value, onChange, columns = 3, accent = ACCENT }) => {
   if (!Array.isArray(data) || data.length === 0) return null;
   return (
     <div className="space-y-2">
@@ -36,8 +41,21 @@ export const ChipGroup = ({ label, hint, data = [], value, onChange, columns = 3
 };
 
 // 접을 수 있는 그룹 — 깊은 옵션을 카테고리별로 묶을 때 사용.
-export const Collapsible = ({ title, icon, defaultOpen = false, children, accent = '#7C3AED' }) => {
-  const [open, setOpen] = useState(defaultOpen);
+// storageKey 주면 localStorage 에 열림/닫힘 상태 영속화 (SectionGroup 과 동일 패턴).
+export const Collapsible = ({ title, icon, defaultOpen = false, children, accent = ACCENT, storageKey }) => {
+  const [open, setOpen] = useState(() => {
+    if (!storageKey) return defaultOpen;
+    try {
+      const v = localStorage.getItem(storageKey);
+      if (v === '0') return false;
+      if (v === '1') return true;
+    } catch { /* ignore */ }
+    return defaultOpen;
+  });
+  useEffect(() => {
+    if (!storageKey) return;
+    try { localStorage.setItem(storageKey, open ? '1' : '0'); } catch { /* ignore */ }
+  }, [open, storageKey]);
   return (
     <div className="rounded-lg border border-zinc-800 bg-[#111111] overflow-hidden">
       <button

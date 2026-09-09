@@ -2,7 +2,7 @@
 // 원본 RenderMatrix index.jsx 의 generate*/compile*/performLogicAudit/calculateQualityScore 들을 그대로 옮긴 모듈.
 // 각 compile 함수는 IR + state 를 받아 모델 syntax 에 맞는 prompt 문자열을 반환한다.
 
-import { DIRECTOR_PERSONAS, EDIT_BUDGETS, RENDER_ENGINES, getOptionEn, getOptionName } from "../constants/presets";
+import { DIRECTOR_PERSONAS, EDIT_BUDGETS, RENDER_ENGINES, getOptionEn, getOptionName } from "../constants/presets.js";
 
 // ─── 예상 결과 요약 (한국어) ───
 // Quality Score 는 수치 예측일 뿐 실제 질감·느낌을 보여주지 못한다는 피드백으로 신설.

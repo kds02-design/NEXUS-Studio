@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BreezeProvider, useBreeze } from './context/BreezeContext.jsx';
+import { ACCENT } from './components/ui.jsx';
 import BreezeSidebar from './components/BreezeSidebar.jsx';
 import BreezeHeader from './components/BreezeHeader.jsx';
 import BreezePromptForm from './components/BreezePromptForm.jsx';
@@ -12,8 +13,14 @@ import { AdvancedToggle } from '../../components/SovereignKit.jsx';
 // 뷰별 라우팅 — Creation 뷰는 Header(Quick Start StepCard ①②③) + PresetPanel(고급 옵션 토글 안) / Edit 뷰는 PromptForm.
 function BreezeViews() {
   const { currentView, usageModal } = useBreeze();
-  // 고급 옵션 토글 — 초보자는 처음 진입 시 닫힌 상태로 봄. 한 번 펼치면 세션 동안 유지.
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // 고급 옵션 토글 — 초보자는 처음 진입 시 닫힌 상태로 봄. localStorage 영속화로 재진입 시 복원.
+  const ADV_KEY = 'nx:typecore-breeze:adv';
+  const [advancedOpen, setAdvancedOpen] = useState(() => {
+    try { return localStorage.getItem(ADV_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(ADV_KEY, advancedOpen ? '1' : '0'); } catch { /* ignore */ }
+  }, [advancedOpen]);
   return (
     <div className="flex flex-col h-screen bg-slate-50 text-slate-900 dark:bg-[#0A0A0A] dark:text-zinc-200 font-sans overflow-hidden transition-colors duration-500 relative selection:bg-zinc-700 selection:text-white">
       {usageModal}
@@ -39,7 +46,7 @@ function BreezeViews() {
                 <AdvancedToggle
                   open={advancedOpen}
                   onToggle={() => setAdvancedOpen(v => !v)}
-                  accent="#D4AF37"
+                  accent={ACCENT}
                   label="고급 옵션"
                   sublabel="레이아웃 · 획 · 마감 · 강도 등 세부 조정"
                 >

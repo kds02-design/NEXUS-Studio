@@ -1,6 +1,7 @@
 {
-  "comment": "배너 코덱스 주간 자동 동기화 대상. share/pathPrefix 의 {year} 는 실행 시점 연도로 치환 (전년도 폴더도 함께 스캔). sizeKeyword 는 마스터 배너 파일 선택 키워드 — 블소·아이온 1180(1180x750_notice), 그 외 1200(Facebook_1200x630 등). minDate 이전 날짜 폴더는 건드리지 않음 — 과거 앱 수동 등록분과의 중복 방지 하한선이므로 수정하지 말 것. 새 게임 추가: targets 에 한 줄 추가하면 끝. promoShare/promoPathPrefix 는 브랜드웹 라이브러리(PromotionArchive) 프로모션 자동 등록용 — promoMinDate 이후 캠페인 폴더만.",
+  "comment": "배너 코덱스 주간 자동 동기화 대상. share/pathPrefix 의 {year} 는 실행 시점 연도로 치환 (전년도 폴더도 함께 스캔). sizeKeyword 는 마스터 배너 파일 선택 키워드 — 블소·아이온 1180(1180x750_notice), 그 외 1200(Facebook_1200x630 등). minDate 이전 날짜 폴더는 건드리지 않음 — 과거 앱 수동 등록분과의 중복 방지 하한선이므로 수정하지 말 것. 새 게임 추가: targets 에 한 줄 추가하면 끝. promoShare/promoPathPrefix 는 브랜드웹 라이브러리(PromotionArchive) 프로모션 자동 등록용 — promoMinDate 이후 캠페인 폴더만. 브랜드웹 예약 실행은 현재 연도의 신규 캠페인 경로만 등록하고, brandWebMinYear 는 --backfill 전체 복구의 시작 연도다.",
   "minDate": "20260603",
+  "brandWebMinYear": 2024,
   "targets": [
     {
       "game": "블소",

@@ -1,4 +1,5 @@
-import { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { createContext, useContext, useState, useRef, useEffect, useMemo } from 'react';
+import { useDraftPersistence } from '../../../lib/useDraftPersistence.js';
 import { useUsageGate } from '../../../components/UsageGate';
 import { useAuth } from '../../../context/AuthContext';
 import { useGlobal } from '../../../context/GlobalContext';
@@ -43,6 +44,10 @@ export const BreezeProvider = ({ children }) => {
   const [charProportion, setCharProportion] = useState("P_Std");
   const [kerning, setKerning] = useState("Kern_Std");
   const [scriptType, setScriptType] = useState("Casual_Bubble");
+  const [narrativeIntensity, setNarrativeIntensity] = useState("subtle");
+  const [narrativeScope, setNarrativeScope] = useState("one");
+  const [narrativeMutation, setNarrativeMutation] = useState("auto");
+  const [narrativeTarget, setNarrativeTarget] = useState("");
   const [terminalStyle, setTerminalStyle] = useState("End_Round");
   const [strokeTexture, setStrokeTexture] = useState("Tex_Smooth");
   const [strokeSharpness, setStrokeSharpness] = useState("Sharp_Soft");
@@ -58,7 +63,8 @@ export const BreezeProvider = ({ children }) => {
   const [dynamicOptions, setDynamicOptions] = useState({ CasualStyles: [], strokeTextures: [], analogImperfections: [], strokeEnds: [], strokeWeights: [], strokeSharpness: [], widths: [], kerningOptions: [], strokeExtensions: [], rhythmDynamics: [], playfulDistortions: [] });
 
   const [customDesignInjections, setCustomDesignInjections] = useState("");
-  const [aiModel, setAiModel] = useState("Overview");
+  // 기본 탭은 NanoBanana — Overview 탭에는 Generate Prompt 버튼이 없어 첫 진입 시 생성 진입점이 보이지 않음.
+  const [aiModel, setAiModel] = useState("NanoBanana");
 
   // ─── Creation: AI outputs / loading ───────────────────────
   const [dramaticPrompt, setDramaticPrompt] = useState(null);
@@ -81,6 +87,7 @@ export const BreezeProvider = ({ children }) => {
   const [copiedTop, setCopiedTop] = useState(false);
   const [copiedBottom, setCopiedBottom] = useState(false);
   const [baseLangView, setBaseLangView] = useState('ko');
+  const [aiError, setAiError] = useState(null); // AI 호출 실패 메시지 (renderError 와 동일 패턴)
 
   // ─── 외부 payload 수신 (NEXUS Preview KV 타이틀 등) ─────────
   // payload.prompt.text → 입력 텍스트로 주입 + 에디터 뷰 전환 (timestamp 로 1회만 소비).
@@ -152,6 +159,7 @@ export const BreezeProvider = ({ children }) => {
   const [selectedImagenModel, setSelectedImagenModel] = useState(IMAGEN_MODELS[0].id);
   const [sendingToRenderMatrix, setSendingToRenderMatrix] = useState(false);
   const [sendingToMaskForge, setSendingToMaskForge] = useState(false);
+  const [sendingToVectorForge, setSendingToVectorForge] = useState(false);
 
   // 새 렌더 결과가 들어오면 PromptArc 저장 상태 초기화.
   useEffect(() => {
@@ -159,10 +167,58 @@ export const BreezeProvider = ({ children }) => {
     setSavedCloudinaryUrl(null);
   }, [renderedImage]);
 
+  // ─── 드래프트 영속화 (useDraftPersistence 공용 훅) ──────────
+  // 옵션 값만 스냅샷 — 이미지(dataURL)/튜닝 채팅/렌더 결과/생성 프롬프트는 제외 (프롬프트는 라이브 재계산).
+  const draftSnapshot = useMemo(() => ({
+    inputText, selectedCategory, aiPersona, personaSliderValue, customDesignInjections,
+    baseStyle, aspectRatio, occupancy, layoutType, enhanceMode, momentumActive, isAdvancedOptionsEnabled,
+    stemWeight, charWidth, charProportion, kerning, scriptType,
+    narrativeIntensity, narrativeScope, narrativeMutation, narrativeTarget,
+    terminalStyle, strokeTexture, strokeSharpness, strokeExtension, slantAngle,
+    rhythmDynamic, playfulDistortion, analogImperfection, internalDecoration,
+    textFlow, letterConnection, casualSurrounding, dynamicOptions, aiModel,
+  }), [
+    inputText, selectedCategory, aiPersona, personaSliderValue, customDesignInjections,
+    baseStyle, aspectRatio, occupancy, layoutType, enhanceMode, momentumActive, isAdvancedOptionsEnabled,
+    stemWeight, charWidth, charProportion, kerning, scriptType,
+    narrativeIntensity, narrativeScope, narrativeMutation, narrativeTarget,
+    terminalStyle, strokeTexture, strokeSharpness, strokeExtension, slantAngle,
+    rhythmDynamic, playfulDistortion, analogImperfection, internalDecoration,
+    textFlow, letterConnection, casualSurrounding, dynamicOptions, aiModel,
+  ]);
+  const draft = useDraftPersistence('nx:typecore-breeze:draft', draftSnapshot);
+
+  // [복원] — 저장된 드래프트 값을 현재 상태에 적용 (없는 필드는 건너뜀).
+  const restoreDraft = () => {
+    const s = draft.saved;
+    if (!s) return;
+    const apply = (setter, v) => { if (v !== undefined && v !== null) setter(v); };
+    apply(setInputText, s.inputText); apply(setSelectedCategory, s.selectedCategory);
+    apply(setAiPersona, s.aiPersona); apply(setPersonaSliderValue, s.personaSliderValue);
+    apply(setCustomDesignInjections, s.customDesignInjections);
+    apply(setBaseStyle, s.baseStyle); apply(setAspectRatio, s.aspectRatio);
+    apply(setOccupancy, s.occupancy); apply(setLayoutType, s.layoutType);
+    apply(setEnhanceMode, s.enhanceMode); apply(setMomentumActive, s.momentumActive);
+    apply(setIsAdvancedOptionsEnabled, s.isAdvancedOptionsEnabled);
+    apply(setStemWeight, s.stemWeight); apply(setCharWidth, s.charWidth);
+    apply(setCharProportion, s.charProportion); apply(setKerning, s.kerning);
+    apply(setScriptType, s.scriptType);
+    apply(setNarrativeIntensity, s.narrativeIntensity); apply(setNarrativeScope, s.narrativeScope);
+    apply(setNarrativeMutation, s.narrativeMutation); apply(setNarrativeTarget, s.narrativeTarget);
+    apply(setTerminalStyle, s.terminalStyle); apply(setStrokeTexture, s.strokeTexture);
+    apply(setStrokeSharpness, s.strokeSharpness); apply(setStrokeExtension, s.strokeExtension);
+    apply(setSlantAngle, s.slantAngle); apply(setRhythmDynamic, s.rhythmDynamic);
+    apply(setPlayfulDistortion, s.playfulDistortion); apply(setAnalogImperfection, s.analogImperfection);
+    apply(setInternalDecoration, s.internalDecoration); apply(setTextFlow, s.textFlow);
+    apply(setLetterConnection, s.letterConnection); apply(setCasualSurrounding, s.casualSurrounding);
+    apply(setDynamicOptions, s.dynamicOptions); apply(setAiModel, s.aiModel);
+    draft.dismiss();
+  };
+
   // ─── App-level effects ────────────────────────────────────
   useEffect(() => {
     setIsOutdated(true); setVerificationLog("");
-  }, [aiPersona, personaSliderValue, inputText, customDesignInjections, enhanceMode, momentumActive, baseStyle, aspectRatio, occupancy, layoutType, stemWeight, charWidth, charProportion, kerning, scriptType, terminalStyle, strokeTexture, strokeSharpness, strokeExtension, slantAngle, rhythmDynamic, playfulDistortion, analogImperfection, internalDecoration, textFlow, letterConnection, casualSurrounding, isAdvancedOptionsEnabled]);
+  }, [aiPersona, personaSliderValue, inputText, customDesignInjections, enhanceMode, momentumActive, baseStyle, aspectRatio, occupancy, layoutType, stemWeight, charWidth, charProportion, kerning, scriptType, narrativeIntensity, narrativeScope, narrativeMutation, narrativeTarget, terminalStyle, strokeTexture, strokeSharpness, strokeExtension, slantAngle, rhythmDynamic, playfulDistortion, analogImperfection, internalDecoration, textFlow, letterConnection, casualSurrounding, isAdvancedOptionsEnabled]);
 
   useEffect(() => { setIsEditOutdated(true); }, [editInstruction, editUploadedImage, editTargetCategory, editTexStyle, editEdgeStyle, editExtStyle, editRhythmStyle, editObjLetter, editObjItem]);
 
@@ -175,12 +231,12 @@ export const BreezeProvider = ({ children }) => {
     theme, isSidebarOpen, currentView, selectedCategory, inputText, base64Image, isDragging,
     aiPersona, personaDropdownOpen, isAdvancedOptionsEnabled, enhanceMode, momentumActive, personaSliderValue,
     baseStyle, aspectRatio, occupancy, layoutType,
-    stemWeight, charWidth, charProportion, kerning, scriptType, terminalStyle, strokeTexture, strokeSharpness,
+    stemWeight, charWidth, charProportion, kerning, scriptType, narrativeIntensity, narrativeScope, narrativeMutation, narrativeTarget, terminalStyle, strokeTexture, strokeSharpness,
     strokeExtension, slantAngle, rhythmDynamic, playfulDistortion, analogImperfection, internalDecoration,
     textFlow, letterConnection, casualSurrounding, dynamicOptions, customDesignInjections, aiModel,
     dramaticPrompt, optimizedPrompt, mjOptimizedPrompt, cgEnhancedPrompt, nanoViewMode, aiRecSummary, lastRecSource,
     isEnhancing, isOptimizing, isMjOptimizing, isCgEnhancing, isExpandingIntent, isRecommending, isVerifyingLogic,
-    verificationLog, isAuditedHighlight, isAuditModalOpen, copiedTop, copiedBottom, baseLangView,
+    verificationLog, isAuditedHighlight, isAuditModalOpen, copiedTop, copiedBottom, baseLangView, aiError,
     editUploadedImage, editInstruction, editTargetCategory, editTexStyle, editEdgeStyle, editExtStyle,
     editRhythmStyle, editObjLetter, editObjItem, editAiModel, editNanoMode,
     editDramaticPrompt, editOptimizedPrompt, editMjPrompt, editCgPrompt,
@@ -192,13 +248,13 @@ export const BreezeProvider = ({ children }) => {
     setTheme, setIsSidebarOpen, setCurrentView, setSelectedCategory, setInputText, setBase64Image, setIsDragging,
     setAiPersona, setPersonaDropdownOpen, setIsAdvancedOptionsEnabled, setEnhanceMode, setMomentumActive, setPersonaSliderValue,
     setBaseStyle, setAspectRatio, setOccupancy, setLayoutType,
-    setStemWeight, setCharWidth, setCharProportion, setKerning, setScriptType, setTerminalStyle, setStrokeTexture,
+    setStemWeight, setCharWidth, setCharProportion, setKerning, setScriptType, setNarrativeIntensity, setNarrativeScope, setNarrativeMutation, setNarrativeTarget, setTerminalStyle, setStrokeTexture,
     setStrokeSharpness, setStrokeExtension, setSlantAngle, setRhythmDynamic, setPlayfulDistortion, setAnalogImperfection,
     setInternalDecoration, setTextFlow, setLetterConnection, setCasualSurrounding, setDynamicOptions, setCustomDesignInjections, setAiModel,
     setDramaticPrompt, setOptimizedPrompt, setMjOptimizedPrompt, setCgEnhancedPrompt, setNanoViewMode, setAiRecSummary, setLastRecSource,
     setIsEnhancing, setIsOptimizing, setIsMjOptimizing, setIsCgEnhancing, setIsExpandingIntent, setIsRecommending,
     setIsVerifyingLogic, setVerificationLog, setIsAuditedHighlight, setIsAuditModalOpen,
-    setCopiedTop, setCopiedBottom, setBaseLangView,
+    setCopiedTop, setCopiedBottom, setBaseLangView, setAiError,
     setEditUploadedImage, setEditInstruction, setEditTargetCategory, setEditTexStyle, setEditEdgeStyle, setEditExtStyle,
     setEditRhythmStyle, setEditObjLetter, setEditObjItem, setEditAiModel, setEditNanoMode,
     setEditDramaticPrompt, setEditOptimizedPrompt, setEditMjPrompt, setEditCgPrompt,
@@ -210,9 +266,12 @@ export const BreezeProvider = ({ children }) => {
 
     // Imagen 렌더링
     rendering, renderedImage, renderError, savingToArc, savedToArcId, savedCloudinaryUrl,
-    selectedImagenModel, sendingToRenderMatrix, sendingToMaskForge, canRender, grade,
+    selectedImagenModel, sendingToRenderMatrix, sendingToMaskForge, sendingToVectorForge, canRender, grade,
     setRendering, setRenderedImage, setRenderError, setSavingToArc, setSavedToArcId, setSavedCloudinaryUrl,
-    setSelectedImagenModel, setSendingToRenderMatrix, setSendingToMaskForge,
+    setSelectedImagenModel, setSendingToRenderMatrix, setSendingToMaskForge, setSendingToVectorForge,
+
+    // 드래프트 영속화 — 복원 배너(BreezeResultPanel) + 초기화 시 clear(breezeHandlers).
+    showDraftRestore: draft.showRestore, restoreDraft, dismissDraftRestore: draft.dismiss, clearDraft: draft.clear,
   };
 
   const handlers = createHandlers(stateBag);

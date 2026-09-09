@@ -16,6 +16,8 @@ import { APP_MAP } from '../../config/apps';
 import { GEMINI_API_KEY } from '../../lib/gemini';
 import { IMAGEN_MODELS, renderWithImagen } from '../../lib/imagenRender';
 import { savePromptToArc } from '../../lib/promptArcSave';
+// 완성형 옵션 축·프롬프트 빌더·브랜드웹 키트는 React 없는 frameforgeAxes.js 로 분리 — 앱·MCP 브릿지·스킬 런타임이 한 파일을 본다.
+import { COMPLETE_AXES, COMPLETE_RANDOM, SIMPLE_MOODS, SIMPLE_RENDER_STYLES, BRANDWEB_KITS, buildCompletePrompt, buildKitSeeds, seedAspectRatio } from './frameforgeAxes';
 
 const ACCENT = APP_MAP['frame-forge']?.color || '#4BCFFA';
 const OPTION_ACTIVE = {
@@ -44,7 +46,7 @@ function restoreCompleteSettings(axes) {
   const fallback = defaultCompleteSelection(axes);
   try {
     const saved = JSON.parse(localStorage.getItem(COMPLETE_SETTINGS_STORAGE) || 'null');
-    if (!saved?.selection) return { selection:fallback, userIntent:'', simpleMood:'dark_rpg', iconCreative:false };
+    if (!saved?.selection) return { selection:fallback, userIntent:'', simpleMood:'dark_rpg', iconCreative:false, kitKey:null };
     const selection = { ...fallback };
     for (const [axisKey, savedId] of Object.entries(saved.selection)) {
       const axis = axes[axisKey];
@@ -58,9 +60,10 @@ function restoreCompleteSettings(axes) {
       userIntent:typeof saved.userIntent === 'string' ? saved.userIntent : '',
       simpleMood:SIMPLE_MOODS.some((o) => o.key === saved.simpleMood) ? saved.simpleMood : '',
       iconCreative:!!saved.iconCreative,
+      kitKey:BRANDWEB_KITS.some((k) => k.key === saved.kitKey) ? saved.kitKey : null,
     };
   } catch {
-    return { selection:fallback, userIntent:'', simpleMood:'dark_rpg', iconCreative:false };
+    return { selection:fallback, userIntent:'', simpleMood:'dark_rpg', iconCreative:false, kitKey:null };
   }
 }
 
@@ -220,209 +223,15 @@ const MAT_AXES = {
 };
 const MAT_RANDOM = ['palette', 'lighting', 'finish', 'mood'];
 
-// ─── 완성형 프레임 · 형태+장식+재질을 한 번에 생성 ──────────
-// 스킬 런타임(SkillChat)이 재사용하는 옵션 축·빌더 — 컴포넌트 파일에 함께 두되 Fast Refresh 예외만 명시.
-// eslint-disable-next-line react-refresh/only-export-components
-export const COMPLETE_AXES = {
-  assetType: {
-    label:'사용 용도', pick:true,
-    opts:[
-      { key:'button', ko:'버튼', en:'an empty horizontal game menu button frame' },
-      { key:'box', ko:'박스', en:'an empty game UI content box or panel frame' },
-      { key:'frame', ko:'프레임', en:'an empty decorative game UI frame' },
-      { key:'badge', ko:'배지', en:'an empty compact game UI badge frame' },
-      { key:'divider', ko:'디바이더', en:'a single straight horizontal game UI divider line' },
-      { key:'icon', ko:'아이콘', en:'a single standalone game UI icon glyph, no frame, no background plate' },
-    ],
-  },
-  preset: {
-    label: '스타일',
-    opts: [
-      { key:'dragon_slayer', ko:'드래곤 슬레이어', en:'restrained dragon-slayer accents, abstract mirrored dragon cues localized only at the four corners' },
-      { key:'royal_crest', ko:'왕가 문장', en:'fallen royal dynasty crest, crown-like heraldic ornaments and restrained fleur-de-lis details' },
-      { key:'black_thorn', ko:'흑철 가시', en:'black iron thorn armor, blade-like spikes and severe gothic corner guards' },
-      // "룬 문자" 직접 요청이 결과물에 실제 룬 글자를 만들던 원인 → 추상 기하 홈 패턴으로 재정의.
-      { key:'ancient_rune', ko:'고대 각인', en:'ancient clan engraving style — abstract geometric groove patterns and notches carved into austere medieval metal border segments, evoking rune aesthetics WITHOUT any actual rune characters or letter-like symbols' },
-      { key:'minimal_gold', ko:'미니멀 골드', en:'minimal luxury gold trim with one soft highlight and no figurative ornament' },
-      { key:'soft_glow', ko:'소프트 글로우', en:'clean soft-glowing rim with rounded modern fantasy restraint' },
-      { key:'parchment', ko:'양피지', en:'lightly aged parchment edge with simple folded corners and no dense decoration' },
-      { key:'nature', ko:'자연 정령', en:'restrained leaf and spirit-light accents localized to two corners' },
-      { key:'arcane', ko:'아케인 마법', en:'one subtle arcane glow line and a small central glowing geometric accent — an abstract shape, never a rune or character' },
-      { key:'dark_minimal', ko:'다크 미니멀', en:'plain charcoal surface, precise thin border and almost no ornament' },
-      { key:'modern_ui', ko:'모던 UI', en:'clean contemporary product-UI styling — flat calm surfaces, ONE restrained thin border line as the only decoration, generous negative space; explicitly NOT futuristic: no sci-fi glow, no neon, no holographic effects, no tech greebles, no angular chamfer patterns' },
-      { key:'red_lacquer', ko:'붉은 칠기', en:'restrained deep-red lacquer with narrow aged-gold edge accents' },
-      { key:'crystal', ko:'크리스탈', en:'clean translucent crystal rim with sparse controlled highlights' },
-    ],
-  },
-  silhouette: {
-    label:'형태',
-    opts:[
-      { key:'button_hex_3', for:['button'], ko:'뾰족 육각 3:1', en:'an elongated 3:1 pointed hexagon menu-button frame with sharp spear-tip ends' },
-      { key:'button_hex_4', for:['button'], ko:'뾰족 육각 4:1', en:'an ultra-wide 4:1 pointed hexagon button frame' },
-      { key:'button_cut', for:['button'], ko:'컷코너 버튼', en:'an elongated 3:1 button with precise clipped corners' },
-      { key:'button_pill', for:['button'], ko:'필 버튼', en:'a clean horizontal pill-shaped button' },
-      { key:'button_stadium', for:['button'], ko:'좌우 원형', en:'a wide stadium-shaped button frame whose left and right ends are perfect full semicircles — true capsule geometry with the end radius equal to half the button height, never just softly rounded corners' },
-      { key:'button_round', for:['button'], ko:'라운드 버튼', en:'a wide softly rounded rectangular button' },
-      { key:'box_landscape', for:['box'], ko:'가로 박스', en:'a wide landscape content box with a large usable interior' },
-      { key:'box_square', for:['box'], ko:'정사각 박스', en:'a square content box with a large usable interior' },
-      { key:'box_portrait', for:['box'], ko:'세로 박스', en:'a tall portrait content box with a large usable interior' },
-      { key:'box_tab', for:['box'], ko:'탭 박스', en:'a rectangular content box with one small integrated top tab' },
-      { key:'box_banner', for:['box'], ko:'행잉 박스', en:'a hanging banner-shaped content box with a pointed lower edge' },
-      { key:'frame_wide', for:['frame'], ko:'와이드 프레임', en:'a wide 16:9 decorative frame with a large open center' },
-      { key:'frame_square', for:['frame'], ko:'정사각 프레임', en:'a square decorative frame with a large open center' },
-      { key:'frame_portrait', for:['frame'], ko:'세로 프레임', en:'a portrait decorative frame with a large open center' },
-      { key:'circle_plate', for:['frame'], ko:'원형 장식 사각판', en:'a rectangular UI plate incorporating a circular medallion or round ornament' },
-      { key:'perfect_circle', for:['frame','badge'], ko:'완전한 원', en:'one mathematically perfect circular silhouette, equal width and height, with no square or rectangular backing plate' },
-      { key:'oval', for:['frame','badge'], ko:'타원형', en:'a wide oval frame with a clean center and no rectangular backing' },
-      { key:'badge_shield', for:['badge'], ko:'방패 배지', en:'a compact shield-shaped badge frame' },
-      { key:'badge_hex', for:['badge'], ko:'육각 배지', en:'a compact regular hexagonal badge frame' },
-      { key:'badge_ribbon', for:['badge'], ko:'리본 배지', en:'a compact ribbon-shaped badge frame' },
-      { key:'divider_line', for:['divider'], ko:'일직선', en:'one perfectly straight horizontal separator line' },
-      // ─── 아이콘 (화살표 · 스크롤다운) ───
-      { key:'icon_arrow_right', for:['icon'], ko:'화살표 (오른쪽)', en:'a single bold arrow icon pointing right, clean triangular arrowhead with a short straight tail, instantly readable silhouette' },
-      { key:'icon_arrow_down', for:['icon'], ko:'화살표 (아래)', en:'a single bold arrow icon pointing straight down, clean triangular arrowhead with a short straight tail' },
-      { key:'icon_arrow_back', for:['icon'], ko:'화살표 (뒤로)', en:'a single bold back-arrow icon pointing left, clean triangular arrowhead with a short straight tail' },
-      { key:'icon_scroll_down', for:['icon'], ko:'스크롤 다운 (셰브론)', en:'a scroll-down indicator icon made of two stacked downward chevrons, the lower chevron slightly smaller and fainter, clean game UI style' },
-      { key:'icon_scroll_mouse', for:['icon'], ko:'스크롤 다운 (마우스)', en:'a scroll-down indicator icon: a slim rounded mouse outline with a small inner scroll dot and one downward chevron beneath it' },
-      { key:'icon_chevron_down', for:['icon'], ko:'셰브론 (아래)', en:'a single clean downward chevron icon with crisp mitered joints and consistent stroke weight' },
-      { key:'icon_nav_prev', for:['icon'], ko:'이동 (왼쪽)', en:'a single clean left-pointing navigation chevron icon for a previous/back UI control — one crisp mitered chevron with consistent stroke weight, no tail, instantly readable as "go left" in a carousel or pager' },
-      { key:'icon_nav_next', for:['icon'], ko:'이동 (오른쪽)', en:'a single clean right-pointing navigation chevron icon for a next/forward UI control — one crisp mitered chevron with consistent stroke weight, no tail, instantly readable as "go right" in a carousel or pager' },
-      { key:'icon_play', for:['icon'], ko:'재생 (플레이)', en:'a single media play icon — one clean right-pointing triangle, video play button glyph, crisp even edges' },
-      { key:'icon_play_circle', for:['icon'], ko:'영상 플레이 (원형)', en:'a video play button icon: a right-pointing play triangle centered inside a clean circular ring, classic media player play glyph, balanced and instantly readable' },
-    ],
-  },
-  frameWeight: {
-    label:'프레임 굵기',
-    opts:[
-      { ko:'초박형', en:'ultra-thin sleek hairline rails, never bulky' },
-      { ko:'얇고 예리함', en:'thin razor-edged metal rails with precise bevels' },
-      { ko:'장식부만 강조', en:'hairline straight rails with detail concentrated only at corners and ends' },
-    ],
-  },
-  material: {
-    label:'재질',
-    opts:[
-      { ko:'순금', en:'rich solid gold with controlled polished highlights' },
-      { ko:'금박', en:'thin hand-applied gold leaf with subtle seams and restrained wear' },
-      { ko:'고대 황금', en:'aged ancient gold with dark patina settled into recesses' },
-      { ko:'전투 흔적 황금', en:'battle-worn gold with fine scratches, small dents and exposed dark under-metal' },
-      { ko:'백금', en:'cool pale platinum with refined satin highlights' },
-      { ko:'황동', en:'aged brass with warm brown patina' },
-      { ko:'청동', en:'ancient bronze with restrained verdigris in recesses' },
-      { ko:'은', en:'polished silver with cool controlled reflections' },
-      { ko:'다마스커스 강철', en:'dark Damascus steel with subtle layered wave patterns' },
-      { ko:'연마 강철', en:'polished forged steel with crisp cold highlights' },
-      { ko:'무광 매트', en:'smooth matte non-metallic surface with a soft flat finish, minimal reflections and clean uniform color' },
-      { ko:'전투로 단련된 흑철', en:'battle-hardened dark steel, subtly scratched and worn' },
-      { ko:'기름 먹인 흑철', en:'oiled blackened steel with restrained cold highlights' },
-      { ko:'그을린 강철', en:'smoke-darkened forged steel with worn edges' },
-      { ko:'주철', en:'heavy matte cast iron with fine granular texture' },
-      { ko:'흑요석', en:'deep black obsidian with sparse razor-sharp reflections' },
-      { ko:'대리석', en:'dark fantasy marble with restrained natural veining' },
-      { ko:'고대 석재', en:'weathered carved stone with shallow age cracks' },
-      { ko:'룬 스톤', en:'dark ancient stone with one restrained engraved glowing groove — an abstract line, never a rune character or symbol' },
-      { ko:'고목', en:'aged dark hardwood with visible grain and worn edges' },
-      { ko:'가죽', en:'dark embossed leather with restrained stitched edging' },
-      { ko:'뼈', en:'aged ivory bone with subtle porous texture and no gore' },
-      { ko:'마력 크리스탈', en:'dark translucent magic crystal with controlled inner light' },
-    ],
-  },
-  interior: {
-    label:'프레임 내부',
-    opts:[
-      { key:'empty', ko:'비우기', en:'leave the interior completely empty and transparent-looking' },
-      { key:'solid_dark', ko:'어두운 단색', en:'fill the interior with a clean flat near-black surface' },
-      { key:'material_fill', ko:'동일 재질', en:'fill the interior with a restrained flat panel using the same material' },
-      { key:'translucent', ko:'반투명', en:'fill the interior with a subtle translucent smoked panel' },
-      { key:'gradient', ko:'은은한 그라데이션', en:'fill the interior with a low-contrast dark vertical gradient' },
-      { key:'soft_glow', ko:'중앙 소프트광', en:'fill the interior with a dark surface and one restrained soft central glow' },
-    ],
-  },
-  ornament: {
-    label:'장식 배치',
-    opts:[
-      { ko:'절제된 테두리', en:'small ornament accents touch the perimeter but occupy no more than 20% of the total frame area' },
-      { ko:'네 모서리 집중', en:'small mirrored ornaments localized at the four corners, connected only by clean hairline rails' },
-      { ko:'좌우 대칭', en:'compact mirrored accents at both pointed ends with plain top and bottom hairline rails' },
-    ],
-  },
-  renderStyle: {
-    label:'렌더 표현 방식',
-    opts:[
-      { key:'realistic_3d', ko:'실사형 3D', en:'high-end physically based 3D game UI render; realistic metal, stone, leather and wood response; controlled real-world reflections, wear, micro-scratches and surface roughness; no painted outlines' },
-      { key:'illustrated', ko:'일러스트형', en:'hand-painted game UI illustration; clear painted outer edges, simplified lighting and readable color masses; shape and color design take priority over physically realistic material response; no photorealism' },
-      { key:'semi_realistic', ko:'반실사형', en:'semi-realistic RPG game UI rendering that combines believable material cues with controlled hand-painted shading; stable readable silhouette and restrained stylization' },
-      { key:'flat_graphic', ko:'플랫 그래픽', en:'clean 2D vector-like or cel-shaded game UI graphic; simplified flat color planes, crisp silhouette and minimal shading; optimized for small buttons and mobile UI; no photorealistic depth' },
-    ],
-  },
-};
-const COMPLETE_RANDOM = ['preset', 'silhouette', 'frameWeight', 'material', 'interior', 'ornament', 'renderStyle'];
-// eslint-disable-next-line react-refresh/only-export-components
-export const SIMPLE_MOODS = [
-  { key:'dark_rpg', ko:'어둡고 강한 RPG', preset:'black_thorn', material:'전투로 단련된 흑철', ornament:'절제된 테두리' },
-  { key:'gold_kingdom', ko:'화려한 황금 왕국', preset:'royal_crest', material:'고대 황금', ornament:'네 모서리 집중' },
-  { key:'magic', ko:'신비로운 마법', preset:'arcane', material:'마력 크리스탈', ornament:'좌우 대칭' },
-  { key:'nature', ko:'자연과 정령', preset:'nature', material:'고목', ornament:'네 모서리 집중' },
-  // '깔끔하고 현대적'(구: dark_minimal+연마강철)이 SF 풍으로 나온다는 피드백 →
-  // 그 조합은 '미래적 SF'로 정직하게 이름 붙이고, 현대적은 모던 UI + 무광 매트로 재정의.
-  { key:'clean', ko:'깔끔하고 현대적', preset:'modern_ui', material:'무광 매트', ornament:'절제된 테두리' },
-  { key:'futuristic', ko:'미래적 SF', preset:'dark_minimal', material:'연마 강철', ornament:'절제된 테두리' },
-];
-// eslint-disable-next-line react-refresh/only-export-components
-export const SIMPLE_RENDER_STYLES = [
-  { key:'illustrated', ko:'게임 일러스트' },
-  { key:'realistic_3d', ko:'사실적인 3D' },
-  { key:'flat_graphic', ko:'심플한 2D' },
-];
-
-// ─── 프롬프트 빌더 ────────────────────────────────────────
+// ─── 완성형 축·프롬프트 빌더·브랜드웹 키트는 frameforgeAxes.js 참조 ──────────
+// ─── 2단계(형태/재질) 프롬프트 빌더 — UI 미노출, 저장 데이터 호환용 ────────────
 function buildFormPrompt(seed) {
   return `Flat structural design of ${seed.component.en} for a game promotion UI. Silhouette: ${seed.silhouette.en}. ${seed.corner.en}. Internal layout: ${seed.slot.en}. Ornament: ${seed.ornament.en}. Proportion: ${seed.proportion.en}. Render as a CLEAN FLAT greyscale line/vector shape — geometry and outline only, NO material, NO color, NO lighting, NO texture. Isolated on a plain neutral background, front orthographic view, crisp edges, centered with generous padding. This is a base FORM to be textured in a later pass.`;
 }
 function buildMatPrompt(seed) {
   return `Using the ATTACHED flat form image as the exact structural base, apply material and lighting WITHOUT changing its shape, proportions, corners or internal layout. Material: ${seed.material.en}. Color palette: ${seed.palette.en}. Lighting: ${seed.lighting.en}. Finish: ${seed.finish.en}. Mood: ${seed.mood.en}. Preserve the crisp silhouette and clean alpha edges. Isolated on a transparent or flat dark background, front orthographic view, high detail, production-ready game UI, 4k. No text, no watermark.`;
 }
-// eslint-disable-next-line react-refresh/only-export-components
-export function buildCompletePrompt(seed, userIntent = '', opts = {}) {
-  const isDivider = seed.assetType.key === 'divider';
-  const isIcon = seed.assetType.key === 'icon';
-  const iconCreative = isIcon && opts.iconCreative;
-  const isPerfectCircle = seed.silhouette.key === 'perfect_circle';
-  const structure = isDivider
-    ? 'one perfectly straight horizontal separator line, very wide and extremely thin; ignore all plate, box and silhouette shapes'
-    : isIcon
-      // 아이콘 — 창의 모드면 게임풍 재해석 허용, 기본은 깔끔한 글리프.
-      ? (iconCreative
-        ? `${seed.silhouette.en}; reinterpret this icon with creative flair as a premium fantasy game UI icon — keep the core meaning instantly recognizable, but stylize the silhouette with bold dynamic shaping, sculpted facets, energy accents, motion or ornamental hints so it feels like a crafted game asset rather than a plain flat glyph; still ONE icon, no frame or plate around it`
-        : `${seed.silhouette.en}; a solid glyph with consistent stroke weight, instantly readable even at small sizes; exactly ONE icon, no frame or plate around it`)
-      : `${seed.silhouette.en}; ${seed.frameWeight.en}`;
-  const interior = isDivider ? 'no interior panel because this is a divider line'
-    : isIcon ? 'no interior panel — the icon itself is the solid shape'
-    : seed.interior.en;
-  const ornamentEn = iconCreative ? 'expressive decorative flourishes are welcome as long as the icon meaning stays clear'
-    : isIcon ? 'no ornament — keep the glyph pure and unadorned'
-    : seed.ornament.en;
-  const circleLock = isPerfectCircle ? ' CIRCLE LOCK: exact 1:1 outer boundary, one continuous perfect circle, absolutely no square corners, rectangular backing, tabs or side extensions.' : '';
-  const emptyRule = isIcon ? 'The icon stands alone as a clean solid glyph.' : seed.interior.key === 'empty' ? 'The center must remain unfilled.' : 'Keep the selected interior fill simple and low contrast.';
-  const isolationBg = (isIcon || seed.interior.key === 'empty')
-    ? 'Use a plain neutral background clearly separated from the asset.'
-    : 'BACKGROUND FOR EASY CUTOUT: place the finished asset on one perfectly flat solid background color with maximum hue and luminance contrast against the asset and its filled interior (white/light gray behind a dark asset, black/deep blue behind a bright gold or pale asset). Never reuse an asset color in the background; no background texture, gradient, glow, cast shadow or vignette.';
-  const intent = userIntent.trim() ? ` USER INTENT — apply only when it does not violate the structural locks: ${userIntent.trim()}.` : '';
-  // 아이콘 생성 시엔 "no icons" 금지어를 빼야 함 — 그대로 두면 아이콘 자체가 차단됨.
-  // 룬 절대 금지 — "no text, no letters" 만으로는 모델이 룬을 문자로 인식하지 않아 계속 생성됨.
-  const runeBan = ' ABSOLUTELY NO runes, NO rune-like marks, NO glyphs, NO hieroglyphs, NO alphabet of any real or fictional language, NO letter-like or character-like symbols anywhere on the asset — engraved decoration must read only as abstract geometric grooves, notches or patterns.';
-  const noList = (isIcon
-    ? 'no perspective, no text, no letters, no watermark, no extra objects, no duplicate icons'
-    : 'no perspective, no text, no letters, no icons, no watermark, no extra objects') + runeBan;
-  // 절제 규칙 — 창의 아이콘 모드에선 표현 자유를 위해 완화 (판독성만 유지).
-  const restraint = iconCreative
-    ? 'CREATIVE FREEDOM: bold stylization, dynamic shaping and decorative energy are encouraged, but the icon must stay one clear recognizable symbol with a crisp readable silhouette; avoid clutter that hides the meaning.'
-    : 'STRICT RESTRAINT: ornament may occupy at most 15% of the asset area; use one clear silhouette with only 1 decorative layer and very low visual density. Frame rails must remain slim, visually light and nearly uniform in thickness; decorative masses must never make the frame look thick.';
-  const negList = iconCreative
-    ? `NO mixing with another render style, NO cluttered unreadable shape, ${noList}`
-    : `NO mixing with another render style, NO thick frame, NO bulky border, NO heavy corner blocks, NO dense filigree, NO spiderweb or lattice, NO repeated spikes, NO overlapping ornaments, NO extra decorative layer, ${noList}`;
-  return `Create ${seed.assetType.en}, production-ready for a game UI. Structure: ${structure}.${circleLock} Style direction: ${seed.preset.en}. Ornament placement: ${ornamentEn}. Interior treatment: ${interior}. RENDER EXPRESSION LOCK: ${seed.renderStyle.en}.${intent} ${restraint} Material and surface: ${seed.material.en}, refined finish, crisp controlled highlights interpreted strictly through the selected render expression. ${emptyRule} ${isolationBg} Make the asset nine-slice-safe where applicable. Front orthographic view, centered, 4K game UI asset render. ${negList}.`;
-}
+
 function tagsOf(seed, keys) { return keys.map((k) => seed[k].ko); }
 
 function generateSeeds(n, axes, randomKeys, pickKeys) {
@@ -544,23 +353,34 @@ function StagePanel({ kind, axes, randomKeys, storageKey, buildPrompt, ensureCan
 
   // 아이콘 창의적 재해석 토글 — 아이콘일 때만 의미. buildCompletePrompt 에 opts 로 전달.
   const [iconCreative, setIconCreative] = useState(() => restoredComplete?.iconCreative || false);
+  // 브랜드웹 키트 모드 — 키트를 고르면 스타일 축(프리셋·재질·장식·굵기·내부·렌더)은 공유하고 용도·형태는 키트 항목별로 정해진다.
+  const [kitKey, setKitKey] = useState(() => restoredComplete?.kitKey || null);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const activeKit = kitKey ? BRANDWEB_KITS.find((k) => k.key === kitKey) || null : null;
 
   useEffect(() => {
     if (!isComplete) return;
     const selection = Object.fromEntries(Object.entries(completeSelection).map(([key, value]) => [key, value?.key || value?.ko]));
-    try { localStorage.setItem(COMPLETE_SETTINGS_STORAGE, JSON.stringify({ selection, userIntent, simpleMood, iconCreative })); } catch { /* quota */ }
-  }, [isComplete, completeSelection, userIntent, simpleMood, iconCreative]);
+    try { localStorage.setItem(COMPLETE_SETTINGS_STORAGE, JSON.stringify({ selection, userIntent, simpleMood, iconCreative, kitKey })); } catch { /* quota */ }
+  }, [isComplete, completeSelection, userIntent, simpleMood, iconCreative, kitKey]);
 
   // 완성형 — 옵션/의도 변경 시 우측 프롬프트 실시간 갱신 (반영 버튼 없이도 즉시 반영).
   // buildPrompt(=buildCompletePrompt)·axes 는 안정적 참조라 사용자 액션에만 재실행된다.
+  // 단일 부품이면 현재 선택 1건, 키트면 스타일 축을 공유한 항목 N건.
+  const makeCompleteQueue = useCallback(() => {
+    const seed = completeSelection;
+    if (activeKit) {
+      const { preset, material, ornament, frameWeight, interior, renderStyle } = seed;
+      return buildKitSeeds(activeKit, { preset, material, ornament, frameWeight, interior, renderStyle }, { userIntent, iconCreative });
+    }
+    const tags = Object.keys(axes).map((key) => seed[key]?.ko).filter(Boolean);
+    return [{ id:'live', seed, tags, enriched:null, prompt:buildPrompt(seed, userIntent, { iconCreative }) }];
+  }, [completeSelection, activeKit, userIntent, iconCreative, axes, buildPrompt]);
   useEffect(() => {
     if (!isComplete) return;
-    const seed = completeSelection;
-    const tags = Object.keys(axes).map((key) => seed[key]?.ko).filter(Boolean);
-    setQueue([{ id: 'live', seed, tags, enriched: null, prompt: buildPrompt(seed, userIntent, { iconCreative }) }]);
+    setQueue(makeCompleteQueue());
     setSettingsDirty(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isComplete, completeSelection, userIntent, iconCreative]);
+  }, [isComplete, makeCompleteQueue]);
 
   const togglePick = (key) => setPickKeys((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
 
@@ -586,10 +406,8 @@ function StagePanel({ kind, axes, randomKeys, storageKey, buildPrompt, ensureCan
   const handleGenerate = useCallback(() => {
     if (isComplete) {
       // 실시간 useEffect 가 큐를 최신으로 유지 — 버튼은 정제(enriched) 초기화 겸 재생성용.
-      const seed = completeSelection;
-      const tags = Object.keys(axes).map((key) => seed[key]?.ko).filter(Boolean);
-      setQueue([{ id:'live', seed, tags, enriched:null, prompt:buildPrompt(seed, userIntent, { iconCreative }) }]);
-      setNote('현재 설정으로 프롬프트를 새로 만들었습니다.');
+      setQueue(makeCompleteQueue());
+      setNote(activeKit ? `${activeKit.ko} ${activeKit.items.length}종 프롬프트를 새로 만들었습니다.` : '현재 설정으로 프롬프트를 새로 만들었습니다.');
       setSettingsDirty(false);
       return;
     }
@@ -597,7 +415,7 @@ function StagePanel({ kind, axes, randomKeys, storageKey, buildPrompt, ensureCan
     const seeds = generateSeeds(batch, axes, randomKeys, keys).map((s) => ({ ...s, prompt: buildPrompt(s.seed) }));
     setQueue(seeds);
     setNote(`${seeds.length}개 ${isForm ? '형태' : isComplete ? '완성형 프레임' : '렌더링'} 프롬프트 생성 (무료).`);
-  }, [batch, pickKeys, axes, randomKeys, pickAxis, buildPrompt, isForm, isComplete, completeSelection, userIntent, iconCreative]);
+  }, [batch, pickKeys, axes, randomKeys, pickAxis, buildPrompt, isForm, isComplete, activeKit, makeCompleteQueue]);
 
   const handleEnrich = useCallback(async () => {
     if (!queue.length) { setNote('먼저 큐를 생성하세요.'); return; }
@@ -649,13 +467,15 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
     try { await navigator.clipboard.writeText(text); setCopiedId(id); setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1200); }
     catch { setNote('클립보드 접근 실패.'); }
   };
+  // 반환값: false = 크레딧 게이트에서 막힘(배치 렌더 중단용), true = 시도 완료(성공/실패 무관).
   const renderPrompt = async (q) => {
-    if (renderingId) return;
-    if (!(await ensureCanGenerate('image'))) return;
+    if (renderingId) return true;
+    if (!(await ensureCanGenerate('image'))) return false;
     setRenderingId(q.id);
     setRenderErrors((prev) => ({ ...prev, [q.id]: '' }));
     try {
-      const result = await renderWithImagen(promptText(q), selectedModel);
+      // 실루엣별 캔버스 비율 — 가로 버튼·디바이더·장식 라인은 21:9, 세로 카드는 3:4 등. (예전엔 전부 1:1)
+      const result = await renderWithImagen(promptText(q), selectedModel, null, { aspectRatio: seedAspectRatio(q.seed) });
       setRenderResults((prev) => ({ ...prev, [q.id]: result }));
       if (result?.dataUrl && user?.uid) {
         setSavingIds((prev) => ({ ...prev, [q.id]: true }));
@@ -676,6 +496,22 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
       setRenderErrors((prev) => ({ ...prev, [q.id]: e.message || String(e) }));
     } finally {
       setRenderingId(null);
+    }
+    return true;
+  };
+  // 키트 전체 렌더 — 큐를 순서대로 1장씩. 이미 렌더된 항목은 건너뛰고, 크레딧이 막히면 중단.
+  const renderAllQueued = async () => {
+    if (batchBusy || renderingId || !queue.length) return;
+    setBatchBusy(true);
+    const done = { ...renderResults };
+    try {
+      for (const q of queue) {
+        if (done[q.id]?.dataUrl) continue;
+        const ok = await renderPrompt(q);
+        if (ok === false) { setNote('크레딧이 부족해 전체 렌더를 중단했습니다.'); break; }
+      }
+    } finally {
+      setBatchBusy(false);
     }
   };
   // 일반(원본) 저장 — 생성 배경 그대로. 투명 저장은 옆의 '투명 PNG' 버튼으로 선택.
@@ -782,11 +618,22 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                 })}
               </div>
             </div>
+            <div className="ff-step">
+              <div className="text-[12px] font-black text-zinc-200 mb-1">4. 브랜드웹 한 벌로 만들까요?</div>
+              <div className="text-[10px] text-zinc-600 mb-3">키트를 고르면 같은 분위기·재질로 부품 세트를 한 번에 큐로 만듭니다. 용도·형태는 키트가 항목별로 정합니다.</div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => { setSettingsDirty(true); setKitKey(null); }} className={`px-3 py-2 rounded-lg border text-[10px] font-bold ${!kitKey ? '' : 'text-zinc-400 border-zinc-700'}`} style={!kitKey ? OPTION_ACTIVE : undefined}>단일 부품</button>
+                {BRANDWEB_KITS.map((kit) => (
+                  <button key={kit.key} onClick={() => { setSettingsDirty(true); setKitKey(kit.key); }} title={kit.desc} className={`px-3 py-2 rounded-lg border text-[10px] font-bold ${kitKey === kit.key ? '' : 'text-zinc-400 border-zinc-700'}`} style={kitKey === kit.key ? OPTION_ACTIVE : undefined}>{kit.ko} · {kit.items.length}종</button>
+                ))}
+              </div>
+              {activeKit && <div className="mt-2 text-[9px] leading-relaxed text-zinc-500">{activeKit.desc}</div>}
+            </div>
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-800 bg-black/20 p-3">
               <div className="min-w-0 flex-1">
-                <div className="text-[10px] font-black text-zinc-300">현재 조합</div>
+                <div className="text-[10px] font-black text-zinc-300">현재 조합{activeKit ? ` · ${activeKit.ko}` : ''}</div>
                 <div className="mt-1 text-[9px] leading-relaxed text-zinc-500">
-                  {completeSelection.silhouette?.ko} · {completeSelection.preset?.ko} · {completeSelection.material?.ko} · {completeSelection.interior?.ko}
+                  {activeKit ? `${activeKit.items.length}종 공통 스타일: ` : `${completeSelection.silhouette?.ko} · `}{completeSelection.preset?.ko} · {completeSelection.material?.ko} · {completeSelection.interior?.ko}
                 </div>
               </div>
               <button onClick={randomizeComplete} className="text-[10px] font-bold px-3 py-2 rounded-lg border inline-flex items-center gap-1.5 hover:brightness-110" style={{ color:ACCENT, borderColor:`${ACCENT}55` }} title="사용 용도와 렌더 표현은 유지합니다">
@@ -886,7 +733,12 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
       {queue.length > 0 && (
         <div className="border-b border-zinc-800 pb-3 flex flex-wrap items-center gap-2.5">
           <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{isComplete ? '내보내기 → 이미지 생성 모델에 바로 붙여넣기' : `내보내기 → Ultra${isForm ? '에서 형태 생성' : '에 형태 첨부 + 붙여넣기'}`}</span>
-          <button onClick={() => copy(allText, '__all__')} className="ml-auto text-[11px] font-bold px-4 py-2 rounded-lg text-black inline-flex items-center gap-1.5 hover:brightness-110" style={{ background: ACCENT }}>
+          {isComplete && queue.length > 1 && (
+            <button onClick={renderAllQueued} disabled={batchBusy || !!renderingId} title={`큐 ${queue.length}장을 순서대로 렌더 (이미지 크레딧 10c × ${queue.length})`} className="ml-auto text-[11px] font-bold px-4 py-2 rounded-lg border inline-flex items-center gap-1.5 hover:brightness-110 disabled:opacity-50" style={{ color: ACCENT, borderColor: `${ACCENT}66` }}>
+              {batchBusy ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />} 키트 전체 렌더 ({queue.length}장)
+            </button>
+          )}
+          <button onClick={() => copy(allText, '__all__')} className={`${isComplete && queue.length > 1 ? '' : 'ml-auto'} text-[11px] font-bold px-4 py-2 rounded-lg text-black inline-flex items-center gap-1.5 hover:brightness-110`} style={{ background: ACCENT }}>
             {copiedId === '__all__' ? <><Check size={13} /> 복사됨</> : <><Copy size={13} /> 전체 복사</>}
           </button>
           <button onClick={() => downloadFile(allText, `${kind}-prompts_${Date.now()}.txt`, 'text/plain')} className="text-[11px] font-bold px-4 py-2 rounded-lg border border-zinc-700 text-zinc-300 hover:border-zinc-500 inline-flex items-center gap-1.5"><Download size={13} /> .txt</button>
@@ -911,6 +763,7 @@ ${queue.map((q, i) => `${i + 1}. [${q.tags.join(', ')}] ${q.prompt}`).join('\n')
                   <span className="text-[10px] font-mono text-zinc-600 tabular-nums">#{String(i + 1).padStart(2, '0')}</span>
                   <div className="flex flex-wrap gap-1">
                     {q.tags.map((t, ti) => (<span key={ti} className="text-[9px] font-bold text-zinc-400 border border-zinc-800 rounded px-1.5 py-0.5">{t}</span>))}
+                    {isComplete && q.seed && <span className="text-[9px] font-mono text-zinc-600 border border-zinc-800/60 rounded px-1.5 py-0.5" title="렌더 캔버스 비율">{seedAspectRatio(q.seed)}</span>}
                   </div>
                   {q.enriched && <span className="ml-auto text-[8px] font-bold tracking-wider px-1.5 py-0.5 rounded-full border" style={{ color: ACCENT, borderColor: `${ACCENT}55` }}>정제됨</span>}
                   <button onClick={() => copy(promptText(q), q.id)} className={`${q.enriched ? '' : 'ml-auto'} text-zinc-500 hover:text-white transition-colors shrink-0`} title="이 프롬프트 복사">

@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import {
   collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, addDoc,
-  query, orderBy, serverTimestamp, writeBatch,
+  query, where, orderBy, serverTimestamp, writeBatch,
 } from "firebase/firestore";
 import { db, appId } from "../../lib/firebase";
 import { useAuth } from "../../context/AuthContext";
@@ -23,6 +23,7 @@ import {
   fetchCalibration, saveCalibration, computeSuggestedOffset,
 } from "../../lib/evaluationCriteria";
 import { DEFAULT_AI_PROMPT } from "../BannerCodex/constants/categories";
+import { validateCriteria } from "../../lib/designEvaluationCore";
 import { DEFAULT_HERO_IMAGE, fetchDashboardSettings, updateDashboardHeroImage } from "../../lib/dashboardSettings";
 import { uploadBase64 } from "../../lib/storage";
 import { subscribeGeminiGate, setGeminiEnabled } from "../../lib/gemini";
@@ -525,7 +526,12 @@ function CriteriaPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const activeVersion = useMemo(() => versions.find(v => v.isActive), [versions]);
+  const activeVersions = useMemo(() => versions.filter(v => v.isActive).sort((a, b) => {
+    const timeOf = (value) => value?.updatedAt?.toMillis?.() || value?.createdAt?.toMillis?.() || 0;
+    return timeOf(b) - timeOf(a) || String(b.id).localeCompare(String(a.id));
+  }), [versions]);
+  const activeVersion = activeVersions[0];
+  const activeHealth = useMemo(() => validateCriteria(activeVersion?.criteria || []), [activeVersion]);
 
   const handleNew = () => {
     setEditingVersion({
@@ -558,6 +564,15 @@ function CriteriaPanel() {
   const handleSave = async (versionData) => {
     setError("");
     try {
+      const validation = validateCriteria(versionData.criteria || []);
+      if (!validation.valid) {
+        const problems = [];
+        if (!versionData.criteria?.length) problems.push("평가 항목이 비어 있음");
+        if (validation.missingIds.length) problems.push(`ID 누락: ${validation.missingIds.join(", ")}`);
+        if (validation.duplicateIds.length) problems.push(`중복 ID: ${validation.duplicateIds.join(", ")}`);
+        if (validation.invalidWeights.length) problems.push(`잘못된 가중치: ${validation.invalidWeights.join(", ")}`);
+        throw new Error(`평가 기준을 저장할 수 없습니다. ${problems.join(" / ")}`);
+      }
       const payload = {
         name: versionData.name || "untitled",
         isActive: !!versionData.isActive,
@@ -575,9 +590,11 @@ function CriteriaPanel() {
       // 활성화 토글 시 다른 버전들은 자동으로 비활성화
       if (payload.isActive) {
         const batch = writeBatch(db);
-        versions.forEach(v => {
-          if (v.id !== versionData.id && v.isActive) {
-            batch.update(doc(versionsRef, v.id), { isActive: false });
+        // 화면에 로드된 배열이 오래됐더라도 서버의 모든 활성 문서를 다시 조회해 단 하나만 남긴다.
+        const activeSnap = await getDocs(query(versionsRef, where("isActive", "==", true)));
+        activeSnap.docs.forEach(activeDoc => {
+          if (activeDoc.id !== versionData.id) {
+            batch.update(activeDoc.ref, { isActive: false, updatedAt: serverTimestamp() });
           }
         });
         if (versionData.id) {
@@ -605,9 +622,10 @@ function CriteriaPanel() {
       const batch = writeBatch(db);
       // 활성화 시 다른 모든 버전 비활성화
       if (!v.isActive) {
-        versions.forEach(vv => {
-          if (vv.id !== v.id && vv.isActive) {
-            batch.update(doc(versionsRef, vv.id), { isActive: false, updatedAt: serverTimestamp() });
+        const activeSnap = await getDocs(query(versionsRef, where("isActive", "==", true)));
+        activeSnap.docs.forEach(activeDoc => {
+          if (activeDoc.id !== v.id) {
+            batch.update(activeDoc.ref, { isActive: false, updatedAt: serverTimestamp() });
           }
         });
       }
@@ -615,6 +633,20 @@ function CriteriaPanel() {
       await batch.commit();
       await load();
     } catch (e) { setError(e.message || "활성화 실패"); }
+  };
+
+  const handleRepairActiveVersions = async () => {
+    if (activeVersions.length <= 1) return;
+    const keep = activeVersions[0];
+    if (!confirm(`"${keep.name}"만 활성 상태로 유지하고 나머지 ${activeVersions.length - 1}개를 비활성화할까요?`)) return;
+    try {
+      const batch = writeBatch(db);
+      activeVersions.slice(1).forEach((version) => {
+        batch.update(doc(versionsRef, version.id), { isActive: false, updatedAt: serverTimestamp() });
+      });
+      await batch.commit();
+      await load();
+    } catch (e) { setError(e.message || "중복 활성 버전 정리 실패"); }
   };
 
   const handleDelete = async (v) => {
@@ -706,6 +738,14 @@ function CriteriaPanel() {
 
       {error && <ErrorBanner message={error}/>}
 
+      {activeVersions.length > 1 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-300">
+          <AlertTriangle size={14} className="mt-0.5 shrink-0"/>
+          <span className="flex-1">활성 버전이 {activeVersions.length}개입니다. 최신 버전 하나만 남기도록 정리할 수 있습니다.</span>
+          <button onClick={handleRepairActiveVersions} className="shrink-0 rounded border border-amber-400/30 px-2 py-1 font-bold hover:bg-amber-400/10">중복 정리</button>
+        </div>
+      )}
+
       {/* 전역 점수 보정 (offset) */}
       <CalibrationOffsetCard type={type} />
 
@@ -717,6 +757,9 @@ function CriteriaPanel() {
               <span className="text-[10px] font-bold uppercase tracking-widest shrink-0" style={{ color: ACCENT }}>현재 활성 버전</span>
               <span className="text-sm font-bold text-white truncate">{activeVersion.name}</span>
               <span className="text-[10px] text-zinc-500 font-mono shrink-0">{formatTime(activeVersion.createdAt)}</span>
+              <span className={`text-[10px] font-mono shrink-0 ${activeHealth.valid ? 'text-emerald-400' : 'text-amber-400'}`}>
+                가중치 합 {activeHealth.weightSum}
+              </span>
             </div>
             <div className="flex gap-1.5 shrink-0">
               <button onClick={() => handleEdit(activeVersion)} className="text-[10px] px-2 py-1 rounded text-zinc-400 hover:text-white hover:bg-white/5">

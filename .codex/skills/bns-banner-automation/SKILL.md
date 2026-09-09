@@ -31,7 +31,7 @@ If the official logo is absent, continue with the seven non-logo compositions an
 7. Create a new page in the supplied Figma file. Assemble 1180 first, then duplicate it for 1200. Build the remaining six image-only sizes from the same separated assets.
 8. Compare every frame against the source PSD and the Season 4 template. Verify alpha edges, title transparency, text centering, crop, logo, effect alignment, and layer visibility.
 9. As you assemble Figma, emit a produced-manifest JSON (layers, anchors, fonts, title/characterFx presets, seeds — see [banner-recipe.md](references/banner-recipe.md)). Run the **consistency gate**: `node scripts/consistency-gate.mjs --recipe recipes/bns-live-event.v1.json --manifest produced.json`. Any `fail` (anchor/layer/preset/seed drift) blocks completion — fix to match the recipe, do not adjust the recipe.
-10. Export the finalized `1180x750_Notice` master, invoke `$nexus-design-evaluator` (banner mode, Banner Codex rubric), and run the **quality gate**: `node scripts/evaluation-gate.mjs --input evaluation.json`. Both gates must pass.
+10. Export the finalized `1180x750_Notice` master, invoke `$nexus-design-evaluator` (banner mode), and reuse the evaluator's synchronized criteria snapshot for the **quality gate**: `node scripts/evaluation-gate.mjs --input evaluation.json --criteria criteria.json`. Both gates must pass; never resync between judging and gate arithmetic.
 11. If the quality gate fails, apply only the recommended layer-scoped corrections, re-export, re-evaluate, and re-run the consistency gate. After both pass, propagate relevant master changes to 1200 and the image-only crops. Stop after both gates pass or three correction rounds.
 
 ## Non-negotiable rules

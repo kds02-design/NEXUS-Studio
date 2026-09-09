@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useGlobal } from "../../../context/GlobalContext";
 import { useUsageGate } from "../../../components/UsageGate";
 import { INITIAL_OPTIONS } from "../constants/materials";
+import { useDraftPersistence } from "../../../lib/useDraftPersistence";
 import {
-  generateIR, generateEditIR, generateMotionIR,
+  generateIR, generateEditIR,
   compileNanoBanana, compileChatGPT, compileMidjourney,
   compileEditNanoBanana, compileEditChatGPT, compileEditMidjourney,
-  compileVeo, compileRunway, compileLuma, compileSequence,
   performLogicAudit, calculateQualityScore, buildFeelSummary,
 } from "../services/promptCompiler";
 import {
@@ -103,17 +103,13 @@ export function useRenderPrompt() {
   const [editFxIntensity, setEditFxIntensity] = useState("Moderate");
   const [editVfxPassMode, setEditVfxPassMode] = useState(false);
 
-  // ===== motion state =====
-  const [motionImage, setMotionImage] = useState(null);
-  const [cameraMotion, setCameraMotion] = useState("Static");
-  const [vfxDynamics, setVfxDynamics] = useState("Flowing");
-  const [motionIntent, setMotionIntent] = useState("");
+  // (motion 뷰 제거됨 — 영상 프롬프트는 Motion Matrix 앱이 담당.)
 
   // ===== derived: IR / compiled / audit / quality =====
   const [currentIR, setCurrentIR] = useState(null);
   // 예상 질감·느낌 요약 (한국어, 규칙 기반) — editor 뷰에서만 계산.
   const [feelSummary, setFeelSummary] = useState(null);
-  const [compiledOutputs, setCompiledOutputs] = useState({ NanoBanana: "", ChatGPT: "", Midjourney: "", Veo: "", Runway: "", Luma: "", Sequence: "" });
+  const [compiledOutputs, setCompiledOutputs] = useState({ NanoBanana: "", ChatGPT: "", Midjourney: "" });
   const [optimizedPrompts, setOptimizedPrompts] = useState({ NanoBanana: null, ChatGPT: null, Midjourney: null });
   const [optimizedPromptsKo, setOptimizedPromptsKo] = useState({ NanoBanana: null, ChatGPT: null, Midjourney: null });
   const [auditIssues, setAuditIssues] = useState([]);
@@ -133,7 +129,104 @@ export function useRenderPrompt() {
   const [isChatting, setIsChatting] = useState(false);
   const [tempIntent, setTempIntent] = useState("");
 
-  const showToast = (msg, ms = 3000) => { setToastMsg(msg); setTimeout(() => setToastMsg(null), ms); };
+  // 연속 토스트 시 이전 타이머가 새 메시지를 조기 소멸시키는 레이스 방지 — 타이머를 ref 로 관리.
+  const toastTimerRef = useRef(null);
+  const showToast = (msg, ms = 3000) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMsg(msg);
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), ms);
+  };
+
+  // ===== 드래프트 영속화 =====
+  // 옵션 선택값 + 텍스트 입력만 스냅샷 — 이미지 dataURL/채팅/분석 결과/렌더 결과는 절대 제외 (quota).
+  const draftSnapshot = useMemo(() => ({
+    currentView,
+    // creation 옵션
+    directorPersona, typographyScale, cameraLens, background, frontRelief, projectionDepth,
+    surfaceTreatment, enableVfx, enableShadow, energyCore, fxOrigin, fxIntensity,
+    vfxPassMode, vfxPassOverlay, material, dramaticTex, surfaceDetail,
+    rimThickness, wearLevel, rimColor, rimIntensity, enableGlint, renderEngine, userIntent,
+    // edit 옵션
+    editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent,
+    editMaterial, editWearLevel, editRimColor, editRimIntensity,
+    editEnergyCore, editFxOrigin, editFxIntensity, editVfxPassMode,
+  }), [
+    currentView, directorPersona, typographyScale, cameraLens, background, frontRelief, projectionDepth,
+    surfaceTreatment, enableVfx, enableShadow, energyCore, fxOrigin, fxIntensity,
+    vfxPassMode, vfxPassOverlay, material, dramaticTex, surfaceDetail,
+    rimThickness, wearLevel, rimColor, rimIntensity, enableGlint, renderEngine, userIntent,
+    editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent,
+    editMaterial, editWearLevel, editRimColor, editRimIntensity,
+    editEnergyCore, editFxOrigin, editFxIntensity, editVfxPassMode,
+  ]);
+  const draft = useDraftPersistence("nx:render-metrics:draft", draftSnapshot);
+  // 저장본이 기본값과 동일하면 복원 배너를 숨김 — 아무것도 안 만진 세션의 자동 저장이
+  // 다음 진입마다 배너를 띄우는 노이즈 방지. (마운트 첫 렌더의 draftSnapshot = 기본값)
+  const draftDiffersFromDefaults = useMemo(() => {
+    if (!draft.saved) return false;
+    try { return JSON.stringify(draft.saved) !== JSON.stringify(draftSnapshot); } catch { return true; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.saved]);
+  const showRestoreDraft = draft.showRestore && draftDiffersFromDefaults;
+
+  // 저장된 드래프트를 기존 setter 로 되살림 — 없는 필드는 건드리지 않음.
+  const restoreDraft = () => {
+    const s = draft.saved;
+    if (!s) return;
+    const apply = (val, setter) => { if (val !== undefined && val !== null) setter(val); };
+    if (s.currentView === 'editor' || s.currentView === 'edit') setCurrentView(s.currentView);
+    apply(s.directorPersona, setDirectorPersona);
+    apply(s.typographyScale, setTypographyScale);
+    apply(s.cameraLens, setCameraLens);
+    apply(s.background, setBackground);
+    apply(s.frontRelief, setFrontRelief);
+    apply(s.projectionDepth, setProjectionDepth);
+    apply(s.surfaceTreatment, setSurfaceTreatment);
+    apply(s.enableVfx, setEnableVfx);
+    apply(s.enableShadow, setEnableShadow);
+    apply(s.energyCore, setEnergyCore);
+    apply(s.fxOrigin, setFxOrigin);
+    apply(s.fxIntensity, setFxIntensity);
+    apply(s.vfxPassMode, setVfxPassMode);
+    apply(s.vfxPassOverlay, setVfxPassOverlay);
+    apply(s.material, setMaterial);
+    apply(s.dramaticTex, setDramaticTex);
+    apply(s.surfaceDetail, setSurfaceDetail);
+    apply(s.rimThickness, setRimThickness);
+    apply(s.wearLevel, setWearLevel);
+    apply(s.rimColor, setRimColor);
+    apply(s.rimIntensity, setRimIntensity);
+    apply(s.enableGlint, setEnableGlint);
+    apply(s.renderEngine, setRenderEngine);
+    apply(s.userIntent, setUserIntent);
+    apply(s.editBudget, setEditBudget);
+    apply(s.activeEditIntents, setActiveEditIntents);
+    apply(s.editBg, setEditBg);
+    apply(s.editRearExtrusion, setEditRearExtrusion);
+    apply(s.editIntent, setEditIntent);
+    apply(s.editMaterial, setEditMaterial);
+    apply(s.editWearLevel, setEditWearLevel);
+    apply(s.editRimColor, setEditRimColor);
+    apply(s.editRimIntensity, setEditRimIntensity);
+    apply(s.editEnergyCore, setEditEnergyCore);
+    apply(s.editFxOrigin, setEditFxOrigin);
+    apply(s.editFxIntensity, setEditFxIntensity);
+    apply(s.editVfxPassMode, setEditVfxPassMode);
+    draft.dismiss();
+    showToast('✨ 이전 드래프트를 복원했어요');
+  };
+
+  // ===== arc 추천 옵션 일괄 적용 =====
+  // 파이프라인 자동 적용 + 사이드바 "추천 일괄 적용" 버튼이 같은 경로를 사용.
+  const applyRecommendations = (rec) => {
+    if (!rec) return;
+    if (rec.material) setMaterial(rec.material);
+    if (rec.frontRelief) setFrontRelief(rec.frontRelief);
+    if (rec.surfaceTreatment) setSurfaceTreatment(rec.surfaceTreatment);
+    if (rec.background) setBackground(rec.background);
+    if (rec.energyCore) setEnergyCore(rec.energyCore);
+    if (rec.surfaceDetail) setSurfaceDetail(rec.surfaceDetail);
+  };
 
   // ===== arc payload effect — Gemini 로 추천 옵션 계산. mode==='edit' 이면 마이크로 에디트 뷰로 전환 + editImage 자동 임포트. =====
   useEffect(() => {
@@ -154,6 +247,8 @@ export function useRenderPrompt() {
     (async () => {
       const mode = isPipeline ? 'pipeline' : isEditMode ? 'edit' : 'creation';
       setIncomingFromArc({ from: source, tags, text, hasImage: !!imgUrl, status: 'starting', mode });
+      // 받은 프롬프트 텍스트를 ① Prompt Analyzer 에 프리필 — 붙여넣기 없이 바로 역분석(매핑) 가능.
+      if (text) setImportPromptStr(text);
       try { clearPayload(); } catch {}
       // 파이프라인은 base image 가 없으면 자동 렌더가 불가능 → 실패 처리.
       if (!imgUrl) {
@@ -203,6 +298,18 @@ export function useRenderPrompt() {
           setBaseImage(dataUrl);
         } catch (e) { console.error('[RenderMatrix] base image 임포트 실패', e); }
       }
+      // 크레딧 게이트 — 부족하면 자동 분석만 건너뛰고 이미지 임포트는 유지 (수신 흐름은 계속).
+      if (!(await ensureCanGenerate('analysis'))) {
+        showToast('크레딧이 부족해 자동 분석을 건너뛰었어요');
+        setIsArcAnalyzing(false);
+        setIncomingFromArc((s) => s ? { ...s, status: 'analyze-failed', errorMessage: '크레딧 부족' } : null);
+        // 파이프라인은 분석 실패 시와 동일하게 기본 옵션으로 렌더를 진행.
+        if (isPipeline) {
+          autoPipelineReadyPendingRef.current = true;
+          setAutoPipeline({ id: payloadTs, from: source, status: 'preparing' });
+        }
+        return;
+      }
       setIncomingFromArc((s) => s ? { ...s, status: 'analyzing' } : null);
       try {
         const parsed = await analyzeArcImage(base64Data, appOptions, tags, text);
@@ -218,14 +325,7 @@ export function useRenderPrompt() {
         };
         setArcRecommended(rec);
         // 파이프라인 — 추천 옵션을 실제 상태에 자동 적용 (수동 "적용" 클릭 없이 렌더에 반영).
-        if (isPipeline) {
-          if (rec.material) setMaterial(rec.material);
-          if (rec.frontRelief) setFrontRelief(rec.frontRelief);
-          if (rec.surfaceTreatment) setSurfaceTreatment(rec.surfaceTreatment);
-          if (rec.background) setBackground(rec.background);
-          if (rec.energyCore) setEnergyCore(rec.energyCore);
-          if (rec.surfaceDetail) setSurfaceDetail(rec.surfaceDetail);
-        }
+        if (isPipeline) applyRecommendations(rec);
         setIncomingFromArc((s) => s ? { ...s, status: 'done', summary: parsed.summary } : null);
       } catch (e) {
         console.error('[RenderMatrix] arc 추천 분석 실패', e);
@@ -279,6 +379,7 @@ export function useRenderPrompt() {
 
   const handleAnalyzeReference = async () => {
     if (!referenceImage) return;
+    if (!(await ensureCanGenerate('analysis'))) return;
     setIsAnalyzingRef(true);
     try {
       const parsed = await analyzeReferenceImage(referenceImage, appOptions);
@@ -292,6 +393,7 @@ export function useRenderPrompt() {
 
   const handleAnalyzePrompt = async () => {
     if (!importPromptStr.trim()) return;
+    if (!(await ensureCanGenerate('analysis'))) return;
     setIsAnalyzingPrompt(true);
     try {
       const parsed = await analyzePromptText(importPromptStr, appOptions);
@@ -326,7 +428,7 @@ export function useRenderPrompt() {
     try {
       const isVfxPass = currentIR.vfxPassMode === true;
       const isOrthographic = currentIR.camera_and_depth?.isFlat2D || currentIR.camera_and_depth?.isMinimal || currentIR.constraints?.extrusion?.includes("MINIMAL");
-      const currentIntentText = currentView === 'editor' ? userIntent : (currentView === 'edit' ? editIntent : motionIntent);
+      const currentIntentText = currentView === 'editor' ? userIntent : editIntent;
       console.log('[RenderMatrix] optimize start', { aiModel, baseLen: basePrompt.length, isVfxPass, isOrthographic });
       const parsed = await optimizePrompt({
         aiModel,
@@ -429,6 +531,7 @@ export function useRenderPrompt() {
   const handleExpandIntent = async () => {
     const text = currentView === 'editor' ? userIntent : editIntent;
     if (!text) { showToast("⚠️ 확장할 키워드나 아이디어를 먼저 입력해주세요."); return; }
+    if (!(await ensureCanGenerate('analysis'))) return;
     setIsExpandingIntent(true);
     try {
       const result = await expandIntent(text, currentView === 'editor');
@@ -446,6 +549,7 @@ export function useRenderPrompt() {
 
   const handleSendChatMessage = async () => {
     if (!chatInput.trim()) return;
+    if (!(await ensureCanGenerate('analysis'))) return;
     const newMessages = [...chatMessages, { role: 'user', text: chatInput }];
     setChatMessages(newMessages);
     setChatInput("");
@@ -482,7 +586,6 @@ export function useRenderPrompt() {
       fxOrigin, fxIntensity, surfaceDetail, vfxPassMode, vfxPassOverlay, enableVfx, enableShadow,
       editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent,
       editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity,
-      motionImage, cameraMotion, vfxDynamics, motionIntent,
     };
     if (currentView === "editor") {
       const ir = generateIR(s, appOptions);
@@ -498,15 +601,6 @@ export function useRenderPrompt() {
         ChatGPT: !editImage ? "Target 이미지를 업로드해주세요." : compileEditChatGPT(ir),
         Midjourney: !editImage ? "Target 이미지를 업로드해주세요." : compileEditMidjourney(ir, s),
       });
-    } else if (currentView === "motion") {
-      const ir = generateMotionIR(s, appOptions);
-      setCurrentIR(ir);
-      setCompiledOutputs({
-        Veo: !motionImage ? "Target 이미지를 업로드해주세요." : compileVeo(ir),
-        Runway: !motionImage ? "Target 이미지를 업로드해주세요." : compileRunway(ir),
-        Luma: !motionImage ? "Target 이미지를 업로드해주세요." : compileLuma(ir),
-        Sequence: !motionImage ? "Target 이미지를 업로드해주세요." : compileSequence(ir),
-      });
     }
     setAuditIssues(performLogicAudit(s));
     setQualityScores(calculateQualityScore(s));
@@ -518,7 +612,7 @@ export function useRenderPrompt() {
       autoPipelineReadyPendingRef.current = false;
       setAutoPipeline((s2) => (s2 ? { ...s2, status: 'ready' } : null));
     }
-  }, [directorPersona, complexity, typographyScale, cameraLens, frontRelief, projectionDepth, surfaceTreatment, energyCore, fxOrigin, fxIntensity, material, materialInt, dramaticTex, wearLevel, rimMaterial, rimThickness, rimColor, rimIntensity, enableGlint, background, renderEngine, userIntent, imageRatio, currentView, editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent, surfaceDetail, vfxPassMode, vfxPassOverlay, enableVfx, enableShadow, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity, motionImage, cameraMotion, vfxDynamics, motionIntent, appOptions, autoPipeline?.id, typographyLock]);
+  }, [directorPersona, complexity, typographyScale, cameraLens, frontRelief, projectionDepth, surfaceTreatment, energyCore, fxOrigin, fxIntensity, material, materialInt, dramaticTex, wearLevel, rimMaterial, rimThickness, rimColor, rimIntensity, enableGlint, background, renderEngine, userIntent, imageRatio, currentView, editImage, editBudget, activeEditIntents, editBg, editRearExtrusion, editIntent, surfaceDetail, vfxPassMode, vfxPassOverlay, enableVfx, enableShadow, editVfxPassMode, editMaterial, editWearLevel, editRimColor, editRimIntensity, editEnergyCore, editFxOrigin, editFxIntensity, appOptions, autoPipeline?.id, typographyLock]);
 
   // ===== send to Motion Metrics =====
   const sendToMotion = () => {
@@ -607,6 +701,10 @@ export function useRenderPrompt() {
     isArcAnalyzing,
     // 완전 자동 파이프라인
     autoPipeline, setAutoPipeline,
+    // arc 추천 일괄 적용 (파이프라인 + 사이드바 버튼 공용)
+    applyRecommendations,
+    // 드래프트 영속화
+    draft, restoreDraft, showRestoreDraft,
     // edit
     editImage, setEditImage,
     editBudget, setEditBudget,
@@ -622,11 +720,6 @@ export function useRenderPrompt() {
     editFxOrigin, setEditFxOrigin,
     editFxIntensity, setEditFxIntensity,
     editVfxPassMode, setEditVfxPassMode,
-    // motion
-    motionImage, setMotionImage,
-    cameraMotion, setCameraMotion,
-    vfxDynamics, setVfxDynamics,
-    motionIntent, setMotionIntent,
     // derived
     currentIR, compiledOutputs, optimizedPrompts, optimizedPromptsKo,
     auditIssues, qualityScores, feelSummary,

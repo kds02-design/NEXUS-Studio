@@ -13,212 +13,19 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { db } from "./firebase";
-
-export const CRITERIA_TYPES = {
-  banner: "banner",
-  promotion: "promotion",
-  brandweb: "brandweb",
-  brandwebSub: "brandwebSub", // 브랜드웹 서브 페이지 — 메인과 다른 가중치/기준.
-  // ─── 모바일 전용 평가 타입 (2026-06 추가) ──────────────────
-  // 모바일은 데스크톱과 폭/뷰포트/엄지 동선/스크롤 패턴이 달라 별도 기준이 필요.
-  // 권장 입력 해상도: 브랜드웹 모바일 750×~1234 (단일 화면 기준 mockup),
-  //                   프로모션 모바일 750×5000+ (긴 세로 스크롤 랜딩).
-  brandwebMobile: "brandwebMobile",
-  promotionMobile: "promotionMobile",
-  // ─── 프로모션 상단 키비주얼(KV/히어로) 전용 (2026-06 추가) ───
-  // 프로모션 페이지 전체가 아니라 최상단 키비주얼(히어로) 영역만 평가. 메인 일러스트·타이틀
-  // 임팩트·카피 가독성 등 KV 본질에 가중치를 몰아준 별도 기준.
-  promotionKv: "promotionKv",
-  prompt: "prompt",
-  // ─── 타이포그래피 전용 평가 타입 (2026-05 추가) ─────────────
-  // 각 타이포 성격에 맞는 항목으로 시드. 관리자가 NexusAdmin 에서 가중치/항목 자유 조정.
-  typo2d: "typo2d",         // 2D 평면 타이포그래피 (벡터, 평면 디자인)
-  typoRender: "typoRender", // 렌더링 타이포 (3D/PBR — Render Matrix 결과물)
-  typoMotion: "typoMotion", // 모션 타이포 (영상/모션 — Motion Matrix 결과물 키프레임)
-};
-
-// ─── 시드 (v1.0) ────────────────────────────────────────
-// id 는 Gemini scores_data 키와 1:1 매칭. 함부로 바꾸지 마세요.
-
-const BANNER_SEED = [
-  { id: "impression", name: "첫인상 / 주목도",   weight: 14, maxScore: 100, description: "한눈에 시선을 사로잡는 강렬함과 매력. 단조롭고 1차원적인 상자 배치 수준이면 80점대 부여." },
-  { id: "concept",    name: "콘셉트 전달력",      weight: 9,  maxScore: 100, description: "이벤트나 업데이트의 성격, 맥락이 잘 전달되는지." },
-  { id: "layout",     name: "레이아웃 균형",      weight: 8,  maxScore: 100, description: "요소들의 화면 배치와 시각적 무게 중심. 중앙 정렬 단순 나열이면 80점대 초중반, 산만하면 70점대." },
-  { id: "typography", name: "타이포그래피",       weight: 18, maxScore: 100, description: "폰트 렌더링, 시각적 위계 및 세련미. 타이틀이 배경과 묻히면 60~70점대." },
-  { id: "color",      name: "컬러 완성도",        weight: 8,  maxScore: 100, description: "배너 무드에 맞는 색상 조합과 완성도. 텍스트와 배경 컬러가 분리되지 않고 겹치면 70점대." },
-  { id: "readability",name: "정보 가독성",        weight: 9,  maxScore: 100, description: "타이틀, 날짜, 혜택 등 핵심 정보의 가독성." },
-  { id: "brand",      name: "브랜드 적합성",      weight: 8,  maxScore: 100, description: "해당 게임/이벤트 감성에 부합하는 톤앤매너." },
-  { id: "flow",       name: "시선 흐름",          weight: 8,  maxScore: 100, description: "텍스트→캐릭터→아이템으로 자연스럽게 이어지면 고득점, 시선이 방황하면 감점." },
-  { id: "detail",     name: "완성도 / 디테일",    weight: 14, maxScore: 100, description: "배경, 빛, 뎁스, 합성의 디테일과 마감. 캐릭터 없는 단순 나열은 90점 이상 금지." },
-  { id: "conversion", name: "클릭/전환 가능성",   weight: 4,  maxScore: 100, description: "유저로 하여금 클릭하고 싶게 만드는 매력도." },
-];
-
-const PROMOTION_SEED = [
-  { id: "impression", name: "첫 화면 흡입력",       weight: 10, maxScore: 100, description: "Hook — 페이지 진입 직후 시선을 잡는가." },
-  { id: "brand",      name: "브랜드·이벤트 톤",     weight: 8,  maxScore: 100, description: "브랜드 정체성 + 캠페인 분위기 일치도." },
-  { id: "concept",    name: "캠페인 이해도",         weight: 10, maxScore: 100, description: "이 캠페인이 무엇이고 왜 참여해야 하는지가 명료한가." },
-  { id: "color",      name: "보상 매력도",           weight: 15, maxScore: 100, description: "Reward appeal — 보상 자체와 그 표현이 매력적인가." },
-  { id: "layout",     name: "보상 구조·조건",        weight: 10, maxScore: 100, description: "Reward logic — 조건/단계/혜택 구조가 명확한가." },
-  { id: "typography", name: "정보 위계",             weight: 10, maxScore: 100, description: "타이틀/서브/본문 간 시각적 위계." },
-  { id: "conversion", name: "참여 동선·CTA",         weight: 10, maxScore: 100, description: "Participation flow — CTA 위치/문구/유도가 효과적인가." },
-  { id: "readability",name: "정보 가독성",           weight: 12, maxScore: 100, description: "긴 페이지 안에서 핵심 정보가 잘 읽히는가." },
-  { id: "flow",       name: "스크롤 리듬",           weight: 8,  maxScore: 100, description: "Scroll rhythm — 섹션 전환과 시선 흐름의 자연스러움." },
-  { id: "detail",     name: "운영 신뢰성",           weight: 7,  maxScore: 100, description: "Operational trust — 안내, 면책, 마감 등 디테일의 신뢰감." },
-];
-
-const BRANDWEB_SEED = [
-  { id: "impression", name: "브랜드 정체성",       weight: 10, maxScore: 100, description: "Identity — 첫 화면에서 브랜드가 명확히 각인되는가." },
-  { id: "concept",    name: "히어로 임팩트",        weight: 15, maxScore: 100, description: "Hero impact — 메인 비주얼/카피의 임팩트." },
-  { id: "layout",     name: "메인 비주얼",          weight: 15, maxScore: 100, description: "Key visual — 핵심 비주얼 구도/스케일." },
-  { id: "typography", name: "타이틀 존재감",        weight: 12, maxScore: 100, description: "Title presence — 타이포의 존재감과 톤." },
-  { id: "color",      name: "세계관 몰입도",        weight: 12, maxScore: 100, description: "World immersion — 컬러로 만들어내는 세계관 몰입." },
-  { id: "readability",name: "시각적 위계",          weight: 10, maxScore: 100, description: "Visual hierarchy — 정보의 시각적 위계." },
-  { id: "brand",      name: "레이아웃 균형",        weight: 8,  maxScore: 100, description: "Layout balance — 전체 레이아웃의 균형감." },
-  { id: "flow",       name: "탐색 스크롤 연출",     weight: 6,  maxScore: 100, description: "Scroll interaction — 스크롤로 펼쳐지는 연출의 매력." },
-  { id: "detail",     name: "진입 전환성",          weight: 6,  maxScore: 100, description: "Gateway conversion — 다음 행동/페이지로의 유도력." },
-  { id: "conversion", name: "기억성",               weight: 6,  maxScore: 100, description: "Memorability — 사용자에게 남는 잔상." },
-];
-
-// 브랜드웹 서브 페이지 — 메인(히어로)과 달리 콘텐츠/정보 구조 위주. weight 는 기존
-// DesignEvaluator getCategoryWeights('서브') 값을 이식, name 은 서브 성격에 맞춰 재라벨.
-const BRANDWEB_SUB_SEED = [
-  { id: "impression", name: "콘텐츠 명확성",   weight: 14, maxScore: 100, description: "서브 페이지 진입 시 무엇을 보여주는 페이지인지 즉시 파악되는가." },
-  { id: "concept",    name: "브랜드 연속성",   weight: 10, maxScore: 100, description: "메인과 톤·비주얼 언어가 이어지는가." },
-  { id: "layout",     name: "정보 구조",       weight: 15, maxScore: 100, description: "콘텐츠 블록의 구조와 그룹핑이 논리적인가." },
-  { id: "typography", name: "가독성",          weight: 14, maxScore: 100, description: "본문/제목의 가독성과 위계." },
-  { id: "color",      name: "섹션 위계",       weight: 10, maxScore: 100, description: "색으로 섹션/모듈 위계가 구분되는가." },
-  { id: "readability",name: "모듈 레이아웃",   weight: 10, maxScore: 100, description: "반복 모듈의 정렬·간격 일관성." },
-  { id: "brand",      name: "보조 비주얼",     weight: 8,  maxScore: 100, description: "보조 이미지/아이콘의 품질과 적합성." },
-  { id: "flow",       name: "탐색 스크롤 흐름", weight: 8,  maxScore: 100, description: "스크롤에 따른 정보 전개의 자연스러움." },
-  { id: "detail",     name: "디테일 완성도",   weight: 6,  maxScore: 100, description: "여백·정렬·마감의 픽셀 완성도." },
-  { id: "conversion", name: "운영 안정성",     weight: 5,  maxScore: 100, description: "링크/CTA/안내 등 운영 요소의 신뢰성." },
-];
-
-// ─── 브랜드웹 모바일 (750×~1234 단일 화면 mockup 기준) ─────────────────
-// 데스크톱 메인과 동일한 10개 표준 키를 유지하되, 좁은 폭·엄지 동선·세로 흐름에 맞춰 가중치/설명 재조정.
-// 메인 비주얼 단일 컬럼, 타이틀 압축, 본문 사이즈 가독성, 엄지 reach 영역 CTA 등이 핵심.
-const BRANDWEB_MOBILE_SEED = [
-  { id: "impression", name: "첫 화면 임팩트",      weight: 13, maxScore: 100, description: "모바일 첫 폴드(above-the-fold) 한 폭 안에서 시선을 사로잡는가. 작은 화면이라 첫인상의 비중이 데스크톱보다 큼." },
-  { id: "concept",    name: "키 메시지 전달",      weight: 12, maxScore: 100, description: "좁은 폭 안에서 캠페인/브랜드 메시지가 즉시 읽히는가. 메인 카피의 압축력." },
-  { id: "layout",     name: "단일 컬럼 리듬",      weight: 11, maxScore: 100, description: "세로 흐름의 자연스러움. 섹션 분절·여백·정렬이 모바일 뷰포트에 최적화돼 있는가." },
-  { id: "typography", name: "타이틀 압축력",       weight: 12, maxScore: 100, description: "메인 타이틀이 좁은 폭에서도 위계와 박력을 잃지 않는가. 줄바꿈/잘림 처리의 의도성." },
-  { id: "color",      name: "세계관·톤 유지",      weight: 9,  maxScore: 100, description: "작은 캔버스에서도 브랜드 컬러와 톤이 분리·각인되는가." },
-  { id: "readability",name: "모바일 본문 가독성",  weight: 11, maxScore: 100, description: "본문/캡션 폰트 크기·행간이 모바일 시청 거리에 맞는가 (보통 ≥14px, 행간 1.4 이상)." },
-  { id: "brand",      name: "브랜드 정체성",       weight: 8,  maxScore: 100, description: "데스크톱과 톤이 끊기지 않고 작은 화면에서도 브랜드가 살아 있는가." },
-  { id: "flow",       name: "엄지 동선·CTA 위치",  weight: 9,  maxScore: 100, description: "Thumb reach — 주요 CTA·핵심 요소가 엄지가 닿기 쉬운 하단 영역에 배치되었는가." },
-  { id: "detail",     name: "모바일 디테일",       weight: 8,  maxScore: 100, description: "안전 영역(safe area)·노치 회피·터치 타깃 최소 크기(≥44px)·정렬 픽셀 완성도." },
-  { id: "conversion", name: "탭 유도력",           weight: 7,  maxScore: 100, description: "CTA 가 분명히 인지되고 누르고 싶게 만드는가 — 형태·색 대비·문구의 명확성." },
-];
-
-// ─── 프로모션 모바일 (750×5000+ 긴 세로 스크롤 랜딩) ───────────────────
-// 데스크톱 프로모션 페이지와 평가 축은 비슷하지만, 모바일은 스크롤 피로·하단 sticky CTA·
-// 정보 압축·터치 타깃이 결정적. weight 는 그 비중에 맞춰 재조정.
-const PROMOTION_MOBILE_SEED = [
-  { id: "impression", name: "첫 화면 흡입력",      weight: 12, maxScore: 100, description: "Hook — 모바일 첫 폴드에서 무엇을 주는 캠페인인지 즉시 인지되는가." },
-  { id: "brand",      name: "브랜드·이벤트 톤",    weight: 7,  maxScore: 100, description: "캠페인 무드와 브랜드 정체성이 모바일 작은 폭에서도 일관되는가." },
-  { id: "concept",    name: "캠페인 명료성",       weight: 10, maxScore: 100, description: "참여 조건·혜택의 핵심이 모바일에서도 명료히 압축돼 있는가." },
-  { id: "color",      name: "보상 매력도",         weight: 13, maxScore: 100, description: "Reward appeal — 좁은 폭 안에서도 보상의 매력이 시각적으로 전달되는가." },
-  { id: "layout",     name: "보상 구조·조건",      weight: 10, maxScore: 100, description: "조건/단계 구조가 모바일 카드/리스트 형태로 잘 압축돼 있는가." },
-  { id: "typography", name: "정보 위계",           weight: 10, maxScore: 100, description: "타이틀/서브/본문의 위계가 좁은 폭에서도 한눈에 들어오는가." },
-  { id: "conversion", name: "CTA·하단 sticky",    weight: 12, maxScore: 100, description: "주요 CTA 의 위치·반복·하단 고정(sticky) 처리가 모바일 전환에 효과적인가." },
-  { id: "readability",name: "정보 가독성",         weight: 10, maxScore: 100, description: "긴 세로 스크롤 페이지에서 본문이 충분히 크고 행간이 답답하지 않은가." },
-  { id: "flow",       name: "스크롤 피로·리듬",   weight: 9,  maxScore: 100, description: "Scroll fatigue — 섹션 길이·전환 신호·여백으로 사용자가 스크롤을 포기하지 않게 설계됐는가." },
-  { id: "detail",     name: "운영 신뢰성",         weight: 7,  maxScore: 100, description: "안내·면책·기간 명시·터치 타깃 크기 등 모바일 운영 디테일의 완성도." },
-];
-
-// ─── 프로모션 상단 키비주얼(KV / 히어로) 전용 ──────────────────────────────
-// 전체 랜딩이 아니라 최상단 키비주얼 영역만 평가. 메인 비주얼 완성도·타이틀 임팩트·
-// 카피 가독성·시선 유도에 가중치를 몰아줌. id 는 10개 표준 키 유지(responseSchema 호환).
-const PROMOTION_KV_SEED = [
-  { id: "impression", name: "첫인상 / 주목도 (Hook)", weight: 14, maxScore: 100, description: "키비주얼이 한눈에 시선을 사로잡는 강렬함. 단조롭고 평이한 배치면 80점대." },
-  { id: "color",      name: "핵심 비주얼 매력",       weight: 15, maxScore: 100, description: "메인 일러스트/캐릭터/오브젝트의 완성도와 매력 — KV 의 본질. 빈약하면 70점대." },
-  { id: "typography", name: "메인 타이틀 임팩트",     weight: 14, maxScore: 100, description: "타이틀/로고 타이포의 존재감·위계·박력. 배경에 묻히면 60~70점대." },
-  { id: "concept",    name: "캠페인 콘셉트 전달",     weight: 10, maxScore: 100, description: "키비주얼만으로 캠페인의 성격·테마가 즉시 읽히는가." },
-  { id: "layout",     name: "구도·여백 균형",         weight: 10, maxScore: 100, description: "키비주얼의 구도, 시각 무게중심, 여백 운용. 산만하거나 답답하면 감점." },
-  { id: "readability",name: "카피·슬로건 가독성",     weight: 9,  maxScore: 100, description: "핵심 카피/슬로건이 배경과 분리되어 또렷이 읽히는가." },
-  { id: "flow",       name: "시선 유도 / 포컬",       weight: 8,  maxScore: 100, description: "타이틀→캐릭터→핵심 요소로 이어지는 시선 흐름과 포컬의 명확성." },
-  { id: "brand",      name: "브랜드·톤 일치",         weight: 8,  maxScore: 100, description: "게임/브랜드 정체성과 캠페인 무드의 일치도." },
-  { id: "detail",     name: "완성도 / 디테일",        weight: 8,  maxScore: 100, description: "빛/뎁스/합성/마감의 디테일. 캐릭터 없는 단순 나열은 90점 이상 금지." },
-  { id: "conversion", name: "클릭/스크롤 유도력",     weight: 4,  maxScore: 100, description: "아래 콘텐츠로 내려가거나 참여하고 싶게 만드는 매력도." },
-];
-
-// 프롬프트 평가 — placeholder. 사용자가 NexusAdmin 에서 직접 채워 넣을 수 있도록 빈 시드.
-const PROMPT_SEED = [];
-
-// ─── 2D 타이포그래피 (평면 디자인 — 벡터/플랫) ───────────────────────────
-// 조판/리듬/그리드 같은 평면 디자인 본질에 집중.
-// id 는 Gemini responseSchema 가 강제하는 10개 표준 키와 동일하게 유지.
-// (관리자가 NexusAdmin 에서 name/weight/description 자유 편집 가능. id 는 schema 호환 위해 유지 권장.)
-const TYPO2D_SEED = [
-  { id: "impression",  name: "첫인상 / 시각 임팩트", weight: 10, maxScore: 100, description: "한눈에 시선을 사로잡는 강렬함. 평범한 폰트 + 평이한 색 조합이면 70점대." },
-  { id: "concept",     name: "콘셉트 표현력",        weight: 10, maxScore: 100, description: "메시지/감정이 타이포 자체로 전달되는지. 글꼴 선택이 메시지 톤과 맞는지." },
-  { id: "layout",      name: "구성/여백",            weight: 10, maxScore: 100, description: "화면 분할과 여백 활용. 답답하지 않고 의도된 호흡이 있는지." },
-  { id: "typography",  name: "자간/조판 정밀도",     weight: 14, maxScore: 100, description: "자간/장평/베이스라인 정밀도. 자모 균형, 글자 간격의 일관성. 타이포 디자인의 핵심." },
-  { id: "color",       name: "색 조화",              weight: 10, maxScore: 100, description: "배경/텍스트 색 조합의 조화. 콘트라스트가 적절하고 톤이 일관된지." },
-  { id: "readability", name: "가독성",               weight: 12, maxScore: 100, description: "폰트 선택, 크기, 색 대비가 빠른 식별성을 보장하는지. 작은 크기에서도 읽히는지." },
-  { id: "brand",       name: "브랜드 톤 일치",       weight: 8,  maxScore: 100, description: "브랜드/제품의 톤앤매너에 부합하는 폰트와 스타일인지." },
-  { id: "flow",        name: "시각 리듬",            weight: 10, maxScore: 100, description: "굵기 대비, 크기 대비, 간격의 반복 패턴이 시각적 리듬을 만드는지." },
-  { id: "detail",      name: "마감/디테일",          weight: 8,  maxScore: 100, description: "픽셀 단위 디테일의 완성도. 깨진 외곽, 어색한 자모, 미세 정렬 오차 없음." },
-  { id: "conversion",  name: "정렬/그리드 정확성",   weight: 8,  maxScore: 100, description: "수학적 정렬과 그리드 준수 + 시각적 정렬(optical) 보정." },
-];
-
-// ─── 렌더링 타이포 (3D/PBR — Render Matrix 산출물) ───────────────────────
-// 재질/조명/실루엣 보존/이펙트 통합 등 3D 렌더의 본질에 집중.
-const TYPO_RENDER_SEED = [
-  { id: "impression",  name: "시네마틱 임팩트",      weight: 10, maxScore: 100, description: "한 장의 시안으로 임팩트가 있는지. AAA 게임 타이틀급 무게감/존재감." },
-  { id: "concept",     name: "콘셉트 일치도",        weight: 10, maxScore: 100, description: "의도한 분위기(다크판타지/하이테크/프리미엄 등)가 정확히 전달되는지." },
-  { id: "layout",      name: "입체감 (Volume)",      weight: 8,  maxScore: 100, description: "정면 부조/후면 돌출의 균형. 두께가 과하거나 부족하지 않고 의도된 깊이인지." },
-  { id: "typography",  name: "실루엣 보존",          weight: 14, maxScore: 100, description: "원본 타이포의 윤곽이 정확히 유지되는지. 변형/녹아내림/형태 왜곡이 없는지." },
-  { id: "color",       name: "컬러 그레이딩",        weight: 8,  maxScore: 100, description: "시네마틱 톤매핑. 채도/대비/색온도가 분위기에 맞고 영상미가 있는지." },
-  { id: "readability", name: "모서리/엣지 정밀도",   weight: 8,  maxScore: 100, description: "외곽선이 깔끔하고 색번짐/blob 없음. 모서리가 살아 있는지." },
-  { id: "brand",       name: "재질 표현 (Material)", weight: 14, maxScore: 100, description: "PBR 재질의 사실성. 금속/얼음/돌 등이 진짜 같은지, 가짜 셰이딩이나 플라스틱 느낌 없는지." },
-  { id: "flow",        name: "라이팅 (Lighting)",    weight: 10, maxScore: 100, description: "주광/측광/림라이트의 자연스러움. 그림자/하이라이트가 형태에 부합하고 입체감을 살리는지." },
-  { id: "detail",      name: "표면 디테일",          weight: 10, maxScore: 100, description: "미세 텍스처(스크래치, 결, 균열)의 밀도와 사실성. 너무 매끄럽거나 너무 지저분하지 않은지." },
-  { id: "conversion",  name: "배경 분리 / 기술 완성도", weight: 8, maxScore: 100, description: "깔끔한 컷아웃. plaque(벽면 부조)처럼 보이지 않고, AI 아티팩트/노이즈 없음." },
-];
-
-// ─── 모션 타이포 (영상/모션 — Motion Matrix 산출물 / 키프레임) ───────────
-// 영상은 대표 키프레임 기준으로 평가하지만 motion blur / sequential frames / easing 흔적도 추론하여 채점.
-const TYPO_MOTION_SEED = [
-  { id: "impression",  name: "모션 임팩트",          weight: 10, maxScore: 100, description: "키프레임 한 장에서도 모션의 박력/매력이 전달되는지. Hollywood title sequence 의 한 컷 같은지." },
-  { id: "concept",     name: "콘셉트 표현",          weight: 10, maxScore: 100, description: "분위기/장르(다크/팝/하이테크)가 모션 전반에서 일관되게 전달되는지." },
-  { id: "layout",      name: "카메라 무빙",          weight: 8,  maxScore: 100, description: "카메라 움직임의 안정성. 의도 없는 zoom/drift 가 없고 의도한 동선과 부합하는지." },
-  { id: "typography",  name: "형태 안정성",          weight: 14, maxScore: 100, description: "모션 중에도 글자 외곽이 흔들리거나 변형되지 않는지. wobble/morph/melting 없는지." },
-  { id: "color",       name: "컬러 그레이딩",        weight: 8,  maxScore: 100, description: "시네마틱 컬러 룩. 모션 중 색상이 자연스럽게 흐르는지." },
-  { id: "readability", name: "모션 중 가독성",       weight: 10, maxScore: 100, description: "움직이는 동안에도 텍스트가 읽히는지. 모션 블러/이펙트가 가독성을 해치지 않는지." },
-  { id: "brand",       name: "모션 리듬",            weight: 10, maxScore: 100, description: "easing 곡선과 박자감. 기계적이지 않고 살아있는 움직임의 흔적이 보이는지." },
-  { id: "flow",        name: "타이밍 (호흡)",        weight: 12, maxScore: 100, description: "등장/유지/퇴장의 호흡. 시작이 너무 갑작스럽거나 끝이 어색하지 않은지." },
-  { id: "detail",      name: "기술 품질",            weight: 8,  maxScore: 100, description: "압축 아티팩트/깜빡임/프레임 드롭 없음. 색 번짐이나 코덱 이슈 없는지." },
-  { id: "conversion",  name: "루프/이펙트 완성도",   weight: 10, maxScore: 100, description: "무한 반복일 경우 시작/끝점 연결의 자연스러움 + 파티클이 프레임을 이탈하지 않는지." },
-];
-
-// 채점 규칙(rules) 시드 — 평가 항목과 별개로 "총점 cap / 점수대 / 감점 가이드" 같은
-// 홀리스틱 규칙. 프롬프트의 {{SCORING_RULES}} 자리에 주입. BannerCodex DEFAULT_AI_PROMPT 에
-// 하드코딩돼 있던 채점 기준을 그대로 이식(손튜닝 캘리브레이션 보존). 다른 타입은 빈 문자열.
-const BANNER_SCORING_RULES = `[채점 규칙 — 매우 중요]
-1. [★최고점 기준 - 하이엔드 퀄리티] 배경을 단순화하고 시선 집중도를 높인 것은 좋으나, 90점 이상(최고점)을 주려면 퀄리티 높은 캐릭터 아트, 세련된 타이포그래피, 다이내믹한 연출이 동반된 '하이엔드 디자인'이어야 합니다.
-2. [매우 중요 - 단조로운 기본 구도 상한선] 중앙에 보물상자 하나만 덩그러니 있거나, 허공에 아이템 몇 개가 떠 있는 수준의 '1차원적이고 흔한 기본 구도(Generic/Basic Layout)'라면, 가독성과 시선 집중도가 아무리 좋더라도 절대 90점 이상을 주지 말고 전체 총점이 80점대 초중반(80~85점)에 머물도록 점수를 제한(Cap)하세요.
-3. [매우 중요 - 산만함 및 구도 분산 감점] 캐릭터가 양옆으로 분산 배치되고, 화면 곳곳에 아이템이나 오브젝트가 규칙 없이 흩어져 산만한 느낌을 준다면 'layout'과 'flow', 'impression' 점수를 70점대로 가차 없이 깎아 전체 총점이 80점대 초중반(80~83점) 이하로 떨어지게 만드세요.
-4. [중요 감점 - 색상/명도 대비 부족] 메인 타이틀의 색상이 배경 색상과 겹쳐서 시각적으로 묻히는 경우, 'typography', 'readability', 'color'를 60~70점대로 깎으세요. 캐릭터 퀄리티가 좋다면 다른 항목으로 보완해 70점대 후반~80점대 초반으로 맞추세요.
-5. [매우 중요 - 타이포그래피 일관성] 메인카피, 서브카피, 날짜 패널 디자인이 촌스럽거나 전체 컨셉과 겉돌면 'typography'를 강력히 감점하세요.
-6. 전반적인 점수 대역을 '60점 ~ 95점' 사이로 폭넓게 사용하여 디자인 퀄리티의 변별력을 확실하게 높이세요.`;
-
-export const SCORING_RULES_SEED = {
-  [CRITERIA_TYPES.banner]: BANNER_SCORING_RULES,
-};
-
-const SEEDS = {
-  [CRITERIA_TYPES.banner]:          { items: BANNER_SEED,           name: "v1.0 (시드)", rules: SCORING_RULES_SEED.banner || "" },
-  [CRITERIA_TYPES.promotion]:       { items: PROMOTION_SEED,        name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.brandweb]:        { items: BRANDWEB_SEED,         name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.brandwebSub]:     { items: BRANDWEB_SUB_SEED,     name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.brandwebMobile]:  { items: BRANDWEB_MOBILE_SEED,  name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.promotionMobile]: { items: PROMOTION_MOBILE_SEED, name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.promotionKv]:     { items: PROMOTION_KV_SEED,     name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.prompt]:          { items: PROMPT_SEED,           name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.typo2d]:          { items: TYPO2D_SEED,           name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.typoRender]:  { items: TYPO_RENDER_SEED,  name: "v1.0 (시드)", rules: "" },
-  [CRITERIA_TYPES.typoMotion]:  { items: TYPO_MOTION_SEED,  name: "v1.0 (시드)", rules: "" },
+import {
+  normalizeCriteria,
+  validateCriteria,
+} from "./designEvaluationCore";
+// 시드·타입·순수 헬퍼는 Node 에서도 쓰이도록 evaluationCriteriaSeeds.js 로 분리 (Firestore 의존 없음).
+// 기존 import 경로 호환을 위해 여기서 그대로 재수출한다.
+import {
+  CRITERIA_TYPES, SCORING_RULES_SEED, SEEDS,
+  getSeedCriteria, getSeedRules, formatCriteriaList, weightsMap, labelsMap, resolveCriteriaType,
+} from "./evaluationCriteriaSeeds";
+export {
+  CRITERIA_TYPES, SCORING_RULES_SEED,
+  getSeedCriteria, getSeedRules, formatCriteriaList, weightsMap, labelsMap, resolveCriteriaType,
 };
 
 const versionsCol = (type) => collection(db, "evaluationCriteria", type, "versions");
@@ -233,9 +40,10 @@ export async function migrateInitialCriteria() {
       const snap = await getDocs(query(versionsCol(type), limit(1)));
       if (!snap.empty) { result.skipped.push(type); continue; }
       const seed = SEEDS[type];
+      const seedRef = doc(versionsCol(type), "seed-v1");
       if (!seed || seed.items.length === 0) {
         // 빈 시드라도 placeholder 빈 버전으로 마킹해두어 다음 실행에서 또 시도하지 않게 함
-        await addDoc(versionsCol(type), {
+        await setDoc(seedRef, {
           name: seed?.name || "v1.0 (빈 시드)",
           isActive: true,
           note: "초기 빈 버전. NexusAdmin 에서 항목을 추가하세요.",
@@ -245,7 +53,7 @@ export async function migrateInitialCriteria() {
           updatedAt: serverTimestamp(),
         });
       } else {
-        await addDoc(versionsCol(type), {
+        await setDoc(seedRef, {
           name: seed.name,
           isActive: true,
           note: "초기 버전 (앱 하드코딩에서 자동 마이그레이션)",
@@ -269,11 +77,30 @@ export async function migrateInitialCriteria() {
 export async function fetchActiveCriteria(type) {
   try {
     // 1) isActive == true
-    const q1 = query(versionsCol(type), where("isActive", "==", true), limit(1));
+    const q1 = query(versionsCol(type), where("isActive", "==", true));
     const snap1 = await getDocs(q1);
     if (!snap1.empty) {
-      const d = snap1.docs[0];
-      return { id: d.id, ...d.data() };
+      const active = snap1.docs.map(d => ({ id: d.id, ...d.data() }));
+      active.sort((a, b) => {
+        const timeOf = (v) => v?.updatedAt?.toMillis?.() || v?.createdAt?.toMillis?.() || 0;
+        return timeOf(b) - timeOf(a) || String(b.id).localeCompare(String(a.id));
+      });
+      if (active.length > 1) {
+        console.warn(`[evaluationCriteria] duplicate active versions type=${type}; selected=${active[0].id}; count=${active.length}`);
+      }
+      const selected = active[0];
+      const check = validateCriteria(selected.criteria || []);
+      return {
+        ...selected,
+        criteria: check.valid ? check.normalized : normalizeCriteria(selected.criteria || []),
+        criteriaHealth: {
+          duplicateActiveCount: active.length,
+          duplicateIds: check.duplicateIds,
+          invalidWeights: check.invalidWeights,
+          weightSum: check.weightSum,
+          valid: check.valid,
+        },
+      };
     }
     // 2) fallback — 아무 버전이나 1개
     const snap2 = await getDocs(query(versionsCol(type), limit(50)));
@@ -292,76 +119,8 @@ export async function fetchActiveCriteria(type) {
   }
 }
 
-// ─── 시드(fallback) 직접 노출 ───────────────────────────
-// Firestore 실패 시 앱이 안전하게 fallback 으로 사용.
-export function getSeedCriteria(type) {
-  return SEEDS[type]?.items || [];
-}
-
-// ─── 프롬프트용 포맷터 ───────────────────────────────
-// Gemini 프롬프트 안에 그대로 끼워 넣을 수 있는 마크다운 형태의 항목 리스트.
-//   "1. (id) 라벨 [N%]
-//       · description"
-export function formatCriteriaList(items) {
-  if (!Array.isArray(items) || items.length === 0) return "(평가 항목 없음)";
-  return items.map((c, i) => {
-    const w = (typeof c.weight === "number" && !Number.isNaN(c.weight)) ? `[${c.weight}%]` : "";
-    const desc = c.description ? `\n     · ${c.description}` : "";
-    return `${i + 1}. (${c.id}) ${c.name} ${w}${desc}`.trim();
-  }).join("\n");
-}
-
-// ─── 가중치/라벨 맵 ─────────────────────────────────
-// 점수 합산이나 UI 라벨에 쓰기 위한 맵 변환.
-export function weightsMap(items) {
-  const out = {};
-  (items || []).forEach(c => { if (c.id) out[c.id] = Number(c.weight) || 0; });
-  return out;
-}
-export function labelsMap(items) {
-  const out = {};
-  (items || []).forEach(c => { if (c.id) out[c.id] = c.name || c.id; });
-  return out;
-}
-
-// ─── 카테고리 → 기준 타입 리졸버 ───────────────────────
-// DesignEvaluator 가 쓰는 한글 카테고리 라벨("배너"/"브랜드웹_메인"/"브랜드웹_모바일"/"2D 타이포" 등)이나
-// AI 판별 결과 문자열을 CRITERIA_TYPES 키로 정규화. 매칭 실패 시 'banner' fallback.
-// 검사 순서:
-//   1) 타이포 (가장 구체적)
-//   2) 모바일 한정자 + 브랜드웹/프로모션 → 모바일 타입
-//   3) 브랜드웹 서브 → 메인
-//   4) 프로모션 (데스크톱)
-//   5) 배너
-export function resolveCriteriaType(category) {
-  const c = String(category || "").toLowerCase();
-  if (!c) return CRITERIA_TYPES.banner;
-  if (c.includes("타이포")) {
-    if (c.includes("2d")) return CRITERIA_TYPES.typo2d;
-    if (c.includes("렌더") || c.includes("render")) return CRITERIA_TYPES.typoRender;
-    if (c.includes("모션") || c.includes("motion")) return CRITERIA_TYPES.typoMotion;
-  }
-  // 키비주얼(KV/히어로) — "프로모션" 보다 먼저 검사해야 generic 프로모션으로 빠지지 않음.
-  if (c.includes("키비주얼") || c.includes("키 비주얼") || c.includes("kv") || c.includes("히어로") || c.includes("hero")) {
-    return CRITERIA_TYPES.promotionKv;
-  }
-  const isMobile = c.includes("모바일") || c.includes("mobile");
-  if (isMobile) {
-    if (c.includes("브랜드웹") || c.includes("brand")) return CRITERIA_TYPES.brandwebMobile;
-    if (c.includes("프로모션") || c.includes("promo")) return CRITERIA_TYPES.promotionMobile;
-  }
-  if (c.includes("서브") || c.includes("sub")) return CRITERIA_TYPES.brandwebSub;
-  if (c.includes("브랜드웹") || c.includes("brand")) return CRITERIA_TYPES.brandweb; // 메인 포함
-  if (c.includes("프로모션") || c.includes("promo")) return CRITERIA_TYPES.promotion;
-  if (c.includes("배너") || c.includes("banner")) return CRITERIA_TYPES.banner;
-  return CRITERIA_TYPES.banner;
-}
-
 // ─── 채점 규칙(rules) 조회 ─────────────────────────────
 // 활성 버전 doc 의 rules → 없으면 시드 rules 폴백.
-export function getSeedRules(type) {
-  return SEEDS[type]?.rules || "";
-}
 export function getActiveRules(versionOrType) {
   if (versionOrType && typeof versionOrType === "object") {
     if (typeof versionOrType.rules === "string" && versionOrType.rules.trim()) return versionOrType.rules;

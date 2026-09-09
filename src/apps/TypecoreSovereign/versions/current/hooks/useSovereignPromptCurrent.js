@@ -3,6 +3,7 @@
 // 핸들러, buildPrompts / buildEditPrompts / fetch 호출까지 그대로 옮긴 격리 사본.
 import { useState, useRef, useEffect } from 'react';
 import { useUsageGate } from '../../../../../components/UsageGate';
+import { useDraftPersistence } from '../../../../../lib/useDraftPersistence.js';
 import { useGlobal } from '../../../../../context/GlobalContext';
 import { coreArchetypes, safetyGuards } from '../constants/personas.jsx';
 import { staticOptions } from '../constants/options.js';
@@ -15,6 +16,7 @@ import {
 } from '../constants/utils.js';
 import { PERSONA_MODIFIERS, SCRIPT_PRESETS } from '../services/sovereignOptions.js';
 import { compileSovereignImagenPrompt } from '../services/compileSovereignImagenPrompt.js';
+import { buildNarrativeDirective } from '../../../../../lib/narrativeTypography.js';
 
 async function readGeminiText(response) {
   if (!response.ok) {
@@ -32,6 +34,14 @@ export function useSovereignPromptCurrent({ apiKey }) {
   // 1. Context & Global States
   const { ensureCanGenerate, modal: usageModal } = useUsageGate();
   const { payload, clearPayload, isLight } = useGlobal();
+  // 토스트 — RenderMatrix useRenderPrompt 와 동일 패턴 + 이전 타이머 정리로 연속 호출 레이스 방지.
+  const [toastMsg, setToastMsg] = useState(null);
+  const toastTimerRef = useRef(null);
+  const showToast = (msg, ms = 3000) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToastMsg(msg);
+    toastTimerRef.current = setTimeout(() => setToastMsg(null), ms);
+  };
   const [incomingFromArc, setIncomingFromArc] = useState(null); // { from, hasImage, text }
   const consumedPayloadRef = useRef(null);
   const theme = isLight ? "light" : "dark";
@@ -81,6 +91,10 @@ export function useSovereignPromptCurrent({ apiKey }) {
   // 선택된 프리셋의 en 토큰은 buildPromptIR 의 shapeStyleBlock 으로 프롬프트 본문에 직접 주입된다
   // (블랙레터처럼 옵션 조합만으로 표현이 안 되는 스타일이 실제 출력에 반영되게 하는 장치).
   const [scriptType, setScriptType] = useState('');
+  const [narrativeIntensity, setNarrativeIntensity] = useState('subtle');
+  const [narrativeScope, setNarrativeScope] = useState('one');
+  const [narrativeMutation, setNarrativeMutation] = useState('auto');
+  const [narrativeTarget, setNarrativeTarget] = useState('');
   const handleScriptPresetChange = (id) => {
     setScriptType(id);
     const preset = SCRIPT_PRESETS[id];
@@ -99,6 +113,23 @@ export function useSovereignPromptCurrent({ apiKey }) {
     if (preset.slantAngle)        setSlantAngle(preset.slantAngle);
     if (preset.kerning)           setKerning(preset.kerning);
     if (preset.cornerStyle)       setCornerStyle(preset.cornerStyle);
+    if (preset.letterConnection)  setLetterConnection(preset.letterConnection);
+    if (preset.internalSpace)     setInternalSpace(preset.internalSpace);
+    if (preset.logoDegree)        setLogoDegree(preset.logoDegree);
+    if (preset.narrative) {
+      setNarrativeIntensity('subtle');
+      setNarrativeScope('one');
+      setNarrativeMutation('auto');
+      setEnhanceMode('refine');
+      setMomentumActive(false);
+      setSlicingIntensity('Slic_None');
+      setStrokeExtension('Ext_None');
+      setMmoSurroundingElement('Clean');
+      setLayoutType('1Line');
+      setLayoutPreset('');
+      setAspectRatio('2.76:1');
+      setOccupancy('40%');
+    }
   };
 
   const [isAdvancedOptionsEnabled, setIsAdvancedOptionsEnabled] = useState(false);
@@ -258,7 +289,7 @@ export function useSovereignPromptCurrent({ apiKey }) {
   }, [inputText]);
 
   // Change Detection
-  useEffect(() => { setIsOutdated(true); }, [activePurpose, coreArchetype, scriptType, customShapeText, personaSliderValue, inputText, customDesignInjections, isEnhanceModeEnabled, enhanceMode, momentumActive, baseStyle, aspectRatio, occupancy, layoutType, stemWeight, charWidth, charProportion, kerning, subTitleSize, terminalStyle, strokeTexture, strokeSharpness, strokeExtension, cornerStyle, slantAngle, kineticVelocity, slicingIntensity, deformationDamage, letterConnection, internalSpace, logoDegree, mmoSilhouetteFraming, mmoSurroundingElement, isAdvancedOptionsEnabled, activeGuards]);
+  useEffect(() => { setIsOutdated(true); }, [activePurpose, coreArchetype, scriptType, narrativeIntensity, narrativeScope, narrativeMutation, narrativeTarget, customShapeText, personaSliderValue, inputText, customDesignInjections, isEnhanceModeEnabled, enhanceMode, momentumActive, baseStyle, aspectRatio, occupancy, layoutType, stemWeight, charWidth, charProportion, kerning, subTitleSize, terminalStyle, strokeTexture, strokeSharpness, strokeExtension, cornerStyle, slantAngle, kineticVelocity, slicingIntensity, deformationDamage, letterConnection, internalSpace, logoDegree, mmoSilhouetteFraming, mmoSurroundingElement, isAdvancedOptionsEnabled, activeGuards]);
 
   useEffect(() => { setIsEditOutdated(true); }, [activePurpose, coreArchetype, personaSliderValue, editInstruction, editUploadedImage, editFeelAdjust, applyAiRecInEdit, applyAutoRefine, isEnhanceModeEnabled, enhanceMode, momentumActive, layoutType, subTitleSize, kineticVelocity, slantAngle, deformationDamage, slicingIntensity, editStrokeMod, editElementMod, editSurfaceMod, mmoSilhouetteFraming, mmoSurroundingElement, cornerStyle, activeGuards]);
 
@@ -487,10 +518,66 @@ Focus on geometry, edges, contrast, mass — convert vague emotional terms into 
     return val && typeof val === 'object' ? val.id || val : val;
   };
 
+  // ── 작업 드래프트 영속화 ──────────────────────────────────────────
+  //   사용자의 작업 상태(텍스트·페르소나·프리셋·아우라·고급 옵션 값)만 스냅샷.
+  //   업로드 이미지·채팅 히스토리·렌더 결과는 제외 (localStorage quota + 프라이버시).
+  const draftSnapshot = {
+    inputText,
+    activePurpose, coreArchetype, scriptType, personaSliderValue,
+    customDesignInjections, customShapeText,
+    narrativeIntensity, narrativeScope, narrativeMutation, narrativeTarget,
+    baseStyle, aspectRatio, occupancy, layoutType, layoutPreset,
+    stemWeight, charWidth, charProportion, kerning, subTitleSize,
+    terminalStyle, strokeTexture, strokeSharpness, strokeExtension,
+    cornerStyle, slantAngle, kineticVelocity, slicingIntensity, deformationDamage,
+    letterConnection, internalSpace, logoDegree,
+    mmoSilhouetteFraming, mmoSurroundingElement,
+    isEnhanceModeEnabled, enhanceMode, momentumActive, activeGuards,
+  };
+  const draft = useDraftPersistence('nx:typecore-sovereign:draft', draftSnapshot);
+  // 마운트 시점의 기본값 스냅샷 — 저장본이 기본값과 동일하면 복원 배너를 띄우지 않음.
+  const defaultSnapshotRef = useRef(null);
+  if (defaultSnapshotRef.current === null) defaultSnapshotRef.current = JSON.stringify(draftSnapshot);
+  const showDraftRestore = draft.showRestore && !!draft.saved
+    && JSON.stringify(draft.saved) !== defaultSnapshotRef.current;
+
+  const restoreDraft = () => {
+    const s = draft.saved;
+    if (!s) return;
+    const setters = {
+      inputText: setInputText,
+      activePurpose: setActivePurpose, coreArchetype: setCoreArchetype,
+      scriptType: setScriptType, personaSliderValue: setPersonaSliderValue,
+      customDesignInjections: setCustomDesignInjections, customShapeText: setCustomShapeText,
+      narrativeIntensity: setNarrativeIntensity, narrativeScope: setNarrativeScope,
+      narrativeMutation: setNarrativeMutation, narrativeTarget: setNarrativeTarget,
+      baseStyle: setBaseStyle, aspectRatio: setAspectRatio, occupancy: setOccupancy,
+      layoutType: setLayoutType, layoutPreset: setLayoutPreset,
+      stemWeight: setStemWeight, charWidth: setCharWidth, charProportion: setCharProportion,
+      kerning: setKerning, subTitleSize: setSubTitleSize,
+      terminalStyle: setTerminalStyle, strokeTexture: setStrokeTexture,
+      strokeSharpness: setStrokeSharpness, strokeExtension: setStrokeExtension,
+      cornerStyle: setCornerStyle, slantAngle: setSlantAngle,
+      kineticVelocity: setKineticVelocity, slicingIntensity: setSlicingIntensity,
+      deformationDamage: setDeformationDamage,
+      letterConnection: setLetterConnection, internalSpace: setInternalSpace,
+      logoDegree: setLogoDegree,
+      mmoSilhouetteFraming: setMmoSilhouetteFraming, mmoSurroundingElement: setMmoSurroundingElement,
+      isEnhanceModeEnabled: setIsEnhanceModeEnabled, enhanceMode: setEnhanceMode,
+      momentumActive: setMomentumActive, activeGuards: setActiveGuards,
+    };
+    Object.entries(setters).forEach(([key, setter]) => {
+      if (s[key] !== undefined && s[key] !== null) setter(s[key]);
+    });
+    draft.dismiss();
+    showToast('이전 드래프트를 복원했어요');
+  };
+
   const handleReset = () => {
+    draft.clear();
     setDynamicOptions({ strokeTextures: [], deformationDamages: [], terminalStyles: [], stemWeights: [], strokeSharpness: [], cornerStyles: [], widths: [], kerningOptions: [], kineticVelocities: [], slicingIntensities: [], editStrokeMods: [], editElementMods: [], editSurfaceMods: [], strokeExtensions: [], letterConnections: [], internalSpaces: [], logoDegrees: [], MMOSilhouetteFramings: [], MMOSurroundingElements: [] });
     setCustomDesignInjections(""); setDramaticPrompt(""); setMjOptimizedPrompt(""); setCgEnhancedPrompt(""); setEnhanceMode("refine"); setMomentumActive(false); setIsAdvancedOptionsEnabled(false);
-    setPersonaSliderValue(50); setAiRecSummary(null); setCoreArchetype('core_fortress'); setScriptType(''); setCustomShapeText(''); setCustomShapeTextEn('');
+    setPersonaSliderValue(50); setAiRecSummary(null); setCoreArchetype('core_fortress'); setScriptType(''); setNarrativeIntensity('subtle'); setNarrativeScope('one'); setNarrativeMutation('auto'); setNarrativeTarget(''); setCustomShapeText(''); setCustomShapeTextEn('');
     setCreationUploadedImage(null); setEditUploadedImage(null);
     setStemWeight("Stem_Heavy"); setTerminalStyle("Term_Chisel"); setStrokeTexture("Tex_Clean"); setStrokeSharpness("Sharp_Std"); setStrokeExtension("Ext_None"); setKineticVelocity("Vel_Static"); setSlicingIntensity("Slic_None"); setSubTitleSize("Sub_Small"); setLetterConnection("Conn_Indep"); setInternalSpace("Space_Std"); setLogoDegree("Logo_Std");
     setTuningReferenceImage(null); setEditTuningReferenceImage(null); setActiveGuards(['guard_mutation', 'guard_3d', 'guard_layout', 'guard_noise']);
@@ -580,7 +667,7 @@ Return strictly in JSON format:
       if (res?.setKerning) setKerning(updateDynamic('kerningOptions', res.setKerning));
 
       setIsAdvancedOptionsEnabled(true);
-    } catch (error) { console.error("Image analysis failed:", error); } finally { setIsAnalyzingCreation(false); }
+    } catch (error) { console.error("Image analysis failed:", error); showToast(error?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { setIsAnalyzingCreation(false); }
   };
 
   // payload 수신 (다른 앱에서 전달됨)
@@ -719,7 +806,7 @@ Write a friendly response in Korean explaining the update. Tone: ${persona.tone}
       momentumActive: momentumActive
     };
     copyToClipboard(JSON.stringify(recipe, null, 2), 'top');
-    alert("Recipe JSON 복사 완료!");
+    showToast('Recipe JSON 복사 완료');
   };
 
   const handleImportPrompt = () => {
@@ -882,7 +969,7 @@ Format: 한국어로 2-3 문장의 고도로 최적화된 구조적 묘사. 쉼�
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: customDesignInjections }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
       setCustomDesignInjections(await readGeminiText(response));
-    } catch (e) {} finally { setIsExpandingIntent(false); }
+    } catch (e) { showToast(e?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { setIsExpandingIntent(false); }
   };
 
   const handleEditExpandIntent = async () => {
@@ -897,7 +984,7 @@ Format: ONLY English, strict structural commands.`;
     try {
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: editInstruction }] }], systemInstruction: { parts: [{ text: systemPrompt }] }, generationConfig: { temperature: 0.7 } }) });
       setEditInstruction(await readGeminiText(response));
-    } catch (e) {} finally { setIsEditExpandingIntent(false); }
+    } catch (e) { showToast(e?.message || '요청에 실패했습니다. 잠시 후 다시 시도해주세요.'); } finally { setIsEditExpandingIntent(false); }
   };
 
   // --- V18: Prompt Intermediate Representation (IR) Compiler ---
@@ -911,7 +998,11 @@ Format: ONLY English, strict structural commands.`;
     const slantList = staticOptions.slantAngles;
     const destList = staticOptions.deformationDamages;
 
-    const weightEn = getOptionEn(weightList, stemWeight); const kerningEn = getOptionEn(kerningList, kerning); const terminalEn = getOptionEn(terminalList, terminalStyle); const sharpnessEn = getOptionEn(sharpnessList, strokeSharpness); const textureEn = getOptionEn(textureList, strokeTexture); const widthEn = getOptionEn(staticOptions.widths, charWidth); const proportionEn = getOptionEn(staticOptions.proportions, charProportion); const cornerList = [...staticOptions.cornerStyles, ...(dynamicOptions.cornerStyles || [])]; const cornerEn = getOptionEn(cornerList, cornerStyle); const kineticEn = getOptionEn(kineticList, kineticVelocity); const slantEn = getOptionEn(slantList, slantAngle); const destructionEn = getOptionEn(destList, deformationDamage); let occupancyEn = getOptionEn(staticOptions.occupancies, occupancy); const slicingEn = getOptionEn(staticOptions.slicingIntensities, slicingIntensity); const subSizeEn = getOptionEn(staticOptions.subTitleSizes, subTitleSize);
+    const visibleGlyphCount = Array.from((inputText || '').replace(/\s/g, '')).length;
+    const isLongSingleLine = layoutType === '1Line' && visibleGlyphCount >= 9;
+    const effectiveCharWidth = isLongSingleLine && charWidth === 'Narrow' ? 'Normal' : charWidth;
+    const effectiveCharProportion = isLongSingleLine && charProportion === 'P_Condensed' ? 'P_Std' : charProportion;
+    const weightEn = getOptionEn(weightList, stemWeight); const kerningEn = getOptionEn(kerningList, kerning); const terminalEn = getOptionEn(terminalList, terminalStyle); const sharpnessEn = getOptionEn(sharpnessList, strokeSharpness); const textureEn = getOptionEn(textureList, strokeTexture); const widthEn = getOptionEn(staticOptions.widths, effectiveCharWidth); const proportionEn = getOptionEn(staticOptions.proportions, effectiveCharProportion); const cornerList = [...staticOptions.cornerStyles, ...(dynamicOptions.cornerStyles || [])]; const cornerEn = getOptionEn(cornerList, cornerStyle); const kineticEn = getOptionEn(kineticList, kineticVelocity); const slantEn = getOptionEn(slantList, slantAngle); const destructionEn = getOptionEn(destList, deformationDamage); let occupancyEn = getOptionEn(staticOptions.occupancies, occupancy); const slicingEn = getOptionEn(staticOptions.slicingIntensities, slicingIntensity); const subSizeEn = getOptionEn(staticOptions.subTitleSizes, subTitleSize);
     const extensionEn = getOptionEn([...staticOptions.strokeExtensions, ...(dynamicOptions.strokeExtensions || [])], strokeExtension);
     const letterConnEn = getOptionEn([...staticOptions.letterConnections, ...(dynamicOptions.letterConnections || [])], letterConnection);
     const internalSpaceEn = getOptionEn([...staticOptions.internalSpaces, ...(dynamicOptions.internalSpaces || [])], internalSpace);
@@ -1042,8 +1133,8 @@ Format: ONLY English, strict structural commands.`;
     const hasTexture = strokeTexture !== 'Tex_Clean';
     const hasDamage  = deformationDamage !== 'Damage_None';
     const hasSlant   = slantAngle !== 'Slant_0';
-    // 세로장평/세로장형 비율 — guard_layout 의 "NO tall letters / vertical stretching" 과 직접 모순.
-    const hasCondensed = charProportion === 'P_Condensed';
+    // 장체형은 명시적인 짧은 타이틀 스타일에만 허용. 9자 이상 1줄은 자연 장평을 강제한다.
+    const hasCondensed = effectiveCharProportion === 'P_Condensed';
     // 짧은 문자열(2자 이하) — "40-50% canvas width" 같은 좁은 점유율은 글자 하나가 비정상 확대됨.
     //   stripped of whitespace/newline so "AB CD" 도 4자로 인식.
     const stripped = (inputText || '').replace(/\s|\n/g, '');
@@ -1124,6 +1215,12 @@ Format: ONLY English, strict structural commands.`;
     const wordSpaceNegative = hasWordSpace
       ? "(natural word gap:1.5), (loose word separation:1.4), "
       : "";
+    const longTitleAspectBlock = isLongSingleLine
+      ? "(natural near-square Hangul skeletons:1.7), (standard balanced glyph width-to-height ratio:1.7), keep the long title on one line by using the canvas width and generous symmetric top-and-bottom whitespace, never by narrowing individual glyphs, "
+      : "";
+    const longTitleAspectNegative = isLongSingleLine
+      ? "(condensed tall-narrow glyphs:1.9), (reduced glyph width:1.9), (narrow character frames:1.8), (horizontal squeezing:1.9), "
+      : "";
 
     // ─────────────────────────────────────────────────────────────────
     // 정교화 derived 필드 — 프롬프트 구조에 직접 영향.
@@ -1152,6 +1249,19 @@ Format: ONLY English, strict structural commands.`;
     // 한글 입력이면 enKo(한글 획 언어로 번안된 토큰) 우선 — "fraktur"·"serif capitals" 같은
     // 라틴 전용 개념은 모델이 한글에 매핑하지 못해 평범한 한글로 나오는 문제의 해결책.
     const activeShape = staticOptions.shapePresets.find(s => s.id === scriptType);
+    const narrativeDirective = buildNarrativeDirective({
+      active: Boolean(activeShape?.narrative),
+      intensity: narrativeIntensity,
+      scope: narrativeScope,
+      mutation: narrativeMutation,
+      target: narrativeTarget,
+    });
+    if (narrativeDirective.active) {
+      modIntensityEn = narrativeDirective.budget;
+      readabilityFloorEn = narrativeDirective.readability;
+      modAllowedEn = narrativeDirective.allowed;
+      modForbiddenEn = narrativeDirective.forbidden;
+    }
     const hasKoreanText = /[ㄱ-힣]/.test(inputText || '');
     const presetShapeEn = activeShape ? ((hasKoreanText && activeShape.enKo) || activeShape.en) : "";
     const customShapeEn = (customShapeTextEn || customShapeText || "").trim();
@@ -1174,14 +1284,14 @@ Format: ONLY English, strict structural commands.`;
       inputText, layoutEn, mmoSilhouetteEn, mmoSurroundingElementEn, logoDegreeEn, textureEn, occupancyEn, aspectRatio, activeCoreData, weightEn, widthEn, proportionEn, kerningEn, letterConnEn, internalSpaceEn, terminalEn, sharpnessEn, cornerEn, extensionEn, userAuraEn, personaSliderValue, modIntensityEn, readabilityFloorEn, modAllowedEn, modForbiddenEn, momentumActive, kineticEn, slantEn, slicingEn, combatVectorEn, combatImpactZoneEn, combatDeformationEn, bgDescEn, destructionEn, troubleshootingBlockEn, cgTextInstruction, explicitTwoLineInstruction, optimizedBase, solidBgPrompt, isSlicingActive, activeGuardsEn, aspectRatioEn,
       // derived (정교화)
       preservationWeight, integrityTag, auraBlock, modeSpecificBlock, scores,
-      shapeStyleEn, shapeStyleBlock,
+      shapeStyleEn, shapeStyleBlock, narrativeDirectiveEn: narrativeDirective.en,
       // derived (충돌 회피)
       surfaceEn, forbiddenWeighted,
       activeGuardsPositive, activeGuardsNegative,
-      hasSlicing, hasTexture, hasDamage, hasSlant, hasWordSpace,
+      hasSlicing, hasTexture, hasDamage, hasSlant, hasWordSpace, isLongSingleLine, visibleGlyphCount,
       flatFillBlock, surfaceNegativeTokens,
       bgInvertNeg, wrapWeight,
-      wordSpaceBlock, wordSpaceNegative,
+      wordSpaceBlock, wordSpaceNegative, longTitleAspectBlock, longTitleAspectNegative,
     };
   };
 
@@ -1206,6 +1316,7 @@ Format: ONLY English, strict structural commands.`;
 [STRUCTURAL SILHOUETTE LANGUAGE]
 - ${ir.activeCoreData.language.split(', ').join('\n- ')}
 - Stroke Body: ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn} proportion.
+- Long-title Aspect Guard: ${ir.isLongSingleLine ? `ACTIVE for ${ir.visibleGlyphCount} glyphs. Preserve natural glyph width/height; canvas ratio and visible-title ratio are independent, so use top/bottom whitespace instead of condensation.` : 'inactive'}
 - Joints & Flow: ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}.
 - Terminals & Edges: ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}.
 - Logo Character: ${ir.logoDegreeEn}.
@@ -1219,6 +1330,7 @@ Format: ONLY English, strict structural commands.`;
 - Legibility Floor: MUST maintain at least ${ir.readabilityFloorEn} readability.
 - Allowed Edits: ${ir.modAllowedEn}
 - Forbidden Edits: ${ir.modForbiddenEn}
+${ir.narrativeDirectiveEn ? `\n[L4A: STORY GLYPH CONTROL]\n${ir.narrativeDirectiveEn}` : ''}
 
 [L5: COMBAT DYNAMICS]
 - Status: ${ir.momentumActive ? "ENABLED" : "DISABLED"}
@@ -1254,6 +1366,7 @@ Format: ONLY English, strict structural commands.`;
     const chatGPTOutput = `Generate a production-grade 2D flat typography graphic. ${ir.cgTextInstruction}.
 
 Aesthetic & Style: ${cgAesthetic}, pure 2D custom typography silhouette, logo-grade flat graphic (not a generic font, not a plain vector icon). ${ir.userAuraEn}.${ir.shapeStyleEn ? ` Letterform shape style: ${ir.shapeStyleEn}.` : ""}
+${ir.narrativeDirectiveEn ? `${ir.narrativeDirectiveEn}\n` : ''}
 Morphology ([${ir.activeCoreData.shortTitle}]): Enforce ${ir.activeCoreData.language}. Implement ${ir.weightEn}, ${ir.widthEn} width, ${ir.proportionEn}, ${ir.kerningEn}, ${ir.letterConnEn}, ${ir.internalSpaceEn}. Terminals should be ${ir.terminalEn}, ${ir.sharpnessEn}, ${ir.cornerEn}, ${ir.extensionEn}. Logo character: ${ir.logoDegreeEn}, silhouette framing: ${ir.mmoSilhouetteEn}.
 Surface & Dynamics: ${cgSurface}. The text should show ${ir.kineticEn}, ${ir.slantEn}, and ${ir.slicingEn}.${cgMomentumBlock}
 Layout constraints: ${ir.layoutEn} Occupancy must be ${ir.occupancyEn}. Canvas size should be ${ir.aspectRatio}.
@@ -1289,8 +1402,8 @@ CRITICAL RESTRICTIONS: Keep the exact requested spelling. No extra text, 3D extr
     //   - 글로우/할로/광 효과 always-on negative (모든 페르소나/2D-flat 의도와 충돌)
     //   - 옵션 en 자동 1.2 가중치 wrap → 무가중치 옵션도 attention 확보
     const W = ir.wrapWeight;
-    const nanoBananaOutput = `An epic cinematic 2D flat typography graphic, ${ir.auraBlock}${ir.shapeStyleBlock}${ir.modeSpecificBlock}${ir.integrityTag}macro photography, hyper-detailed single focal point. ${ir.aspectRatioEn}${ir.explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, ${ir.wordSpaceBlock}logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${W(ir.weightEn)}, ${W(ir.widthEn)}, ${W(ir.proportionEn)}, ${W(ir.kerningEn)}, ${W(ir.letterConnEn)}, ${W(ir.internalSpaceEn)}. Terminals: ${W(ir.terminalEn)}, ${W(ir.sharpnessEn)}, ${W(ir.cornerEn)}, ${W(ir.extensionEn)}. Logo character: ${W(ir.logoDegreeEn)}, framed as ${W(ir.mmoSilhouetteEn)}. The structure is modified by ${W(ir.kineticEn)}, ${W(ir.slantEn)}, and (${ir.slicingEn}:1.4)${momentumTag}. The surface is transformed by ${W(ir.surfaceEn)}. ${ir.optimizedBase}, ${ir.solidBgPrompt}. Surrounding: ${W(ir.mmoSurroundingElementEn)}. ${holeGuard}${ir.flatFillBlock}(pure 2D flat silhouette:${ir.preservationWeight}), ${W(ir.layoutEn)}, ${W(ir.occupancyEn)}, ${getSliderText(ir.personaSliderValue)}, ${ir.activeGuardsPositive.join(', ')}.
-Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (neon glow:1.7), (light bloom:1.7), (radial halo:1.7), (atmospheric haze:1.5), (luminous edge glow:1.6), ${ir.bgInvertNeg}, ${ir.surfaceNegativeTokens}${ir.wordSpaceNegative}(generic font:1.6), (standard typeface:1.5), ${ir.forbiddenWeighted}${ir.activeGuardsNegative.length > 0 ? ', ' + ir.activeGuardsNegative.join(', ') : ''}`;
+    const nanoBananaOutput = `An epic cinematic 2D flat typography graphic, ${ir.auraBlock}${ir.shapeStyleBlock}${ir.modeSpecificBlock}${ir.integrityTag}${ir.longTitleAspectBlock}macro photography, hyper-detailed single focal point. ${ir.narrativeDirectiveEn ? `${ir.narrativeDirectiveEn} ` : ''}${ir.aspectRatioEn}${ir.explicitTwoLineInstruction} is crafted as a pure 2D custom typography silhouette, ${ir.wordSpaceBlock}logo-grade flat graphic, not generic font, not plain vector icon. Feature: ${ir.activeCoreData.weightTags}, ${W(ir.weightEn)}, ${W(ir.widthEn)}, ${W(ir.proportionEn)}, ${W(ir.kerningEn)}, ${W(ir.letterConnEn)}, ${W(ir.internalSpaceEn)}. Terminals: ${W(ir.terminalEn)}, ${W(ir.sharpnessEn)}, ${W(ir.cornerEn)}, ${W(ir.extensionEn)}. Logo character: ${W(ir.logoDegreeEn)}, framed as ${W(ir.mmoSilhouetteEn)}. The structure is modified by ${W(ir.kineticEn)}, ${W(ir.slantEn)}, and (${ir.slicingEn}:1.4)${momentumTag}. The surface is transformed by ${W(ir.surfaceEn)}. ${ir.optimizedBase}, ${ir.solidBgPrompt}. Surrounding: ${W(ir.mmoSurroundingElementEn)}. ${holeGuard}${ir.flatFillBlock}(pure 2D flat silhouette:${ir.preservationWeight}), ${W(ir.layoutEn)}, ${W(ir.occupancyEn)}, ${getSliderText(ir.personaSliderValue)}, ${ir.activeGuardsPositive.join(', ')}.
+Negative prompt: (3D rendering:1.9), (drop shadows:1.9), (bevel:2.0), (emboss:2.0), (perspective:1.8), (background scenery:1.8), (gradients:1.5), (shading:1.5), (lighting:1.5), (specular highlight:1.8), (glossy surface:1.8), (neon glow:1.7), (light bloom:1.7), (radial halo:1.7), (atmospheric haze:1.5), (luminous edge glow:1.6), ${ir.bgInvertNeg}, ${ir.surfaceNegativeTokens}${ir.wordSpaceNegative}${ir.longTitleAspectNegative}(generic font:1.6), (standard typeface:1.5), ${ir.forbiddenWeighted}${ir.activeGuardsNegative.length > 0 ? ', ' + ir.activeGuardsNegative.join(', ') : ''}`;
 
     const sanitizedNanoBananaOutput = nanoBananaOutput
       .replace('An epic cinematic 2D', 'An epic 2D')
@@ -1447,7 +1560,9 @@ The result must remain a front-facing flat 2D graphic. Do not add depth, extrusi
 
   return {
     // 전역
-    usageModal, theme, isLight,
+    usageModal, theme, isLight, ensureCanGenerate,
+    // 토스트
+    toastMsg, showToast,
     // 뷰 상태
     currentView, setCurrentView, isEditMode,
     activeModel, activeEditModel, currentModel, setModel,
@@ -1459,6 +1574,10 @@ The result must remain a front-facing flat 2D graphic. Do not add depth, extrusi
     coreArchetype, setCoreArchetype, handleCoreArchetypeChange,
     coreDropdownOpen, setCoreDropdownOpen,
     scriptType, setScriptType, handleScriptPresetChange,
+    narrativeIntensity, setNarrativeIntensity,
+    narrativeScope, setNarrativeScope,
+    narrativeMutation, setNarrativeMutation,
+    narrativeTarget, setNarrativeTarget,
     customShapeText, setCustomShapeText, isTranslatingShape,
     isAdvancedOptionsEnabled, setIsAdvancedOptionsEnabled,
     isEnhanceModeEnabled, setIsEnhanceModeEnabled,
@@ -1546,6 +1665,8 @@ The result must remain a front-facing flat 2D graphic. Do not add depth, extrusi
     handleLayoutPresetChange,
     getValidationScores, executeAutoCorrection, handleApplyAllCorrections,
     handleReset, copyToClipboard,
+    // 드래프트 복원
+    showDraftRestore, restoreDraft, dismissDraftRestore: draft.dismiss,
     handleCreationDragOver, handleCreationDragLeave, handleCreationDrop, handleCreationImageUpload,
     handleDragOver, handleDragLeave, handleEditDrop, handleEditImageUpload,
     analyzeCreationImage,

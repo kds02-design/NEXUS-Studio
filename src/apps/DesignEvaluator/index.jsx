@@ -7,12 +7,23 @@ import {
 import { collection, addDoc, deleteDoc, doc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { GEMINI_API_KEY } from '../../lib/gemini';
 import {
-  fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES,
-  weightsMap, resolveCriteriaType, getActiveRules, getSeedRules,
+  fetchActiveCriteria, getSeedCriteria, CRITERIA_TYPES,
+  resolveCriteriaType, getActiveRules, getSeedRules,
   fetchAnchors, addAnchor, removeAnchor, formatAnchorsForPrompt,
-  fetchCalibration, buildAnchorFewShot, applyOffset,
+  fetchCalibration, buildAnchorFewShot,
 } from '../../lib/evaluationCriteria';
 import { prepareAnchorImages } from '../../lib/anchorImages';
+import {
+  NEXUS_SCORE_KEYS,
+  calculateEvaluationReport,
+  criteriaSnapshot,
+  mergeEvaluationScores,
+} from '../../lib/designEvaluationCore';
+// 평가 프롬프트 빌더 — 앱·MCP·스킬이 같은 문구를 쓰도록 lib 로 분리 (2026-09).
+import {
+  buildCriteriaPromptText, buildScoringRulesPromptText,
+  buildDesignEvaluationPrompt, buildEvaluationResponseSchema,
+} from '../../lib/designEvaluationPrompt';
 import { db, appId } from '../../lib/firebase';
 import { uploadBase64, uploadImageFile } from '../../lib/storage';
 import { useAuth } from '../../context/AuthContext';
@@ -38,6 +49,19 @@ const compressImage = (base64Str, maxWidth = 1024, quality = 0.8) => {
 // 히스토리/리스트 이미지로 안전하게 표시 가능한 src 인지 — blob: URL 은 다른 세션에서 무효라 제외.
 // data: / http(s) / firebase storage URL 만 허용. (구버전이 blob: 저장한 항목 호환용 guard.)
 const isUsableImageSrc = (src) => typeof src === 'string' && (src.startsWith('data:') || src.startsWith('http'));
+
+const asStringArray = (value) => Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+
+const alignScoreSetToCriteria = (scoreSet, criteria) => {
+  const targetIds = (criteria || []).map((item) => item.id).filter(Boolean);
+  if (!scoreSet || targetIds.every((id) => scoreSet[id])) return scoreSet || {};
+  // 구버전/auto 응답의 고정 10키를 현재 활성 기준의 순서로 안전하게 이식.
+  // 수동 카테고리 평가는 동적 스키마를 사용하므로 이 경로는 호환용이다.
+  if (targetIds.length === NEXUS_SCORE_KEYS.length && NEXUS_SCORE_KEYS.every((id) => scoreSet[id])) {
+    return Object.fromEntries(targetIds.map((id, index) => [id, scoreSet[NEXUS_SCORE_KEYS[index]]]));
+  }
+  return scoreSet;
+};
 
 const blobUrlToBase64 = async (url) => {
   try {
@@ -543,8 +567,8 @@ export default function DesignEvaluator() {
         fetchActiveCriteria(CRITERIA_TYPES.typoMotion),
       ]);
       const pickOrSeed = (v, type) => (v && Array.isArray(v.criteria) && v.criteria.length > 0)
-        ? { items: v.criteria, versionName: v.name || "active", rules: getActiveRules(v) || getSeedRules(type) }
-        : { items: getSeedCriteria(type), versionName: "(시드 fallback)", rules: getSeedRules(type) };
+        ? { items: v.criteria, versionId: v.id, versionName: v.name || "active", rules: getActiveRules(v) || getSeedRules(type), health: v.criteriaHealth || null }
+        : { items: getSeedCriteria(type), versionId: 'seed', versionName: "(시드 fallback)", rules: getSeedRules(type), health: null };
       const next = {
         banner:          pickOrSeed(b,  CRITERIA_TYPES.banner),
         promotion:       pickOrSeed(p,  CRITERIA_TYPES.promotion),
@@ -574,67 +598,7 @@ export default function DesignEvaluator() {
   // 타이포 평가 항목 id 는 기존 일반 디자인 평가 id 와 다르므로 (kerning/material/timing 등),
   // Gemini 가 카테고리에 맞는 id 키로 출력하도록 명시적으로 노출.
   const evaluationCriteria = useMemo(() => {
-    return `[임무 2: 카테고리별 평가 항목 (각 100점 만점)]
-각 항목에 대해 100점 만점 기준의 점수(score)와 핵심을 찌르는 심플한 한 줄 평가(reason)를 작성하세요.
-
-[★ 카테고리별 평가 항목, 가중치, JSON 키 매핑 ★]
-AI는 판별/지정된 카테고리에 따라 다음의 기준으로 평가하고, **반드시 괄호 안의 (JSON 키)에 맞춰** 점수와 이유를 기입하세요.
-카테고리에 따라 평가 항목 키가 완전히 다르므로 (예: 일반 디자인은 impression/concept/..., 타이포는 kerning/material/timing 등),
-판별된 카테고리에 정확히 일치하는 키 셋을 사용하세요.
-
-▶ [배너] 및 [기타] 카테고리:
-${formatCriteriaList(criteriaByType.banner.items)}
-
-▶ [프로모션 페이지] 카테고리 (데스크톱):
-${formatCriteriaList(criteriaByType.promotion.items)}
-
-▶ [프로모션 모바일] 카테고리 (모바일 긴 세로 랜딩 — 750×5000+):
-${formatCriteriaList(criteriaByType.promotionMobile.items)}
-
-▶ [프로모션 키비주얼] 카테고리 (프로모션 최상단 키비주얼/히어로 영역 전용):
-※ 전체 랜딩이 아니라 상단 키비주얼(히어로) 영역만 평가합니다. 전체 페이지 이미지가 들어온 경우에도 최상단 키비주얼 영역에만 집중해 채점하고, 하단 보상/약관/푸터 등은 평가 대상에서 제외하세요.
-${formatCriteriaList(criteriaByType.promotionKv.items)}
-
-▶ [브랜드웹_메인] 카테고리:
-${formatCriteriaList(criteriaByType.brandweb.items)}
-
-▶ [브랜드웹_서브] 카테고리:
-${formatCriteriaList(criteriaByType.brandwebSub.items)}
-
-▶ [브랜드웹_모바일] 카테고리 (모바일 단일 화면 mockup — 750×~1234):
-${formatCriteriaList(criteriaByType.brandwebMobile.items)}
-
-▶ [2D 타이포] 카테고리 (평면 디자인 — 벡터/플랫):
-${formatCriteriaList(criteriaByType.typo2d.items)}
-
-▶ [렌더링 타이포] 카테고리 (3D/PBR — Render Matrix 산출물):
-${formatCriteriaList(criteriaByType.typoRender.items)}
-
-▶ [모션 타이포] 카테고리 (영상/모션 — 대표 키프레임 기준):
-${formatCriteriaList(criteriaByType.typoMotion.items)}
-
-[중요: 이유(reason) 작성 시 강력한 규칙]
-- 고점 항목 (85점 이상): 어떤 디자인 요소가 훌륭한지 구체적으로 짚어 명확히 칭찬하세요.
-- 저점 항목 (80점 미만): 절대 칭찬하거나 "무난하다"고 타협하지 마세요. 명확한 단점과 아쉬운 점을 날카롭게 비판하고 지적하세요.
-- 구어체나 불필요한 미사여구를 빼고 핵심만 심플하게 작성하세요.
-- 모션 타이포 카테고리는 키프레임 한 장으로 평가하지만, 가능한 한 시간 축의 흔적(motion blur, sequential frames, easing 흔적 등)을 추론하여 timing/loop/모션 관련 항목에도 점수를 매기세요.`;
-  }, [criteriaByType]);
-
-  // 카테고리별 채점 규칙(rules) — 공유 기준의 rules. 비어있지 않은 것만 라벨과 함께 노출.
-  // 판별/지정된 카테고리에 해당하는 규칙을 AI 가 적용하도록 프롬프트에 주입.
-  const scoringRulesText = useMemo(() => {
-    const labelOf = {
-      banner: "배너 / 기타", promotion: "프로모션 페이지", promotionMobile: "프로모션 모바일",
-      promotionKv: "프로모션 키비주얼",
-      brandweb: "브랜드웹_메인", brandwebSub: "브랜드웹_서브", brandwebMobile: "브랜드웹_모바일",
-      typo2d: "2D 타이포", typoRender: "렌더링 타이포", typoMotion: "모션 타이포",
-    };
-    const blocks = Object.entries(criteriaByType)
-      .filter(([, v]) => v?.rules && v.rules.trim())
-      .map(([type, v]) => `▶ [${labelOf[type] || type}] 채점 규칙:\n${v.rules.trim()}`);
-    return blocks.length
-      ? `\n[★ 카테고리별 채점 규칙 — 판별된 카테고리에 해당하는 규칙을 반드시 적용하세요]\n${blocks.join("\n\n")}\n`
-      : "";
+    return buildCriteriaPromptText(criteriaByType);
   }, [criteriaByType]);
 
   useEffect(() => {
@@ -720,40 +684,14 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
     }
   };
 
-  const callGeminiAPI = async (prompt, imageBase64 = null, anchorImages = []) => {
+  const callGeminiAPI = async (prompt, imageBase64 = null, anchorImages = [], scoreKeys = NEXUS_SCORE_KEYS) => {
     const apiKey = geminiApiKey || GEMINI_API_KEY;
     const delays = [1000, 2000, 4000, 8000, 16000];
     try {
       const generationConfig = {
           temperature: 0.1,
           responseMimeType: "application/json",
-          responseSchema: {
-              type: "OBJECT",
-              properties: {
-                  title: { type: "STRING" },
-                  category: { type: "STRING" },
-                  date_info: { type: "OBJECT", properties: { year: { type: "STRING" }, month: { type: "STRING" }, full_date: { type: "STRING" } } },
-                  tags: { type: "ARRAY", items: { type: "STRING" } },
-                  purpose: { type: "STRING" },
-                  scores_data: {
-                      type: "OBJECT",
-                      properties: {
-                          impression: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          concept: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          layout: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          typography: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          color: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          readability: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          brand: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          flow: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          detail: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } },
-                          conversion: { type: "OBJECT", properties: { score: { type: "NUMBER" }, reason: { type: "STRING" } } }
-                      },
-                      required: ["impression", "concept", "layout", "typography", "color", "readability", "brand", "flow", "detail", "conversion"]
-                  }
-              },
-              required: ["title", "category", "tags", "scores_data"]
-          }
+          responseSchema: buildEvaluationResponseSchema(scoreKeys, { includeCategory: true, includePurpose: true }),
       };
       // 앵커 few-shot 이미지가 있으면 [프롬프트 → 참고 이미지들 → 평가 대상] 순으로 배치.
       const anchorParts = Array.isArray(anchorImages) ? anchorImages.filter(Boolean) : [];
@@ -808,8 +746,18 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
       setManualScoreAdj(0);
       try {
           // 분석 직전 평가 기준 / rules 를 한번 더 최신화 — admin 의 변경사항이 그대로 반영되도록.
-          // 응답을 기다리되 실패해도 현재 메모리 값으로 계속 진행.
-          try { await refreshCriteria(); } catch { /* keep going */ }
+          // React state 반영을 기다리지 않고 반환된 스냅샷을 이번 요청에 직접 사용한다.
+          let criteriaSource = criteriaByType;
+          try { criteriaSource = (await refreshCriteria()) || criteriaByType; } catch { /* keep current snapshot */ }
+          const runtimeCriteriaText = buildCriteriaPromptText(criteriaSource);
+          const runtimeRulesText = buildScoringRulesPromptText(criteriaSource);
+          const requestedType = selectedCategory === 'auto'
+            ? CRITERIA_TYPES.banner
+            : resolveCriteriaType(selectedCategory);
+          const requestedCriteria = criteriaSource[requestedType]?.items || getSeedCriteria(requestedType);
+          const requestedScoreKeys = selectedCategory === 'auto'
+            ? NEXUS_SCORE_KEYS
+            : requestedCriteria.map((item) => item.id).filter(Boolean);
           let base64Image = previewUrl;
           if (base64Image.startsWith('data:image')) {
               base64Image = await compressImage(base64Image, 1024, 0.8);
@@ -819,28 +767,6 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
               const compressed = await compressImage(b64, 1024, 0.8);
               base64Image = compressed.split(',')[1];
           }
-
-          const categoryInstruction = selectedCategory === 'auto'
-              ? `- category: 이미지의 형태와 목적에 따라 다음 중 하나로 정확히 분류하세요:
-  · "배너" (캠페인/이벤트 배너 — 가로형/정사각형의 단일 시안)
-  · "프로모션 페이지" (데스크톱 세로로 긴 랜딩 페이지 — 폭이 넓고 컬럼이 여럿 가능)
-  · "프로모션 모바일" (모바일 세로 랜딩 페이지 — 폭이 좁고 단일 컬럼, 보통 750×5000+ 비율)
-  · "프로모션 키비주얼" (프로모션 최상단 키비주얼/히어로 영역만 잘라낸 단일 시안 — 메인 일러스트+타이틀 중심, 하단 보상/약관 없음)
-  · "브랜드웹_메인" / "브랜드웹_서브" (데스크톱 게임/브랜드 사이트)
-  · "브랜드웹_모바일" (모바일 브랜드/게임 사이트 — 단일 화면 mockup, 보통 750×1234 또는 9:16~9:22 비율)
-  · "2D 타이포" (글자 자체가 주인공인 평면 타이포그래피 디자인 — 벡터/플랫, 배경 효과 거의 없음)
-  · "렌더링 타이포" (3D/PBR 렌더링된 타이포 — 금속/얼음/돌 재질감, 라이팅, 깊이감)
-  · "모션 타이포" (영상이나 모션이 강하게 느껴지는 키프레임 — 모션 블러, 파티클 궤적, 시퀀스 흔적, 글자가 시간 축으로 움직이는 인상)
-  · "기타"
-  ★ 모바일/데스크톱 구분 기준 (매우 중요):
-     - 이미지 가로폭이 캔버스 짧은 변 기준 800px 이하 또는 좁은 폭(폰 베젤·단일 컬럼 레이아웃)이 명확하면 모바일.
-     - 단일 폰 화면 mockup(세로 9:14~9:22 부근, 보통 750×~1234) → "브랜드웹_모바일" 또는 "프로모션 모바일".
-     - 같은 모바일이라도 단일 화면 단위면 "브랜드웹_모바일", 길게 스크롤되는 랜딩이면 "프로모션 모바일".
-  (타이포 구분 팁: 글자 자체에 3D 입체감/재질감이 있으면 "렌더링 타이포". 모션블러나 글자 주변에 시간성 효과(궤적)가 있으면 "모션 타이포". 평면이면 "2D 타이포".)`
-              : `- category: 이 디자인은 "${selectedCategory}"입니다. 반드시 이 값으로 고정하여 출력하고, 평가 기준도 해당 카테고리에 맞춰 진행하세요.`;
-          const introInstruction = selectedCategory === 'auto'
-              ? '첨부된 이미지를 분석하여 디자인 카테고리를 분류하고,'
-              : `첨부된 디자인은 [${selectedCategory}]입니다. 이 사실을 바탕으로`;
 
           // 기준점 앵커 — 카테고리가 고정된 경우에만 해당 타입 앵커를 few-shot 으로 주입.
           // (auto 모드는 분석 전 타입을 알 수 없어 생략.) 썸네일 있는 앵커는 시각 이미지로,
@@ -860,22 +786,16 @@ ${formatCriteriaList(criteriaByType.typoMotion.items)}
             catch (e) { console.warn('[DesignEvaluator] fetchAnchors failed', e); }
           }
 
-          const dynamicPrompt = `당신은 게임/IT 디자인을 심사하는 최고 권위의 AI 평가단입니다.
-${introInstruction} 반드시 10가지 세부 항목 '모두'에 대해 누락 없이 정밀 평가하세요.
-
-[임무 1: 메타데이터 추출]
-- title: 디자인의 메인 텍스트(제목) 추출.
-${categoryInstruction}
-- date_info: 이벤트 기간/날짜 (있을 경우).
-- tags: 컬러, 분위기, 특징 위주로 반드시 '한글'로만 3~5개 작성 (예: "다크판타지", "황금빛", "캐주얼", "화려한").
-
-${evaluationCriteria}
-${scoringRulesText}${anchorsText}
-반드시 지정된 JSON 스키마에 맞추어 10개 평가 항목 전체를 단 하나도 누락 없이 답변하세요.`;
+          const dynamicPrompt = buildDesignEvaluationPrompt({
+            category: selectedCategory,
+            criteriaText: runtimeCriteriaText,
+            rulesText: runtimeRulesText,
+            anchorsText,
+          });
 
           let geminiResult = null;
           let openaiResult = null;
-          const promises = [callGeminiAPI(dynamicPrompt, base64Image, anchorImageParts)];
+          const promises = [callGeminiAPI(dynamicPrompt, base64Image, anchorImageParts, requestedScoreKeys)];
           if (openAiApiKey) promises.push(callOpenAIAPI(dynamicPrompt, base64Image));
           const results = await Promise.allSettled(promises);
 
@@ -891,43 +811,72 @@ ${scoringRulesText}${anchorsText}
           if (geminiResult) try { geminiData = JSON.parse(geminiResult.replace(/```json|```/g, '').trim()); } catch(e){}
           if (openaiResult) try { openaiData = JSON.parse(openaiResult.replace(/```json|```/g, '').trim()); } catch(e){}
 
-          const primaryData = geminiData || openaiData;
+          let primaryData = geminiData || openaiData;
+
+          // auto 분류 결과가 현재 활성 기준의 동적 ID와 다르면 해당 카테고리로 한 번 더
+          // 평가해 스키마 충돌을 제거한다. 예: promotion v2의 한글 ID.
+          if (selectedCategory === 'auto' && primaryData?.scores_data) {
+            const preliminaryCategory = primaryData.category || '배너';
+            const preliminaryType = resolveCriteriaType(preliminaryCategory);
+            const preliminaryItems = criteriaSource[preliminaryType]?.items || getSeedCriteria(preliminaryType);
+            const targetKeys = preliminaryItems.map((item) => item.id).filter(Boolean);
+            const schemaChanged = targetKeys.length !== requestedScoreKeys.length
+              || targetKeys.some((key, index) => key !== requestedScoreKeys[index]);
+            if (schemaChanged) {
+              const fixedPrompt = `${dynamicPrompt}\n\n[카테고리 확정 재평가]\ncategory는 "${preliminaryCategory}"로 고정하고, 해당 카테고리의 JSON 키 ${targetKeys.join(', ')}만 사용해 전체 평가를 다시 작성하세요.`;
+              const rerunPromises = [callGeminiAPI(fixedPrompt, base64Image, [], targetKeys)];
+              if (openAiApiKey) rerunPromises.push(callOpenAIAPI(fixedPrompt, base64Image));
+              const rerunResults = await Promise.allSettled(rerunPromises);
+              if (rerunResults[0]?.status === 'fulfilled' && !rerunResults[0].value?.startsWith?.('ERROR:')) {
+                try { geminiData = JSON.parse(rerunResults[0].value.replace(/```json|```/g, '').trim()); } catch { /* retain preliminary */ }
+              }
+              if (openAiApiKey && rerunResults[1]?.status === 'fulfilled' && rerunResults[1].value) {
+                try { openaiData = JSON.parse(rerunResults[1].value.replace(/```json|```/g, '').trim()); } catch { /* retain preliminary */ }
+              }
+              primaryData = geminiData || openaiData;
+            }
+          }
 
           if (primaryData && primaryData.scores_data) {
-              const mergeScore = (gScore, oScore) => {
-                  if (gScore != null && oScore != null) return (gScore + oScore) / 2;
-                  return gScore != null ? gScore : oScore != null ? oScore : 80;
-              };
-              const mergeReason = (gReason, oReason) => gReason || oReason || '';
               const detectedCategory = primaryData.category || '미분류';
-              // 가중치 단일 소스 — 공유 평가 기준(criteriaByType[resolvedType])의 weight 사용.
-              // 누락/합≠100 안전하게 weight 합으로 정규화한 가중 평균(0~100) → 0~10.
               const resolvedType = resolveCriteriaType(detectedCategory);
-              const weights = weightsMap(criteriaByType[resolvedType]?.items || []);
-              const keys = ['impression', 'concept', 'layout', 'typography', 'color', 'readability', 'brand', 'flow', 'detail', 'conversion'];
-              const mergedScoresData = {};
-              let weightedSum = 0, totalW = 0;
-              keys.forEach(key => {
-                  const gScore = geminiData?.scores_data?.[key]?.score;
-                  const oScore = openaiData?.scores_data?.[key]?.score;
-                  const score = mergeScore(gScore, oScore);
-                  const w = Number(weights[key]) > 0 ? Number(weights[key]) : 1;
-                  const reason = mergeReason(geminiData?.scores_data?.[key]?.reason, openaiData?.scores_data?.[key]?.reason);
-                  mergedScoresData[key] = { score: Math.round(score), reason, weight: w };
-                  weightedSum += score * w; totalW += w;
-              });
-              const weightedAvg100 = totalW > 0 ? weightedSum / totalW : 0;
-              // 전역 보정(offset) 적용 — resolvedType 별 평가자 점수 감각으로 점수대 시프트.
+              const activeEntry = criteriaSource[resolvedType] || {
+                items: getSeedCriteria(resolvedType), versionName: '(시드 fallback)', rules: getSeedRules(resolvedType),
+              };
+              const activeItems = activeEntry.items || [];
+              const geminiScores = alignScoreSetToCriteria(geminiData?.scores_data, activeItems);
+              const openaiScores = alignScoreSetToCriteria(openaiData?.scores_data, activeItems);
+              const merged = mergeEvaluationScores(activeItems, [geminiScores, openaiScores].filter(Boolean));
+              const hardFailures = [...new Set([
+                ...asStringArray(geminiData?.hardFailures), ...asStringArray(openaiData?.hardFailures),
+              ])];
+              const recommendedCorrections = [...new Set([
+                ...asStringArray(geminiData?.recommendedCorrections), ...asStringArray(openaiData?.recommendedCorrections),
+              ])];
               let calibOffset = 0;
               try { calibOffset = (await fetchCalibration(resolvedType))?.offset || 0; }
               catch (e) { console.warn('[DesignEvaluator] fetchCalibration failed', e); }
-              const adjusted100 = applyOffset(weightedAvg100, calibOffset);
-              let aiScore = Math.round((adjusted100 / 10) * 10) / 10;
+              const report = calculateEvaluationReport({
+                criteria: activeItems,
+                scores: merged.scores,
+                hardFailures,
+                recommendedCorrections,
+                offset: calibOffset,
+              });
+              const aiScore = Math.round((report.overall / 10) * 10) / 10;
               const finalResult = {
                   title: primaryData.title,
                   category: detectedCategory,
                   tags: primaryData.tags || [],
-                  scores: mergedScoresData,
+                  criteriaType: resolvedType,
+                  criteriaVersionId: activeEntry.versionId || 'seed',
+                  criteriaVersion: activeEntry.versionName || 'active',
+                  criteria: criteriaSnapshot(activeItems),
+                  scores: merged.scores,
+                  hardFailures: report.hardFailures,
+                  recommendedCorrections: report.recommendedCorrections,
+                  evaluationReport: report,
+                  pass: report.pass,
                   aiScore: aiScore,
                   score: aiScore
               };
@@ -947,7 +896,7 @@ ${scoringRulesText}${anchorsText}
       }
   };
 
-  const getFinalScore100 = (data, adj) => {
+  const getFinalScore100 = (data) => {
       if (!data) return 0;
       // 우선순위: aiScore (0~10 분석 직후) → finalScore (히스토리 저장본, 이미 0~99) → 0
       let base = 0;
@@ -956,8 +905,7 @@ ${scoringRulesText}${anchorsText}
       } else if (Number.isFinite(parseFloat(data.finalScore))) {
         base = Math.round(parseFloat(data.finalScore));
       }
-      const a = Number.isFinite(parseFloat(adj)) ? parseFloat(adj) : 0;
-      return Math.min(99, Math.max(0, base + a));
+      return Math.min(99, Math.max(0, base));
   };
 
   // ─── 기준점(앵커) 큐레이션 — 이 앱이 허브. 추가/삭제/목록. ───
@@ -1350,7 +1298,11 @@ ${scoringRulesText}${anchorsText}
                 )}
 
                 {resultData && !isAnalyzing && (() => {
-                    const validScores = fixedOrder.map(k => resultData.scores?.[k]?.score).filter(s => s != null).map(s => Math.round(s));
+                    const resultOrder = Array.isArray(resultData.criteria) && resultData.criteria.length
+                        ? resultData.criteria.map((item) => item.id)
+                        : fixedOrder;
+                    const resultLabels = Object.fromEntries((resultData.criteria || []).map((item) => [item.id, item.name || item.id]));
+                    const validScores = resultOrder.map(k => resultData.scores?.[k]?.score).filter(s => s != null).map(s => Math.round(s));
                     const maxScore = validScores.length > 0 ? Math.max(...validScores) : -1;
                     const minScore = validScores.length > 0 ? Math.min(...validScores) : 101;
                     return (
@@ -1409,11 +1361,29 @@ ${scoringRulesText}${anchorsText}
                                         {getFinalScore100(resultData, manualScoreAdj)}
                                     </div>
                                 </div>
-                            </div>
+                             </div>
+
+                            {resultData.evaluationReport && (
+                                <div className={`mb-4 rounded-lg border px-3 py-2.5 ${resultData.pass ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-rose-500/10 border-rose-500/30'}`}>
+                                    <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <span className={`text-xs font-black ${resultData.pass ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                            {resultData.pass ? 'NEXUS 품질 게이트 통과' : 'NEXUS 품질 게이트 미통과'}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-400">
+                                            전체 85+ · 전 항목 75+ · 하드 실패 0 · {resultData.criteriaVersion || 'active'}
+                                        </span>
+                                    </div>
+                                    {resultData.hardFailures?.length > 0 && (
+                                        <ul className="mt-2 list-disc pl-4 text-[11px] text-rose-300 space-y-0.5">
+                                            {resultData.hardFailures.map((failure, index) => <li key={`${failure}-${index}`}>{failure}</li>)}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
 
                             {/* 점수 카드 그리드 — 구분선 없음, 점수 컬러 복원, 최고/최저 카드 배경 차등. */}
                             <div className="grid gap-2 mb-5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
-                                {fixedOrder.map((key) => {
+                                {resultOrder.map((key) => {
                                     const data = resultData.scores?.[key];
                                     if (!data) return null;
                                     const scoreVal = Math.round(data.score);
@@ -1434,7 +1404,7 @@ ${scoringRulesText}${anchorsText}
                                             {/* 타이틀 행 — 구분선/배경 없이 흘러서 카드와 합쳐짐 */}
                                             <div className="flex items-center justify-between gap-2">
                                                 <span className="text-[11px] font-bold text-white leading-tight break-words flex-1 uppercase tracking-wider" style={{ letterSpacing: '0.04em' }}>
-                                                    {getScoreLabel(key, resultData.category)}
+                                                    {resultLabels[key] || getScoreLabel(key, resultData.category)}
                                                 </span>
                                                 <span className="text-[18px] font-bold leading-none tabular-nums shrink-0" style={{ color: scoreColor }}>
                                                     {scoreVal}

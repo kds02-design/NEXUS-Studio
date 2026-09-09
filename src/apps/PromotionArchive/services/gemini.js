@@ -4,11 +4,16 @@ import { GEMINI_API_KEY as DEFAULT_GEMINI_KEY } from "../../../lib/gemini";
 import { getIntroTemplateFor } from "../constants/webEvalCriteria";
 import {
   CRITERIA_TYPES, fetchActiveCriteria, getActiveRules, getSeedRules,
-  getSeedCriteria, formatCriteriaList, weightsMap,
+  getSeedCriteria, formatCriteriaList,
   fetchAnchors, formatAnchorsForPrompt,
-  fetchCalibration, buildAnchorFewShot, applyOffset,
+  fetchCalibration, buildAnchorFewShot,
 } from "../../../lib/evaluationCriteria";
 import { prepareAnchorImages } from "../../../lib/anchorImages";
+import {
+  calculateEvaluationReport,
+  criteriaSnapshot,
+  mergeEvaluationScores,
+} from "../../../lib/designEvaluationCore";
 
 // 공유 캘리브레이션(어드민 활성 평가기준 + 앵커 + 채점 규칙 + 전역 보정) 세션 캐시.
 // 캐시 키에 versionId 를 포함 — 어드민이 활성 버전을 토글하면 다음 호출에서 새 항목/가중치로 자동 전환.
@@ -148,9 +153,11 @@ const _buildResponseSchema = (scoreKeys) => ({
             type: "OBJECT",
             properties: Object.fromEntries(scoreKeys.map(k => [k, WEB_SCORE_OBJ])),
             required: [...scoreKeys]
-        }
+        },
+        hardFailures: { type: "ARRAY", items: { type: "STRING" } },
+        recommendedCorrections: { type: "ARRAY", items: { type: "STRING" } },
     },
-    required: ["title", "tags", "scores_data"]
+    required: ["title", "tags", "scores_data", "hardFailures", "recommendedCorrections"]
 });
 
 const WEB_REQUEST_TIMEOUT_MS = 60000;
@@ -233,7 +240,6 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
     if (SCORE_KEYS.length === 0) {
         return { ok: false, error: `평가 항목이 비어 있습니다 (type=${calibType}). NexusAdmin 에서 활성 버전을 확인하세요.` };
     }
-    const weights = weightsMap(items);
 
     // 프롬프트 인트로(타입별) + 동적 평가 항목 리스트 주입.
     const introTemplate = getIntroTemplateFor(calibType);
@@ -271,7 +277,14 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
 - 첫 이미지의 브랜드 임팩트와 두 번째 이미지의 콘텐츠 구조·브랜드 연속성을 종합해 단일 점수를 작성하세요.
 - title/date/tags/summary는 두 이미지 정보를 종합하되 메인 페이지를 우선하세요.
 ` : '';
-    const prompt = `${introFilled}${ruleBlock}${anchorBlock}${folderBlock}${representativeSetBlock}`
+    const integrityBlock = `
+
+[NEXUS 무결성 검사]
+- 잘못된 카피·날짜·로고, 콘텐츠 잘림, 깨진 투명도, 캐릭터/FX 오정렬은 hardFailures에 기록하세요.
+- recommendedCorrections에는 가장 영향이 큰 수정만 최대 3개 작성하세요.
+- 의도적으로 텍스트나 CTA가 없는 이미지형 결과물에는 누락 자체를 감점하지 마세요.
+`;
+    const prompt = `${introFilled}${ruleBlock}${anchorBlock}${folderBlock}${representativeSetBlock}${integrityBlock}`
         + (userComment ? `\n\n[사용자 피드백]\n${userComment}\n` : '');
 
     const imageParts = (Array.isArray(imagesBase64) ? imagesBase64 : [imagesBase64])
@@ -331,26 +344,15 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
             const cleaned = text.replace(/```json|```/g, '').trim();
             const parsed = JSON.parse(cleaned);
 
-            // 점수 정리 + aiScore 계산 — 가중 평균(weights). 누락 항목은 분모(weight 합)에서도 제외.
-            const scores = {};
-            let weightedSum = 0;
-            let totalW = 0;
-            const missing = [];
-            SCORE_KEYS.forEach(key => {
-                const item = parsed?.scores_data?.[key];
-                if (item && typeof item.score === 'number') {
-                    const w = Number(weights[key]) > 0 ? Number(weights[key]) : 1;
-                    scores[key] = { score: Math.round(item.score), reason: String(item.reason || ''), weight: w };
-                    weightedSum += item.score * w;
-                    totalW += w;
-                } else {
-                    missing.push(key);
-                    scores[key] = { score: null, reason: '(분석 누락)' };
-                }
+            const merged = mergeEvaluationScores(items, [parsed?.scores_data].filter(Boolean));
+            const report = calculateEvaluationReport({
+                criteria: items,
+                scores: merged.scores,
+                hardFailures: Array.isArray(parsed?.hardFailures) ? parsed.hardFailures : [],
+                recommendedCorrections: Array.isArray(parsed?.recommendedCorrections) ? parsed.recommendedCorrections : [],
+                offset: calib.offset,
             });
-            // 전역 보정(offset) 적용 — 평가자 점수 감각으로 점수대 시프트(0~99 clamp).
-            const adjusted100 = applyOffset(totalW > 0 ? weightedSum / totalW : 0, calib.offset);
-            const aiScore = totalW > 0 ? +(adjusted100 / 10).toFixed(1) : 0;
+            const aiScore = +(report.overall / 10).toFixed(1);
 
             // 날짜 정리 — 빈 값/추측 단어 필터
             const isInvalidDate = (val) => !val || ['null', 'none', 'unknown', '없음', '불명'].some(s => String(val).toLowerCase().includes(s));
@@ -374,21 +376,26 @@ export const analyzeWebDesign = async (imagesBase64 = [], userComment = '', opti
             // title 후처리 — AI 가 종종 따옴표나 [ ] 같은 포맷팅 문자를 붙임. 정리.
             let titleClean = parsed?.title ? String(parsed.title).trim() : null;
             if (titleClean) {
-                titleClean = titleClean.replace(/^["'\[「『]+|["'\]」』]+$/g, '').trim();
+                titleClean = titleClean.replace(/^["'[「『]+|["'\]」』]+$/g, '').trim();
                 if (titleClean.length < 2) titleClean = null;
             }
 
             return {
                 ok: true,
-                webScores: scores,
+                webCriteria: criteriaSnapshot(items),
+                webScores: merged.scores,
                 webAiScore: aiScore,
+                webHardFailures: report.hardFailures,
+                webRecommendedCorrections: report.recommendedCorrections,
+                webEvaluationReport: report,
+                webEvaluationPass: report.pass,
                 title: titleClean,
                 year: Number.isFinite(yearNum) ? yearNum : null,
                 month: Number.isFinite(monthNum) ? monthNum : null,
                 fullDate: fullDateStr || null,
                 tags: Array.isArray(parsed?.tags) ? parsed.tags.map(String) : [],
                 summary: parsed?.summary ? String(parsed.summary) : '',
-                missingCount: missing.length,
+                missingCount: merged.missing.length,
                 criteriaType: calibType,
                 criteriaVersionId: calib.versionId,
                 criteriaVersionName: calib.versionName,

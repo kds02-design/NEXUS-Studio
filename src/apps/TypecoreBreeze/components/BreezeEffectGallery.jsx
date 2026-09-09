@@ -6,8 +6,7 @@ import { useState } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { staticOptions } from '../constants/presets.js';
-
-const ACCENT = '#A78BFA';
+import { ACCENT } from './ui.jsx';
 
 // 16 효과 메타 — 이모지 + 한 줄 태그라인. id 누락(동적 스타일)은 기본값 폴백.
 const EFFECT_META = {
@@ -32,6 +31,11 @@ const EFFECT_META = {
   Casual_Idol:       { emoji: '✨', tag: '파스텔 아이돌' },
   Casual_Grunge:     { emoji: '🎬', tag: '거친 그런지 무비' },
   Casual_StencilBlock: { emoji: '🧱', tag: '각진 스텐실 블록' },
+  Story_IntimateMonoline: { emoji: '—', tag: '조용한 관계 드라마' },
+  Story_PoeticBrush: { emoji: '〆', tag: '절제된 문학적 필압' },
+  Story_WarmImperfect: { emoji: '∼', tag: '따뜻한 휴먼 드라마' },
+  Story_YouthDiary: { emoji: '□', tag: '담백한 성장 기록' },
+  Story_DryComedy: { emoji: '·', tag: '무표정한 코미디' },
 };
 
 export default function BreezeEffectGallery() {
@@ -47,12 +51,13 @@ export default function BreezeEffectGallery() {
     ? (expanded ? effects : compactEffects)
     : [...compactEffects, activeEffect];
   const isCalli = b.selectedCategory === 'calli';
+  const isStory = b.selectedCategory === 'story';
 
   return (
     <section className="rounded-xl border border-violet-500/25 bg-gradient-to-br from-violet-950/30 to-[#0E0E0E] p-3">
       <div className="flex items-center gap-2 mb-2.5 px-0.5">
         <Sparkles className="w-3.5 h-3.5 text-violet-300" />
-        <h3 className="text-[11px] font-bold text-violet-100">2. {isCalli ? '붓글씨 효과 고르기' : '글자 효과 고르기'}</h3>
+        <h3 className="text-[11px] font-bold text-violet-100">2. {isStory ? '드라마 타이틀 톤 고르기' : isCalli ? '붓글씨 효과 고르기' : '글자 효과 고르기'}</h3>
         <span className="text-[10px] text-zinc-500">— 먼저 대표 효과만 보여드려요</span>
       </div>
       <div className="grid grid-cols-2 gap-1.5">

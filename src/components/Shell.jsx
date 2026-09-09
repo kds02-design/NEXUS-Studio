@@ -54,6 +54,7 @@ const LumKeyApp = lazy(() => import("../apps/LumKey"));
 const FigmaL10nApp = lazy(() => import("../apps/FigmaL10n"));
 const BriefStudioApp = lazy(() => import("../apps/BriefStudio"));
 const NexusAdminApp = lazy(() => import("../apps/NexusAdmin"));
+const SkillControlApp = lazy(() => import("../apps/SkillControl"));
 const PromptAuditApp = lazy(() => import("../apps/PromptAudit"));
 const DestinyObservatoryApp = lazy(() => import("../apps/DestinyObservatory"));
 const PetPersonaApp = lazy(() => import("../apps/PetPersona"));
@@ -882,6 +883,7 @@ function AppRouter({ appId, version, setVersion, versions }) {
     case "prompt-audit":       return <PromptAuditApp />;
     case "destiny-observatory": return <Suspense fallback={null}><DestinyObservatoryApp /></Suspense>;
     case "pet-persona":        return <Suspense fallback={null}><PetPersonaApp /></Suspense>;
+    case "skill-control":      return <SkillControlApp />;
     case "nexus-admin":        return <NexusAdminApp />;
     default:                   return <PlaceholderApp appId={appId} />;
   }

@@ -1,0 +1,59 @@
+{
+  "$schema": "brandweb-lnb style v1",
+  "name": "base",
+  "description": "리니지2M 브랜드웹 좌측 메뉴(LNB) 기본 스타일. 구조(structure)는 게임·캠페인 간 고정, style 토큰만 변형(variant)으로 덮어쓴다. 값은 2026 최종본 4종(도원결의·기적·라울·사이하) 실측.",
+  "structure": {
+    "canvas": [1920, 1080],
+    "frame": { "name": "LNB", "x": 0, "y": 0, "w": 620, "h": 1080 },
+    "menuX": 78,
+    "blockAnchorY": 542,
+    "lineX": 56,
+    "emblemX": 39,
+    "rows": {
+      "pitch1": 32,
+      "subEnter": 33,
+      "subPitch": 26,
+      "subExit": 32,
+      "subIndent": 0,
+      "subPrefix": "– ",
+      "badgeGap": 12,
+      "badgeDy": 4
+    }
+  },
+  "style": {
+    "dim": {
+      "type": "linear-x",
+      "w": 620,
+      "color": "#000000",
+      "stops": [[0, 0.87], [0.35, 0.55], [0.7, 0.18], [1, 0]]
+    },
+    "line": {
+      "mode": "fixed",
+      "y": 270,
+      "h": 540,
+      "padTop": 68,
+      "padBottom": 30,
+      "width": 1,
+      "color": "#D7B36B",
+      "stops": [[0, 0], [0.3, 0.55], [0.7, 0.55], [1, 0]]
+    },
+    "knot": { "type": "none", "size": 10, "asset": null, "color": "#371310" },
+    "emblem": { "type": "image", "w": 33, "h": 27, "asset": "assets/dowon/active_emblem_33x27.png" },
+    "glow": { "enabled": false, "size": 56, "color": "#F0C060" },
+    "text": {
+      "family": "Noto Sans KR",
+      "size1": 15,
+      "size2": 13,
+      "sizeActive": 16,
+      "styleOff": "Regular",
+      "styleActive": "Medium",
+      "letterSpacing": -5,
+      "color": "#C8AC91",
+      "opacityOff": 0.5,
+      "opacityHover": 0.8,
+      "opacityActive": 1,
+      "colorActive": "#CFA96A"
+    },
+    "badge": { "size": 10, "letterSpacing": -3, "color": "#C8AC91", "opacity": 0.5 }
+  }
+}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback } from "react";
 import { AlertCircle, CheckCircle } from "lucide-react";
 import { doc, setDoc } from "firebase/firestore";
 import { useRenderPrompt } from "./hooks/useRenderPrompt";
@@ -12,6 +12,7 @@ import { TEMP_TTL_MS } from "../../lib/promptArcSave";
 import { db, appId } from "../../lib/firebase";
 import { serializeForFirestore } from "../PromptArc/services/firebase";
 import { useAuth } from "../../context/AuthContext";
+import { ACCENT } from "./constants/accent";
 
 // useRenderPrompt 가 노출하는 setX 함수들을 MatrixSidebar 에 그대로 전달하기 위한 키 목록.
 const SETTER_KEYS = [
@@ -23,7 +24,6 @@ const SETTER_KEYS = [
   'setEditImage','setEditBudget','setActiveEditIntents','setEditBg','setEditRearExtrusion','setEditIntent',
   'setEditMaterial','setEditWearLevel','setEditRimColor','setEditRimIntensity','setEditEnergyCore',
   'setEditFxOrigin','setEditFxIntensity','setEditVfxPassMode',
-  'setMotionImage','setCameraMotion','setVfxDynamics','setMotionIntent',
 ];
 
 // performLogicAudit + QuickAdjustments 의 action 객체 → useRenderPrompt setter 매핑.
@@ -36,7 +36,6 @@ const ACTION_TO_SETTER = {
   editBudget: 'setEditBudget', editRearExtrusion: 'setEditRearExtrusion', activeEditIntents: 'setActiveEditIntents',
   editIntent: 'setEditIntent', vfxPassMode: 'setVfxPassMode', editVfxPassMode: 'setEditVfxPassMode',
   editEnergyCore: 'setEditEnergyCore', userIntent: 'setUserIntent',
-  cameraMotion: 'setCameraMotion', vfxDynamics: 'setVfxDynamics', motionIntent: 'setMotionIntent',
   typographyScale: 'setTypographyScale', cameraLens: 'setCameraLens',
   enableVfx: 'setEnableVfx', enableShadow: 'setEnableShadow',
 };
@@ -54,6 +53,8 @@ export default function RenderMatrixApp() {
   // ─── Imagen 렌더링 ───
   const [rendering, setRendering] = useState(false);
   const [renderedImage, setRenderedImage] = useState(null); // { dataUrl, base64, mimeType, modelId }
+  // 자동 아카이브가 업로드한 Cloudinary URL — Mask Forge 송신 시 dataURL 대신 재사용 (payload 경량화).
+  const [savedCloudinaryUrl, setSavedCloudinaryUrl] = useState(null);
   const [renderError, setRenderError] = useState(null);
   const [savingToArc, setSavingToArc] = useState(false);
   const [selectedModel, setSelectedModel] = useState(IMAGEN_MODELS[0].id);
@@ -67,6 +68,7 @@ export default function RenderMatrixApp() {
     setSavingToArc(true);
     try {
       const cloudinaryUrl = await uploadBase64(image.dataUrl);
+      setSavedCloudinaryUrl(cloudinaryUrl);
       const id = Math.random().toString(36).slice(2);
       const now = Date.now();
       const modelLabel = IMAGEN_MODELS.find(m => m.id === image.modelId)?.label || image.modelId || 'Imagen';
@@ -133,7 +135,7 @@ export default function RenderMatrixApp() {
     }
     setRendering(true);
     setRenderError(null);
-    setRenderedImage(null);
+    // 이전 결과는 유지 — 재렌더 실패 시 10c 짜리 기존 이미지가 사라지는 것 방지. 성공 시에만 교체.
     try {
       // 뷰에 맞는 대상 이미지(dataURL)를 함께 전달 → image-to-image 렌더링.
       const result = await renderWithImagen(
@@ -143,17 +145,29 @@ export default function RenderMatrixApp() {
         { imageSize: selectedRenderSize },
       );
       setRenderedImage(result);
+      setSavedCloudinaryUrl(null); // 이전 렌더의 URL 은 무효 — 자동 아카이브가 새 URL 로 갱신.
+      // 자동 파이프라인 렌더였다면 완료 상태로 마감 ('rendering' 에 영원히 머무는 것 방지).
+      rp.setAutoPipeline?.((s) => (s && s.status === 'rendering' ? { ...s, status: 'done' } : s));
       // 렌더 완료 즉시 PromptArc 내 폴더에 자동 등록 — 사용자 클릭 없이 백그라운드 진행.
       if (user?.uid && result?.dataUrl) {
         saveRenderToPromptArc(promptText, result);
       }
     } catch (e) {
       console.error('[RenderMatrix] imagen failed', e);
-      setRenderError(e.message || String(e));
+      // 원문(영문 API 에러)은 콘솔에만 — 사용자에겐 한국어 안내로 매핑.
+      const raw = e.message || String(e);
+      const friendly = /429|quota/i.test(raw)
+        ? '요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.'
+        : /SAFETY|blocked/i.test(raw)
+          ? '프롬프트가 정책에 의해 거부되었습니다. 표현을 조정해보세요.'
+          : `렌더링에 실패했습니다: ${raw}`;
+      setRenderError(friendly);
+      // 자동 파이프라인 렌더였다면 실패 상태로 마감.
+      rp.setAutoPipeline?.((s) => (s && s.status === 'rendering' ? { ...s, status: 'failed' } : s));
     } finally {
       setRendering(false);
     }
-  }, [canRender, selectedModel, selectedRenderSize, rp.baseImage, rp.editImage, rp.currentView, user, saveRenderToPromptArc]);
+  }, [canRender, selectedModel, selectedRenderSize, rp.baseImage, rp.editImage, rp.currentView, user, saveRenderToPromptArc, rp.setAutoPipeline]);
 
   const handleDownloadRendered = useCallback(() => {
     if (!renderedImage?.dataUrl) return;
@@ -175,26 +189,25 @@ export default function RenderMatrixApp() {
 
   // ─── 완전 자동 파이프라인 ───
   // TypeCore 에서 mode:'pipeline' 로 들어오면 훅이 base image 임포트 + 추천 옵션 적용 후
-  // autoPipeline.status==='ready' 로 올린다. 그 시점의 compiledOutputs(최신 옵션 반영)로
-  // image-to-image 렌더를 1회 자동 실행. autoFiredRef 로 파이프라인당 단 한 번만 발화.
-  const autoFiredRef = useRef(null);
-  useEffect(() => {
-    const pipe = rp.autoPipeline;
-    if (!pipe || pipe.status !== 'ready') return;
-    if (autoFiredRef.current === pipe.id) return;
-    if (!rp.baseImage || rendering) return;
+  // autoPipeline.status==='ready' 로 올린다. 이전엔 그 즉시 10c 렌더를 자동 발화했지만,
+  // 지금은 결과 패널에 확인 배너를 띄우고 [바로 렌더] 클릭 시에만 실행한다 (크레딧 오소비 방지).
+  const handlePipelineRender = useCallback(async () => {
     const text = rp.optimizedPrompts[rp.aiModel] || rp.compiledOutputs[rp.aiModel];
-    // 컴파일이 아직 placeholder/빈 상태면 다음 렌더 틱을 기다린다 (deps 로 재진입).
-    if (!text || text.length < 20 || text.includes('업로드')) return;
-    autoFiredRef.current = pipe.id; // 동기 가드 — 중복 발화 차단.
-    // 실제 발화는 마이크로태스크로 디퍼 — effect 본문에서 동기 setState(cascading render) 회피.
-    // handleRender 는 !canRender 면 내부에서 안내 처리.
-    queueMicrotask(() => {
-      rp.setAutoPipeline?.((s) => (s ? { ...s, status: 'rendering' } : null));
-      rp.showToast?.('🤖 완전 자동 파이프라인 — Render Matrix 렌더 실행', 4000);
-      handleRender(text);
-    });
-  }, [rp.autoPipeline, rp.baseImage, rp.compiledOutputs, rp.optimizedPrompts, rp.aiModel, rendering, handleRender, rp]);
+    if (!text || text.length < 20 || text.includes('업로드')) {
+      rp.showToast?.('⚠️ 프롬프트가 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.');
+      return;
+    }
+    rp.setAutoPipeline?.((s) => (s ? { ...s, status: 'rendering' } : null));
+    await handleRender(text);
+    // handleRender 의 성공/실패 경로가 done/failed 로 마감. 조기 return(크레딧 부족·이미지 누락 등)
+    // 케이스는 'rendering' 에 남으므로 여기서 failed 로 마감.
+    rp.setAutoPipeline?.((s) => (s && s.status === 'rendering' ? { ...s, status: 'failed' } : s));
+  }, [rp.optimizedPrompts, rp.compiledOutputs, rp.aiModel, handleRender, rp]);
+
+  // [옵션 먼저 확인] — 배너만 닫고 적용된 옵션·이미지는 그대로 유지 (수동 렌더 흐름으로 전환).
+  const handlePipelineDismiss = useCallback(() => {
+    rp.setAutoPipeline?.(null);
+  }, [rp]);
 
 
   const presets = usePresets({
@@ -218,7 +231,6 @@ export default function RenderMatrixApp() {
   // 사이드바 내부 드래그-오버 플래그들.
   const [isDraggingRef, setIsDraggingRef] = useState(false);
   const [isDraggingEdit, setIsDraggingEdit] = useState(false);
-  const [isDraggingMotion, setIsDraggingMotion] = useState(false);
 
   // Logic Audit / Quick Adjustments 의 action 객체 → setter 풀어 적용.
   // troubleshoot=true 면 토글식 적용/해제 (history 에 이전 값 보관).
@@ -269,7 +281,7 @@ export default function RenderMatrixApp() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 font-sans overflow-hidden">
+    <div className="flex flex-col h-full bg-slate-50 text-slate-900 dark:bg-[#09090B] dark:text-zinc-100 p-5 font-sans overflow-hidden" style={{ "--rm-accent": ACCENT }}>
       {rp.usageModal}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -279,7 +291,7 @@ export default function RenderMatrixApp() {
       `}</style>
 
       {rp.toastMsg && (
-        <div className={`fixed top-8 left-1/2 -translate-x-1/2 text-white px-6 py-3 rounded-full font-bold text-[12px] shadow-2xl z-[1000] flex items-center gap-2 animate-in slide-in-from-top-4 fade-in whitespace-nowrap border backdrop-blur-md transition-colors ${rp.toastMsg.includes('해제') || rp.toastMsg.includes('실패') ? 'bg-zinc-800/90 border-zinc-600 shadow-[0_10px_30px_rgba(0,0,0,0.5)] text-rose-400' : 'bg-emerald-500/90 border-emerald-400/50 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
+        <div className={`fixed top-8 left-1/2 -translate-x-1/2 text-white px-6 py-3 rounded-full font-bold text-[12px] shadow-2xl z-[9500] flex items-center gap-2 animate-in slide-in-from-top-4 fade-in whitespace-nowrap border backdrop-blur-md transition-colors ${rp.toastMsg.includes('해제') || rp.toastMsg.includes('실패') ? 'bg-zinc-800/90 border-zinc-600 shadow-[0_10px_30px_rgba(0,0,0,0.5)] text-rose-400' : 'bg-emerald-500/90 border-emerald-400/50 shadow-[0_10px_30px_rgba(16,185,129,0.3)]'}`}>
           {rp.toastMsg.includes('해제') || rp.toastMsg.includes('실패') ? <AlertCircle className="w-4 h-4 shrink-0" /> : <CheckCircle className="w-4 h-4 shrink-0" />}
           {rp.toastMsg}
         </div>
@@ -316,9 +328,10 @@ export default function RenderMatrixApp() {
           onOpenChatModal={rp.openChatModal}
           onAnyChange={onAnyChange}
           onSwitchView={onSwitchView}
+          onApplyRecommendations={rp.applyRecommendations}
           isDraggingRef={isDraggingRef} setIsDraggingRef={setIsDraggingRef}
           isDraggingEdit={isDraggingEdit} setIsDraggingEdit={setIsDraggingEdit}
-          isDraggingMotion={isDraggingMotion} setIsDraggingMotion={setIsDraggingMotion}
+          showToast={rp.showToast}
         />
 
         <MatrixResultPanel
@@ -344,13 +357,22 @@ export default function RenderMatrixApp() {
           onCopy={rp.copyToClipboard}
           isCopied={rp.isCopied}
           onSendToMotion={rp.sendToMotion}
+          // 드래프트 복원 배너
+          showRestoreDraft={rp.showRestoreDraft}
+          onRestoreDraft={rp.restoreDraft}
+          onDismissDraft={rp.draft?.dismiss}
+          // 완전 자동 파이프라인 — 확인 배너 + 상태 칩
+          autoPipeline={rp.autoPipeline}
+          onPipelineRender={handlePipelineRender}
+          onPipelineDismiss={handlePipelineDismiss}
           // Imagen 렌더링
           onRender={handleRender}
           rendering={rendering}
           renderedImage={renderedImage}
           renderError={renderError}
           onDownloadRendered={handleDownloadRendered}
-          onSendToMaskForge={() => rp.sendToMaskForge?.(renderedImage?.dataUrl)}
+          // Cloudinary URL 우선 — 수 MB dataURL 대신 경량 URL 전달 (미로그인 등 업로드 실패 시 dataURL 폴백).
+          onSendToMaskForge={() => rp.sendToMaskForge?.(savedCloudinaryUrl || renderedImage?.dataUrl)}
           onSaveToPromptArc={handleSaveToPromptArc}
           savingToArc={savingToArc}
           isLoggedIn={!!user?.uid}
@@ -363,6 +385,7 @@ export default function RenderMatrixApp() {
           selectedRenderSize={selectedRenderSize}
           setSelectedRenderSize={setSelectedRenderSize}
           sizeSelectable={isProImageModel(selectedModel)}
+          showToast={rp.showToast}
         />
       </main>
     </div>

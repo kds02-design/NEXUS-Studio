@@ -1,0 +1,11 @@
+{
+  "name": "gold-hairline",
+  "extends": "base",
+  "description": "레이아웃 테스트용 중립 스타일(2026-09 Figma EImdZvPDDH1S0cGfiRzXVs 초기값). 1px 골드 헤어라인, 매듭 없음, 활성 라벨 골드 Medium 16. 컨셉이 정해지기 전 스캐폴딩에 쓴다.",
+  "style": {
+    "line": { "mode": "fixed", "y": 270, "h": 540, "width": 1, "color": "#D7B36B" },
+    "knot": { "type": "none" },
+    "glow": { "enabled": false },
+    "text": { "colorActive": "#CFA96A", "sizeActive": 16, "styleActive": "Medium", "color": "#8C8B88", "opacityOff": 1 }
+  }
+}

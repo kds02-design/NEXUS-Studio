@@ -1,0 +1,28 @@
+{
+  "format": "promo-mobile",
+  "grammar": "osangseu",
+  "title": "오늘의 상품 스페셜",
+  "game": "블레이드&소울",
+  "period": "2026. 6. 1. ~ 6. 30.",
+  "kv": { "characters": "single" },
+  "sections": [
+    {
+      "type": "product-grid",
+      "title": "이 달의 스페셜 상품",
+      "subtitle": "매월 입고되는 스페셜 상품들을 확인해 보세요!",
+      "count": 4,
+      "cta": "전체 상품 자세히 보기"
+    },
+    {
+      "type": "status-box",
+      "title": "신석 사용 현황",
+      "note": "신석 사용 현황은 전일 사용 내역을 당일 10시 이후에 확인할 수 있습니다."
+    },
+    {
+      "type": "bonus-grid",
+      "title": "획득 가능한 보너스 선물",
+      "count": 5,
+      "note": "보너스 보상은 아이템 별 계정당 1회만 획득 가능합니다."
+    }
+  ]
+}

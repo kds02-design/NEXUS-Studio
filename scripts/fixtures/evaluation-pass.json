@@ -1,0 +1,17 @@
+{
+  "frame": "test-master",
+  "scores": {
+    "impression": { "score": 85, "reason": "test" },
+    "concept": { "score": 85, "reason": "test" },
+    "layout": { "score": 85, "reason": "test" },
+    "typography": { "score": 85, "reason": "test" },
+    "color": { "score": 85, "reason": "test" },
+    "readability": { "score": 85, "reason": "test" },
+    "brand": { "score": 85, "reason": "test" },
+    "flow": { "score": 85, "reason": "test" },
+    "detail": { "score": 85, "reason": "test" },
+    "conversion": { "score": 85, "reason": "test" }
+  },
+  "hardFailures": [],
+  "recommendedCorrections": []
+}

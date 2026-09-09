@@ -1,0 +1,25 @@
+{
+  "schema": "game-banner-profile/v1",
+  "id": "aion",
+  "displayName": "Aion",
+  "version": 1,
+  "aliases": ["aion", "아이온"],
+  "guide": "references/games/aion.md",
+  "framePolicy": {
+    "sourceOfTruth": "live-figma",
+    "frames": [
+      {"name": "Notice", "role": "full-text-master", "visibleRoles": ["background", "character-or-item", "title", "copy", "date", "logo-if-required"]},
+      {"name": "Facebook", "role": "wide-full-text", "visibleRoles": ["background", "character-or-item", "title", "copy", "date", "logo-if-required"]},
+      {"name": "Toast", "role": "transparent-top-image", "visibleRoles": ["background-lower-band", "character"]},
+      {"name": "EventON", "role": "image-led", "visibleRoles": ["background", "character-or-item"]},
+      {"name": "Ingame", "role": "transparent-character", "visibleRoles": ["character"]},
+      {"name": "List", "role": "identity-crop", "visibleRoles": ["character"]}
+    ]
+  },
+  "brand": {
+    "assetAuthority": ["user-approved-live-frame", "campaign-supplied-official-asset", "approved-repeat-master"],
+    "channels": {"default": {"logo": "campaign-or-live-approved", "badge": null}},
+    "placements": {},
+    "protectedZones": {}
+  }
+}

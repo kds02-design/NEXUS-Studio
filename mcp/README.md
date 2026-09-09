@@ -72,7 +72,10 @@ args = ["--use-system-ca", "c:\\work\\00_claude\\mcp\\nexus-mcp.bundle.mjs"]
 | `nexus_guide` | 사용법 개요 — 처음이면 이것부터 |
 | `nexus_list_options` | 모든 옵션 id·한글 라벨 카탈로그(JSON) |
 | `nexus_render_image` | Gemini 이미지 모델 호출 → PNG 저장 (참조 이미지 파일 첨부 가능) |
-| `nexus_frameforge_prompt` | FrameForge 프레임·버튼·박스·배지·디바이더·아이콘 완성형 프롬프트 |
+| `nexus_frameforge_prompt` | FrameForge 프레임·버튼·박스·배지·디바이더·아이콘·장식·아이템 슬롯 완성형 프롬프트 (aspectRatio 포함) |
+| `nexus_frameforge_kit_prompts` | 브랜드웹 키트 — 같은 무드의 부품 세트(기본/보상·쿠폰/내비·유틸) 프롬프트 일괄 생성 |
+| `nexus_asset_library_list` | 2025년 이후 프로모션·브랜드웹 재사용 UI 에셋 검색 |
+| `nexus_asset_library_get` | 투명 PNG·PSD 레이어·FX·출처 상세 조회 |
 | `nexus_lightfx_prompt` | RubiconForge 광원/빛효과 — 순흑/단색 배경 합성용 발광 에셋 |
 | `nexus_variation_prompt` | RubiconForge 리스킨 — 컬러·재질 오버레이 패스(구조 보존) |
 | `nexus_design_alternative_prompt` | RubiconForge 디자인 대안 — 모티프·재질 재해석(골격 유지) |
@@ -109,3 +112,27 @@ mcp/
 서버가 import 하는 순수 모듈(브라우저/Node 공용, 앱과 공유):
 `src/apps/NexusPreview/services/bundlePrompt.js` · `characterPresets.js` · `qualityUpSkills.js` ·
 `src/apps/RubiconForge/services/{lightfx,variations}.js` + `constants/*` · `src/lib/charEffectSplit.js`
+
+## 로컬 배치 CLI (`mcp/nexus-cli.bundle.mjs`)
+
+MCP 는 이미지 한 장당 한 번 왕복이라 수십~수백 장 투명화에는 맞지 않는다. `npm run mcp:build` 가 서버 번들과 함께
+`mcp/nexus-cli.bundle.mjs` 를 만든다 — 원본 `mcp/cli.mjs`, 픽셀 로직은 앱·MCP 와 같은 `src/lib`
+(`colorKeyExtract` · `effectExtract` · `alphaCleanup`) 이라 결과가 픽셀 단위로 같다.
+
+```bash
+node mcp/nexus-cli.bundle.mjs plan  --in <폴더> --out plan.json --out-dir out      # 편집 가능한 계획 + 테두리 색 통계(bgStats)
+node mcp/nexus-cli.bundle.mjs alpha --plan plan.json --jobs 6 --sheet sheet.png    # 워커 병렬 · PNG + report.json + 체커보드 시트
+node mcp/nexus-cli.bundle.mjs alpha --in <폴더> --out-dir out --mode key|effect     # 계획 없이 폴더 전체 한 모드
+```
+
+항목 옵션: `mode`(key|effect) `bg`(auto|black|white|chroma|#hex) `tolerance` `feather` `holeProtect` `holeSize` `decontam`
+`cutoff` `gamma` `opacity` `recoverColor` `trim` `cleanIslands`(옅은 점 제거) `killFaint`(임계 알파, 옅은 고립 얼룩 제거 — 이펙트엔 0).
+`plan` 의 `bgStats.std` 는 배경 평탄도 힌트: ≤6 단색 매트, 15~40 비네팅(허용치↑·killFaint), ≥60 사진 배경(색상 키 대상 아님).
+검증: `npm run mcp:test` → `mcp/test-cli.mjs` 가 CLI 결과와 `src/lib` 직접 호출을 픽셀 비교한다.
+실측: 2048² 66장 → 6워커 7초.
+
+### 자동 분류(triage) · MCP 배치 툴 · 피그마 납품
+
+- `plan` 은 기본으로 `src/lib/alphaTriage.js` 가 항목마다 경로를 제안한다 — `flat`(색상 키 기본값) · `vignette`(테두리 std 8~45: tolerance 를 std 에 비례해 올리되 피사체 색거리 중앙값의 절반을 넘지 않음 + killFaint 160) · `lowcontrast`(비평탄 배경인데 피사체 색거리 중앙값 < 120: tolerance 45·feather 40, killFaint 끔, 수동 확인) · `glow`(피사체 경계 중 단단한 경계 < 8%: 이펙트 추출) · `nonflat`(std > 45: mode `ai`, alpha 가 건너뜀 → nexus_remove_ai). 발광 판정에 '옅은 픽셀 비율' 을 쓰지 않는 이유는 소스 주석 참조(저대비 불투명 피사체 오판). `--no-triage` 면 통계만 기록.
+- MCP: `nexus_alpha_plan(inputDir, planPath)` → 검토·수정 → `nexus_alpha_batch(planPath | inputDir+mode)`. 둘 다 `nexus-cli.bundle.mjs` 를 자식 프로세스로 실행하므로 단건 툴과 결과가 같다.
+- 피그마 납품: `scripts/figma-place-assets.mjs layout|upload|apply` — 폴더 → 섹션 생성 use_figma 코드 → (에이전트가 upload_assets 로 받은 URL 로) 업로드 → imageHash fill 적용 코드. upload_assets 의 nodeIds 자동 배치가 동작하지 않아 hash 를 직접 넣는다.

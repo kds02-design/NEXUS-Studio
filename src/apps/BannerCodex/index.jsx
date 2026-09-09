@@ -3,7 +3,7 @@ import { Loader2, FolderOpen, Zap, Trash2, RotateCcw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useGlobal } from '../../context/GlobalContext';
 import {
-  fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES, weightsMap,
+  fetchActiveCriteria, getSeedCriteria, formatCriteriaList, CRITERIA_TYPES,
   getActiveRules, getSeedRules, fetchAnchors, fetchCalibration,
 } from '../../lib/evaluationCriteria';
 import {
@@ -227,8 +227,6 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
   const criteriaListText = useMemo(() => formatCriteriaList(activeCriteria?.criteria || []), [activeCriteria]);
-  // 항목별 가중치 맵(id→weight) — 최종 점수 가중 평균에 사용. 활성 기준 우선, 시드 폴백.
-  const criteriaWeights = useMemo(() => weightsMap(activeCriteria?.criteria || []), [activeCriteria]);
   // 채점 규칙(rules) — 활성 기준 우선, 시드 폴백. {{SCORING_RULES}} 로 주입.
   const criteriaRules = useMemo(() => getActiveRules(activeCriteria) || getSeedRules(CRITERIA_TYPES.banner), [activeCriteria]);
   // 기준점 앵커(banner) + 전역 보정 — 마운트 시 1회 로드. 분석 시 시각 few-shot + offset 으로 주입.
@@ -250,7 +248,8 @@ export default function App() {
   }, [selectedBanner]);
 
   const evalHook = useEvaluation({
-    banners, updateBanner, customAiPrompt, criteriaListText, criteriaWeights,
+    banners, updateBanner, customAiPrompt, criteriaListText,
+    criteriaItems: activeCriteria?.criteria || getSeedCriteria(CRITERIA_TYPES.banner),
     criteriaRules, anchors, calibOffset,
     geminiApiKey, openAiApiKey, showNotification, onSelectionAffect
   });

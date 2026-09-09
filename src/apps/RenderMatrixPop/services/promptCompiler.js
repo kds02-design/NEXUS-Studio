@@ -8,10 +8,10 @@
 //
 // motion 컴파일러(Veo/Runway/Luma/Sequence)와 getQualityFeedback 은 RenderMatrix 와 100% 동일.
 
-import { DIRECTOR_PERSONAS, EDIT_BUDGETS, RENDER_ENGINES } from "../constants/presets";
-import { getOptionEn } from "../constants/presets";
+import { DIRECTOR_PERSONAS, EDIT_BUDGETS, RENDER_ENGINES } from "../constants/presets.js";
+import { getOptionEn } from "../constants/presets.js";
 
-export { compileVeo, compileRunway, compileLuma, compileSequence, getQualityFeedback } from "../../RenderMatrix/services/promptCompiler";
+export { compileVeo, compileRunway, compileLuma, compileSequence, getQualityFeedback } from "../../RenderMatrix/services/promptCompiler.js";
 
 const CASUAL_RELIEFS = ["ChunkyToy", "SoftRounded", "PuffyBalloon"];
 const HEAVY_MATERIALS = ["RoughStone", "VolcanicRock", "Obsidian", "GothicSteel", "AntiqueGold"];

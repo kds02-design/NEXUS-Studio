@@ -1,5 +1,5 @@
 import {
-  PenTool, Shield, ChevronDown, Copy, CheckCircle2, Loader2, Sparkles, Star, Zap, RefreshCcw, ShieldAlert, AlertTriangle,
+  PenTool, Shield, ChevronDown, Copy, CheckCircle2, Loader2, Sparkles, Star, Zap, RefreshCcw, ShieldAlert, AlertTriangle, AlertCircle, X,
 } from 'lucide-react';
 import { useBreeze } from '../context/BreezeContext.jsx';
 import { aiOptimizationModels } from '../constants/categories.jsx';
@@ -25,7 +25,20 @@ export default function BreezeResultPanel() {
     requestPromptOptimization, requestMidjourneyOptimization, requestChatGPTEnhancement,
     editUploadedImage,
     getPrompts, getEditPrompts,
+    aiError, setAiError,
+    showDraftRestore, restoreDraft, dismissDraftRestore,
   } = useBreeze();
+
+  // AI 호출 실패 배너 — BreezeRenderArea 의 renderError 배너와 동일 스타일 + 닫기 버튼.
+  const aiErrorBanner = aiError && (
+    <div className="px-3 py-2 rounded-lg border border-rose-500/30 bg-rose-950/20 text-[11px] text-rose-300/90 flex items-start gap-2">
+      <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+      <span className="flex-1 leading-snug break-words">{aiError}</span>
+      <button onClick={() => setAiError(null)} className="shrink-0 text-rose-300/70 hover:text-rose-200 transition-colors" aria-label="닫기">
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
 
   // ── Edit (Micro-Edit) 메인 영역 ────────────────────────────
   if (currentView === 'edit') {
@@ -36,8 +49,8 @@ export default function BreezeResultPanel() {
           <div className="flex items-center gap-3 px-2">
             <Shield className="w-5 h-5 text-zinc-500" />
             <div>
-              <h2 className="text-[13px] font-bold text-zinc-200">Surgical Micro-Edit Mode</h2>
-              <p className="text-[11px] text-zinc-500 mt-0.5">Strictly preserves 2D shape & layout while modifying specific textures or terminals.</p>
+              <h2 className="text-[13px] font-bold text-zinc-200">부분 수정 워크스페이스</h2>
+              <p className="text-[11px] text-zinc-500 mt-0.5">글자 모양과 배치는 그대로 유지하면서 질감·마감 등 일부 요소만 바꿉니다.</p>
             </div>
           </div>
 
@@ -93,6 +106,8 @@ export default function BreezeResultPanel() {
             </div>
           )}
 
+          {aiErrorBanner}
+
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
             <div className="min-w-0 flex flex-col [&>div]:h-full">
               <AiOutputBox modelState={editAiModel} viewModeState={editNanoMode} setViewMode={setEditNanoMode} content={editP.outputContent} isEdit={true} outdatedFlag={isEditOutdated} onCopy={copyToClipboard} copiedState={copiedBottom}/>
@@ -117,11 +132,21 @@ export default function BreezeResultPanel() {
   return (
     <div className="flex-1 flex flex-col p-8 lg:p-12 overflow-y-auto custom-scrollbar bg-[#0A0A0A]">
       <div className="w-full space-y-6 pb-20">
+        {/* 이전 드래프트 복원 배너 — 새로고침으로 날아간 옵션 세팅을 한 번에 되살림. */}
+        {showDraftRestore && (
+          <div className="px-3 py-2 rounded-lg border border-zinc-700 bg-[#141414] text-[11px] text-zinc-300 flex items-center gap-2">
+            <RefreshCcw className="w-3.5 h-3.5 shrink-0 text-zinc-500" />
+            <span className="flex-1 leading-snug">이전 작업 드래프트가 있어요</span>
+            <button onClick={restoreDraft} className="shrink-0 px-2.5 py-1 rounded border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 font-bold transition-colors">복원</button>
+            <button onClick={dismissDraftRestore} className="shrink-0 px-2.5 py-1 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 font-bold transition-colors">무시</button>
+          </div>
+        )}
+
         <div className="flex items-center gap-3 px-2">
           <PenTool className="w-5 h-5 text-zinc-500" />
           <div>
-            <h2 className="text-[13px] font-bold text-zinc-200">Creation Workspace</h2>
-            <p className="text-[11px] text-zinc-500 mt-0.5">Define your core aesthetic and generate robust prompts for text-to-image models.</p>
+            <h2 className="text-[13px] font-bold text-zinc-200">생성 워크스페이스</h2>
+            <p className="text-[11px] text-zinc-500 mt-0.5">핵심 스타일을 정하고 텍스트-이미지 모델용 프롬프트를 생성합니다.</p>
           </div>
         </div>
 
@@ -200,6 +225,8 @@ export default function BreezeResultPanel() {
             </button>
           )}
         </div>
+
+        {aiErrorBanner}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
           <div className="min-w-0 flex flex-col [&>div]:h-full">

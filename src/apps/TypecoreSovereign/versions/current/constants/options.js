@@ -24,6 +24,21 @@ export const staticOptions = {
     { id: "Shape_Cinema",      name: "영화 타이틀",   emoji: "🎬",  hint: "실사 영화 포스터 세리프",
       en: "weathered antique serif capitals, cinematic movie title lettering, wide letter spacing, subtly distressed serif edges",
       enKo: "weathered antique Korean Myeongjo-serif title lettering, cinematic live-action movie poster Hangul typography, thin elegant strokes with refined serif terminals, wide airy letter spacing, subtly distressed eroded stroke edges" },
+    { id: "Shape_EditorialSans", name: "에디토리얼 산스", emoji: "▱", hint: "조용한 현대 드라마 산세리프", narrative: true,
+      en: "restrained contemporary editorial sans-serif title, neutral geometric skeleton, calm optical spacing, quiet cinematic proportions",
+      enKo: "restrained contemporary Korean Gothic sans-serif title, neutral Hangul skeleton, calm optical spacing, quiet cinematic proportions" },
+    { id: "Shape_LiterarySerif", name: "문학적 명조", emoji: "¶", hint: "절제된 문학·시대극 명조", narrative: true,
+      en: "restrained literary serif title, refined book typography, measured contrast, generous editorial spacing",
+      enKo: "restrained literary Korean Myeongjo title, refined book-derived Hangul structure, measured thick-thin contrast, generous editorial spacing" },
+    { id: "Shape_Psychological", name: "심리 스릴러", emoji: "◐", hint: "폐쇄적인 여백과 긴장감", narrative: true,
+      en: "quiet psychological thriller title, condensed neutral sans-serif skeleton, controlled closed counters, subtle asymmetric tension",
+      enKo: "quiet Korean psychological thriller title, condensed neutral Hangul skeleton, controlled narrow counters, subtle asymmetric tension" },
+    { id: "Shape_PeriodHumanist", name: "시대극 휴머니스트", emoji: "⌛", hint: "질감 없이 시대감만 담은 글자", narrative: true,
+      en: "humanist period-drama title, historically informed proportions, warm restrained stroke modulation, clean unweathered silhouette",
+      enKo: "Korean humanist period-drama title, historically informed Hangul proportions, warm restrained stroke modulation, clean unweathered silhouette" },
+    { id: "Shape_QuietThriller", name: "콰이어트 스릴러", emoji: "⌁", hint: "한 곳만 미세하게 불안한 구조", narrative: true,
+      en: "minimal quiet-thriller title, pristine neutral base letterforms, one controlled structural anomaly, high negative-space discipline",
+      enKo: "minimal Korean quiet-thriller title, pristine neutral Hangul base, one controlled structural anomaly, high negative-space discipline" },
   ],
   // 리터칭 "느낌 미세 조절" 축 — 양방향 슬라이더 (-2..+2, 0=유지).
   // 0 이 아닌 축만 프롬프트에 주입: ±1 → "subtly …" 1.15 가중치, ±2 → "noticeably …" 1.35 가중치.
@@ -59,7 +74,7 @@ export const staticOptions = {
   subTitleSizes: [ { id: "Sub_Small", name: "소형 (30%)", en: "Subtitle is strictly 30% scale." }, { id: "Sub_Medium", name: "중형 (50%)", en: "Subtitle is strictly 50% scale." }, { id: "Sub_Large", name: "대형 (70%)", en: "Subtitle is strictly 70% scale." }, { id: "Sub_Equal", name: "동일 크기", en: "Both rows have equal font scale." } ],
   proportions: [
     { id: "P_Std", name: "기본형 (정방형)", en: "(balanced letterform skeleton with natural horizontal proportions:1.4)" },
-    { id: "P_Condensed", name: "압축형 (세로장평)", en: "condensed tall aspect ratio, narrow vertical stems" },
+    { id: "P_Condensed", name: "장체형 (가로폭 축소 · 명시 선택)", en: "intentionally condensed tall aspect ratio with narrow glyph width" },
     { id: "P_Extended", name: "확장형 (가로장평)", en: "(extended wide panoramic letterforms:1.5), heavily stretched horizontally" },
     { id: "P_FlatWide", name: "납작 와이드형", en: "(compress vertical stroke proportions:1.4), (horizontally extended character frame:1.4), (wide aspect ratio letterforms:1.5), (flat low-profile characters:1.3)" }
   ],

@@ -16,7 +16,7 @@ import {
 } from '../services/gemini';
 import { renderDesignAlternative, renderAtlasVariation, renderVariation } from '../services/variations';
 import { renderLightFx } from '../services/lightfx';
-import { autoPadImage } from '../../../lib/autoPadImage';
+import { autoPadImage, cropToFrame } from '../../../lib/autoPadImage';
 import { renderWithImagen, IMAGEN_MODELS } from '../../../lib/imagenRender';
 import { savePromptToArc, TEMP_TTL_DAYS } from '../../../lib/promptArcSave';
 import {
@@ -24,7 +24,7 @@ import {
   DESIGN_VARIATION_BY_ID, defaultDesignVariationIds, VARIATION_STRENGTH_BY_ID,
   BG_COLOR_BY_ID,
 } from '../constants/variations';
-import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID } from '../constants/lightfx';
+import { LIGHTFX_CATEGORY_BY_ID, LIGHTFX_STYLE_BY_ID, LIGHTFX_COLOR_BY_ID, lightFxPadProfile } from '../constants/lightfx';
 
 // 결과가 자동 저장될 PromptArc 폴더 이름.
 const ARC_FOLDER_NAME = '리스킨 보관함';
@@ -32,13 +32,14 @@ const REDESIGN_FOLDER_NAME = '리디자인 보관함';
 const LIGHTFX_FOLDER_NAME = '광원 보관함';
 
 // 앱 내부 페이지 이동으로 컴포넌트가 언마운트되어도 대용량 dataURL 결과를 메모리에 유지한다.
-const forgeSessionCache = { creationSource: null, reskinResults: [], sourceAsset: null, variationResults: [], lightFxRef: null, lightFxResults: [], lightFxBase: null };
+const forgeSessionCache = { creationSource: null, reskinResults: [], sourceAsset: null, variationResults: [], lightFxRef: null, lightFxRefRaw: null, lightFxResults: [], lightFxBase: null };
 
 export function useForgePrompt() {
   // 전역 테마와 동기화 — 루트만 light 대응. 내부 위젯은 다크 하드코딩.
   const { isLight, user, payload, clearPayload } = useGlobal();
   const theme = isLight ? "light" : "dark";
   const [currentView, setCurrentView] = useState("kvedit"); // 기본 = 키비주얼 편집(KvEdit)
+  const [handoffView, setHandoffView] = useState(null); // 마지막 핸드오프 진입 뷰(creation/micro-edit/atlas) — 헤더 문맥 탭 유지용
 
   const [themeDna, setThemeDna] = useState("LineageDarkRoyal");
   const [assetType, setAssetType] = useState("Button");
@@ -292,7 +293,7 @@ export function useForgePrompt() {
       if (ref) setAtlasBackgroundRef(ref);
       if (payload.params?.themeText) setCustomThemeHint(payload.params.themeText);
       setAtlasRedesign(mode === 'redesign');
-      setCurrentView('atlas');
+      setCurrentView('atlas'); setHandoffView('atlas');
       flashSaveMsg(`프레임 세트 수신 — KV 테마로 ${mode === 'redesign' ? '리디자인' : '리컬러'} 한 판 생성 후 결과에서 "넥서스 프리뷰로"`);
     } else if (payload.params?.slot) {
       // 단일 부품 소스(프레임 등) + KV 참조 → 리스킨/리디자인 모드에 소스/배경참조/테마 세팅
@@ -300,7 +301,7 @@ export function useForgePrompt() {
       setCreationSource(url); setSourceAsset(url);
       if (ref) { setCreationBgRef(ref); setBackgroundRef(ref); }
       if (payload.params?.themeText) setCustomThemeHint(payload.params.themeText);
-      setCurrentView(mode === 'redesign' ? 'micro-edit' : 'creation');
+      setCurrentView(mode === 'redesign' ? 'micro-edit' : 'creation'); setHandoffView(mode === 'redesign' ? 'micro-edit' : 'creation');
       flashSaveMsg(`${payload.params.slotLabel || '부품'} 수신 — KV 테마로 ${mode === 'redesign' ? '리디자인' : '리스킨'} 후 결과에서 "넥서스 프리뷰로"`);
     } else {
       setBackgroundRef(url); setCreationBgRef(url);
@@ -440,15 +441,21 @@ export function useForgePrompt() {
   const [lightFxBokeh, setLightFxBokeh] = useState('normal');   // 보케 사이즈 (기본/세밀)
   const [lightFxText, setLightFxText] = useState('');
   const [lightFxCount, setLightFxCount] = useState(4);
-  const [lightFxRef, setLightFxRef] = useState(() => forgeSessionCache.lightFxRef); // (선택) 형태 참고 dataURL
+  const [lightFxRef, setLightFxRef] = useState(() => forgeSessionCache.lightFxRef); // (선택) 형태 참고 dataURL — 여백 자동 추가가 적용된 실제 렌더 입력
+  const [lightFxRefRaw, setLightFxRefRaw] = useState(() => forgeSessionCache.lightFxRefRaw); // 업로드 원본 — 여백 옵션/배치 형태가 바뀌면 여기서 다시 계산
   const [isDraggingLightFxRef, setIsDraggingLightFxRef] = useState(false);
   // 변형(알파값 유지) — 이전에 제작된 발광 에셋을 base 로 삼아 색·질감만 리스킨. { dataUrl, label, resultId } | null
   const [lightFxBase, setLightFxBase] = useState(() => forgeSessionCache.lightFxBase || null);
   const [lightFxPreserveAlpha, setLightFxPreserveAlpha] = useState(true); // 원본 발광 형태(알파) 고정
   const [isDraggingLightFxBase, setIsDraggingLightFxBase] = useState(false);
   // 여백 자동 추가 — 피사체가 프레임에 꽉 찬 형태 참고를 올리면 주변 여백을 만들어 빛이 퍼질 공간 확보.
+  // 여백 크기는 배치 형태/종류별 프로필(lightFxPadProfile)로 결정 — 밀착형은 좁게, 바닥형은 넓게+16:9.
   const [lightFxAutoPad, setLightFxAutoPad] = useState(true);
-  const [lightFxRefPadded, setLightFxRefPadded] = useState(false); // 마지막 업로드가 실제로 패딩됐는지(배지 표시용)
+  const [lightFxRefPadded, setLightFxRefPadded] = useState(false); // 현재 참고가 실제로 패딩됐는지(배지 표시용)
+  const [lightFxRefFrame, setLightFxRefFrame] = useState(null); // 패딩 캔버스 안 원본 위치 { x,y,w,h,outW,outH } — 되돌리기용
+  // 결과를 원본 프레임으로 잘라내기 — 캐릭터 PNG 와 같은 캔버스로 맞춰야 할 때(정렬 레이어) 사용. 바깥 번짐은 잘린다.
+  const [lightFxCropBack, setLightFxCropBack] = useState(false);
+  const lightFxPadProfileActive = lightFxPadProfile(lightFxCategory, lightFxForm);
   const [lightFxRenderModel, setLightFxRenderModel] = useState(IMAGEN_MODELS[0]?.id || 'gemini-3.1-flash-image-preview');
   const [lightFxImageSize, setLightFxImageSize] = useState('2K');
   // 생성 배경색 — 발광 에셋이 깔릴 단색. 기본 블랙(발광 합성).
@@ -458,35 +465,45 @@ export function useForgePrompt() {
 
   useEffect(() => { forgeSessionCache.creationSource = creationSource; forgeSessionCache.reskinResults = reskinResults; }, [creationSource, reskinResults]);
   useEffect(() => { forgeSessionCache.sourceAsset = sourceAsset; forgeSessionCache.variationResults = variationResults; }, [sourceAsset, variationResults]);
-  useEffect(() => { forgeSessionCache.lightFxRef = lightFxRef; forgeSessionCache.lightFxResults = lightFxResults; forgeSessionCache.lightFxBase = lightFxBase; }, [lightFxRef, lightFxResults, lightFxBase]);
+  useEffect(() => { forgeSessionCache.lightFxRef = lightFxRef; forgeSessionCache.lightFxRefRaw = lightFxRefRaw; forgeSessionCache.lightFxResults = lightFxResults; forgeSessionCache.lightFxBase = lightFxBase; }, [lightFxRef, lightFxRefRaw, lightFxResults, lightFxBase]);
 
-  // 형태 참고 업로드 핸들러.
-  // 여백 자동 추가가 켜져 있으면 피사체가 가장자리에 붙은(여백 없는) 이미지에 캔버스 여백을 만들어
-  // 빛효과가 실루엣 바깥으로 퍼질 공간을 확보한다. 이미 여백이 있거나 CORS 실패 시엔 원본 그대로.
-  const applyLightFxRef = async (dataUrl) => {
-    if (!lightFxAutoPad) { setLightFxRef(dataUrl); setLightFxRefPadded(false); return; }
-    try {
-      // 자동 여백 ON → 무조건 16:9 캔버스로 확장(부족한 축에만 여백 추가, 크롭 없음).
-      // targetMargin 을 넉넉히(긴 변의 80%) 줘서 광원·이펙트가 실루엣 바깥으로 크게 퍼져도 잘리지 않게 한다.
-      const { padded, dataUrl: out } = await autoPadImage(dataUrl, { aspectRatio: 16 / 9, targetMargin: 0.8 });
-      setLightFxRef(out || dataUrl);
-      setLightFxRefPadded(!!padded);
-    } catch {
-      setLightFxRef(dataUrl);
-      setLightFxRefPadded(false);
-    }
-  };
+  // 형태 참고 — 업로드 원본(raw)만 저장하고, 실제 렌더 입력(lightFxRef)은 아래 effect 가
+  // 여백 옵션·배치 형태·종류가 바뀔 때마다 raw 에서 다시 계산한다. (예전엔 업로드 순간에만 패딩돼
+  // 이후 토글/형태를 바꿔도 반영되지 않았다.) 이미 여백이 있거나 CORS 실패 시엔 원본 그대로.
+  useEffect(() => {
+    let cancelled = false;
+    const profile = lightFxPadProfile(lightFxCategory, lightFxForm);
+    const job = !lightFxRefRaw
+      ? Promise.resolve({ ref: null, padded: false, frame: null })
+      : !lightFxAutoPad
+        ? Promise.resolve({ ref: lightFxRefRaw, padded: false, frame: null })
+        : autoPadImage(lightFxRefRaw, { targetMargin: profile.targetMargin, aspectRatio: profile.aspectRatio })
+          .then(({ padded, dataUrl, frame }) => ({ ref: dataUrl || lightFxRefRaw, padded: !!padded, frame: padded ? frame : null }))
+          .catch(() => ({ ref: lightFxRefRaw, padded: false, frame: null }));
+    job.then(({ ref, padded, frame }) => {
+      if (cancelled) return;
+      setLightFxRef(ref); setLightFxRefPadded(padded); setLightFxRefFrame(frame);
+    });
+    return () => { cancelled = true; };
+  }, [lightFxRefRaw, lightFxAutoPad, lightFxCategory, lightFxForm]);
+
   const handleLightFxRefFile = (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
-    reader.onloadend = () => applyLightFxRef(reader.result);
+    reader.onloadend = () => setLightFxRefRaw(reader.result);
     reader.readAsDataURL(file);
   };
   const handleLightFxRefUpload = (e) => handleLightFxRefFile(e.target.files[0]);
   const handleLightFxRefDragOver = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(true); }, []);
   const handleLightFxRefDragLeave = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(false); }, []);
   const handleLightFxRefDrop = useCallback((e) => { e.preventDefault(); setIsDraggingLightFxRef(false); handleLightFxRefFile(e.dataTransfer.files[0]); }, []);
-  const handleClearLightFxRef = () => { setLightFxRef(null); setLightFxRefPadded(false); };
+  const handleClearLightFxRef = () => { setLightFxRefRaw(null); };
+  // 정렬용 — 패딩된 참고 이미지를 그대로 저장. Figma 에서 결과와 같은 크기로 겹쳐 원본 위치를 맞춘 뒤 지우면 된다.
+  const handleDownloadPaddedLightFxRef = () => {
+    if (!lightFxRef) return;
+    const a = document.createElement('a');
+    a.href = lightFxRef; a.download = `rubicon-lightfx-ref-padded-${Date.now()}.png`; a.click();
+  };
 
   // ── 변형 base 로드 — 우측 결과 슬롯 또는 외부 파일에서 "이전 광원"을 가져온다 ──
   const handleUseAsLightFxBase = (slot) => {
@@ -532,7 +549,7 @@ export function useForgePrompt() {
     });
   };
 
-  const renderOneLightFx = (i) => renderLightFx({
+  const renderLightFxSpec = (i) => renderLightFx({
     category: lightFxCategory, form: lightFxForm, style: lightFxStyle, color: lightFxColor,
     userText: lightFxText, intensity: lightFxIntensity, shape: (lightFxRef || lightFxBase) ? 'none' : lightFxShape, index: i,
     material: lightFxMaterial, grain: lightFxGrain, bokeh: lightFxBokeh,
@@ -544,6 +561,16 @@ export function useForgePrompt() {
     bg: BG_COLOR_BY_ID[lightFxBgColor],
   });
 
+  const renderOneLightFx = async (i) => {
+    const r = await renderLightFxSpec(i);
+    // 원본 프레임으로 되돌리기 — 패딩된 참고로 렌더했고 옵션이 켜져 있으면 원본 영역만 잘라낸다.
+    // (변형 모드는 base 캔버스를 그대로 쓰므로 제외.) 실패 시 패딩된 결과 그대로.
+    if (r.ok && lightFxCropBack && lightFxRefFrame && !lightFxBase) {
+      const cropped = await cropToFrame(r.dataUrl, lightFxRefFrame);
+      if (cropped) return { ...r, dataUrl: cropped, croppedToFrame: true };
+    }
+    return r;
+  };
   const handleGenerateLightFx = async () => {
     if (isGeneratingLightFx) return;
     setIsGeneratingLightFx(true);
@@ -1109,7 +1136,7 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
 
   return {
     // theme/view
-    theme, currentView, setCurrentView,
+    theme, currentView, setCurrentView, handoffView, setHandoffView,
     // variation (Micro-Edit) mode
     sourceAsset, isDraggingSource,
     handleSourceUpload, handleSourceDragOver, handleSourceDragLeave, handleSourceDrop, handleClearSource,
@@ -1207,7 +1234,8 @@ ${userIntent ? `Specific Feature: ${userIntent}. ` : ''}The final image must be 
     lightFxText, setLightFxText,
     lightFxCount, setLightFxCount,
     lightFxRef, isDraggingLightFxRef,
-    lightFxAutoPad, setLightFxAutoPad, lightFxRefPadded,
+    lightFxAutoPad, setLightFxAutoPad, lightFxRefPadded, lightFxRefFrame, lightFxPadProfileActive,
+    lightFxCropBack, setLightFxCropBack, handleDownloadPaddedLightFxRef,
     handleLightFxRefUpload, handleLightFxRefDragOver, handleLightFxRefDragLeave, handleLightFxRefDrop, handleClearLightFxRef,
     // 변형(알파값 유지) base
     lightFxBase, lightFxPreserveAlpha, setLightFxPreserveAlpha, isDraggingLightFxBase,

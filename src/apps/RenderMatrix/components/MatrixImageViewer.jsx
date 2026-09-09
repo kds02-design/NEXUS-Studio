@@ -1,8 +1,7 @@
 import { X, Loader2 } from "lucide-react";
 
 // 이미지 드롭존 + 미리보기. 분석 진행 중에는 dim 처리하고 로더 오버레이 노출.
-// 원본 RenderMatrix 의 ImageDropzone 과 동일한 API. 향후 줌/패닝 viewer 가 필요해지면
-// 여기에 useImageZoom 훅을 합성하면 됨.
+// 원본 RenderMatrix 의 ImageDropzone 과 동일한 API. 확대 보기는 공용 ImageZoomModal 사용.
 export default function MatrixImageViewer({
   image, onClear, onUpload,
   onDragOver, onDragLeave, onDrop, isDragging,

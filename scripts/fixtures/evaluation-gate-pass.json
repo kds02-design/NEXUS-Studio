@@ -1,0 +1,20 @@
+{
+  "frames": [
+    {
+      "frame": "test-master",
+      "scores": {
+        "impression": 85,
+        "concept": 85,
+        "layout": 85,
+        "typography": 85,
+        "color": 85,
+        "readability": 85,
+        "brand": 85,
+        "flow": 85,
+        "detail": 85,
+        "conversion": 85
+      },
+      "hardFailures": []
+    }
+  ]
+}

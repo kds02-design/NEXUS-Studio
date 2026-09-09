@@ -3,7 +3,7 @@
 // 자동 저장 흐름: PromptEngine 의 handleRender 가 결과 직후 saveRenderToPromptArc 호출 →
 // savedToArcId 가 채워지면 여기 버튼이 "저장됨" 인디케이터로 전환.
 import React, { useState } from 'react';
-import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, Maximize2 } from 'lucide-react';
+import { AlertCircle, Image as ImageIcon, Loader2, Download, Save, Check, Layers, Maximize2, PenTool } from 'lucide-react';
 import ImageZoomModal from '../../../../../components/ImageZoomModal';
 
 const ImagenRenderArea = ({
@@ -22,6 +22,7 @@ const ImagenRenderArea = ({
   savedToArcId,              // 자동/수동 저장 완료 시 PromptArc doc id.
   onSendToRenderMatrix,      // Render Matrix 의 base image 로 송신.
   sendingToRenderMatrix,
+  onSendToVectorForge,       // Vector Forge 로 송신 — 흑백 형태를 SVG 벡터로.
   isLoggedIn,
   canRender,
   grade,
@@ -31,35 +32,20 @@ const ImagenRenderArea = ({
 
   return (
     <div className="bg-[#18181B] border border-zinc-800 rounded-2xl flex flex-col overflow-hidden h-full min-h-[480px]">
-      {/* 헤더 — 모델 pill + 렌더 버튼 */}
+      {/* 헤더 — 모델 라벨(고정) + 렌더 버튼. 모델은 품질 일관성을 위해 하나로 고정되므로 선택 UI 없음. */}
       <div className="flex justify-between items-center px-4 py-3 border-b border-zinc-800 bg-[#121214] gap-3">
-        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-          {imagenModels.length > 0 && setSelectedModel ? (
-            imagenModels.map((m) => {
-              const active = selectedModel === m.id;
-              return (
-                <button
-                  key={m.id}
-                  onClick={() => setSelectedModel(m.id)}
-                  disabled={!canRender || rendering}
-                  title={`${m.label}${m.desc ? ' · ' + m.desc : ''}`}
-                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold whitespace-nowrap transition-colors ${active ? 'bg-zinc-800 border-zinc-600 text-white' : 'bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-700'} disabled:opacity-40 disabled:cursor-not-allowed`}
-                >
-                  <span>{m.label}</span>
-                  {m.desc && <span className="text-[9px] opacity-60 font-medium">{m.desc}</span>}
-                </button>
-              );
-            })
-          ) : (
-            <span className="text-[11px] text-zinc-500">Imagen 렌더링</span>
-          )}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-[11px] font-bold text-zinc-400 whitespace-nowrap truncate" title={imagenModels[0]?.desc || undefined}>
+            {imagenModels[0]?.label || 'Imagen 렌더링'}
+            {imagenModels[0]?.desc && <span className="ml-1.5 text-[9px] text-zinc-600 font-medium">{imagenModels[0].desc}</span>}
+          </span>
         </div>
         <button
           onClick={() => onRender?.(promptText)}
           disabled={rendering || !canRender || !hasOutput || !onRender}
           title={
             !canRender ? `Pro 등급부터 사용할 수 있습니다 (현재: ${grade || 'general'})`
-            : !hasOutput ? '먼저 프롬프트를 컴파일하세요'
+            : !hasOutput ? '좌측 옵션을 설정하면 프롬프트가 준비됩니다'
             : undefined
           }
           className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-lg font-bold text-[11px] transition-all active:scale-95 whitespace-nowrap bg-indigo-500 hover:bg-indigo-400 text-white disabled:opacity-40 disabled:cursor-not-allowed"
@@ -139,6 +125,15 @@ const ImagenRenderArea = ({
                   )}
                 </button>
               )}
+              {onSendToVectorForge && (
+                <button
+                  onClick={onSendToVectorForge}
+                  title="렌더된 흑백 글자 형태를 Vector Forge 로 보내 SVG 벡터로 변환"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15 hover:border-emerald-500/50 text-[11px] font-semibold transition-colors"
+                >
+                  <PenTool className="w-3.5 h-3.5" /> Vector Forge 로 보내기
+                </button>
+              )}
               {renderedImage.modelId && (
                 <span className="ml-auto text-[10px] text-zinc-500">
                   {imagenModels.find((m) => m.id === renderedImage.modelId)?.label || renderedImage.modelId}
@@ -151,7 +146,7 @@ const ImagenRenderArea = ({
             <ImageIcon className="w-9 h-9 opacity-30" />
             <p className="text-[12px] font-semibold leading-relaxed">
               {!hasOutput
-                ? '좌측 프롬프트를 먼저 컴파일하세요'
+                ? '좌측에서 옵션을 고르면 프롬프트가 자동으로 준비됩니다'
                 : rendering
                   ? '이미지 생성 중입니다'
                   : '우측 상단 [렌더링] 버튼을 눌러 시작'}

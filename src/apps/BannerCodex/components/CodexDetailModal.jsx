@@ -203,6 +203,18 @@ const CodexDetailModal = ({
             </div>
 
             <div className="mb-4">
+              {Array.isArray(editedBanner?.codexBadges) && editedBanner.codexBadges.length > 0 && (
+                <div className="mb-4">
+                  <div className={`text-[10px] font-bold mb-2 uppercase tracking-wider ${isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>제작 상태</div>
+                  <div className="flex flex-wrap gap-2">
+                    {editedBanner.codexBadges.map((badge) => (
+                      <span key={badge} className={`px-3 py-1.5 text-[11px] font-bold rounded border ${badge === '예측 제작' ? 'bg-cyan-500/15 border-cyan-500/40 text-cyan-500' : badge === '스타일 연구' ? 'bg-violet-500/15 border-violet-500/40 text-violet-500' : 'bg-amber-400/15 border-amber-400/40 text-amber-500'}`}>
+                        {badge}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className={`text-[10px] font-bold mb-2 uppercase tracking-wider ${isLightMode ? 'text-slate-400' : 'text-zinc-500'}`}>태그</div>
               {isEditingPreview ? (
                 <div className="space-y-2">

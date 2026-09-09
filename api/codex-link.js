@@ -28,6 +28,7 @@ export default async function handler(req, res) {
         "prompt_arc.personal.read",
         "prompt_arc.personal.create",
         "prompt_arc.folder.own.update",
+        "banner_codex.automation.upsert",
         "render.execute",
       ],
     });

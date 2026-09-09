@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, Settings, ChevronUp, ChevronDown, Edit3, Sparkles, Loader2, Wand2 } from 'lucide-react';
+import { X, Edit3, Sparkles, Loader2, Wand2 } from 'lucide-react';
 import {
   getWebFinalScore100,
   hasWebEvaluation,
@@ -18,7 +18,6 @@ const WebDesignEvalModal = ({
   isAnalyzing = false,
   isAdmin = false,
 }) => {
-  const [isScoreAdjExpanded, setIsScoreAdjExpanded] = useState(false);
   // 활성 평가기준(어드민 evaluationCriteria) 로드 — banner 의 criteriaType 에 맞춰.
   // 실패 시 시드 폴백. items 변경되면 라벨/그리드 즉시 갱신.
   const criteriaType = banner ? resolveWebCriteriaType(banner) : null;
@@ -35,7 +34,10 @@ const WebDesignEvalModal = ({
     return () => { cancelled = true; };
   }, [isOpen, criteriaType]);
 
-  const items = useMemo(() => (activeCriteria?.items?.length ? activeCriteria.items : (criteriaType ? getSeedCriteria(criteriaType) : [])), [activeCriteria, criteriaType]);
+  const items = useMemo(() => {
+    if (Array.isArray(banner?.webCriteria) && banner.webCriteria.length) return banner.webCriteria;
+    return activeCriteria?.items?.length ? activeCriteria.items : (criteriaType ? getSeedCriteria(criteriaType) : []);
+  }, [activeCriteria, banner?.webCriteria, criteriaType]);
   const itemKeys = useMemo(() => items.map(c => c.id).filter(Boolean), [items]);
   const labelMap = useMemo(() => labelsMap(items), [items]);
 
@@ -48,7 +50,6 @@ const WebDesignEvalModal = ({
     .map(s => Math.round(s));
   const maxScore = validScores.length > 0 ? Math.max(...validScores) : -1;
   const minScore = validScores.length > 0 ? Math.min(...validScores) : 101;
-  const manualAdj = parseInt(banner?.webManualScoreAdj || 0);
   // 옛 키 셋으로 저장된 도큐먼트 — 현재 itemKeys 와 webScores 키가 하나도 안 겹치면 안내.
   const storedKeys = banner?.webScores ? Object.keys(banner.webScores) : [];
   const staleKeySet = hasEval && itemKeys.length > 0 && storedKeys.length > 0
@@ -180,49 +181,24 @@ const WebDesignEvalModal = ({
                 })}
               </div>
 
-              {/* 점수 보정 + 피드백 */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                <div className="bg-black/30 border border-white/[0.06] rounded-xl p-4 col-span-1 flex flex-col">
-                  <button
-                    onClick={() => setIsScoreAdjExpanded(v => !v)}
-                    className="flex justify-between items-center w-full group cursor-pointer"
-                  >
-                    <label className="text-[12px] font-bold text-white flex items-center gap-2 group-hover:text-[#d8b17e] transition-colors pointer-events-none">
-                      <Settings className="w-3.5 h-3.5 text-[#d8b17e]" />점수 보정
-                      {isScoreAdjExpanded ? <ChevronUp className="w-3 h-3 text-zinc-500" /> : <ChevronDown className="w-3 h-3 text-zinc-500" />}
-                    </label>
-                    <span
-                      className={`text-[11px] font-mono font-bold px-2 py-0.5 rounded-md border pointer-events-none ${
-                        manualAdj > 0
-                          ? 'bg-[#d8b17e]/20 text-[#d8b17e] border-[#d8b17e]/30'
-                          : manualAdj < 0
-                          ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                          : 'bg-white/5 text-zinc-300 border-white/10'
-                      }`}
-                    >
-                      {manualAdj > 0 ? '+' : ''}{manualAdj}점
+              {banner?.webEvaluationReport && (
+                <div className={`rounded-lg border px-3 py-2.5 ${banner.webEvaluationPass ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className={`text-xs font-black ${banner.webEvaluationPass ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {banner.webEvaluationPass ? 'NEXUS 품질 게이트 통과' : 'NEXUS 품질 게이트 미통과'}
                     </span>
-                  </button>
-                  {isScoreAdjExpanded && (
-                    <div className="flex items-center gap-2 px-1 mt-4 animate-in fade-in slide-in-from-top-2">
-                      <button
-                        onClick={() => onEditChange?.('webManualScoreAdj', Math.max(-3, manualAdj - 1))}
-                        className="text-[15px] font-bold w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/15 text-zinc-400 hover:text-white transition-colors"
-                      >-</button>
-                      <input
-                        type="range" min="-3" max="3" step="1" value={manualAdj}
-                        onChange={(e) => onEditChange?.('webManualScoreAdj', parseInt(e.target.value))}
-                        className="flex-1 h-1.5 rounded-full appearance-none cursor-pointer focus:outline-none mx-2"
-                        style={{ background: `linear-gradient(to right, #ef4444 0%, #52525b 50%, #d8b17e 100%)` }}
-                      />
-                      <button
-                        onClick={() => onEditChange?.('webManualScoreAdj', Math.min(3, manualAdj + 1))}
-                        className="text-[15px] font-bold w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/15 text-zinc-400 hover:text-white transition-colors"
-                      >+</button>
-                    </div>
+                    <span className="text-[10px] text-zinc-400">전체 85+ · 전 항목 75+ · 하드 실패 0</span>
+                  </div>
+                  {banner.webHardFailures?.length > 0 && (
+                    <ul className="mt-2 list-disc pl-4 text-[11px] text-red-300">
+                      {banner.webHardFailures.map((failure, index) => <li key={`${failure}-${index}`}>{failure}</li>)}
+                    </ul>
                   )}
                 </div>
-                <div className="bg-black/30 border border-white/[0.06] rounded-xl p-4 col-span-1 lg:col-span-2 flex flex-col">
+              )}
+
+              {/* 평가자 관찰 메모 — 점수 자체는 수정하지 않고 다음 분석의 정성 컨텍스트로만 사용. */}
+              <div className="bg-black/30 border border-white/[0.06] rounded-xl p-4 flex flex-col">
                   <label className="text-[12px] font-bold flex items-center gap-2 text-white mb-2">
                     <Edit3 className="w-3.5 h-3.5 text-violet-400" /> AI 학습용 피드백
                   </label>
@@ -232,7 +208,6 @@ const WebDesignEvalModal = ({
                     placeholder="이 페이지 디자인에 대한 평가 기준이나 의견을 적어주세요."
                     className="w-full flex-1 p-2.5 rounded-lg border border-white/10 bg-black/30 text-[11px] font-normal resize-none focus:border-violet-500 focus:outline-none text-white placeholder:text-zinc-500 min-h-[60px]"
                   />
-                </div>
               </div>
             </>
           )}

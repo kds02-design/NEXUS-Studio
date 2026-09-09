@@ -12,6 +12,10 @@ export const createHandlers = (b) => {
     setRhythmDynamic: b.setRhythmDynamic, setTextFlow: b.setTextFlow, setPlayfulDistortion: b.setPlayfulDistortion,
     setCharProportion: b.setCharProportion, setInternalDecoration: b.setInternalDecoration,
     setSlantAngle: b.setSlantAngle, setCasualSurrounding: b.setCasualSurrounding,
+    setKerning: b.setKerning, setAspectRatio: b.setAspectRatio, setOccupancy: b.setOccupancy, setLayoutType: b.setLayoutType,
+    setEnhanceMode: b.setEnhanceMode, setMomentumActive: b.setMomentumActive, setPersonaSliderValue: b.setPersonaSliderValue,
+    setNarrativeIntensity: b.setNarrativeIntensity, setNarrativeScope: b.setNarrativeScope,
+    setNarrativeMutation: b.setNarrativeMutation, setNarrativeTarget: b.setNarrativeTarget,
   };
 
   const handleScriptPresetChange = (id) => applyScriptPreset(id, presetSetters);
@@ -39,22 +43,24 @@ export const createHandlers = (b) => {
     b.setCustomDesignInjections(""); b.setNanoViewMode("enhanced"); b.setAiModel("Overview");
     b.setEnhanceMode("perfection"); b.setMomentumActive(false); b.setIsAdvancedOptionsEnabled(false);
     b.setPersonaSliderValue(50); b.setBase64Image(null);
+    b.setNarrativeIntensity('subtle'); b.setNarrativeScope('one'); b.setNarrativeMutation('auto'); b.setNarrativeTarget('');
     b.setAiRecSummary(null); b.setLastRecSource(null);
     b.setStyleImage(null); b.setVerificationLog("");
     b.setDramaticPrompt(null); b.setOptimizedPrompt(null); b.setMjOptimizedPrompt(null); b.setCgEnhancedPrompt(null);
     b.setEditDramaticPrompt(null); b.setEditOptimizedPrompt(null); b.setEditMjPrompt(null); b.setEditCgPrompt(null);
     handleCategoryChange(b.selectedCategory);
+    b.clearDraft?.(); // 저장된 드래프트도 함께 삭제 — 초기화 후 옛 드래프트가 다시 저장/복원되지 않게.
   };
 
-  const copyToClipboard = (text, type) => {
-    const ta = document.createElement("textarea");
-    ta.value = text || ''; document.body.appendChild(ta); ta.select();
+  const copyToClipboard = async (text, type) => {
     try {
-      document.execCommand('copy');
+      await navigator.clipboard.writeText(text || '');
       if (type === 'top') b.setCopiedTop(true); else b.setCopiedBottom(true);
       setTimeout(() => { b.setCopiedTop(false); b.setCopiedBottom(false); }, 2000);
-    } catch (err) { console.error("Failed to copy", err); }
-    document.body.removeChild(ta);
+    } catch (err) {
+      console.error('Failed to copy', err);
+      b.setAiError('클립보드 복사에 실패했어요');
+    }
   };
 
   // dynamicOptions 에 새 옵션 upsert. 객체면 추가하고 id 반환, 문자열이면 그대로.
