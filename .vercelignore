@@ -1,0 +1,27 @@
+# Vercel 배포 허용 목록 — NEXUS 앱 빌드에 필요한 것만 업로드/빌드.
+# 루트의 모든 항목을 제외한 뒤 필요한 것만 되살린다.
+# (.claude / .codex / .agents / .tmp / scripts / mcp / docs / test / nexus-watcher /
+#  logs / output / theme-output / dist* / 로컬 산출물 등은 자동 제외)
+/*
+
+# 앱 소스·정적 자산·서버리스 API
+!/src
+!/public
+!/api
+
+# 멀티 엔트리 HTML (vite.config.js rollupOptions.input)
+!/index.html
+!/tt-index.html
+!/pet.html
+!/destiny.html
+
+# 빌드 설정·의존성
+!/package.json
+!/package-lock.json
+!/vite.config.js
+!/vercel.json
+
+# 되살린 폴더 안의 로컬 잡동사니는 다시 제외
+node_modules
+*.log
+.DS_Store
