@@ -1,0 +1,63 @@
+{
+  "name": "palm-line-student-exp2",
+  "task": "palm crease (line) semantic segmentation",
+  "source_checkpoint": "runs/exp2/checkpoints/best.pt",
+  "trained_epoch": 102,
+  "val_fg_dice": 0.8098,
+  "architecture": "segmentation_models_pytorch UNet, encoder mit_b0",
+  "params_millions": 5.55,
+
+  "input": {
+    "name": "input",
+    "layout": "NCHW",
+    "shape": [1, 3, 512, 512],
+    "dtype": "float32",
+    "color_order": "RGB",
+    "value_range_before_norm": "[0,1] (pixel/255)",
+    "normalize": {
+      "note": "ImageNet stats. Applied per channel AFTER dividing pixels by 255: (v - mean) / std",
+      "mean": [0.485, 0.456, 0.406],
+      "std": [0.229, 0.224, 0.225]
+    },
+    "resize": {
+      "to": [512, 512],
+      "interpolation": "bilinear",
+      "note": "Model is fixed 512x512 (static ONNX axes). Resize the input crop to exactly 512x512 before inference. There is NO aspect-ratio letterboxing in training - training used a plain resize - so match that: plain resize, no padding."
+    }
+  },
+
+  "output": {
+    "name": "logits",
+    "layout": "NCHW",
+    "shape": [1, 4, 512, 512],
+    "dtype": "float32",
+    "note": "Raw logits, NOT softmaxed. Take argmax over the class axis (axis=1) per pixel to get the class-index mask. Apply softmax only if you need per-class probabilities/confidence."
+  },
+
+  "classes": [
+    { "index": 0, "name": "background", "color_rgb": [0, 0, 0] },
+    { "index": 1, "name": "heart_line", "color_rgb": [255, 0, 0] },
+    { "index": 2, "name": "head_line",  "color_rgb": [0, 0, 255] },
+    { "index": 3, "name": "life_line",  "color_rgb": [0, 255, 0] }
+  ],
+
+  "files": {
+    "student_fp32.onnx": {
+      "size_mb": 22.3,
+      "precision": "fp32",
+      "recommended_for": "highest fidelity / verification baseline"
+    },
+    "student_fp16.onnx": {
+      "size_mb": 11.3,
+      "precision": "fp16 weights, fp32 I/O",
+      "recommended_for": "SHIP THIS. Best size/quality tradeoff for the web. Runs on WebGPU and WASM (wasm executes fp16 weights via fp32 upcast)."
+    },
+    "student_int8.onnx": {
+      "size_mb": 5.9,
+      "precision": "int8 dynamic-quantized weights",
+      "recommended_for": "smallest download, but visibly lossier on thin lines - only use if 5.9MB matters more than quality. Verify visually before shipping."
+    }
+  },
+  "opset": 17,
+  "dynamic_axes": false
+}

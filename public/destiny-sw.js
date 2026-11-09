@@ -3,7 +3,7 @@
 //   NEXUS 동거 배포 → /destiny.html (본체에 관여하지 않음) / 전용 도메인 → /
 // 페이지는 network-first(새 배포 즉시 반영, 오프라인 시 캐시 폴백),
 // 해시 파일명 에셋·폰트는 cache-first.
-const CACHE = "destiny-obs-v1";
+const CACHE = "destiny-obs-v2";
 // 캐시할 페이지 경로 — 등록 scope 에서 유도 ("/" 또는 "/destiny.html")
 const PAGE = new URL(self.registration.scope).pathname;
 

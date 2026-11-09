@@ -31,6 +31,11 @@ for (const f of ['destiny-180.png', 'destiny-192.png', 'destiny-512.png']) {
 }
 fs.copyFileSync('public/destiny-sw.js', path.join(OUT, 'destiny-sw.js'))
 
+// 손금 추론은 서버/API 없이 실행된다. 모델과 고정 버전 WASM 런타임을 함께 배포한다.
+for (const relative of ['models/palm-creases', 'vendor/ort-1.20.1']) {
+  fs.cpSync(path.join('public', relative), path.join(OUT, relative), { recursive: true })
+}
+
 // 매니페스트 — 루트 배포용 (기존 파일은 NEXUS 동거 배포용 /destiny.html 기준이라 재작성)
 const mf = JSON.parse(fs.readFileSync('public/destiny-manifest.webmanifest', 'utf8'))
 mf.start_url = '/'

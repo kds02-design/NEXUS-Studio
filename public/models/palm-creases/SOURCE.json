@@ -1,0 +1,12 @@
+{
+  "upstream": "https://github.com/samuelwbarber/palm-line-reader",
+  "commit": "bc48939f4deee6d8ff842bfde499396dab9c4830",
+  "file": "models/student_fp16.onnx",
+  "sha256": "e2c9f826676b3aaf0a715f3087fcd4fc0b4dccd8c53de05fd26696a8399f8dd6",
+  "license": "MIT; see LICENSE. Upstream's declared license, not an independent audit of training-image rights.",
+  "training_provenance": "Upstream reports teacher pseudo-labels and reviewed RGB palm photos scraped from Reddit. Source photos and teacher weights are not included upstream. No new user-photo training or scraping performed here.",
+  "supported_classes": ["background", "heart", "head", "life"],
+  "unsupported": ["fate", "fortune prediction", "health assessment"],
+  "preprocessing": "RGB, NCHW, ImageNet normalization. Full rotated landmark bbox + 100 source pixels, mirror to MediaPipe Left, teacher-style 1024 letterbox then 512. See upstream pipeline/hand_preprocess.py and generate_pseudo_labels.py, not just the generic palm-crop README.",
+  "limitations": "Experimental segmentation candidate. Model probabilities are not calibrated accuracy. Public examples are developer-supplied, not independent held-out app evaluation. No claimed accuracy percentage. Poor images may return no lines. Physical iOS/Android testing remains necessary."
+}
