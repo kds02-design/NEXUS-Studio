@@ -386,7 +386,58 @@ function fuse({ mbti, blood, zodiac, saju, env, gender, birth, hour }) {
     return row;
   });
 
-  return { eMbti, eBlood, eZod, eSaju, envAdd, envMainHas, sysEl, dist, dominant, deficient, ...ys, harmony, rels, synergy, coined, persona, cats, months, monthlyCats };
+  return { eMbti, eBlood, eZod, eSaju, envAdd, envMainHas, sysEl, dist, dominant, deficient, ...ys, harmony, rels, synergy, coined, persona, cats, months, monthlyCats, phase };
+}
+
+/* ═══════════════════════ 세운(歲運) · 선택한 해의 운 ═══════════════════════
+   그 해의 간지(년간·년지)를 억부용신 기준으로 채점하고, 일지와의 충·합, 띠 충, 그 나이의 대운을 겹친다.
+   월별은 월건(月建: 년간에서 유도한 월간 + 월지)으로 다시 계산해 해마다 다른 흐름이 나온다. */
+const HAP6 = { 0: 1, 1: 0, 2: 11, 11: 2, 3: 10, 10: 3, 4: 9, 9: 4, 5: 8, 8: 5, 6: 7, 7: 6 };
+const SIP_THEME = {
+  재성: ["재물·인연", "돈과 사람이 움직이는 해. 벌이·소비·만남이 활발해지니 '내가 다룰 수 있는 만큼'을 정해 두면 가장 좋아요."],
+  관성: ["일·책임", "자리와 책임이 주어지는 해. 승진·이직·시험·계약처럼 바깥에서 나를 평가하는 일이 늘어요. 규칙을 지키는 쪽이 유리합니다."],
+  식상: ["표현·창작", "말하고 만들고 보여주는 해. 창작·발표·새 취미·자녀 일이 두드러지고, 틀을 벗어나고 싶은 마음도 커져요."],
+  인성: ["배움·문서", "배우고 정리하는 해. 공부·자격·문서·계약·부동산·윗사람의 도움이 주제가 되고, 혼자 생각하는 시간이 늘어요."],
+  비겁: ["자립·경쟁", "내 힘으로 서는 해. 동료·친구·경쟁자가 늘고 독립·동업·분배 문제가 주제가 돼요. 나눌 것과 지킬 것을 구분하세요."],
+};
+function yearFortune(F, saju, daewoon, year, birthYear) {
+  const ganI = mod(year - 4, 10), jiI = mod(year - 4, 12);
+  const gan = GAN[ganI], ji = JI[jiI], ganOh = GAN_OH[gan], jiOh = JI_OH[jiI];
+  const scoreOh = (oh) => (oh === F.yong ? 25 : oh === F.hee ? 12 : oh === F.gi ? -15 : oh === F.gu ? -8 : 0);
+  const amp = 0.4 + 0.6 * F.decisive;
+  const ilJi = saju.pillars[2].jiI, yJi = saju.yJiI;
+  const tags = [];
+  let v = 50 + (scoreOh(ganOh) * 0.55 + scoreOh(jiOh) * 0.45) * amp;
+  if ((jiI + 6) % 12 === ilJi) { v -= 9; tags.push("일지 충"); } else if (HAP6[jiI] === ilJi) { v += 6; tags.push("일지 합"); }
+  if ((jiI + 6) % 12 === yJi) { v -= 5; tags.push("띠 충"); } else if (jiI === yJi) { v += 3; tags.push("본띠 해"); }
+  const age = year - birthYear + 1; // 세는 나이
+  const dw = [...daewoon.list].reverse().find((d) => age >= d.age) || null;
+  if (dw) { const dv = scoreOh(GAN_OH[dw.gan]) * 0.6 + scoreOh(JI_OH[JI.indexOf(dw.ji)]) * 0.4; v += dv * amp * 0.35; }
+  const sipOf = (oh) => Object.entries(F.sip).find(([, el]) => el === oh)?.[0] || "비겁";
+  const sipGan = sipOf(ganOh), sipJi = sipOf(jiOh);
+  const level = (oh) => (oh === F.yong ? "용신" : oh === F.hee ? "희신" : oh === F.gi ? "기신" : oh === F.gu ? "구신" : "한신");
+  // 월건: 인월(2월) 월간 = 년간에 따라 갑기→병, 을경→무, 병신→경, 정임→임, 무계→갑. 양력 월≈지지(1월 축, 2월 인 … 12월 자)
+  const firstGan = (ganI % 5) * 2 + 2;
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const m = i + 1, mJi = mod(m, 12), mGan = mod(firstGan + (mJi - 2), 10);
+    const mo = JI_OH[mJi], mg = GAN_OH[GAN[mGan]];
+    const seasonal = (scoreOh(mo) * 0.5 + scoreOh(mg) * 0.3) * amp * 0.45;
+    const clash = (mJi + 6) % 12 === ilJi ? -6 : HAP6[mJi] === ilJi ? 4 : 0;
+    const row = { m: `${m}월`, 간지: `${GAN[mGan]}${JI[mJi]}` };
+    const CAT_EL = { 재물: "금", 연애: "화", 건강: "토" };
+    let sum = 0;
+    for (const c of ["재물", "연애", "건강"]) {
+      const ce = CAT_EL[c], r = relation(mo, ce);
+      let s = F.harmony * 0.3 + 38 + (v - 50) * 0.35 + seasonal + clash;
+      s += mo === ce ? 7 : r === "상생" ? 3 : r === "상극" ? -5 : 0;
+      s += Math.sin((i / 12) * Math.PI * 2 + (F.phase?.[c] || 0)) * 9;
+      row[c] = clamp(s); sum += row[c];
+    }
+    row.총운 = clamp(sum / 3);
+    return row;
+  });
+  const best = months.reduce((a, b) => (b.총운 > a.총운 ? b : a)), worst = months.reduce((a, b) => (b.총운 < a.총운 ? b : a));
+  return { year, age, gan, ji, ganOh, jiOh, ganLevel: level(ganOh), jiLevel: level(jiOh), sipGan, sipJi, theme: SIP_THEME[sipGan], tags, value: clamp(v), dw, months, best, worst, tti: TTI[jiI] };
 }
 
 // 체계별 비중 예산(절대 점수 합 기준): 사주 ≈40% > MBTI ≈25% > 별자리 ≈20% > 혈액형 ≈15%.
@@ -435,6 +486,9 @@ function Seg({ children, on, onClick, mono, serif, big }) {
 }
 const btnGold = { padding: "17px 20px", cursor: "pointer", border: "none", background: C.gold, color: "#141412", fontFamily: "'Noto Sans KR',sans-serif", fontWeight: 900, fontSize: 17, letterSpacing: 1 };
 const tip = { background: C.bg2, border: `1px solid ${C.line}`, color: C.ink, fontFamily: "'Noto Sans KR',sans-serif", fontSize: 12 };
+const btnYear = { width: 44, height: 46, cursor: "pointer", border: `1px solid ${C.line}`, background: C.bg2, color: C.ink, fontSize: 14, flex: "0 0 auto" };
+const tagStyle = { fontSize: 11, padding: "3px 8px", border: `1px solid ${C.line}`, color: C.dim };
+const lvColor = (lv) => (lv === "용신" ? C.goldSoft : lv === "희신" ? C.목 : lv === "기신" ? C.화 : lv === "구신" ? C.토 : C.dim);
 
 /* ═══════════════════════ 메인 ═══════════════════════ */
 // standalone: destiny.html 독립 PWA 모드 — Shell/로그인이 없어 AI 섹션(크레딧 필요) 제외.
@@ -655,6 +709,8 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
   const [shared, setShared] = useState(false);
   const [tarotOpen, setTarotOpen] = useState(false);
   const [oracleText, setOracleText] = useState(""); // AI 심층 예언 — 공유/복사 텍스트 포함용
+  const thisYear = new Date().getFullYear();
+  const [year, setYear] = useState(thisYear); // 운세를 볼 해 (세운·월건·삼재 기준)
 
   // 대운 길흉: 억부용신 기준 + 원국 일지 대비 충·합(변동)까지 반영
   const scoreOh = (oh) => {
@@ -664,7 +720,6 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
     if (oh === F.gu) return -8;     // 구신
     return 0;                       // 한신
   };
-  const HAP6 = { 0: 1, 1: 0, 2: 11, 11: 2, 3: 10, 10: 3, 4: 9, 9: 4, 5: 8, 8: 5, 6: 7, 7: 6 };
   const ilJi = saju.pillars[2].jiI; // 원국 일지(나)
   const amp = 0.4 + 0.6 * F.decisive; // 중화(애매)일수록 용신 진폭 완만
   const daewoonCurve = daewoon.list.map((dw) => {
@@ -765,8 +820,10 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
 
   // 오늘의 타로 (오늘 날짜 + 생일 + 이름으로 결정)
   const todayStr = new Date().toISOString().slice(0, 10);
-  const nowYear = new Date().getFullYear();
+  const nowYear = year;
   const sj = samjaeInfo(saju.yJiI, nowYear);
+  const yf = yearFortune(F, saju, daewoon, year, R.y);
+  const yearOptions = Array.from({ length: Math.max(1, Math.min(100, thisYear + 20 - R.y + 1)) }, (_, i) => R.y + i);
   const todayCard = TAROT[Math.floor(hashStr(`${todayStr}|${R.y}-${R.m}-${R.d}|${R.name}`)() * TAROT.length) % TAROT.length];
 
   const shareText =
@@ -785,7 +842,8 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
     (R.palm ? `[ 손금 관측 노트 · 사용자 확인 ]\n${palmShareText(buildPalmReading(R.palm))}\n(전통 상징을 빌린 재미 콘텐츠 · 성격·건강·미래 판정 아님)\n\n` : "") +
     (R.face ? `[ 관상 관측 노트 · 사진상 비율 ]\n${faceShareText(buildFaceReading(R.face))}\n(전통 상징을 빌린 재미 콘텐츠 · 성격·운세 판정 아님)\n\n` : "") +
     `[ 인생 12영역 요약 ]\n가장 잘 풀리는 영역: ${bestGung.dom}(${bestGung.t}) · 신경 쓸 영역: ${warnGung.dom}(${warnGung.t})\n\n` +
-    `[ 삼재 ]\n${sj.inSamjae ? `지금 삼재 기간(${sj.years[0]}~${sj.years[2]}년, 올해는 ${sj.phase})` : `지금은 삼재 아님 · 다음 삼재 ${sj.years[0]}~${sj.years[2]}년`}\n\n` +
+    `[ ${year}년 세운 · ${yf.gan}${yf.ji}년 ]\n흐름 ${yf.value}점 · 주제 ${yf.theme[0]} · 년간 ${yf.sipGan}(${yf.ganLevel}) / 년지 ${yf.sipJi}(${yf.jiLevel})${yf.tags.length ? " · " + yf.tags.join(", ") : ""}\n가장 트이는 달 ${yf.best.m}(${yf.best.총운}) · 숨 고를 달 ${yf.worst.m}(${yf.worst.총운})\n\n` +
+    `[ 삼재 ]\n${sj.inSamjae ? `${year}년은 삼재 기간(${sj.years[0]}~${sj.years[2]}년, ${sj.phase})` : `${year}년은 삼재 아님 · 다음 삼재 ${sj.years[0]}~${sj.years[2]}년`}\n\n` +
     `[ 오늘의 타로 ]\n${todayCard[1]} (${todayCard[0]}) · ${todayCard[2]}\n${todayCard[3]}\n\n` +
     `[ 운명은 이렇게 말한다 ]\n${summary}\n\n` +
     (oracleText ? `[ AI 관측사의 심층 예언 ]\n${oracleText}\n\n` : "") +
@@ -1014,12 +1072,60 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
         </p>
       </Panel>
 
+      <Panel style={{ background: "rgba(245,135,15,0.05)" }}>
+        <Eyebrow>세운(歲運) · 운세를 볼 해 고르기</Eyebrow>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}>
+          <button onClick={() => setYear((y) => Math.max(yearOptions[0], y - 1))} disabled={year <= yearOptions[0]} aria-label="이전 해"
+            style={{ ...btnYear, opacity: year <= yearOptions[0] ? 0.35 : 1 }}>◀</button>
+          <select value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label="운세를 볼 해"
+            style={{ ...inp, flex: 1, textAlign: "center", fontSize: 16, fontWeight: 700, color: C.goldSoft }}>
+            {yearOptions.map((y) => <option key={y} value={y}>{y}년{y === thisYear ? " (올해)" : ""} · {y - R.y + 1}세</option>)}
+          </select>
+          <button onClick={() => setYear((y) => Math.min(yearOptions.at(-1), y + 1))} disabled={year >= yearOptions.at(-1)} aria-label="다음 해"
+            style={{ ...btnYear, opacity: year >= yearOptions.at(-1) ? 0.35 : 1 }}>▶</button>
+          {year !== thisYear && <button onClick={() => setYear(thisYear)} style={{ ...btnYear, width: "auto", padding: "0 10px", fontSize: 11 }}>올해</button>}
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+          <div>
+            <span className="destiny-display" style={{ fontSize: 30, color: C.ink }}>{yf.gan}{yf.ji}년</span>
+            <span style={{ marginLeft: 8, fontSize: 12, color: C.dim }}>{yf.tti}띠 해 · <span style={{ color: C[yf.ganOh] }}>{OH_GLYPH[yf.ganOh]}</span><span style={{ color: C[yf.jiOh] }}>{OH_GLYPH[yf.jiOh]}</span></span>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div className="destiny-display" style={{ fontSize: 30, color: yf.value >= 62 ? C.goldSoft : yf.value <= 42 ? C.화 : C.ink }}>{yf.value}</div>
+            <div style={{ fontSize: 10, color: C.dim, letterSpacing: 1 }}>{yf.value >= 70 ? "크게 트이는 해" : yf.value >= 58 ? "순조로운 해" : yf.value >= 45 ? "무난한 해" : yf.value >= 35 ? "숨 고르는 해" : "지키는 해"}</div>
+          </div>
+        </div>
+        <div style={{ height: 8, background: "rgba(24,24,22,0.6)", marginBottom: 10 }}>
+          <div style={{ width: `${yf.value}%`, height: "100%", background: `linear-gradient(90deg, ${C.gold}, ${C.goldSoft})`, transition: "width .5s" }} />
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+          <span style={tagStyle}>년간 {yf.gan}({yf.ganOh}) · {yf.sipGan} · <b style={{ color: lvColor(yf.ganLevel) }}>{yf.ganLevel}</b></span>
+          <span style={tagStyle}>년지 {yf.ji}({yf.jiOh}) · {yf.sipJi} · <b style={{ color: lvColor(yf.jiLevel) }}>{yf.jiLevel}</b></span>
+          {yf.tags.map((t) => <span key={t} style={{ ...tagStyle, color: t.includes("충") ? C.화 : C.goldSoft }}>{t}</span>)}
+          {yf.dw && <span style={tagStyle}>대운 {yf.dw.gan}{yf.dw.ji} ({yf.dw.age}세~)</span>}
+        </div>
+        <p style={{ fontSize: 13, color: C.ink, margin: "0 0 6px", lineHeight: 1.7 }}>
+          <b style={{ color: C.goldSoft }}>{yf.theme[0]}의 해.</b> {yf.theme[1]}
+        </p>
+        <p style={{ fontSize: 12, color: C.dim, margin: 0, lineHeight: 1.65 }}>
+          {yf.ganLevel === "용신" || yf.jiLevel === "용신"
+            ? `그 해의 기운이 당신 용신 '${yE.n}'을 품고 들어와요. 미뤄 둔 시작을 꺼내기 좋은 해.`
+            : yf.ganLevel === "기신" || yf.jiLevel === "기신"
+              ? `그 해의 기운에 지치게 하는 '${gE.n}'이 섞여 있어요. 새 일을 벌이기보다 지키고 다듬는 쪽이 편합니다.`
+              : `용신도 기신도 아닌 중립의 해. 당신이 채우는 '${yE.n}' 기운만큼 흐름이 열려요.`}
+          {yf.tags.includes("일지 충") && " 일지와 충이라 거처·관계·건강 리듬이 한 번 흔들릴 수 있으니 변화를 미리 계획해 두세요."}
+          {yf.tags.includes("일지 합") && " 일지와 합이라 사람과 자리가 당신 쪽으로 모이는 해예요."}
+          {yf.tags.includes("띠 충") && " 띠와 충(충태세)인 해 — 전통적으로 이동·이사·변동이 잦다고 보니, 바꿀 일은 이 해에 몰아서."}
+          {yf.tags.includes("본띠 해") && " 본띠 해(태세)라 나를 돌아보고 새 주기를 여는 느낌이 강해요."}
+        </p>
+      </Panel>
+
       <Panel>
         <Eyebrow>삼재 · {nowYear}년 기준</Eyebrow>
         <p style={{ fontSize: 12.5, color: C.ink, margin: 0, lineHeight: 1.7 }}>
           {sj.inSamjae
-            ? <>지금은 <b style={{ color: C.화 }}>삼재 기간</b>({sj.years[0]}~{sj.years[2]}년)이에요. 올해는 <b style={{ color: C.goldSoft }}>{sj.phase}</b> — 큰 결정은 한 템포 늦추고, 용신 '{yE.n}' 기운을 채우며 지나가면 무탈합니다.</>
-            : <>지금은 삼재가 아니에요. 다음 삼재는 <b style={{ color: C.goldSoft }}>{sj.years[0]}~{sj.years[2]}년</b> — 그 전에 벌여둘 일은 지금 벌이는 게 좋아요.</>}
+            ? <>{nowYear}년은 <b style={{ color: C.화 }}>삼재 기간</b>({sj.years[0]}~{sj.years[2]}년)이에요. 이 해는 <b style={{ color: C.goldSoft }}>{sj.phase}</b> — 큰 결정은 한 템포 늦추고, 용신 '{yE.n}' 기운을 채우며 지나가면 무탈합니다.</>
+            : <>{nowYear}년은 삼재가 아니에요. 다음 삼재는 <b style={{ color: C.goldSoft }}>{sj.years[0]}~{sj.years[2]}년</b> — 그 전에 벌여둘 일은 미리 벌이는 게 좋아요.</>}
         </p>
       </Panel>
 
@@ -1041,13 +1147,13 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
 
       {/* ── 이하 원본 코드 (사용자 제공 하단부) ── */}
       <Panel>
-        <Eyebrow>기운 리듬 · 상징적 흐름 (콘텐츠용)</Eyebrow>
+        <Eyebrow>{year}년 월별 흐름 · 월건(月建) 기준</Eyebrow>
         <ResponsiveContainer width="100%" height={230}>
-          <LineChart data={F.monthlyCats} margin={{ top: 8, right: 10, left: -18, bottom: 0 }}>
+          <LineChart data={yf.months} margin={{ top: 8, right: 10, left: -18, bottom: 0 }}>
             <CartesianGrid stroke={C.line} vertical={false} />
             <XAxis dataKey="m" tick={{ fill: C.dim, fontSize: 10 }} axisLine={false} tickLine={false} interval={0} />
             <YAxis domain={[20, 95]} tick={{ fill: C.dim, fontSize: 10 }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={tip} />
+            <Tooltip contentStyle={tip} labelFormatter={(l, p) => `${l} · ${p?.[0]?.payload?.간지 || ""}`} />
             <Legend wrapperStyle={{ fontFamily: "'Noto Sans KR',sans-serif", fontSize: 11, paddingTop: 6 }} />
             <Line dataKey="재물" stroke={C.goldSoft} strokeWidth={2.2} dot={false} activeDot={{ r: 4 }} />
             <Line dataKey="연애" stroke={C.화} strokeWidth={2.2} dot={false} activeDot={{ r: 4 }} />
@@ -1055,7 +1161,7 @@ function Results({ R, mbti, blood, gender, standalone, onReset }) {
           </LineChart>
         </ResponsiveContainer>
         <p style={{ color: C.dim, fontSize: 11.5, margin: 0, textAlign: "center", lineHeight: 1.6 }}>
-          특정 연도의 실제 운세 예측이 아니라, 계절 오행 리듬을 상징적으로 표현한 <b style={{ color: C.dim }}>재미용 흐름</b>이에요. 봄엔 목, 여름엔 화… 식으로 각 분야 기운이 어떻게 오르내리는지 감각적으로 보여줍니다.
+          {year}년 각 달의 월건(월간·월지)이 당신 용신을 돕는지, 일지와 충·합인지로 셈한 <b style={{ color: C.dim }}>재미용 흐름</b>이에요. 가장 트이는 달은 <b style={{ color: C.goldSoft }}>{yf.best.m}</b>, 숨 고를 달은 <b style={{ color: C.화 }}>{yf.worst.m}</b>. 양력 월을 지지에 대응한 간이 계산이라 절입일과 며칠 차이가 날 수 있어요.
         </p>
       </Panel>
 
